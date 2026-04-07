@@ -48,7 +48,7 @@ flowchart TB
     end
 
     subgraph 存储
-        DB["MySQL / TypeORM"]
+        DB["PostgreSQL / TypeORM"]
     end
 
     subgraph 工具
@@ -158,7 +158,7 @@ task_run
 └── created_at: datetime
 ```
 
-**同一个 task 同时只能有一个 running 状态的 run**。如果当前有 running 的 run，新建的 run 进入 `pending` 状态排队，等旧 run 到达终态后自动启动。这避免了两个 run 同时执行、共享工作目录的竞态。V1 单进程，check + create 在同一个事务内即可保证互斥，不需要分布式锁。
+**同一个 task 同时只能有一个 running 状态的 run**。如果当前有 running 的 run，新建的 run 进入 `pending` 状态排队，等旧 run 到达终态后自动启动。这避免了两个 run 同时执行、共享工作目录的竞态。V1 默认使用 PostgreSQL，推荐用 `事务 + 行级锁（SELECT ... FOR UPDATE）` 保证 `check + create` 原子性；如果需要更强的兜底，可以再加部分唯一索引约束 `status = 'running'`。
 
 没有 run 会出什么问题：
 1. 你无法区分"同一任务版本的第一次执行"和"失败后的重试"
@@ -185,7 +185,7 @@ plan_step
 ├── step_index: int             // 在该 plan 内的顺序（0, 1, 2...）
 ├── description: string         // "调研 React Compiler 最新进展"
 ├── skill_name: string?         // 指定使用的 skill（如 "web_research"），为空则由 executor 自行决定工具
-├── skill_input: JSON?          // skill 的输入参数
+├── skill_input: JSONB?         // skill 的输入参数（PostgreSQL）
 ├── tool_hint: string?          // 不使用 skill 时，建议使用的工具名
 └── created_at: datetime
 ```
@@ -204,9 +204,9 @@ step_run
 ├── executor_type: enum         // 'tool' | 'skill'（标记本步是工具直调还是 skill 执行）
 ├── skill_name: string?         // skill 执行时填写
 ├── tool_name: string?          // 工具直调时填写
-├── tool_input: JSON?
-├── tool_output: JSON?
-├── skill_trace: JSON?          // skill 内部的工具调用轨迹（数组：[{tool, input, output}, ...]）
+├── tool_input: JSONB?
+├── tool_output: JSONB?
+├── skill_trace: JSONB?         // skill 内部的工具调用轨迹（数组：[{tool, input, output}, ...]）
 ├── llm_reasoning: text?        // 模型的推理过程
 ├── result_summary: text?       // 步骤结果摘要（喂给后续步骤和 planner）
 ├── error_message: text?
@@ -227,13 +227,38 @@ artifact
 ├── type: ArtifactType          // markdown | json | file
 ├── title: string
 ├── content: text
-├── metadata: JSON?
+├── metadata: JSONB?
 └── created_at: datetime
 ```
 
 artifact 代表交付物，不代表中间过程。
 
-### 3.3 三层分离的必要性
+### 3.3 PostgreSQL 落库约束
+
+V1 默认数据库是 PostgreSQL，所以文档里的结构化字段统一按 `JSONB` 设计，便于存工具参数、skill trace、artifact metadata 这类半结构化数据。
+
+推荐的数据库约束：
+
+- `task_revision(task_id, version)` 唯一：同一 task 下 revision 版本号不能重复
+- `task_run(revision_id, run_number)` 唯一：同一 revision 下 run 编号不能重复
+- `task_plan(run_id, version)` 唯一：同一 run 下 plan 版本号不能重复
+- `plan_step(plan_id, step_index)` 唯一：同一 plan 下步骤顺序不能重复
+- `step_run(run_id, execution_order)` 唯一：同一 run 下实际执行顺序不能重复
+
+推荐的并发约束：
+
+- 用事务包住“读取 task 当前状态 → 创建 run → 更新 task.current_run_id”这一组操作
+- 如果要把“同一 task 同时只能有一个 running run”下沉到数据库层，优先用 PostgreSQL 的**部分唯一索引**而不是只靠应用层判断
+
+推荐的索引：
+
+- `task(current_revision_id)`
+- `task(current_run_id)`
+- `task_run(task_id, status)`
+- `step_run(run_id, plan_step_id)`
+- `artifact(run_id)`
+
+### 3.4 三层分离的必要性
 
 一个例子说清楚三层为什么不能合并：
 
@@ -917,12 +942,24 @@ flowchart LR
 | 技术 | 位置 | 用在哪 | 不用在哪 |
 |---|---|---|---|
 | **NestJS** | 后端框架 | 模块化、DI、Controller/Service/Gateway | — |
-| **TypeORM + MySQL** | 持久化 | 所有实体的 CRUD | 不承担 LLM 上下文管理 |
+| **TypeORM + PostgreSQL** | 持久化 | 所有实体的 CRUD、事务、状态约束 | 不承担 LLM 上下文管理 |
 | **LangGraph.js** | 执行引擎 | StateGraph 定义节点与边，管理执行流 | 不管数据库、不管前端 |
 | **LangChain.js** | LLM 调用 | ChatModel、Tool Calling、结构化输出 | 不做执行编排（那是 LangGraph 的事） |
 | **socket.io** | 实时通信 | 事件推送、前端指令 | — |
 | **EventEmitter2** | 内部解耦 | Agent Runtime → Gateway 的桥梁 | 不做跨进程通信 |
 | **Zod** | 校验 | 工具参数、评估结果、计划结构 | — |
+
+**关于数据库**：V1 默认使用 **PostgreSQL**，不再默认选 MySQL。原因不是 MySQL 不能用，而是这套任务系统天然更依赖事务、一致性约束、JSON 字段和复杂状态流转；PostgreSQL 更贴合这些需求。
+
+**关于 Supabase**：可以用，但这里的定位是 **Supabase Postgres（托管 PostgreSQL）**，不是让前端直接把任务系统建成 `supabase-js` 驱动的应用。推荐方式：
+
+1. 后端仍然使用 `NestJS + TypeORM`
+2. TypeORM 通过 PostgreSQL 连接串连接到 Supabase
+3. `task / revision / run / plan / step_run / artifact` 这些核心表只允许后端写
+4. 前端继续通过 REST + WebSocket 和后端交互，不直接改核心任务状态
+5. 任务执行过程的实时展示继续走 `socket.io`，不把 Supabase Realtime 当成主事件通道
+
+如果后续想降低本地运维成本，本地开发可以用 Docker/Postgres，线上直接切到 Supabase；两边的数据模型和 TypeORM 代码保持一致。
 
 **关于 Vercel AI SDK**：V1 不引入。
 

@@ -1,0 +1,42 @@
+import { Injectable } from '@nestjs/common';
+import * as fs from 'fs/promises';
+import { z } from 'zod';
+import { Tool, ToolResult } from '../interfaces/tool.interface';
+import { WorkspaceService } from '../../workspace/workspace.service';
+
+const schema = z.object({
+  task_id: z.string().uuid(),
+  path: z
+    .string()
+    .default('.')
+    .describe('Relative directory path inside workspace'),
+});
+
+@Injectable()
+export class ListDirectoryTool implements Tool {
+  readonly name = 'list_directory';
+  readonly description = 'List files and directories in the task workspace.';
+  readonly schema = schema;
+  readonly type = 'read-only' as const;
+
+  constructor(private readonly workspace: WorkspaceService) {}
+
+  async execute(input: unknown): Promise<ToolResult> {
+    const { task_id, path: dirPath } = schema.parse(input);
+    try {
+      const safePath = this.workspace.resolveSafePath(task_id, dirPath);
+      const entries = await fs.readdir(safePath, { withFileTypes: true });
+      const lines = entries.map((e) =>
+        e.isDirectory() ? `[DIR]  ${e.name}/` : `[FILE] ${e.name}`,
+      );
+      return { success: true, output: lines.join('\n') || '(empty directory)' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        output: '',
+        error: `Cannot list directory: ${msg}`,
+      };
+    }
+  }
+}

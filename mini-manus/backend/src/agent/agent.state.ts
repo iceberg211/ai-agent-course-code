@@ -1,0 +1,47 @@
+import { Annotation } from '@langchain/langgraph';
+
+export interface StepResult {
+  stepRunId: string;
+  planStepId: string;
+  description: string;
+  resultSummary: string;
+  executionOrder: number;
+}
+
+export interface EvaluationResult {
+  decision: 'continue' | 'retry' | 'replan' | 'complete' | 'fail';
+  reason: string;
+}
+
+export interface PlanStepDef {
+  stepIndex: number;
+  description: string;
+  skillName?: string | null;
+  skillInput?: Record<string, unknown> | null;
+  toolHint?: string | null;
+}
+
+export interface PlanDef {
+  planId: string;
+  steps: PlanStepDef[];
+}
+
+export const AgentStateAnnotation = Annotation.Root({
+  taskId: Annotation<string>({ reducer: (_, b) => b }),
+  runId: Annotation<string>({ reducer: (_, b) => b }),
+  revisionInput: Annotation<string>({ reducer: (_, b) => b }),
+  currentPlan: Annotation<PlanDef | null>({ reducer: (_, b) => b }),
+  currentStepIndex: Annotation<number>({ reducer: (_, b) => b }),
+  stepResults: Annotation<StepResult[]>({
+    reducer: (a, b) => [...a, ...b],
+    default: () => [],
+  }),
+  replanCount: Annotation<number>({ reducer: (_, b) => b }),
+  retryCount: Annotation<number>({ reducer: (_, b) => b }),
+  evaluation: Annotation<EvaluationResult | null>({ reducer: (_, b) => b }),
+  executionOrder: Annotation<number>({ reducer: (_, b) => b }),
+  shouldStop: Annotation<boolean>({ reducer: (_, b) => b }),
+  errorMessage: Annotation<string | null>({ reducer: (_, b) => b }),
+});
+
+export type AgentState = typeof AgentStateAnnotation.State;

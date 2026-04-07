@@ -1,8 +1,13 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
-      "Bash(npx skills:*)"
-    ]
+      "Read(*)",
+      "Edit(*)",
+      "Bash(npm *)",
+      "Bash(git *)",
+      "Bash(npx *)",
+      "Bash(node:*)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
