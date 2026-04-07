@@ -22,5 +22,6 @@ import { ChatOpenAI } from '@langchain/openai';
       inject: [ConfigService],
     },
   ],
+  exports: [AiService], // SpeechGateway 需要注入 AiService
 })
 export class AiModule {}
