@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { WorkspaceService } from './workspace.service';
+import { WorkspaceService } from '@/workspace/workspace.service';
 
 @Module({
   providers: [WorkspaceService],

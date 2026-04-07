@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { ToolRegistry } from '../../tool/tool.registry';
-import { WorkspaceService } from '../../workspace/workspace.service';
+import { ToolRegistry } from '@/tool/tool.registry';
+import { WorkspaceService } from '@/workspace/workspace.service';
 import { ChatOpenAI } from '@langchain/openai';
 
 export type SkillEvent =

@@ -7,9 +7,9 @@ import {
   OneToMany,
   Index,
 } from 'typeorm';
-import { TaskStatus } from '../../common/enums';
-import { TaskRevision } from './task-revision.entity';
-import { TaskRun } from './task-run.entity';
+import { TaskStatus } from '@/common/enums';
+import { TaskRevision } from '@/task/entities/task-revision.entity';
+import { TaskRun } from '@/task/entities/task-run.entity';
 
 @Entity('tasks')
 export class Task {

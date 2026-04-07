@@ -1,5 +1,5 @@
-import { TaskPlan, StepRun, Artifact } from '../task/entities';
-import { StepStatus, RunStatus } from '../common/enums';
+import { TaskPlan, StepRun, Artifact } from '@/task/entities';
+import { StepStatus, RunStatus } from '@/common/enums';
 
 export interface AgentCallbacks {
   savePlan(

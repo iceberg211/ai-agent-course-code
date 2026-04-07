@@ -8,8 +8,8 @@ import {
   OneToMany,
   Unique,
 } from 'typeorm';
-import { TaskPlan } from './task-plan.entity';
-import { StepRun } from './step-run.entity';
+import { TaskPlan } from '@/task/entities/task-plan.entity';
+import { StepRun } from '@/task/entities/step-run.entity';
 
 @Entity('plan_steps')
 @Unique(['planId', 'stepIndex'])

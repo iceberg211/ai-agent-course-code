@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Tool, ToolResult } from '../interfaces/tool.interface';
+import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
 
 const schema = z.object({
   thought: z.string().min(1).describe('The reasoning or thinking to record'),

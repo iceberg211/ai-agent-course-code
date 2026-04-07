@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { z } from 'zod';
-import { Tool, ToolResult, truncateOutput } from '../interfaces/tool.interface';
+import { Tool, ToolResult, truncateOutput } from '@/tool/interfaces/tool.interface';
 
 const schema = z.object({
   url: z.string().url().describe('URL to fetch and extract text from'),

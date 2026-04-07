@@ -8,8 +8,8 @@ import {
   OneToMany,
   Unique,
 } from 'typeorm';
-import { Task } from './task.entity';
-import { TaskRun } from './task-run.entity';
+import { Task } from '@/task/entities/task.entity';
+import { TaskRun } from '@/task/entities/task-run.entity';
 
 @Entity('task_revisions')
 @Unique(['taskId', 'version'])

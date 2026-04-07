@@ -1,10 +1,10 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { AgentState, EvaluationResult } from '../agent.state';
-import { AgentCallbacks } from '../agent.callbacks';
-import { StepStatus } from '../../common/enums';
-import { TASK_EVENTS } from '../../common/events/task.events';
-import { EventPublisher } from '../../event/event.publisher';
+import { AgentState, EvaluationResult } from '@/agent/agent.state';
+import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { StepStatus } from '@/common/enums';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { EventPublisher } from '@/event/event.publisher';
 
 const EvalSchema = z.object({
   decision: z.enum(['continue', 'retry', 'replan', 'complete', 'fail']),

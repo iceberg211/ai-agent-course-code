@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import { z } from 'zod';
-import { Tool, ToolResult, truncateOutput } from '../interfaces/tool.interface';
-import { WorkspaceService } from '../../workspace/workspace.service';
+import { Tool, ToolResult, truncateOutput } from '@/tool/interfaces/tool.interface';
+import { WorkspaceService } from '@/workspace/workspace.service';
 
 const schema = z.object({
   task_id: z.string().uuid(),

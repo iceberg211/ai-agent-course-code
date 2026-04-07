@@ -9,12 +9,12 @@ import {
   Unique,
   Index,
 } from 'typeorm';
-import { RunStatus } from '../../common/enums';
-import { Task } from './task.entity';
-import { TaskRevision } from './task-revision.entity';
-import { TaskPlan } from './task-plan.entity';
-import { StepRun } from './step-run.entity';
-import { Artifact } from './artifact.entity';
+import { RunStatus } from '@/common/enums';
+import { Task } from '@/task/entities/task.entity';
+import { TaskRevision } from '@/task/entities/task-revision.entity';
+import { TaskPlan } from '@/task/entities/task-plan.entity';
+import { StepRun } from '@/task/entities/step-run.entity';
+import { Artifact } from '@/task/entities/artifact.entity';
 
 @Entity('task_runs')
 @Unique(['revisionId', 'runNumber'])

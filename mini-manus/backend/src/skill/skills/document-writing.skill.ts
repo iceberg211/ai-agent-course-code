@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Skill, SkillContext, SkillEvent } from '../interfaces/skill.interface';
+import { Skill, SkillContext, SkillEvent } from '@/skill/interfaces/skill.interface';
 
 const inputSchema = z.object({
   task_id: z.string().uuid(),

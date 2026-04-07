@@ -1,16 +1,16 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TaskService } from './task.service';
-import { TaskController } from './task.controller';
-import { Task } from './entities/task.entity';
-import { TaskRevision } from './entities/task-revision.entity';
-import { TaskRun } from './entities/task-run.entity';
-import { TaskPlan } from './entities/task-plan.entity';
-import { PlanStep } from './entities/plan-step.entity';
-import { StepRun } from './entities/step-run.entity';
-import { Artifact } from './entities/artifact.entity';
-import { AgentModule } from '../agent/agent.module';
-import { EventModule } from '../event/event.module';
+import { TaskService } from '@/task/task.service';
+import { TaskController } from '@/task/task.controller';
+import { Task } from '@/task/entities/task.entity';
+import { TaskRevision } from '@/task/entities/task-revision.entity';
+import { TaskRun } from '@/task/entities/task-run.entity';
+import { TaskPlan } from '@/task/entities/task-plan.entity';
+import { PlanStep } from '@/task/entities/plan-step.entity';
+import { StepRun } from '@/task/entities/step-run.entity';
+import { Artifact } from '@/task/entities/artifact.entity';
+import { AgentModule } from '@/agent/agent.module';
+import { EventModule } from '@/event/event.module';
 
 @Module({
   imports: [

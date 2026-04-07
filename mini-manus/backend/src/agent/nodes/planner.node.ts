@@ -1,10 +1,10 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { AgentState, PlanDef } from '../agent.state';
-import { AgentCallbacks } from '../agent.callbacks';
-import { SkillRegistry } from '../../skill/skill.registry';
-import { TASK_EVENTS } from '../../common/events/task.events';
-import { EventPublisher } from '../../event/event.publisher';
+import { AgentState, PlanDef } from '@/agent/agent.state';
+import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { SkillRegistry } from '@/skill/skill.registry';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { EventPublisher } from '@/event/event.publisher';
 
 const PlanSchema = z.object({
   steps: z.array(

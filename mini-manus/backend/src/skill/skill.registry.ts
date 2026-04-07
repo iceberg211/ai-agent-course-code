@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Skill, SkillForPlanner } from './interfaces/skill.interface';
+import { Skill, SkillForPlanner } from '@/skill/interfaces/skill.interface';
 
 @Injectable()
 export class SkillRegistry implements OnModuleInit {

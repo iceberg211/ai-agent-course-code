@@ -7,8 +7,8 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { ArtifactType } from '../../common/enums';
-import { TaskRun } from './task-run.entity';
+import { ArtifactType } from '@/common/enums';
+import { TaskRun } from '@/task/entities/task-run.entity';
 
 @Entity('artifacts')
 export class Artifact {

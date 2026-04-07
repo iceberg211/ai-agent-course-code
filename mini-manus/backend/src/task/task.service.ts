@@ -1,23 +1,23 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { Task } from './entities/task.entity';
-import { TaskRevision } from './entities/task-revision.entity';
-import { TaskRun } from './entities/task-run.entity';
-import { TaskPlan } from './entities/task-plan.entity';
-import { PlanStep } from './entities/plan-step.entity';
-import { StepRun } from './entities/step-run.entity';
-import { Artifact } from './entities/artifact.entity';
+import { Task } from '@/task/entities/task.entity';
+import { TaskRevision } from '@/task/entities/task-revision.entity';
+import { TaskRun } from '@/task/entities/task-run.entity';
+import { TaskPlan } from '@/task/entities/task-plan.entity';
+import { PlanStep } from '@/task/entities/plan-step.entity';
+import { StepRun } from '@/task/entities/step-run.entity';
+import { Artifact } from '@/task/entities/artifact.entity';
 import {
   TaskStatus,
   RunStatus,
   StepStatus,
   ArtifactType,
-} from '../common/enums';
-import { AgentService } from '../agent/agent.service';
-import { EventPublisher } from '../event/event.publisher';
-import { TASK_EVENTS } from '../common/events/task.events';
-import { AgentCallbacks } from '../agent/agent.callbacks';
+} from '@/common/enums';
+import { AgentService } from '@/agent/agent.service';
+import { EventPublisher } from '@/event/event.publisher';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { AgentCallbacks } from '@/agent/agent.callbacks';
 
 @Injectable()
 export class TaskService implements OnModuleInit {

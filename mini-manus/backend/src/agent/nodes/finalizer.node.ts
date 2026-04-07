@@ -1,8 +1,8 @@
 import { ChatOpenAI } from '@langchain/openai';
-import { AgentState } from '../agent.state';
-import { AgentCallbacks } from '../agent.callbacks';
-import { TASK_EVENTS } from '../../common/events/task.events';
-import { EventPublisher } from '../../event/event.publisher';
+import { AgentState } from '@/agent/agent.state';
+import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { EventPublisher } from '@/event/event.publisher';
 
 export async function finalizerNode(
   state: AgentState,

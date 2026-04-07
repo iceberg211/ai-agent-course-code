@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { z } from 'zod';
-import { Tool, ToolResult, truncateOutput } from '../interfaces/tool.interface';
+import { Tool, ToolResult, truncateOutput } from '@/tool/interfaces/tool.interface';
 
 const schema = z.object({
   query: z.string().min(1).describe('Search query'),

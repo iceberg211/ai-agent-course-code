@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Tool } from './interfaces/tool.interface';
+import { Tool } from '@/tool/interfaces/tool.interface';
 
 @Injectable()
 export class ToolRegistry implements OnModuleInit {

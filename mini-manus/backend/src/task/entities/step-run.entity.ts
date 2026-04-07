@@ -8,9 +8,9 @@ import {
   Unique,
   Index,
 } from 'typeorm';
-import { StepStatus, ExecutorType } from '../../common/enums';
-import { TaskRun } from './task-run.entity';
-import { PlanStep } from './plan-step.entity';
+import { StepStatus, ExecutorType } from '@/common/enums';
+import { TaskRun } from '@/task/entities/task-run.entity';
+import { PlanStep } from '@/task/entities/plan-step.entity';
 
 @Entity('step_runs')
 @Unique(['runId', 'executionOrder'])

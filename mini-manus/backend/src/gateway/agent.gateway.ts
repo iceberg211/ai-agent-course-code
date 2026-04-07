@@ -10,8 +10,8 @@ import {
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { TASK_EVENTS } from '../common/events/task.events';
-import { TaskService } from '../task/task.service';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { TaskService } from '@/task/task.service';
 
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/' })
 export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {

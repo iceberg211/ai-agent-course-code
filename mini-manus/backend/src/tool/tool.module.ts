@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ToolRegistry } from './tool.registry';
-import { WebSearchTool } from './tools/web-search.tool';
-import { BrowseUrlTool } from './tools/browse-url.tool';
-import { ReadFileTool } from './tools/read-file.tool';
-import { WriteFileTool } from './tools/write-file.tool';
-import { ListDirectoryTool } from './tools/list-directory.tool';
-import { ThinkTool } from './tools/think.tool';
-import { WorkspaceModule } from '../workspace/workspace.module';
+import { ToolRegistry } from '@/tool/tool.registry';
+import { WebSearchTool } from '@/tool/tools/web-search.tool';
+import { BrowseUrlTool } from '@/tool/tools/browse-url.tool';
+import { ReadFileTool } from '@/tool/tools/read-file.tool';
+import { WriteFileTool } from '@/tool/tools/write-file.tool';
+import { ListDirectoryTool } from '@/tool/tools/list-directory.tool';
+import { ThinkTool } from '@/tool/tools/think.tool';
+import { WorkspaceModule } from '@/workspace/workspace.module';
 
 @Module({
   imports: [WorkspaceModule],

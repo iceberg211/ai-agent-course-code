@@ -1,12 +1,12 @@
 import { ChatOpenAI } from '@langchain/openai';
-import { AgentState } from '../agent.state';
-import { AgentCallbacks } from '../agent.callbacks';
-import { ToolRegistry } from '../../tool/tool.registry';
-import { SkillRegistry } from '../../skill/skill.registry';
-import { WorkspaceService } from '../../workspace/workspace.service';
-import { ExecutorType, StepStatus } from '../../common/enums';
-import { TASK_EVENTS } from '../../common/events/task.events';
-import { EventPublisher } from '../../event/event.publisher';
+import { AgentState } from '@/agent/agent.state';
+import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { ToolRegistry } from '@/tool/tool.registry';
+import { SkillRegistry } from '@/skill/skill.registry';
+import { WorkspaceService } from '@/workspace/workspace.service';
+import { ExecutorType, StepStatus } from '@/common/enums';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import { EventPublisher } from '@/event/event.publisher';
 
 export async function executorNode(
   state: AgentState,

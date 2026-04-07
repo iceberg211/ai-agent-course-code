@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { AgentGateway } from './agent.gateway';
-import { TaskModule } from '../task/task.module';
+import { AgentGateway } from '@/gateway/agent.gateway';
+import { TaskModule } from '@/task/task.module';
 
 @Module({
   imports: [TaskModule],

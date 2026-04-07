@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { SkillRegistry } from './skill.registry';
-import { WebResearchSkill } from './skills/web-research.skill';
-import { DocumentWritingSkill } from './skills/document-writing.skill';
-import { ToolModule } from '../tool/tool.module';
+import { SkillRegistry } from '@/skill/skill.registry';
+import { WebResearchSkill } from '@/skill/skills/web-research.skill';
+import { DocumentWritingSkill } from '@/skill/skills/document-writing.skill';
+import { ToolModule } from '@/tool/tool.module';
 
 @Module({
   imports: [ToolModule],
