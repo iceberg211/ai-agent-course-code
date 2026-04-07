@@ -6,8 +6,10 @@ import { JsonOutputToolsParser } from '@langchain/core/output_parsers/openai_too
 import { executeCommandTool, listDirectoryTool, readFileTool, writeFileTool } from './all-tools.mjs';
 import chalk from 'chalk';
 
-const model = new ChatOpenAI({ 
-    modelName: "qwen-plus",
+// ─── 模型初始化 ───────────────────────────────────────────────────────────────
+
+const model = new ChatOpenAI({
+    modelName: 'qwen-plus',
     apiKey: process.env.OPENAI_API_KEY,
     temperature: 0,
     configuration: {
@@ -15,18 +17,105 @@ const model = new ChatOpenAI({
     },
 });
 
-const tools = [
-    readFileTool,
-    writeFileTool,
-    executeCommandTool,
-    listDirectoryTool,
-];
+// ─── 工具列表 ─────────────────────────────────────────────────────────────────
 
-// 绑定工具到模型
+const tools = [readFileTool, writeFileTool, executeCommandTool, listDirectoryTool];
+
+// bindTools 让模型知道有哪些工具可以调用，模型会在回复中以结构化格式给出工具调用指令
 const modelWithTools = model.bindTools(tools);
 
-// Agent 执行函数
-async function runAgentWithTools(query, maxIterations = 30) {
+// ─── 流式接收 AI 回复 ──────────────────────────────────────────────────────────
+//
+// 模型以流的方式返回内容（一个 chunk 一个 chunk 地来），好处是：
+//   - 普通文字可以实时打印，不用等全部生成完
+//   - write_file 的文件内容可以边生成边预览
+//
+// 难点：工具调用的参数是 JSON，流式状态下 JSON 是不完整的，
+// 所以我们用 JsonOutputToolsParser 不断尝试解析，失败了就等下一个 chunk 再试。
+
+async function streamAIResponse(messages) {
+    const rawStream = await modelWithTools.stream(messages);
+    const toolParser = new JsonOutputToolsParser();
+
+    // 把所有 chunk 拼成一个完整的 AIMessage，流结束后用它提取 tool_calls
+    let fullAIMessage = null;
+
+    // 记录每个 write_file 调用已经打印了多少字符，用来只打印新增部分（避免重复）
+    const printedLengths = new Map();
+
+    console.log(chalk.bgBlue(`\n🚀 Agent 开始思考...\n`));
+
+    for await (const chunk of rawStream) {
+        // 累积 chunk：LangChain 的消息对象支持 .concat() 做增量合并
+        fullAIMessage = fullAIMessage ? fullAIMessage.concat(chunk) : chunk;
+
+        // 尝试从已累积的内容里解析工具调用（流未结束时 JSON 不完整，解析失败是正常的）
+        let parsedTools = null;
+        try {
+            parsedTools = await toolParser.parseResult([{ message: fullAIMessage }]);
+        } catch {
+            // JSON 还不完整，跳过，等下一个 chunk
+        }
+
+        if (parsedTools?.length > 0) {
+            // AI 正在生成工具调用 —— 如果是 write_file，实时预览文件内容
+            for (const toolCall of parsedTools) {
+                if (toolCall.type === 'write_file' && toolCall.args?.content) {
+                    const key = toolCall.id || toolCall.args.filePath || 'default';
+                    const content = String(toolCall.args.content);
+                    const alreadyPrinted = printedLengths.get(key) ?? 0;
+
+                    if (alreadyPrinted === 0) {
+                        console.log(chalk.bgBlue(
+                            `\n[工具调用] write_file("${toolCall.args.filePath}") - 开始写入（流式预览）\n`
+                        ));
+                    }
+
+                    // 只打印本轮新增的字符
+                    if (content.length > alreadyPrinted) {
+                        process.stdout.write(content.slice(alreadyPrinted));
+                        printedLengths.set(key, content.length);
+                    }
+                }
+            }
+        } else if (chunk.content) {
+            // AI 在输出普通文字（不是工具调用），直接流式打印
+            process.stdout.write(
+                typeof chunk.content === 'string' ? chunk.content : JSON.stringify(chunk.content)
+            );
+        }
+    }
+
+    return fullAIMessage;
+}
+
+// ─── 执行工具调用 ─────────────────────────────────────────────────────────────
+//
+// AI 回复里包含工具调用指令（tool_calls），我们在本地真正执行这些工具，
+// 然后把执行结果以 ToolMessage 的形式存入历史，AI 下一轮才能看到结果。
+
+async function executeToolCalls(toolCalls, history) {
+    for (const toolCall of toolCalls) {
+        const tool = tools.find(t => t.name === toolCall.name);
+        if (!tool) continue;
+
+        console.log(chalk.yellow(`\n🔧 执行工具: ${toolCall.name}`));
+        const result = await tool.invoke(toolCall.args);
+
+        await history.addMessage(new ToolMessage({
+            content: result,
+            tool_call_id: toolCall.id, // 必须和 AI 请求里的 id 对应，AI 才知道这是哪个工具的结果
+        }));
+    }
+}
+
+// ─── Agent 主循环 ─────────────────────────────────────────────────────────────
+//
+// 整体流程：
+//   用户输入 → AI 思考 → 调用工具 → 把结果告诉 AI → AI 继续思考 → ...
+//   直到 AI 不再调用任何工具，说明它认为任务已完成。
+
+async function runAgent(query, maxIterations = 30) {
     const history = new InMemoryChatMessageHistory();
 
     await history.addMessage(new SystemMessage(`你是一个项目管理助手，使用工具完成任务。
@@ -52,100 +141,35 @@ async function runAgentWithTools(query, maxIterations = 30) {
     await history.addMessage(new HumanMessage(query));
 
     for (let i = 0; i < maxIterations; i++) {
-        console.log(chalk.bgGreen(`⏳ 正在等待 AI 思考...`));
+        console.log(chalk.bgGreen(`⏳ 第 ${i + 1} 轮思考...`));
 
-        // 获取当前消息历史
+        // 1. 把完整对话历史发给 AI，流式接收回复
         const messages = await history.getMessages();
+        const aiMessage = await streamAIResponse(messages);
 
-        const rawStream = await modelWithTools.stream(messages);
+        // 2. 把 AI 回复存入历史（下一轮 AI 能看到自己说过什么）
+        await history.addMessage(aiMessage);
+        
+        console.log(chalk.green('\n✅ 回复已存入历史'));
 
-        // 准备一个空的容器来拼接完整的 AIMessage
-        let fullAIMessage = null;
-
-        // 准备一个 tool_call_chunks 的 JSON 增量解析器
-        const toolParser = new JsonOutputToolsParser();
-
-        // 记录每个工具调用已打印的长度（用 id 或 filePath 作为 key）
-        const printedLengths = new Map();
-
-        console.log(chalk.bgBlue(`\n🚀 Agent 开始思考并生成流...\n`));
-
-        for await (const chunk of rawStream) {
-            // 这里的 chunk 是 AIMessageChunk，把它拼接起来
-            fullAIMessage = fullAIMessage ? fullAIMessage.concat(chunk) : chunk;
-
-            let parsedTools = null;
-            try {
-                parsedTools = await toolParser.parseResult([{ message: fullAIMessage }]);
-            } catch (e) {
-                // 解析失败说明 JSON 还不完整，忽略错误继续累积
-            }
-
-            if (parsedTools && parsedTools.length > 0) {
-                for (const toolCall of parsedTools) {
-                    if (toolCall.type === 'write_file' && toolCall.args?.content) {
-                        const toolCallId = toolCall.id || toolCall.args.filePath || 'default';
-                        const currentContent = String(toolCall.args.content);
-                        const previousLength = printedLengths.get(toolCallId);
-
-                        if (previousLength === undefined) {
-                            printedLengths.set(toolCallId, 0);
-                            console.log(
-                                chalk.bgBlue(
-                                    `\n[工具调用] write_file("${toolCall.args.filePath}") - 开始写入（流式预览）\n`,
-                                ),
-                            );
-                        }
-
-                        if (currentContent.length > previousLength) {
-                            const newContent = currentContent.slice(previousLength);
-                            process.stdout.write(newContent);
-                            printedLengths.set(toolCallId, currentContent.length);
-                        }
-                    }
-                }
-            } else {
-                // 当前还没有解析出工具调用时，如果有文本内容就直接输出
-                if (chunk.content) {
-                    process.stdout.write(
-                        typeof chunk.content === 'string'
-                            ? chunk.content
-                            : JSON.stringify(chunk.content),
-                    );
-                }
-            }
+        // 3. 如果 AI 没有调用任何工具，说明它认为任务完成了
+        if (!aiMessage.tool_calls?.length) {
+            console.log(`\n✨ 任务完成:\n${aiMessage.content}\n`);
+            return aiMessage.content;
         }
 
-        // 此时 fullAIMessage 已经完美还原，直接存入 history
-        await history.addMessage(fullAIMessage);
-        console.log(chalk.green('\n✅ 消息已完整存入历史'));
-
-        // 检查是否有工具调用
-        if (!fullAIMessage.tool_calls || fullAIMessage.tool_calls.length === 0) {
-            console.log(`\n✨ AI 最终回复:\n${fullAIMessage.content}\n`);
-            return fullAIMessage.content;
-        }
-
-        // 执行工具调用
-        for (const toolCall of fullAIMessage.tool_calls) {
-            const foundTool = tools.find((t) => t.name === toolCall.name);
-            if (foundTool) {
-                const toolResult = await foundTool.invoke(toolCall.args);
-                await history.addMessage(
-                    new ToolMessage({
-                        content: toolResult,
-                        tool_call_id: toolCall.id,
-                    }),
-                );
-            }
-        }
+        // 4. 执行工具，结果存入历史，进入下一轮
+        await executeToolCalls(aiMessage.tool_calls, history);
     }
 
+    // 超过最大迭代次数，返回最后一条消息
     const finalMessages = await history.getMessages();
-    return finalMessages[finalMessages.length - 1].content;
+    return finalMessages.at(-1).content;
 }
 
-const case1 = `创建一个功能丰富的 React TodoList 应用：
+// ─── 任务定义 & 执行 ──────────────────────────────────────────────────────────
+
+const task = `创建一个功能丰富的 React TodoList 应用：
 
 1. 创建项目：echo -e "n\nn" | pnpm create vite react-todo-app --template react-ts
 2. 修改 src/App.tsx，实现完整功能的 TodoList：
@@ -172,8 +196,7 @@ const case1 = `创建一个功能丰富的 React TodoList 应用：
 `;
 
 try {
-    await runAgentWithTools(case1);
+    await runAgent(task);
 } catch (error) {
     console.error(`\n❌ 错误: ${error.message}\n`);
 }
-

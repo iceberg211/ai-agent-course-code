@@ -2,15 +2,17 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SpeechService } from './speech.service';
 import { SpeechController } from './speech.controller';
-import { TtsRelayService } from './tts-relay.service';
+import { SpeechGateway } from './speech.gateway';
+import { AiModule } from '../ai/ai.module';
 import * as tencentcloud from 'tencentcloud-sdk-nodejs';
 
 const AsrClient = tencentcloud.asr.v20190614.Client;
 
 @Module({
+  imports: [AiModule], // SpeechGateway 依赖 AiService
   providers: [
     SpeechService,
-    TtsRelayService,
+    SpeechGateway,
     {
       provide: 'ASR_CLIENT',
       useFactory: (configService: ConfigService) => {
@@ -21,10 +23,7 @@ const AsrClient = tencentcloud.asr.v20190614.Client;
           },
           region: 'ap-shanghai',
           profile: {
-            httpProfile: {
-              reqMethod: 'POST',
-              reqTimeout: 30,
-            },
+            httpProfile: { reqMethod: 'POST', reqTimeout: 30 },
           },
         });
       },
@@ -32,6 +31,5 @@ const AsrClient = tencentcloud.asr.v20190614.Client;
     },
   ],
   controllers: [SpeechController],
-  exports: [TtsRelayService],
 })
 export class SpeechModule {}
