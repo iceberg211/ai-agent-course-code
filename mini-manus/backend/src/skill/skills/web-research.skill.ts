@@ -4,6 +4,7 @@ import {
   SkillContext,
   SkillEvent,
 } from '@/skill/interfaces/skill.interface';
+import { webResearchSynthesisPrompt } from '@/prompts';
 
 const inputSchema = z.object({
   topic: z.string().min(1).describe('Research topic or question'),
@@ -81,17 +82,8 @@ export class WebResearchSkill implements Skill {
     // Step 3: Synthesize
     yield { type: 'progress', message: '正在整合调研内容...' };
     const contextText = pageContents.join('\n\n').slice(0, 8000);
-    const summaryResponse = await ctx.llm.invoke([
-      {
-        role: 'system',
-        content:
-          '你是一个专业的研究助手。根据提供的网页内容，整合出一份关于该主题的结构化摘要。用中文回答，条理清晰。',
-      },
-      {
-        role: 'user',
-        content: `研究主题：${topic}\n\n参考内容：\n${contextText}\n\n请整合成结构化摘要：`,
-      },
-    ]);
+    const chain = webResearchSynthesisPrompt.pipe(ctx.llm);
+    const summaryResponse = await chain.invoke({ topic, contextText });
 
     const rawContent = summaryResponse.content;
     const findings =

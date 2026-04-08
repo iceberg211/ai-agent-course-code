@@ -3,6 +3,7 @@ import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
+import { finalizerPrompt } from '@/prompts';
 
 export async function finalizerNode(
   state: AgentState,
@@ -10,24 +11,18 @@ export async function finalizerNode(
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
 ): Promise<Partial<AgentState>> {
-  const context = state.stepResults
+  const executionContext = state.stepResults
     .map(
       (s) =>
         `步骤 ${s.executionOrder + 1}: ${s.description}\n结果: ${s.resultSummary}`,
     )
     .join('\n\n');
 
-  const response = await llm.invoke([
-    {
-      role: 'system',
-      content:
-        '你是一个专业的任务总结助手。根据执行步骤和结果，生成一份完整的任务总结报告（Markdown 格式）。',
-    },
-    {
-      role: 'user',
-      content: `任务：${state.revisionInput}\n\n执行记录：\n${context}\n\n请生成任务总结报告：`,
-    },
-  ]);
+  const chain = finalizerPrompt.pipe(llm);
+  const response = await chain.invoke({
+    revisionInput: state.revisionInput,
+    executionContext,
+  });
 
   const content =
     typeof response.content === 'string'

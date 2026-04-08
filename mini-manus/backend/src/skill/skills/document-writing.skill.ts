@@ -4,6 +4,7 @@ import {
   SkillContext,
   SkillEvent,
 } from '@/skill/interfaces/skill.interface';
+import { documentWritingPrompt } from '@/prompts';
 
 const inputSchema = z.object({
   task_id: z.string().uuid(),
@@ -40,17 +41,8 @@ export class DocumentWritingSkill implements Skill {
     yield { type: 'progress', message: `正在撰写文档: ${title}` };
 
     // Generate document content
-    const response = await ctx.llm.invoke([
-      {
-        role: 'system',
-        content:
-          '你是一个专业的文档写作助手。根据提供的标题和内容摘要，撰写一份完整的、结构清晰的 Markdown 文档。',
-      },
-      {
-        role: 'user',
-        content: `标题：${title}\n\n内容素材：\n${brief}\n\n请撰写完整的 Markdown 文档：`,
-      },
-    ]);
+    const chain = documentWritingPrompt.pipe(ctx.llm);
+    const response = await chain.invoke({ title, brief });
 
     if (ctx.signal.aborted) return;
 
