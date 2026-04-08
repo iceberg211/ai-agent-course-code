@@ -21,12 +21,12 @@ export function useTaskSelectionActions() {
   }, [setSelectedArtifactId, setSelectedRunId])
 
   const selectTask = useCallback(
-    (taskId: string) => {
+    (taskId: string | null) => {
       startTransition(() => {
         setSelectedTaskId(taskId)
         setSelectedRevisionId(null)
         clearRunContext()
-        setIsSidebarOpen(false)
+        if (taskId) setIsSidebarOpen(false)
       })
     },
     [clearRunContext, setIsSidebarOpen, setSelectedRevisionId, setSelectedTaskId],

@@ -36,7 +36,7 @@ export function TaskCenterPage() {
   const taskDetailQuery = useTaskDetailQuery(selectedTaskId)
 
   useTaskSelectionSync(taskListQuery.data, taskDetailQuery.data)
-  useTaskSocketSync(selectedTaskId, selectedRunId)
+  const { liveRunFeed, socketConnected } = useTaskSocketSync(selectedTaskId, selectedRunId)
 
   const runDetailQuery = useRunDetailQuery(
     selectedTaskId,
@@ -113,6 +113,7 @@ export function TaskCenterPage() {
             <TaskSummaryPanel
               isCancelling={taskActions.cancelTaskMutation.isPending}
               isRetrying={taskActions.retryTaskMutation.isPending}
+              liveRunFeed={liveRunFeed}
               onCancel={() => {
                 if (selectedTaskId) {
                   taskActions.cancelTaskMutation.mutate(selectedTaskId)
@@ -131,12 +132,21 @@ export function TaskCenterPage() {
               runs={revisionRuns}
               selectedRevisionId={selectedRevision?.id ?? null}
               selectedRunId={selectedRunId}
+              socketConnected={socketConnected}
               task={taskDetailQuery.data.task}
             />
 
             <section className="task-center-grid__columns">
-              <PlanSection plans={currentRun?.plans ?? []} stepRuns={currentRun?.stepRuns ?? []} />
-              <TimelineSection plans={currentRun?.plans ?? []} stepRuns={currentRun?.stepRuns ?? []} />
+              <PlanSection
+                liveRunFeed={liveRunFeed}
+                plans={currentRun?.plans ?? []}
+                stepRuns={currentRun?.stepRuns ?? []}
+              />
+              <TimelineSection
+                liveRunFeed={liveRunFeed}
+                plans={currentRun?.plans ?? []}
+                stepRuns={currentRun?.stepRuns ?? []}
+              />
             </section>
 
             <ArtifactSection

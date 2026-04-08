@@ -113,6 +113,13 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit(TASK_EVENTS.STEP_STARTED, payload);
   }
 
+  @OnEvent(TASK_EVENTS.STEP_PROGRESS)
+  onStepProgress(payload: Record<string, unknown>) {
+    this.server
+      .to(this.taskRoom(payload))
+      .emit(TASK_EVENTS.STEP_PROGRESS, payload);
+  }
+
   @OnEvent(TASK_EVENTS.STEP_COMPLETED)
   onStepCompleted(payload: Record<string, unknown>) {
     this.server

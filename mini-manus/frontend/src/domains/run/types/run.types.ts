@@ -45,3 +45,41 @@ export interface RunDetail extends RunSummary {
   stepRuns: StepRunDetail[]
   artifacts: ArtifactDetail[]
 }
+
+export interface LiveToolCall {
+  id: string
+  toolName: string
+  state: 'pending' | 'completed'
+  input: Record<string, unknown> | null
+  output: string | null
+  startedAt: string
+  completedAt: string | null
+}
+
+export interface LiveStepFeed {
+  stepRunId: string
+  planStepId: string | null
+  description: string
+  status: Exclude<StepStatus, 'pending' | 'skipped'>
+  executorType: ExecutorType | null
+  skillName: string | null
+  toolName: string | null
+  startedAt: string
+  completedAt: string | null
+  resultSummary: string | null
+  errorMessage: string | null
+  progressMessages: string[]
+  toolCalls: LiveToolCall[]
+}
+
+export interface LiveRunFeed {
+  taskId: string
+  runId: string
+  runStatus: RunStatus
+  latestNarration: string | null
+  startedAt: string | null
+  lastEventAt: string | null
+  activeStepRunId: string | null
+  stepOrder: string[]
+  steps: Record<string, LiveStepFeed>
+}

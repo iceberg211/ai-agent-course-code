@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { PlanDetail } from '@/domains/plan/types/plan.types'
-import type { StepRunDetail } from '@/domains/run/types/run.types'
+import type { LiveRunFeed, StepRunDetail } from '@/domains/run/types/run.types'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { StatusBadge } from '@/shared/ui/status-badge'
@@ -8,11 +8,12 @@ import { formatDateTime, formatDuration } from '@/shared/utils/date'
 import { prettyJson } from '@/shared/utils/text'
 
 interface TimelineSectionProps {
+  liveRunFeed: LiveRunFeed | null
   plans: PlanDetail[]
   stepRuns: StepRunDetail[]
 }
 
-export function TimelineSection({ plans, stepRuns }: TimelineSectionProps) {
+export function TimelineSection({ liveRunFeed, plans, stepRuns }: TimelineSectionProps) {
   const stepDescriptions = useMemo(() => {
     const map = new Map<string, string>()
 
@@ -25,7 +26,12 @@ export function TimelineSection({ plans, stepRuns }: TimelineSectionProps) {
     return map
   }, [plans])
 
-  if (!stepRuns.length) {
+  const activeLiveStep = useMemo(() => {
+    if (!liveRunFeed?.activeStepRunId) return null
+    return liveRunFeed.steps[liveRunFeed.activeStepRunId] ?? null
+  }, [liveRunFeed])
+
+  if (!stepRuns.length && !activeLiveStep) {
     return (
       <PanelSection title="执行时间线" subtitle="工具调用与结果会实时出现在这里">
         <EmptyState title="暂无执行记录" description="开始运行后，这里会显示每一步的执行明细。" />
@@ -36,6 +42,77 @@ export function TimelineSection({ plans, stepRuns }: TimelineSectionProps) {
   return (
     <PanelSection title="执行时间线" subtitle="按实际执行顺序回看过程">
       <div className="timeline">
+        {liveRunFeed ? (
+          <article className="timeline-item timeline-item--live">
+            <div className="timeline-live__header">
+              <div>
+                <p className="timeline-item__eyebrow">Live Feed</p>
+                <h3>{liveRunFeed.latestNarration ?? '正在等待新的执行反馈'}</h3>
+              </div>
+              <div className="timeline-live__status">
+                <StatusBadge status={liveRunFeed.runStatus} />
+                <span>{formatDateTime(liveRunFeed.lastEventAt ?? liveRunFeed.startedAt)}</span>
+              </div>
+            </div>
+
+            {activeLiveStep ? (
+              <div className="timeline-live__body">
+                <div className="timeline-live__step">
+                  <span className="timeline-live__label">当前步骤</span>
+                  <strong>{activeLiveStep.description}</strong>
+                </div>
+
+                <div className="timeline-live__meta">
+                  <span>
+                    {activeLiveStep.executorType === 'skill' ? 'Skill' : 'Tool'}
+                    {activeLiveStep.skillName
+                      ? ` · ${activeLiveStep.skillName}`
+                      : activeLiveStep.toolName
+                        ? ` · ${activeLiveStep.toolName}`
+                        : ''}
+                  </span>
+                  <span>{formatDuration(activeLiveStep.startedAt, activeLiveStep.completedAt)}</span>
+                </div>
+
+                {activeLiveStep.progressMessages.length ? (
+                  <ul className="timeline-live__progress">
+                    {activeLiveStep.progressMessages.map((message, index) => (
+                      <li key={`${activeLiveStep.stepRunId}-progress-${index}`}>{message}</li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {activeLiveStep.toolCalls.length ? (
+                  <div className="timeline-live__tools">
+                    {activeLiveStep.toolCalls.map((toolCall) => (
+                      <div key={toolCall.id} className="timeline-live__tool">
+                        <div className="timeline-live__tool-head">
+                          <span className="timeline-live__tool-name">{toolCall.toolName}</span>
+                          <StatusBadge
+                            status={toolCall.state === 'pending' ? 'running' : 'completed'}
+                          />
+                        </div>
+                        {toolCall.input ? (
+                          <details className="timeline-item__detail">
+                            <summary>工具输入</summary>
+                            <pre>{prettyJson(toolCall.input)}</pre>
+                          </details>
+                        ) : null}
+                        {toolCall.output ? (
+                          <details className="timeline-item__detail">
+                            <summary>工具输出</summary>
+                            <pre>{toolCall.output}</pre>
+                          </details>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+        ) : null}
+
         {stepRuns.map((stepRun) => {
           const description =
             stepDescriptions.get(stepRun.planStepId) ?? `步骤 ${stepRun.executionOrder + 1}`

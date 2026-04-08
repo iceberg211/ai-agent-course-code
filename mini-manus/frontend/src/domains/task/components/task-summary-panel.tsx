@@ -1,13 +1,14 @@
-import type { RunSummary } from '@/domains/run/types/run.types'
+import type { LiveRunFeed, RunSummary } from '@/domains/run/types/run.types'
 import type { TaskRevision, TaskSummary } from '@/domains/task/types/task.types'
 import { Button } from '@/shared/ui/button'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { StatusBadge } from '@/shared/ui/status-badge'
-import { formatDateTime } from '@/shared/utils/date'
+import { formatDateTime, formatDuration } from '@/shared/utils/date'
 
 interface TaskSummaryPanelProps {
   isCancelling: boolean
   isRetrying: boolean
+  liveRunFeed: LiveRunFeed | null
   onCancel: () => void
   onOpenEdit: () => void
   onRetry: () => void
@@ -18,12 +19,14 @@ interface TaskSummaryPanelProps {
   runs: RunSummary[]
   selectedRevisionId: string | null
   selectedRunId: string | null
+  socketConnected: boolean
   task: TaskSummary
 }
 
 export function TaskSummaryPanel({
   isCancelling,
   isRetrying,
+  liveRunFeed,
   onCancel,
   onOpenEdit,
   onRetry,
@@ -34,8 +37,14 @@ export function TaskSummaryPanel({
   runs,
   selectedRevisionId,
   selectedRunId,
+  socketConnected,
   task,
 }: TaskSummaryPanelProps) {
+  const activeStep =
+    liveRunFeed?.activeStepRunId && liveRunFeed.steps[liveRunFeed.activeStepRunId]
+      ? liveRunFeed.steps[liveRunFeed.activeStepRunId]
+      : null
+
   return (
     <PanelSection
       title="当前任务"
@@ -91,6 +100,45 @@ export function TaskSummaryPanel({
         <p className="summary-note__label">任务描述</p>
         <p>{revisionInput}</p>
       </div>
+
+      {liveRunFeed ? (
+        <div className="summary-live">
+          <div className="summary-live__header">
+            <div>
+              <p className="summary-live__eyebrow">实时执行反馈</p>
+              <h3>{liveRunFeed.latestNarration ?? '正在等待新的执行反馈'}</h3>
+            </div>
+            <div className="summary-live__badges">
+              <StatusBadge status={liveRunFeed.runStatus} />
+              <span
+                className={`summary-live__socket ${socketConnected ? 'summary-live__socket--online' : 'summary-live__socket--offline'}`}
+              >
+                {socketConnected ? '实时通道已连接' : '实时通道重连中'}
+              </span>
+            </div>
+          </div>
+
+          <div className="summary-live__meta">
+            <span>
+              {activeStep
+                ? `当前步骤 · ${activeStep.description}`
+                : '当前没有活跃步骤，等待下一条事件'}
+            </span>
+            <span>{formatDateTime(liveRunFeed.lastEventAt ?? liveRunFeed.startedAt)}</span>
+            {activeStep ? (
+              <span>{formatDuration(activeStep.startedAt, activeStep.completedAt)}</span>
+            ) : null}
+          </div>
+
+          {activeStep?.progressMessages.length ? (
+            <ul className="summary-live__progress">
+              {activeStep.progressMessages.map((message, index) => (
+                <li key={`${activeStep.stepRunId}-summary-progress-${index}`}>{message}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </PanelSection>
   )
 }

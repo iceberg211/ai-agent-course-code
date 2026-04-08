@@ -8,6 +8,7 @@ export const TASK_EVENTS = {
   RUN_CANCELLED: 'run.cancelled',
   PLAN_CREATED: 'plan.created',
   STEP_STARTED: 'step.started',
+  STEP_PROGRESS: 'step.progress',
   STEP_COMPLETED: 'step.completed',
   STEP_FAILED: 'step.failed',
   TOOL_CALLED: 'tool.called',
