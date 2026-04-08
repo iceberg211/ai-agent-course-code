@@ -1,6 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Task } from '@/task/entities/task.entity';
 import { TaskRevision } from '@/task/entities/task-revision.entity';
 import { TaskRun } from '@/task/entities/task-run.entity';
@@ -355,6 +360,40 @@ export class TaskService implements OnModuleInit {
     return revision;
   }
 
+  // ─── Delete task ──────────────────────────────────────────────────────────
+  async deleteTask(taskId: string): Promise<void> {
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) throw new NotFoundException('任务不存在');
+
+    // Cancel any running execution first
+    await this.cancelRun(taskId);
+
+    // Delete in reverse dependency order (no ON DELETE CASCADE in schema)
+    const runs = await this.runRepo.find({ where: { taskId }, select: ['id'] });
+    const runIds = runs.map((r) => r.id);
+
+    if (runIds.length > 0) {
+      const plans = await this.planRepo.find({
+        where: { runId: In(runIds) },
+        select: ['id'],
+      });
+      const planIds = plans.map((p) => p.id);
+
+      if (planIds.length > 0) {
+        await this.planStepRepo.delete({ planId: In(planIds) });
+      }
+      await this.artifactRepo.delete({ runId: In(runIds) });
+      await this.stepRunRepo.delete({ runId: In(runIds) });
+      await this.planRepo.delete({ runId: In(runIds) });
+    }
+
+    await this.runRepo.delete({ taskId });
+    await this.revisionRepo.delete({ taskId });
+    await this.taskRepo.delete(taskId);
+
+    this.logger.log(`Task ${taskId} deleted`);
+  }
+
   // ─── Queries ─────────────────────────────────────────────────────────────
   async listTasks(): Promise<Task[]> {
     return this.taskRepo.find({ order: { createdAt: 'DESC' } });
@@ -403,9 +442,10 @@ export class TaskService implements OnModuleInit {
     };
   }
 
-  async getRunDetail(runId: string) {
+  async getRunDetail(taskId: string, runId: string) {
+    // taskId validation: ensures the run belongs to this task
     return this.runRepo.findOneOrFail({
-      where: { id: runId },
+      where: { id: runId, taskId },
       relations: ['plans', 'plans.steps', 'stepRuns', 'artifacts'],
     });
   }

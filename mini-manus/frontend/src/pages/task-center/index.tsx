@@ -82,6 +82,7 @@ export function TaskCenterPage() {
         onClose={panels.closeSidebar}
         onCreateTask={(input) => taskActions.createTaskMutation.mutateAsync(input)}
         onSelectTask={selectionActions.selectTask}
+        onDeleteTask={(id) => taskActions.deleteTaskMutation.mutate(id)}
         selectedTaskId={selectedTaskId}
         tasks={taskListQuery.data ?? []}
       />

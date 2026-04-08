@@ -124,12 +124,13 @@
 }
 
 .task-sidebar__item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.56);
   border-radius: 18px;
-  padding: 14px 16px;
-  text-align: left;
   transition:
     border-color 180ms ease,
     transform 180ms ease,
@@ -144,6 +145,41 @@
 .task-sidebar__item--active {
   border-color: rgba(161, 75, 43, 0.3);
   background: rgba(255, 250, 242, 0.94);
+}
+
+/* 任务选中按钮（占大部分宽度） */
+.task-sidebar__item-body {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 16px;
+  text-align: left;
+  background: transparent;
+  border: none;
+}
+
+/* 删除按钮（右侧，hover 时出现） */
+.task-sidebar__item-delete {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 18px;
+  border-radius: 0 18px 18px 0;
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.task-sidebar__item:hover .task-sidebar__item-delete {
+  opacity: 1;
+}
+
+.task-sidebar__item-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .task-sidebar__item-top,

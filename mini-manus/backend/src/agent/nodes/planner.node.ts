@@ -14,9 +14,11 @@ const PlanSchema = z.object({
       stepIndex: z.number().int().min(0),
       description: z.string().min(1),
       skillName: z.string().nullable().optional(),
-      skillInput: z.record(z.string(), z.unknown()).nullable().optional(),
+      // z.any() → JSON schema 生成 {} ，避免 z.record() 产生的 patternProperties
+      // Qwen 不支持 json_schema 格式里的 patternProperties
+      skillInput: z.any().optional(),
       toolHint: z.string().nullable().optional(),
-      toolInput: z.record(z.string(), z.unknown()).nullable().optional(),
+      toolInput: z.any().optional(),
     }),
   ),
 });
@@ -28,6 +30,7 @@ export async function plannerNode(
   toolRegistry: ToolRegistry,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
+  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
 ): Promise<Partial<AgentState>> {
   const skillSection = skillRegistry.getPlannerPromptSection();
 
@@ -53,7 +56,9 @@ export async function plannerNode(
           .join('\n')
       : '';
 
-  const chain = plannerPrompt.pipe(llm.withStructuredOutput(PlanSchema));
+  const chain = plannerPrompt.pipe(
+    llm.withStructuredOutput(PlanSchema, { method: soMethod }),
+  );
   const result = await chain.invoke({
     revisionInput: state.revisionInput,
     taskId: state.taskId,

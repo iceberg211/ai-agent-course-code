@@ -10,6 +10,7 @@ interface TaskSidebarProps {
   onClose: () => void
   onCreateTask: (input: string) => Promise<unknown>
   onSelectTask: (taskId: string) => void
+  onDeleteTask: (taskId: string) => void
   selectedTaskId: string | null
   tasks: TaskSummary[]
 }
@@ -20,6 +21,7 @@ export function TaskSidebar({
   onClose,
   onCreateTask,
   onSelectTask,
+  onDeleteTask,
   selectedTaskId,
   tasks,
 }: TaskSidebarProps) {
@@ -43,20 +45,39 @@ export function TaskSidebar({
             const isActive = task.id === selectedTaskId
 
             return (
-              <button
+              <div
                 key={task.id}
                 className={cn('task-sidebar__item', isActive && 'task-sidebar__item--active')}
-                onClick={() => onSelectTask(task.id)}
               >
-                <div className="task-sidebar__item-top">
-                  <span className={cn('task-dot', `task-dot--${task.status}`)} />
-                  <span className="task-sidebar__item-title">{task.title}</span>
-                </div>
-                <div className="task-sidebar__item-meta">
-                  <span>{formatRelativeTime(task.updatedAt)}</span>
-                  <StatusBadge status={task.status} />
-                </div>
-              </button>
+                {/* 点击区域：选中任务 */}
+                <button
+                  className="task-sidebar__item-body"
+                  onClick={() => onSelectTask(task.id)}
+                >
+                  <div className="task-sidebar__item-top">
+                    <span className={cn('task-dot', `task-dot--${task.status}`)} />
+                    <span className="task-sidebar__item-title">{task.title}</span>
+                  </div>
+                  <div className="task-sidebar__item-meta">
+                    <span>{formatRelativeTime(task.updatedAt)}</span>
+                    <StatusBadge status={task.status} />
+                  </div>
+                </button>
+
+                {/* 删除按钮：仅在 hover 时显示 */}
+                <button
+                  className="task-sidebar__item-delete"
+                  aria-label="删除任务"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (window.confirm(`确认删除「${task.title}」？此操作不可撤销。`)) {
+                      onDeleteTask(task.id)
+                    }
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             )
           })}
         </div>

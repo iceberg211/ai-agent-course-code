@@ -17,6 +17,7 @@ export async function evaluatorNode(
   llm: ChatOpenAI,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
+  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
 ): Promise<Partial<AgentState>> {
   const lastStepRunId = state.lastStepRunId;
   const lastStepOutput = state.lastStepOutput;
@@ -44,7 +45,9 @@ export async function evaluatorNode(
       .map((s) => s.resultSummary)
       .join('\n') || '无';
 
-  const chain = evaluatorPrompt.pipe(llm.withStructuredOutput(EvalSchema));
+  const chain = evaluatorPrompt.pipe(
+    llm.withStructuredOutput(EvalSchema, { method: soMethod }),
+  );
   const result = (await chain.invoke({
     stepDescription: currentStep?.description ?? '未知',
     lastStepOutput: lastStepOutput.slice(0, 1000),

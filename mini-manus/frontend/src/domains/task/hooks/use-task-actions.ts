@@ -3,17 +3,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   cancelTask,
   createTask,
+  deleteTask,
   editTask,
   retryTask,
 } from '@/core/api/task.api'
 import { queryKeys } from '@/core/api/query-keys'
 import { useTaskCenterPanels } from '@/domains/task/hooks/use-task-center-panels'
 import { useTaskSelectionActions } from '@/domains/task/hooks/use-task-selection-actions'
+import { useSelectedTask } from '@/domains/task/hooks/use-selected-task'
 
 export function useTaskActions() {
   const queryClient = useQueryClient()
   const selectionActions = useTaskSelectionActions()
   const panels = useTaskCenterPanels()
+  const { selectedTaskId } = useSelectedTask()
 
   const invalidateTaskState = useCallback(
     async (taskId: string) => {
@@ -29,22 +32,39 @@ export function useTaskActions() {
     mutationFn: createTask,
     onSuccess: async (task) => {
       selectionActions.selectTask(task.id)
-      await invalidateTaskState(task.id)
+      // 刷新列表，detail 由 selectTask 触发 query
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
+    },
+  })
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: deleteTask,
+    onSuccess: (_, taskId) => {
+      // 如果删的是当前选中的任务，清除选中状态
+      if (selectedTaskId === taskId) {
+        selectionActions.selectTask(null)
+      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
     },
   })
 
   const cancelTaskMutation = useMutation({
     mutationFn: cancelTask,
+    // Bug 3 fix: 不在 onSuccess 里 invalidate
+    // socket 事件 (run.cancelled) 会触发 invalidateSelectedTask
+    // 立即刷新一次 detail 给用户反馈，不会造成重复因为 socket 可能延迟
     onSuccess: async (_, taskId) => {
-      await invalidateTaskState(taskId)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.taskDetail(taskId) })
     },
   })
 
   const retryTaskMutation = useMutation({
     mutationFn: retryTask,
-    onSuccess: async (_, taskId) => {
+    onSuccess: (_, taskId) => {
+      // Bug 3 fix: retry 后不主动 invalidate
+      // socket 的 run.started 事件会立即触发 invalidateSelectedTask
+      // 只做导航，不做重复请求
       selectionActions.selectTask(taskId)
-      await invalidateTaskState(taskId)
     },
   })
 
@@ -61,6 +81,7 @@ export function useTaskActions() {
 
   return {
     createTaskMutation,
+    deleteTaskMutation,
     cancelTaskMutation,
     retryTaskMutation,
     editTaskMutation,

@@ -6,6 +6,7 @@ export interface PlanStep {
   skillName: string | null
   skillInput: Record<string, unknown> | null
   toolHint: string | null
+  toolInput: Record<string, unknown> | null
   createdAt: string
 }
 

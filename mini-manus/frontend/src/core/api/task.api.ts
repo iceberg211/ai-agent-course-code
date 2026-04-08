@@ -36,6 +36,7 @@ interface PlanStepResponse {
   skillName: string | null
   skillInput: Record<string, unknown> | null
   toolHint: string | null
+  toolInput: Record<string, unknown> | null
   createdAt: string
 }
 
@@ -158,6 +159,10 @@ export async function fetchTaskDetail(taskId: string) {
 export async function fetchRunDetail(taskId: string, runId: string) {
   const { data } = await apiClient.get<RunDetailResponse>(`/tasks/${taskId}/runs/${runId}`)
   return mapRunDetail(data)
+}
+
+export async function deleteTask(taskId: string) {
+  await apiClient.delete(`/tasks/${taskId}`)
 }
 
 export async function cancelTask(taskId: string) {

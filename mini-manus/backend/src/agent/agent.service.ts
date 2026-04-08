@@ -22,7 +22,16 @@ const MAX_STEPS = 20;
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
-  private readonly llm: ChatOpenAI;
+  readonly llm: ChatOpenAI;
+  /**
+   * 结构化输出方式：
+   * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
+   * - 'json_schema'      OpenAI 原生 Structured Outputs，更严格但仅 gpt-4o 支持完整
+   * - 'jsonMode'         response_format=json_object，最宽松，适合不支持函数调用的模型
+   *
+   * 通过 STRUCTURED_OUTPUT_METHOD 环境变量覆盖，默认 functionCalling。
+   */
+  readonly structuredOutputMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
 
   constructor(
     private readonly config: ConfigService,
@@ -37,6 +46,13 @@ export class AgentService {
       configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
       temperature: 0,
     });
+
+    const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling');
+    this.structuredOutputMethod = (
+      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw) ? raw : 'functionCalling'
+    ) as this['structuredOutputMethod'];
+
+    this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
   }
 
   async executeRun(
@@ -51,6 +67,7 @@ export class AgentService {
     const skillRegistry = this.skillRegistry;
     const workspace = this.workspace;
     const eventPublisher = this.eventPublisher;
+    const soMethod = this.structuredOutputMethod;
 
     // Build StateGraph
     const graph = new StateGraph(AgentStateAnnotation)
@@ -62,6 +79,7 @@ export class AgentService {
           toolRegistry,
           callbacks,
           eventPublisher,
+          soMethod,
         );
       })
       .addNode('executor', async (state: AgentState) => {
@@ -77,8 +95,7 @@ export class AgentService {
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
-        // Bug 1 fix: evaluator reads lastStepRunId/lastStepOutput from state
-        return evaluatorNode(state, llm, callbacks, eventPublisher);
+        return evaluatorNode(state, llm, callbacks, eventPublisher, soMethod);
       })
       .addNode('finalizer', async (state: AgentState) => {
         return finalizerNode(state, llm, callbacks, eventPublisher);
