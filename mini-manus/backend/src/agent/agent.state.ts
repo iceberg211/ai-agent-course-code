@@ -2,7 +2,6 @@ import { Annotation } from '@langchain/langgraph';
 
 export interface StepResult {
   stepRunId: string;
-  planStepId: string;
   description: string;
   resultSummary: string;
   executionOrder: number;
@@ -19,6 +18,7 @@ export interface PlanStepDef {
   skillName?: string | null;
   skillInput?: Record<string, unknown> | null;
   toolHint?: string | null;
+  toolInput?: Record<string, unknown> | null; // Bug 2 fix: planner specifies exact tool input
 }
 
 export interface PlanDef {
@@ -42,6 +42,15 @@ export const AgentStateAnnotation = Annotation.Root({
   executionOrder: Annotation<number>({ reducer: (_, b) => b }),
   shouldStop: Annotation<boolean>({ reducer: (_, b) => b }),
   errorMessage: Annotation<string | null>({ reducer: (_, b) => b }),
+  // Bug 1 fix: pass step_run id and output through state so evaluator can read them
+  lastStepRunId: Annotation<string>({
+    reducer: (_, b) => b,
+    default: () => '',
+  }),
+  lastStepOutput: Annotation<string>({
+    reducer: (_, b) => b,
+    default: () => '',
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

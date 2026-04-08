@@ -103,27 +103,30 @@ export async function executorNode(
         completedAt: new Date(),
       });
 
+      // Bug 1 fix: return lastStepRunId + lastStepOutput through state
       return {
         executionOrder: state.executionOrder + 1,
         evaluation: null,
+        lastStepRunId: stepRun.id,
+        lastStepOutput: resultSummary,
       };
     } else {
       // Direct tool execution
       const toolName = step.toolHint ?? 'think';
       const tool = toolRegistry.get(toolName);
 
+      // Bug 2 fix: use toolInput from plan step (planner-specified), not a hardcoded format
+      const toolInput = step.toolInput ?? { thought: step.description };
+
       eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {
         taskId: state.taskId,
         runId: state.runId,
         stepRunId: stepRun.id,
         toolName,
-        toolInput: { description: step.description },
+        toolInput,
       });
 
-      const toolResult = await tool.execute({
-        description: step.description,
-        task_id: state.taskId,
-      });
+      const toolResult = await tool.execute(toolInput);
 
       eventPublisher.emit(TASK_EVENTS.TOOL_COMPLETED, {
         taskId: state.taskId,
@@ -133,21 +136,26 @@ export async function executorNode(
         toolOutput: toolResult.output,
       });
 
+      const resultSummary = toolResult.success
+        ? toolResult.output.slice(0, 500)
+        : (toolResult.error ?? '工具执行失败');
+
       await callbacks.updateStepRun(stepRun.id, {
         executorType: ExecutorType.TOOL,
         toolName,
-        toolInput: { description: step.description },
+        toolInput,
         toolOutput: toolResult.output,
-        resultSummary: toolResult.success
-          ? toolResult.output.slice(0, 500)
-          : toolResult.error,
+        resultSummary,
         errorMessage: toolResult.success ? null : (toolResult.error ?? null),
         completedAt: new Date(),
       });
 
+      // Bug 1 fix: return lastStepRunId + lastStepOutput through state
       return {
         executionOrder: state.executionOrder + 1,
         evaluation: null,
+        lastStepRunId: stepRun.id,
+        lastStepOutput: toolResult.output,
       };
     }
   } catch (err: unknown) {
@@ -160,6 +168,8 @@ export async function executorNode(
     return {
       executionOrder: state.executionOrder + 1,
       evaluation: { decision: 'retry', reason: msg },
+      lastStepRunId: stepRun.id,
+      lastStepOutput: msg,
     };
   }
 }

@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { AgentState, EvaluationResult } from '@/agent/agent.state';
+import { AgentState, EvaluationResult, StepResult } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { StepStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
@@ -16,16 +16,21 @@ export async function evaluatorNode(
   llm: ChatOpenAI,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
-  lastStepRunId: string,
-  lastStepOutput: string,
 ): Promise<Partial<AgentState>> {
+  // Bug 1 fix: read lastStepRunId and lastStepOutput from state (not closure)
+  const lastStepRunId = state.lastStepRunId;
+  const lastStepOutput = state.lastStepOutput;
+
   // Check cancel before evaluating
   const cancelled = await callbacks.readCancelFlag(state.runId);
   if (cancelled) {
-    await callbacks.updateStepRun(lastStepRunId, {
-      status: StepStatus.FAILED,
-      errorMessage: '任务已取消',
-    });
+    if (lastStepRunId) {
+      await callbacks.updateStepRun(lastStepRunId, {
+        status: StepStatus.FAILED,
+        errorMessage: '任务已取消',
+        completedAt: new Date(),
+      });
+    }
     return { shouldStop: true, errorMessage: 'cancelled' };
   }
 
@@ -59,32 +64,84 @@ export async function evaluatorNode(
   const structured = llm.withStructuredOutput(EvalSchema);
   const result = (await structured.invoke(prompt)) as EvaluationResult;
 
-  // Update step_run terminal status based on decision
+  // Update step_run terminal status + emit event (every branch must close the step_run)
   if (result.decision === 'retry' || result.decision === 'fail') {
-    await callbacks.updateStepRun(lastStepRunId, {
-      status: StepStatus.FAILED,
-      errorMessage: result.reason,
-      completedAt: new Date(),
-    });
-    eventPublisher.emit(TASK_EVENTS.STEP_FAILED, {
-      taskId: state.taskId,
-      runId: state.runId,
-      stepRunId: lastStepRunId,
-      error: result.reason,
-    });
+    if (lastStepRunId) {
+      await callbacks.updateStepRun(lastStepRunId, {
+        status: StepStatus.FAILED,
+        errorMessage: result.reason,
+        completedAt: new Date(),
+      });
+      eventPublisher.emit(TASK_EVENTS.STEP_FAILED, {
+        taskId: state.taskId,
+        runId: state.runId,
+        stepRunId: lastStepRunId,
+        error: result.reason,
+      });
+    }
   } else {
-    await callbacks.updateStepRun(lastStepRunId, {
-      status: StepStatus.COMPLETED,
-      resultSummary: result.reason,
-      completedAt: new Date(),
-    });
-    eventPublisher.emit(TASK_EVENTS.STEP_COMPLETED, {
-      taskId: state.taskId,
-      runId: state.runId,
-      stepRunId: lastStepRunId,
-      resultSummary: result.reason,
-    });
+    if (lastStepRunId) {
+      await callbacks.updateStepRun(lastStepRunId, {
+        status: StepStatus.COMPLETED,
+        resultSummary: result.reason,
+        completedAt: new Date(),
+      });
+      eventPublisher.emit(TASK_EVENTS.STEP_COMPLETED, {
+        taskId: state.taskId,
+        runId: state.runId,
+        stepRunId: lastStepRunId,
+        resultSummary: result.reason,
+      });
+    }
   }
 
-  return { evaluation: result };
+  // Build partial state updates based on decision
+  const newStepResult: StepResult = {
+    stepRunId: lastStepRunId,
+    description: currentStep?.description ?? '',
+    resultSummary: result.reason,
+    executionOrder: state.executionOrder - 1,
+  };
+
+  const baseUpdate: Partial<AgentState> = {
+    evaluation: result,
+    lastStepRunId: '',
+    lastStepOutput: '',
+  };
+
+  // Bug 3 + Bug 4 fix: advance counters and step index based on decision
+  if (result.decision === 'continue') {
+    return {
+      ...baseUpdate,
+      currentStepIndex: state.currentStepIndex + 1, // Bug 3: advance to next step
+      retryCount: 0,
+      stepResults: [newStepResult],
+    };
+  }
+
+  if (result.decision === 'retry') {
+    return {
+      ...baseUpdate,
+      retryCount: state.retryCount + 1, // Bug 4: increment retry counter
+    };
+  }
+
+  if (result.decision === 'replan') {
+    return {
+      ...baseUpdate,
+      replanCount: state.replanCount + 1, // Bug 4: increment replan counter
+      retryCount: 0,
+      stepResults: [newStepResult],
+    };
+  }
+
+  if (result.decision === 'complete') {
+    return {
+      ...baseUpdate,
+      stepResults: [newStepResult],
+    };
+  }
+
+  // fail
+  return baseUpdate;
 }

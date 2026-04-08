@@ -6,7 +6,8 @@
       "Bash(npm *)",
       "Bash(git *)",
       "Bash(npx *)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(python:*)"
     ],
     "defaultMode": "acceptEdits"
   }

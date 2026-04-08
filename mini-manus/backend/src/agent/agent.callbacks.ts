@@ -10,6 +10,7 @@ export interface AgentCallbacks {
       skillName?: string | null;
       skillInput?: Record<string, unknown> | null;
       toolHint?: string | null;
+      toolInput?: Record<string, unknown> | null; // Bug 2 fix
     }>,
   ): Promise<TaskPlan>;
   createStepRun(

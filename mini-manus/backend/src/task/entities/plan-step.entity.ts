@@ -35,6 +35,9 @@ export class PlanStep {
   @Column({ name: 'tool_hint', type: 'varchar', nullable: true })
   toolHint: string | null;
 
+  @Column({ name: 'tool_input', type: 'jsonb', nullable: true })
+  toolInput: Record<string, unknown> | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

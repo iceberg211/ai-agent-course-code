@@ -173,6 +173,7 @@ export class TaskService implements OnModuleInit {
             skillName: s.skillName ?? null,
             skillInput: s.skillInput ?? null,
             toolHint: s.toolHint ?? null,
+            toolInput: s.toolInput ?? null,
           }),
         );
         await this.planStepRepo.save(planSteps);

@@ -52,10 +52,6 @@ export class AgentService {
     const workspace = this.workspace;
     const eventPublisher = this.eventPublisher;
 
-    // Track last step_run id for evaluator
-    const lastStepRunId = '';
-    const lastStepOutput = '';
-
     // Build StateGraph
     const graph = new StateGraph(AgentStateAnnotation)
       .addNode('planner', async (state: AgentState) => {
@@ -63,12 +59,13 @@ export class AgentService {
           state,
           llm,
           skillRegistry,
+          toolRegistry,
           callbacks,
           eventPublisher,
         );
       })
       .addNode('executor', async (state: AgentState) => {
-        const result = await executorNode(
+        return executorNode(
           state,
           llm,
           toolRegistry,
@@ -78,19 +75,10 @@ export class AgentService {
           eventPublisher,
           signal,
         );
-        // Capture step_run id + output for evaluator (side-channel via closure)
-        // In production, would pass through state; simplified here for V1
-        return result;
       })
       .addNode('evaluator', async (state: AgentState) => {
-        return evaluatorNode(
-          state,
-          llm,
-          callbacks,
-          eventPublisher,
-          lastStepRunId,
-          lastStepOutput,
-        );
+        // Bug 1 fix: evaluator reads lastStepRunId/lastStepOutput from state
+        return evaluatorNode(state, llm, callbacks, eventPublisher);
       })
       .addNode('finalizer', async (state: AgentState) => {
         return finalizerNode(state, llm, callbacks, eventPublisher);

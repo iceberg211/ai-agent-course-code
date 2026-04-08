@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { Skill, SkillContext, SkillEvent } from '@/skill/interfaces/skill.interface';
+import {
+  Skill,
+  SkillContext,
+  SkillEvent,
+} from '@/skill/interfaces/skill.interface';
 
 const inputSchema = z.object({
   topic: z.string().min(1).describe('Research topic or question'),
