@@ -21,7 +21,7 @@ mini-manus/
 
 **后端**：NestJS 11 · TypeORM + **PostgreSQL** · LangGraph.js · LangChain.js · socket.io · EventEmitter2 · Zod
 
-**前端**：React 18 · Vite · Tailwind CSS · socket.io-client · Zustand · TanStack Query
+**前端**：React 18 · Vite · Tailwind CSS · socket.io-client · Jotai · TanStack Query
 
 ---
 

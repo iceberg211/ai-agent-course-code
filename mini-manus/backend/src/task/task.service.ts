@@ -197,7 +197,11 @@ export class TaskService implements OnModuleInit {
       },
 
       updateStepRun: async (srId, updates) => {
-        await this.stepRunRepo.update(srId, updates as Partial<StepRun>);
+        const stepRun = await this.stepRunRepo.findOneOrFail({
+          where: { id: srId },
+        });
+        Object.assign(stepRun, updates);
+        await this.stepRunRepo.save(stepRun);
       },
 
       readCancelFlag: async (rId) => {
@@ -211,7 +215,11 @@ export class TaskService implements OnModuleInit {
         if (status !== RunStatus.PENDING && status !== RunStatus.RUNNING) {
           updates.completedAt = new Date();
         }
-        await this.runRepo.update(rId, updates);
+        const run = await this.runRepo.findOneOrFail({
+          where: { id: rId },
+        });
+        Object.assign(run, updates);
+        await this.runRepo.save(run);
 
         // Update task status only if this is the current run
         const taskStatusMap: Record<string, TaskStatus> = {
@@ -358,7 +366,16 @@ export class TaskService implements OnModuleInit {
   async getTaskDetail(taskId: string) {
     const task = await this.taskRepo.findOneOrFail({
       where: { id: taskId },
-      relations: ['revisions'],
+    });
+
+    const revisions = await this.revisionRepo.find({
+      where: { taskId },
+      order: { version: 'DESC' },
+    });
+
+    const runs = await this.runRepo.find({
+      where: { taskId },
+      order: { createdAt: 'DESC' },
     });
 
     const currentRun = task.currentRunId
@@ -368,7 +385,21 @@ export class TaskService implements OnModuleInit {
         })
       : null;
 
-    return { task, currentRun };
+    return {
+      task,
+      revisions,
+      runs: runs.map((run) => ({
+        id: run.id,
+        revisionId: run.revisionId,
+        runNumber: run.runNumber,
+        status: run.status,
+        createdAt: run.createdAt,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        errorMessage: run.errorMessage,
+      })),
+      currentRun,
+    };
   }
 
   async getRunDetail(runId: string) {

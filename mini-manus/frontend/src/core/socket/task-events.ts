@@ -1,0 +1,31 @@
+export const TASK_EVENTS = {
+  taskCreated: 'task.created',
+  revisionCreated: 'revision.created',
+  runStarted: 'run.started',
+  runCompleted: 'run.completed',
+  runFailed: 'run.failed',
+  runCancelled: 'run.cancelled',
+  planCreated: 'plan.created',
+  stepStarted: 'step.started',
+  stepCompleted: 'step.completed',
+  stepFailed: 'step.failed',
+  toolCalled: 'tool.called',
+  toolCompleted: 'tool.completed',
+  artifactCreated: 'artifact.created',
+  taskSnapshot: 'task:snapshot',
+} as const
+
+export const TASK_ROOM_EVENTS = [
+  TASK_EVENTS.revisionCreated,
+  TASK_EVENTS.runStarted,
+  TASK_EVENTS.runCompleted,
+  TASK_EVENTS.runFailed,
+  TASK_EVENTS.runCancelled,
+  TASK_EVENTS.planCreated,
+  TASK_EVENTS.stepStarted,
+  TASK_EVENTS.stepCompleted,
+  TASK_EVENTS.stepFailed,
+  TASK_EVENTS.toolCalled,
+  TASK_EVENTS.toolCompleted,
+  TASK_EVENTS.artifactCreated,
+] as const

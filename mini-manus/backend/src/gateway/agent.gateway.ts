@@ -71,6 +71,13 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit(TASK_EVENTS.RUN_STARTED, payload);
   }
 
+  @OnEvent(TASK_EVENTS.REVISION_CREATED)
+  onRevisionCreated(payload: Record<string, unknown>) {
+    this.server
+      .to(this.taskRoom(payload))
+      .emit(TASK_EVENTS.REVISION_CREATED, payload);
+  }
+
   @OnEvent(TASK_EVENTS.RUN_COMPLETED)
   onRunCompleted(payload: Record<string, unknown>) {
     this.server
