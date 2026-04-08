@@ -35,14 +35,13 @@ export class WebResearchSkill implements Skill {
 
     yield { type: 'progress', message: `开始调研: ${topic}` };
 
-    // Step 1: Search
-    const searchTool = ctx.tools.get('web_search');
+    // Step 1: Search（走缓存，同一关键词同一任务内不重复请求）
     yield {
       type: 'tool_call',
       tool: 'web_search',
       input: { query: topic, max_results: maxPages },
     };
-    const searchResult = await searchTool.execute({
+    const searchResult = await ctx.tools.executeWithCache('web_search', {
       query: topic,
       max_results: maxPages,
     });

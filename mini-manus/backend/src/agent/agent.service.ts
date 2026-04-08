@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
+import { InMemoryCache } from '@langchain/core/caches';
 import { StateGraph, END, START } from '@langchain/langgraph';
 import { AgentStateAnnotation, AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
@@ -45,6 +46,7 @@ export class AgentService {
       apiKey: config.get<string>('OPENAI_API_KEY', ''),
       configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
       temperature: 0,
+      cache: new InMemoryCache(), // 相同 prompt 直接命中缓存，减少 token 消耗
     });
 
     const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling');

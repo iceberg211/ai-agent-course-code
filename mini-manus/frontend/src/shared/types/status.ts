@@ -1,7 +1,7 @@
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type RunStatus = TaskStatus
 export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-export type ArtifactType = 'markdown' | 'json' | 'file'
+export type ArtifactType = 'markdown' | 'json' | 'file' | 'code' | 'diagram'
 export type ExecutorType = 'tool' | 'skill'
 
 export const statusLabels: Record<TaskStatus | StepStatus, string> = {

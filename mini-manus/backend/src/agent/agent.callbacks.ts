@@ -1,5 +1,5 @@
 import { TaskPlan, StepRun, Artifact } from '@/task/entities';
-import { StepStatus, RunStatus } from '@/common/enums';
+import { StepStatus, RunStatus, ArtifactType } from '@/common/enums';
 
 export interface AgentCallbacks {
   savePlan(
@@ -48,6 +48,7 @@ export interface AgentCallbacks {
     runId: string,
     title: string,
     content: string,
+    type?: ArtifactType,
   ): Promise<Artifact>;
   finalize(taskId: string): Promise<void>;
 }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ArtifactDetail } from '@/domains/artifact/types/artifact.types'
@@ -7,10 +7,84 @@ import { PanelSection } from '@/shared/ui/panel-section'
 import { formatDateTime } from '@/shared/utils/date'
 import { prettyJson } from '@/shared/utils/text'
 
+// ─── Sub-renderers ────────────────────────────────────────────────────────────
+
+function MarkdownPreview({ content }: { content: string }) {
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  )
+}
+
+function CodePreview({ content, language }: { content: string; language?: string }) {
+  return (
+    <pre className="artifact-code">
+      <code className={language ? `language-${language}` : undefined}>{content}</code>
+    </pre>
+  )
+}
+
+function DiagramPreview({ content }: { content: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    // 延迟加载 mermaid，避免 SSR 问题
+    void import('mermaid').then((mermaidModule) => {
+      const mermaid = mermaidModule.default
+      mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
+
+      // 清空旧内容
+      if (!containerRef.current) return
+      containerRef.current.innerHTML = ''
+
+      // 渲染 mermaid 图
+      const id = `mermaid-${Date.now()}`
+      void mermaid
+        .render(id, content)
+        .then(({ svg }) => {
+          if (containerRef.current) {
+            containerRef.current.innerHTML = svg
+          }
+        })
+        .catch(() => {
+          if (containerRef.current) {
+            containerRef.current.innerHTML = `<pre>${content}</pre>`
+          }
+        })
+    })
+  }, [content])
+
+  return <div ref={containerRef} className="artifact-diagram" />
+}
+
+function JsonPreview({ content }: { content: string }) {
+  const formatted = useMemo(() => {
+    try {
+      return prettyJson(JSON.parse(content))
+    } catch {
+      return content
+    }
+  }, [content])
+  return <pre>{formatted}</pre>
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 interface ArtifactSectionProps {
   artifacts: ArtifactDetail[]
   onSelectArtifact: (artifactId: string) => void
   selectedArtifactId: string | null
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  markdown: 'Markdown',
+  json: 'JSON',
+  file: '文件',
+  code: '代码',
+  diagram: '图表',
 }
 
 export function ArtifactSection({
@@ -19,28 +93,22 @@ export function ArtifactSection({
   selectedArtifactId,
 }: ArtifactSectionProps) {
   const selectedArtifact = useMemo(
-    () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
+    () => artifacts.find((a) => a.id === selectedArtifactId) ?? artifacts[0] ?? null,
     [artifacts, selectedArtifactId],
   )
 
   if (!artifacts.length) {
     return (
-      <PanelSection title="产物预览" subtitle="最终 Markdown 会出现在这里">
-        <EmptyState title="还没有产物" description="任务完成后，这里会展示 Markdown 或文件产物。" />
+      <PanelSection title="产物预览" subtitle="最终产物会出现在这里">
+        <EmptyState title="还没有产物" description="任务完成后，这里会展示报告、代码或图表。" />
       </PanelSection>
     )
   }
 
-  const jsonContent =
-    selectedArtifact?.type === 'json'
-      ? (() => {
-          try {
-            return prettyJson(JSON.parse(selectedArtifact.content))
-          } catch {
-            return selectedArtifact.content
-          }
-        })()
-      : null
+  const language =
+    typeof selectedArtifact?.metadata?.language === 'string'
+      ? selectedArtifact.metadata.language
+      : undefined
 
   return (
     <PanelSection
@@ -52,6 +120,7 @@ export function ArtifactSection({
         ) : null
       }
     >
+      {/* 产物 tab 切换 */}
       <div className="artifact-tabs">
         {artifacts.map((artifact) => (
           <button
@@ -63,24 +132,25 @@ export function ArtifactSection({
             }
             onClick={() => onSelectArtifact(artifact.id)}
           >
-            {artifact.title}
+            <span className="artifact-tab__type">{TYPE_LABELS[artifact.type] ?? artifact.type}</span>
+            <span className="artifact-tab__title">{artifact.title}</span>
           </button>
         ))}
       </div>
 
+      {/* 按类型渲染内容 */}
       <div className="artifact-preview">
         {selectedArtifact?.type === 'markdown' ? (
-          <div className="markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {selectedArtifact.content}
-            </ReactMarkdown>
-          </div>
+          <MarkdownPreview content={selectedArtifact.content} />
+        ) : selectedArtifact?.type === 'code' ? (
+          <CodePreview content={selectedArtifact.content} language={language} />
+        ) : selectedArtifact?.type === 'diagram' ? (
+          <DiagramPreview content={selectedArtifact.content} />
         ) : selectedArtifact?.type === 'json' ? (
-          <pre>{jsonContent}</pre>
+          <JsonPreview content={selectedArtifact.content} />
         ) : (
           <div className="artifact-file-placeholder">
             <strong>文件型产物</strong>
-            <p>V1 先展示文件描述，不扩展下载器。</p>
             <pre>{selectedArtifact?.content}</pre>
           </div>
         )}

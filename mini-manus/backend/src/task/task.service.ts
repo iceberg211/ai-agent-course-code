@@ -247,10 +247,10 @@ export class TaskService implements OnModuleInit {
         }
       },
 
-      saveArtifact: async (rId, title, content) => {
+      saveArtifact: async (rId, title, content, type) => {
         const artifact = this.artifactRepo.create({
           runId: rId,
-          type: ArtifactType.MARKDOWN,
+          type: type ?? ArtifactType.MARKDOWN,
           title,
           content,
         });

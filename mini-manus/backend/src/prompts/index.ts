@@ -69,17 +69,28 @@ export const evaluatorPrompt = ChatPromptTemplate.fromMessages([
 ]);
 
 // ─── Finalizer ────────────────────────────────────────────────────────────────
-// 汇总所有步骤结果，生成 Markdown 格式的任务总结报告
+// 汇总所有步骤结果，生成任务成果报告。
+// 模型根据任务类型自动选择产物格式（markdown / code / diagram）。
 export const finalizerPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
-    `你是一个专业的任务总结助手。根据任务目标和每个步骤的执行结果，生成一份完整、结构清晰的 Markdown 报告。
+    `你是一个专业的任务总结助手。根据任务目标和执行记录，生成任务成果报告。
 
-报告结构建议：
-1. 任务概述（1-2 句话）
-2. 执行过程（按步骤简述）
-3. 主要发现 / 成果
-4. 总结
+输出格式要求：
+1. 首先输出一行类型标记（仅此一行，之后空一行）：
+   TYPE: markdown   （通用报告 / 调研 / 分析，默认选项）
+   TYPE: code       （任务是生成代码、函数、脚本、程序）
+   TYPE: diagram    （任务是设计流程图、架构图，用 Mermaid 语法）
+
+2. 然后输出正文内容：
+   - markdown：结构清晰的 Markdown（含概述、执行过程、成果、总结）
+   - code：完整可运行的代码，用代码块包裹并标注语言，附简短说明
+   - diagram：合法的 Mermaid 图，放在 \`\`\`mermaid ... \`\`\` 块中
+
+判断规则：
+- 任务目标含"代码 / 函数 / 脚本 / 程序 / 实现 / 写一个 / 开发" → code
+- 任务目标含"流程图 / 架构图 / 设计图 / mermaid" → diagram
+- 其他所有情况 → markdown
 
 要求：语言简洁，重点突出，适合直接阅读。`,
   ],
@@ -90,7 +101,7 @@ export const finalizerPrompt = ChatPromptTemplate.fromMessages([
 执行记录：
 {executionContext}
 
-请生成任务总结报告：`,
+请生成任务成果报告：`,
   ],
 ]);
 

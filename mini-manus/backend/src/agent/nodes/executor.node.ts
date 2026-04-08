@@ -144,7 +144,6 @@ export async function executorNode(
     } else {
       // ─── Tool 路径 ────────────────────────────────────────────────────────
       const toolName = step.toolHint ?? 'think';
-      const tool = toolRegistry.get(toolName);
       const toolInput = step.toolInput ?? { thought: step.description };
 
       eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {
@@ -155,8 +154,9 @@ export async function executorNode(
         toolInput,
       });
 
+      // read-only 工具走缓存（executeWithCache），side-effect 工具直接执行
       const toolResult = await withTimeout(
-        tool.execute(toolInput),
+        toolRegistry.executeWithCache(toolName, toolInput),
         STEP_TIMEOUT_MS,
       );
 
