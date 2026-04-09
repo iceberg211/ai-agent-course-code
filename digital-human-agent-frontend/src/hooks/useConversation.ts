@@ -103,14 +103,17 @@ export function useConversation() {
   function hydrateMessages(history: HistoryMessage[] = []) {
     messages.value = history
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-      .map((m, idx) => ({
-        id: m.id ?? `${m.turnId}-${m.role}-${idx}`,
-        role: m.role,
+      .map((m, idx): ChatMessage => {
+        const role: MessageRole = m.role === 'user' ? 'user' : 'assistant'
+        return {
+        id: m.id ?? `${m.turnId}-${role}-${idx}`,
+        role,
         content: m.content ?? '',
         status: m.status ?? 'completed',
         citations: [],
         streaming: false,
-      }))
+      }
+      })
     scrollToBottom()
   }
 

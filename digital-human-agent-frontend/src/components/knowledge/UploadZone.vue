@@ -26,16 +26,20 @@ defineProps({ uploading: { type: Boolean, default: false } })
 const emit = defineEmits(['upload'])
 
 const isDragover = ref(false)
-const inputEl = ref(null)
+const inputEl = ref<HTMLInputElement | null>(null)
 
 function triggerInput() { inputEl.value?.click() }
-function onFileChange(e) {
-  const file = e.target.files[0]
-  if (file) { emit('upload', file); e.target.value = '' }
+function onFileChange(e: Event) {
+  const target = e.target as HTMLInputElement | null
+  const file = target?.files?.[0]
+  if (file) {
+    emit('upload', file)
+    target.value = ''
+  }
 }
-function onDrop(e) {
+function onDrop(e: DragEvent) {
   isDragover.value = false
-  const file = e.dataTransfer.files[0]
+  const file = e.dataTransfer?.files?.[0]
   if (file) emit('upload', file)
 }
 </script>

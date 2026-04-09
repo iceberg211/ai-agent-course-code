@@ -19,9 +19,11 @@
       />
       <MessageList :messages="messages" :loading="historyLoading" />
       <ChatComposer
-        :disabled="!personaStore.selectedId || !sessionStore.connected"
+        :disabled="!personaStore.selectedId"
         :busy="historyLoading || state === 'thinking' || state === 'speaking' || state === 'recording'"
+        :can-stop="state === 'thinking'"
         @send="onSendText"
+        @stop="onStopText"
       />
       <ChatControls
         :state="state"
@@ -79,6 +81,7 @@ const {
   onMicDown,
   onMicUp,
   onSendText,
+  onStopText,
   onUpload,
   onDeleteDoc,
   onDeletePersona,

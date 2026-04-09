@@ -11,6 +11,20 @@
       @input="resize"
     />
     <button
+      v-if="canStop"
+      class="stop-btn"
+      type="button"
+      @mousedown.stop
+      @mouseup.stop
+      @touchstart.stop.prevent
+      @touchend.stop.prevent
+      @click.stop.prevent="$emit('stop')"
+      aria-label="停止生成"
+    >
+      停止
+    </button>
+    <button
+      v-else
       class="send-btn"
       type="button"
       :disabled="sendDisabled"
@@ -31,15 +45,24 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { SendHorizonalIcon } from 'lucide-vue-next'
 
-const props = defineProps({
-  disabled: { type: Boolean, default: false },
-  busy: { type: Boolean, default: false },
-  placeholder: { type: String, default: '输入文字后按 Enter 发送，Shift+Enter 换行' },
+const props = withDefaults(defineProps<{
+  disabled?: boolean
+  busy?: boolean
+  canStop?: boolean
+  placeholder?: string
+}>(), {
+  disabled: false,
+  busy: false,
+  canStop: false,
+  placeholder: '输入文字后按 Enter 发送，Shift+Enter 换行',
 })
-const emit = defineEmits(['send'])
+const emit = defineEmits<{
+  (e: 'send', text: string): void
+  (e: 'stop'): void
+}>()
 
 const draft = ref('')
-const inputEl = ref(null)
+const inputEl = ref<HTMLTextAreaElement | null>(null)
 const canSend = computed(() => draft.value.trim().length > 0)
 const sendDisabled = computed(() => props.disabled || props.busy || !canSend.value)
 const resolvedPlaceholder = computed(() => {
@@ -63,7 +86,8 @@ function submit() {
   nextTick(resize)
 }
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
+  if (props.canStop) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit()
@@ -130,5 +154,25 @@ onMounted(() => nextTick(resize))
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid #d7dbe6;
+  border-radius: 10px;
+  background: #fff;
+  color: #344054;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.stop-btn:hover {
+  background: #f5f7fb;
+  border-color: #c6cedd;
 }
 </style>

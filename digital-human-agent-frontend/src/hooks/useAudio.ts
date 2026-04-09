@@ -16,23 +16,25 @@ export function useAudio() {
   }
 
   async function stopRecording() {
-    if (!mediaRecorder) {
+    const recorder = mediaRecorder
+    if (!recorder) {
       return new ArrayBuffer(0)
     }
 
-    if (mediaRecorder.state === 'inactive') {
+    if (recorder.state === 'inactive') {
       const blob = new Blob(chunks, { type: 'audio/webm' })
+      mediaRecorder = null
       return blob.arrayBuffer()
     }
 
     return new Promise<ArrayBuffer>((resolve) => {
-      mediaRecorder.onstop = async () => {
+      recorder.onstop = async () => {
         const blob = new Blob(chunks, { type: 'audio/webm' })
         mediaRecorder = null
         resolve(await blob.arrayBuffer())
       }
-      mediaRecorder.stop()
-      mediaRecorder.stream.getTracks().forEach((t) => t.stop())
+      recorder.stop()
+      recorder.stream.getTracks().forEach((t) => t.stop())
     })
   }
 
@@ -56,12 +58,19 @@ export function useAudio() {
     audioEl.value.src = URL.createObjectURL(mediaSource)
 
     mediaSource.addEventListener('sourceopen', () => {
+      const source = mediaSource
+      if (!source) return
+
       try {
-        sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg')
+        sourceBuffer = source.addSourceBuffer('audio/mpeg')
       } catch {
-        sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs=opus')
+        try {
+          sourceBuffer = source.addSourceBuffer('audio/webm; codecs=opus')
+        } catch {
+          sourceBuffer = null
+        }
       }
-      sourceBuffer.addEventListener('updateend', flushQueue)
+      sourceBuffer?.addEventListener('updateend', flushQueue)
     }, { once: true })
 
     audioEl.value.play().catch(() => { })

@@ -1,20 +1,31 @@
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { Chat } from '@ai-sdk/vue'
+import { DefaultChatTransport, type UIMessage } from 'ai'
 import { usePersonaStore } from '../stores/persona'
 import { useSessionStore } from '../stores/session'
 import { useWebSocket } from './useWebSocket'
 import { useAudio } from './useAudio'
 import { useConversation } from './useConversation'
 import { useKnowledge } from './useKnowledge'
-import type { Citation, WsEnvelope } from '../types'
+import type { ChatMessage, Citation, MessageStatus, WsEnvelope } from '../types'
 
 interface SessionReadyPayload {
   conversationId?: string
-  history?: Array<Record<string, any>>
+  history?: Array<Record<string, unknown>>
 }
 
-interface BaseWsMessage<T = Record<string, any>> extends WsEnvelope<T> {
+interface BaseWsMessage<T = Record<string, unknown>> extends WsEnvelope<T> {
   payload?: T
 }
+
+interface StreamMetadata {
+  conversationId?: string
+  turnId?: string
+  status?: MessageStatus | 'streaming'
+  citations?: Citation[]
+}
+
+type StreamUIMessage = UIMessage<StreamMetadata>
 
 export function useAppController() {
   const MIC_SEND_DELAY_MS = 1000
@@ -32,10 +43,38 @@ export function useAppController() {
   const toastMsg = ref('')
   const audioEl = ref<HTMLAudioElement | null>(null)
   const historyLoading = ref(false)
-  const pendingText = ref('')
   const pendingVoiceSend = ref(false)
   const micPressedAt = ref(0)
+  const textRequestActive = ref(false)
   let voiceSendTimer: ReturnType<typeof setTimeout> | null = null
+
+  const textChat = new Chat<StreamUIMessage>({
+    transport: new DefaultChatTransport<StreamUIMessage>({
+      api: '/api/chat',
+      body: () => ({
+        personaId: personaStore.selectedId,
+        conversationId: sessionStore.conversationId || undefined,
+      }),
+    }),
+    onFinish: ({ message }) => {
+      textRequestActive.value = false
+      const meta = message.metadata
+      if (meta?.conversationId) {
+        sessionStore.setSession(sessionStore.sessionId, meta.conversationId)
+      }
+      syncMessagesFromTextChat()
+      if (conversation.state.value === 'thinking') {
+        conversation.state.value = 'idle'
+      }
+    },
+    onError: (error) => {
+      textRequestActive.value = false
+      showToast(`⚠ 文本对话失败：${error.message}`)
+      if (conversation.state.value === 'thinking') {
+        conversation.state.value = 'idle'
+      }
+    },
+  })
 
   const messages = computed(() => conversation.messages.value)
   const state = computed(() => conversation.state.value)
@@ -49,7 +88,7 @@ export function useAppController() {
       sessionStore.setConnected(!!val)
 
       if (!val) {
-        sessionStore.reset()
+        sessionStore.setSession('', sessionStore.conversationId)
         clearPendingVoiceSend()
         if (conversation.state.value !== 'recording') {
           conversation.state.value = 'idle'
@@ -70,17 +109,41 @@ export function useAppController() {
     { immediate: true },
   )
 
+  watch(
+    () => textChat.status,
+    (chatStatus) => {
+      if (chatStatus === 'submitted' || chatStatus === 'streaming') {
+        textRequestActive.value = true
+        if (conversation.state.value !== 'recording' && conversation.state.value !== 'speaking') {
+          conversation.state.value = 'thinking'
+        }
+        return
+      }
+
+      if (chatStatus === 'ready' && textRequestActive.value) {
+        textRequestActive.value = false
+        if (conversation.state.value === 'thinking') {
+          conversation.state.value = 'idle'
+        }
+      }
+    },
+    { immediate: true },
+  )
+
+  watchEffect(() => {
+    // 读取 messages 以建立响应依赖
+    void textChat.messages.length
+    syncMessagesFromTextChat()
+  })
+
   on('session:ready', (msg: BaseWsMessage<SessionReadyPayload>) => {
     sessionStore.setSession(msg.sessionId, msg.payload?.conversationId ?? '')
     conversation.hydrateMessages(msg.payload?.history ?? [])
+    textChat.messages = []
+    textRequestActive.value = false
     historyLoading.value = false
     conversation.state.value = 'idle'
     knowledge.fetchDocuments(personaStore.selectedId)
-
-    if (pendingText.value) {
-      sendTextNow(pendingText.value)
-      pendingText.value = ''
-    }
   })
 
   on('asr:final', (msg: BaseWsMessage<{ text?: string }>) => {
@@ -101,7 +164,7 @@ export function useAppController() {
 
   on('conversation:done', (msg: BaseWsMessage) => {
     conversation.finishAssistantMessage(msg.turnId ?? '')
-    if (conversation.state.value === 'thinking') {
+    if (conversation.state.value === 'thinking' && !textRequestActive.value) {
       conversation.state.value = 'idle'
     }
   })
@@ -145,7 +208,7 @@ export function useAppController() {
     clearPendingVoiceSend()
     const message = msg.payload?.message ?? '发生错误'
     if (typeof message === 'string' && message.includes('No active session')) {
-      sessionStore.reset()
+      sessionStore.setSession('', sessionStore.conversationId)
       if (personaStore.selectedId && wsConnected.value) {
         send({
           type: 'session:start',
@@ -167,51 +230,71 @@ export function useAppController() {
   function onSelectPersona(id: string) {
     if (id === personaStore.selectedId) return
     clearPendingVoiceSend()
+    textRequestActive.value = false
+    void textChat.stop().catch(() => undefined)
+    textChat.messages = []
+
     personaStore.select(id)
     conversation.clearMessages()
     sessionStore.reset()
     historyLoading.value = true
     if (!wsConnected.value) {
-      showToast('连接恢复后将自动建立会话')
+      showToast('连接恢复后将自动建立语音会话')
       return
     }
     send({ type: 'session:start', sessionId: '', payload: { personaId: id } })
   }
 
-  function sendTextNow(text: string) {
-    if (!sessionStore.sessionId) return
-    conversation.pushUserMessageWithId(`user-${Date.now()}`, text)
-    conversation.state.value = 'thinking'
-    send({
-      type: 'conversation:text',
-      sessionId: sessionStore.sessionId,
-      payload: { text },
-    })
-  }
-
-  function onSendText(text: string) {
+  async function onSendText(text: string) {
     const normalized = String(text ?? '').trim()
     if (!normalized) return
     if (!personaStore.selectedId) return
+
     clearPendingVoiceSend()
 
-    if (!sessionStore.sessionId) {
-      pendingText.value = normalized
-      historyLoading.value = true
-      if (!wsConnected.value) {
-        showToast('连接中，恢复后自动发送')
-        return
+    if (conversation.state.value === 'thinking' || conversation.state.value === 'speaking') {
+      if (sessionStore.sessionId) {
+        send({
+          type: 'conversation:interrupt',
+          sessionId: sessionStore.sessionId,
+        })
       }
-      send({
-        type: 'session:start',
-        sessionId: '',
-        payload: { personaId: personaStore.selectedId },
-      })
-      showToast('会话建立中，消息将自动发送')
-      return
+      audio.stopPlayback()
     }
 
-    sendTextNow(normalized)
+    textRequestActive.value = true
+    conversation.state.value = 'thinking'
+
+    try {
+      await textChat.sendMessage(
+        { text: normalized },
+        {
+          body: {
+            personaId: personaStore.selectedId,
+            conversationId: sessionStore.conversationId || undefined,
+          },
+        },
+      )
+      syncMessagesFromTextChat()
+    } catch {
+      textRequestActive.value = false
+      if (conversation.state.value === 'thinking') {
+        conversation.state.value = 'idle'
+      }
+      showToast('文本发送失败，请重试')
+    }
+  }
+
+  async function onStopText() {
+    if (textChat.status !== 'submitted' && textChat.status !== 'streaming') {
+      return
+    }
+    await textChat.stop()
+    textRequestActive.value = false
+    if (conversation.state.value === 'thinking') {
+      conversation.state.value = 'idle'
+    }
+    showToast('已停止生成')
   }
 
   async function onMicDown() {
@@ -274,7 +357,7 @@ export function useAppController() {
     const holdMs = Date.now() - micPressedAt.value
     micPressedAt.value = 0
 
-    let buffer
+    let buffer: ArrayBuffer
     try {
       buffer = await audio.stopRecording()
     } catch {
@@ -339,10 +422,12 @@ export function useAppController() {
     if (deletingSelected) {
       sessionStore.reset()
       clearPendingVoiceSend()
+      textRequestActive.value = false
+      void textChat.stop().catch(() => undefined)
+      textChat.messages = []
       conversation.clearMessages()
       conversation.state.value = 'idle'
       historyLoading.value = false
-      pendingText.value = ''
       knowledge.clearDocuments()
       docsOpen.value = false
     }
@@ -370,6 +455,63 @@ export function useAppController() {
     pendingVoiceSend.value = false
   }
 
+  function syncMessagesFromTextChat() {
+    const sdkMessages = textChat.messages.filter(
+      (m) => m.role === 'user' || m.role === 'assistant',
+    )
+
+    for (const message of sdkMessages) {
+      const mapped = mapSdkMessage(message)
+      const idx = conversation.messages.value.findIndex((m) => m.id === mapped.id)
+      if (idx >= 0) {
+        conversation.messages.value[idx] = mapped
+      } else {
+        conversation.messages.value.push(mapped)
+      }
+    }
+
+    conversation.scrollToBottom()
+  }
+
+  function mapSdkMessage(message: StreamUIMessage): ChatMessage {
+    const content = (message.parts ?? [])
+      .map((part) => {
+        if (part.type !== 'text') return ''
+        return typeof part.text === 'string' ? part.text : ''
+      })
+      .join('')
+
+    const citations = Array.isArray(message.metadata?.citations)
+      ? message.metadata.citations.filter(
+          (item): item is Citation => typeof item === 'object' && item !== null,
+        )
+      : []
+
+    const streaming =
+      message.role === 'assistant' &&
+      (message.parts ?? []).some(
+        (part) => part.type === 'text' && part.state === 'streaming',
+      )
+
+    const status = normalizeMessageStatus(message.metadata?.status)
+
+    return {
+      id: message.id,
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content,
+      status,
+      citations,
+      streaming,
+      turnId: message.metadata?.turnId,
+    }
+  }
+
+  function normalizeMessageStatus(status: unknown): MessageStatus {
+    if (status === 'interrupted') return 'interrupted'
+    if (status === 'failed') return 'failed'
+    return 'completed'
+  }
+
   onMounted(async () => {
     audio.initAudioElement(audioEl.value)
     connect()
@@ -378,6 +520,7 @@ export function useAppController() {
 
   onUnmounted(() => {
     clearPendingVoiceSend()
+    void textChat.stop().catch(() => undefined)
     if (toastTimer) clearTimeout(toastTimer)
   })
 
@@ -398,6 +541,7 @@ export function useAppController() {
     onMicDown,
     onMicUp,
     onSendText,
+    onStopText,
     onUpload,
     onDeleteDoc,
     onDeletePersona,

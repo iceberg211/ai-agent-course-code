@@ -9,7 +9,7 @@ export const usePersonaStore = defineStore('persona', () => {
   const loadError = ref('')
 
   const selectedPersona = computed(() =>
-    personas.value.find((p) => p.id === selectedId.value) ?? null
+    personas.value.find((p) => p.id === selectedId.value) ?? undefined
   )
 
   async function fetchPersonas() {

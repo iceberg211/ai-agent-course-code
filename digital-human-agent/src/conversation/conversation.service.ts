@@ -17,6 +17,12 @@ export class ConversationService {
     return this.convRepo.save(this.convRepo.create({ personaId }));
   }
 
+  getConversationById(id: string): Promise<Conversation | null> {
+    return this.convRepo.findOne({
+      where: { id },
+    });
+  }
+
   getLatestConversationByPersona(personaId: string): Promise<Conversation | null> {
     return this.convRepo.findOne({
       where: { personaId },

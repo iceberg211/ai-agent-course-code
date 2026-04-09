@@ -9,6 +9,7 @@ import { TtsModule } from './tts/tts.module';
 import { RealtimeSessionModule } from './realtime-session/realtime-session.module';
 import { AgentModule } from './agent/agent.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { GatewayModule } from './gateway/gateway.module';
     RealtimeSessionModule,
     AgentModule,
     GatewayModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
