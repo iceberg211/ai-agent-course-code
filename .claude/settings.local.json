@@ -8,8 +8,11 @@
       "Bash(npx *)",
       "Bash(node:*)",
       "Bash(python:*)",
-      "Bash(ls /Users/wei.he/Documents/GitHub/ai-agent-course-code/mini-manus/frontend/.env*)"
+      "Bash(ls /Users/wei.he/Documents/GitHub/ai-agent-course-code/mini-manus/frontend/.env*)",
+      "Bash(nest --version)",
+      "Bash(pnpm create:*)",
+      "Bash(*)"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   }
 }
