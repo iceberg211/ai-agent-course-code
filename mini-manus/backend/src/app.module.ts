@@ -12,6 +12,7 @@ import { SkillModule } from '@/skill/skill.module';
 import { AgentModule } from '@/agent/agent.module';
 import { EventModule } from '@/event/event.module';
 import { GatewayModule } from '@/gateway/gateway.module';
+import { HealthModule } from '@/health/health.module';
 
 const envSchema = z
   .object({
@@ -67,6 +68,7 @@ function validateEnv(config: Record<string, unknown>) {
     AgentModule,
     GatewayModule,
     TaskModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

@@ -17,6 +17,34 @@ import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 
+/** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
+const MODEL_PRICING: Record<
+  string,
+  { inputPerMillion: number; outputPerMillion: number }
+> = {
+  'gpt-4o': { inputPerMillion: 5.0, outputPerMillion: 15.0 },
+  'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+  'gpt-4-turbo': { inputPerMillion: 10.0, outputPerMillion: 30.0 },
+  'qwen-plus': { inputPerMillion: 0.4, outputPerMillion: 1.2 },
+  'qwen-max': { inputPerMillion: 1.6, outputPerMillion: 4.8 },
+  'qwen-turbo': { inputPerMillion: 0.05, outputPerMillion: 0.2 },
+  'deepseek-chat': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  'deepseek-reasoner': { inputPerMillion: 0.55, outputPerMillion: 2.19 },
+};
+
+function estimateCostUsd(
+  modelName: string,
+  inputTokens: number,
+  outputTokens: number,
+): number | null {
+  const pricing = MODEL_PRICING[modelName];
+  if (!pricing) return null;
+  return (
+    (inputTokens / 1_000_000) * pricing.inputPerMillion +
+    (outputTokens / 1_000_000) * pricing.outputPerMillion
+  );
+}
+
 function readBoolean(
   value: string | undefined,
   defaultValue: boolean,
@@ -243,17 +271,36 @@ export class AgentService {
         error: msg,
       });
     } finally {
-      // Emit token usage regardless of run outcome
+      // 持久化 token 统计 + 推送实时事件
       if (tokenTracker.totalTokens > 0) {
-        this.logger.log(
-          `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}`,
+        const estimatedCostUsd = estimateCostUsd(
+          this.llm.modelName ?? '',
+          tokenTracker.inputTokens,
+          tokenTracker.outputTokens,
         );
+        this.logger.log(
+          `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}${estimatedCostUsd != null ? `, cost: $${estimatedCostUsd.toFixed(6)}` : ''}`,
+        );
+        // 持久化到 task_runs（失败不阻塞 finalize）
+        try {
+          await callbacks.saveTokenUsage(runId, {
+            inputTokens: tokenTracker.inputTokens,
+            outputTokens: tokenTracker.outputTokens,
+            totalTokens: tokenTracker.totalTokens,
+            estimatedCostUsd,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Failed to save token usage for run ${runId}: ${String(err)}`,
+          );
+        }
         eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
           taskId,
           runId,
           inputTokens: tokenTracker.inputTokens,
           outputTokens: tokenTracker.outputTokens,
           totalTokens: tokenTracker.totalTokens,
+          estimatedCostUsd,
         });
       }
       await callbacks.finalize(taskId);

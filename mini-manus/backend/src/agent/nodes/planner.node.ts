@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { AgentState, PlanDef } from '@/agent/agent.state';
@@ -7,6 +8,12 @@ import { ToolRegistry } from '@/tool/tool.registry';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { plannerPrompt } from '@/prompts';
+import {
+  validatePlanSemantics,
+  formatValidationErrors,
+} from '@/agent/plan-semantic-validator';
+
+const logger = new Logger('PlannerNode');
 
 const PlanSchema = z.object({
   steps: z.array(
@@ -61,29 +68,89 @@ export async function plannerNode(
           .join('\n')
       : '';
 
+  // ─── 历史记忆注入（Task 级第一层）────────────────────────────────────────────
+  // 从最近已完成的 run 读取摘要，供 Planner 参考，避免重复搜索相同内容
+  // 注意：记忆内容来自外部工具输出，视为半可信来源，仅供参考
+  let memoryContext = '';
+  try {
+    const memory = await callbacks.getRecentMemory(state.taskId);
+    if (memory) {
+      memoryContext =
+        '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
+        memory;
+    }
+  } catch {
+    // 记忆读取失败不应阻断规划，静默忽略
+  }
+
   const chain = plannerPrompt.pipe(
     llm.withStructuredOutput(PlanSchema, { method: soMethod }),
   );
-  const result = await chain.invoke({
+
+  const baseInvokeArgs = {
     revisionInput: state.revisionInput,
     taskId: state.taskId,
     completedContext,
     skillSection,
     toolSection,
-  });
+    memoryContext,
+  };
 
-  const plan = await callbacks.savePlan(state.runId, result.steps);
+  // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────
+  let planSteps: typeof PlanSchema._type.steps;
+
+  const result1 = await chain.invoke({
+    ...baseInvokeArgs,
+    validationErrors: '',
+  });
+  const errors1 = validatePlanSemantics(
+    result1.steps,
+    skillRegistry,
+    toolRegistry,
+  );
+
+  if (errors1.length === 0) {
+    planSteps = result1.steps;
+  } else {
+    logger.warn(
+      `Plan semantic validation failed (attempt 1): ${errors1.map((e) => e.message).join(' | ')}`,
+    );
+    const validationErrors = formatValidationErrors(errors1);
+    const result2 = await chain.invoke({ ...baseInvokeArgs, validationErrors });
+    const errors2 = validatePlanSemantics(
+      result2.steps,
+      skillRegistry,
+      toolRegistry,
+    );
+
+    if (errors2.length === 0) {
+      planSteps = result2.steps;
+    } else {
+      logger.error(
+        `Plan semantic validation failed after 2 attempts: ${errors2.map((e) => e.message).join(' | ')}`,
+      );
+      // 两次语义校验均失败，终止本 Run
+      return {
+        errorMessage: `Planner 语义校验连续失败（${errors2
+          .map((e) => e.message)
+          .slice(0, 2)
+          .join('；')}），请简化任务描述后重试`,
+      };
+    }
+  }
+
+  const plan = await callbacks.savePlan(state.runId, planSteps);
 
   const planDef: PlanDef = {
     planId: plan.id,
-    steps: result.steps,
+    steps: planSteps,
   };
 
   eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
     taskId: state.taskId,
     runId: state.runId,
     planId: plan.id,
-    steps: result.steps as unknown as Record<string, unknown>[],
+    steps: planSteps as unknown as Record<string, unknown>[],
   });
 
   return {

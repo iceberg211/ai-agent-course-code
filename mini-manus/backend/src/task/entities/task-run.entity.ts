@@ -41,6 +41,25 @@ export class TaskRun {
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage: string | null;
 
+  // ─── Token 统计（run 结束后回写）──────────────────────────
+  @Column({ name: 'input_tokens', type: 'int', nullable: true })
+  inputTokens: number | null;
+
+  @Column({ name: 'output_tokens', type: 'int', nullable: true })
+  outputTokens: number | null;
+
+  @Column({ name: 'total_tokens', type: 'int', nullable: true })
+  totalTokens: number | null;
+
+  @Column({
+    name: 'estimated_cost_usd',
+    type: 'decimal',
+    precision: 10,
+    scale: 6,
+    nullable: true,
+  })
+  estimatedCostUsd: number | null;
+
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt: Date | null;
 

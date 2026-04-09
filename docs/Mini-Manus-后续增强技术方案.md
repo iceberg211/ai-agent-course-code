@@ -23,45 +23,71 @@
 
 ## 2. 当前现状评估
 
+> **文档更新说明**（2026-04-09）：本节已按最新实现状态同步更新，§12 实施顺序同步修订。
+
 ### 2.1 已经具备的能力
 
-当前系统已经具备以下基础能力：
+当前系统已经具备以下能力（含本阶段新增）：
 
-- 任务中心：创建任务、编辑任务、重试、取消、历史 Run 回看
-- Agent 执行闭环：planner -> executor -> evaluator -> finalizer
+**核心执行链**
+- 任务中心：创建、编辑、重试、取消、历史 Run 回看
+- Agent 执行闭环：planner → executor → evaluator → finalizer
 - 实时反馈：步骤开始、progress、tool 调用、tool 完成、artifact 创建
 - 多产物：`markdown / json / code / diagram / file`
-- 工具层：网页搜索、网页抓取、文件读写、目录读取、下载文件、PDF 文本提取、GitHub 搜索、PDF 导出
+
+**工具与 Skill**
+- 工具层：网页搜索、网页抓取（静态）、Markdown 抽取、文件读写、目录读取、文件下载、PDF 文本提取、GitHub 搜索、PDF 导出
 - Skill 层：调研、文档写作、竞品对比、briefing、产物审阅、报告打包
+
+**稳定性与安全（本阶段补全）**
+- Bug 修复：retry/replan 超限正确标 FAILED、finalizeRun/startRun 悲观锁、createTask 事务后发事件、cancel 分支补 step.failed 事件、deleteTask 事务删除
+- 提示词安全：用户输入注入检测（detectInjection）+ 6 个 prompt 安全声明
+- Planner 语义校验：skillName/toolHint 注册校验 + safeParse 输入校验 + 带错误反馈最多两次重试
+- 速率限制：`@nestjs/throttler`，全局 60次/分，任务创建 10次/分
+- WebSocket 认证：`WS_AUTH_TOKEN` 环境变量开启 token 鉴权
+- 配置校验：Zod schema 校验必填项，启动时失败快速抛出
+
+**可观测性（本阶段新增）**
+- Token 统计：Run 级聚合（输入/输出/总计）+ 实时推送前端 RunDebugPanel
+- Token 持久化：`task_runs` 新增 `input_tokens / output_tokens / total_tokens / estimated_cost_usd` 列（migration 已运行）
+- 成本估算：内置模型价格表（gpt-4o / gpt-4o-mini / qwen-plus / deepseek 等）
+- 健康检查：`GET /api/health` 含 DB 连通性探测
+- 请求日志：`LoggingInterceptor` 记录每个 HTTP 请求耗时
+
+**资源治理（本阶段新增）**
+- Workspace 清理：deleteTask 事务提交后自动清理任务目录
+- Task 级跨 Run 记忆（第一层）：Planner 从最近 3 次 completed run 的 JSON 摘要中读取历史上下文
+- 优雅关闭：`enableShutdownHooks` + `OnModuleDestroy` 中止所有 in-flight run
+
+**配置**
 - 配置化运行参数：`MAX_RETRIES / MAX_REPLANS / MAX_STEPS / STEP_TIMEOUT_MS / TOOL_CACHE_TTL_MS / LLM_CACHE_ENABLED / EXPORT_PDF_ENABLED`
-- 基础提示词注入防护：对用户直接输入进行简单模式检测与长度截断
+- `.env.example` 与实际 `.env` 同步，含注释说明
 
 ### 2.2 当前主要缺口
 
-当前版本离更完整的开源 Agent 系统，主要还差这几类能力：
+以下能力尚未实现，按优先级排列：
 
 #### 执行能力缺口
 
-- 无浏览器自动化，只能处理静态抓取场景
+- 无浏览器自动化，只能处理静态抓取场景（动态 JS 渲染页面拿不到）
 - 无代码执行沙箱，代码生成后无法运行验证
-- Skill 内部调用仍以串行为主，缺少并行执行
+- Skill 内部工具调用仍以串行为主，缺少并行执行
 
 #### 可观测性缺口
 
-- Token 已有聚合统计，但还没有成本估算
-- Token 统计只存在于实时事件和前端 live feed，刷新后会丢失
-- 事件没有持久化，无法真正回放执行过程
-- Planner 只有结构校验，缺少语义校验
+- 事件没有持久化，无法真正回放执行过程（刷新后 live feed 消失）
+- 节点级 LLM 调用明细（planner/evaluator/finalizer/skill 各用了多少 token）尚无独立表记录
 
-#### 生命周期与资源治理缺口
+#### 记忆与生命周期缺口
 
-- Workspace 目录只创建不清理
-- 任务历史虽然保存在数据库中，但没有被 Agent 重新利用为记忆
+- Workspace 定期清理（定时任务扫描超期目录）尚未实现
+- Artifact 级记忆复用（第二层）和来源级记忆（第三层）尚未实现
 - 输出截断仍偏粗暴，长内容没有先摘要再截断
 
-#### 产品化缺口
+#### 认证与配额缺口
 
-- 无认证、限流、配额控制
+- HTTP 接口无 API Key 认证（WebSocket 已有 token 鉴权）
+- 无每日配额表（`api_clients` / `api_usage_daily`）
 - 无浏览器会话、代码执行等高价值闭环能力
 
 ## 3. 轻量认证、限流与 API 配额保护
@@ -793,33 +819,62 @@ Planner prompt 可新增：
 
 ## 12. 推荐实施顺序
 
-如果按收益 / 复杂度比排序，推荐顺序如下：
+> 最后更新：2026-04-09。✅ 表示已完成，⏳ 表示待实现。
 
-1. Token / 成本观测持久化
-2. Planner 语义校验
-3. Workspace 生命周期清理
-4. 事件持久化回放
-5. 跨 Run 记忆
-6. 浏览器自动化
-7. 代码执行沙箱
-8. 轻量认证 + 限流 + 配额
+| 优先级 | 项目 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | Token 持久化 + 成本估算 | ✅ 已完成 | task_runs 新增 4 列，MODEL_PRICING 内置 |
+| 2 | Planner 语义校验 | ✅ 已完成 | skillName/toolHint 注册校验 + safeParse + 带错误反馈重试 |
+| 3 | Workspace 删除清理 | ✅ 已完成 | deleteTask 事务后调 cleanTaskDir |
+| 4 | Task 级跨 Run 记忆（第一层） | ✅ 已完成 | 最近 3 次 completed run 的 JSON 摘要注入 Planner |
+| 5 | 限流 | ✅ 已完成 | @nestjs/throttler，全局 + 任务创建单独限流 |
+| 6 | WebSocket 认证 | ✅ 已完成 | WS_AUTH_TOKEN，生产环境必填 |
+| 7 | 健康检查 | ✅ 已完成 | GET /api/health，含 DB 连通性 |
+| 8 | 事件持久化回放 | ⏳ 待实现 | 需新增 task_events 表，改 Gateway 写库 |
+| 9 | Artifact 级记忆（第二层）| ⏳ 待实现 | 读取历史 artifact 做结构化摘要复用 |
+| 10 | Workspace 定期清理 | ⏳ 待实现 | 定时任务扫描超期目录 |
+| 11 | 节点级 token 明细 | ⏳ 待实现 | 新增 llm_call_logs 表，按 node 拆分统计 |
+| 12 | HTTP API Key 认证 | ⏳ 待实现 | x-api-key 全局 Guard |
+| 13 | 每日配额表 | ⏳ 待实现 | api_clients + api_usage_daily |
+| 14 | 浏览器自动化 | ⏳ 待实现 | Playwright，browser_sessions 表 |
+| 15 | 代码执行沙箱 | ⏳ 待实现 | Docker 方案 A，最复杂，放最后 |
 
-说明：
+### 下一步建议顺序
 
-- 认证不是不重要，而是对当前个人项目来说不在第一波收益最高的位置
-- 浏览器自动化和代码沙箱价值很高，但复杂度也最高，放在中后段更稳
-- 事件持久化和跨 Run 记忆会明显提升“产品感”和“长期可用性”
+**立即可做（低复杂度，高价值）：**
+
+1. **事件持久化**（§9）：新增 `task_events` 表，在 Gateway 写库，前端支持历史回放。这是产品感提升最明显的一步。
+
+2. **HTTP API Key 认证**（§3）：加 `ApiKeyGuard`，`APP_API_KEYS` 环境变量配置，15 分钟内可完成。
+
+3. **Workspace 定期清理**：在 `TaskService.onModuleInit` 里加一次性扫描，再接 NestJS `@Cron` 定时任务。
+
+**中期（中等复杂度）：**
+
+4. 节点级 token 明细（需新表 + TokenTracker 分 node 统计）
+
+5. Artifact 级记忆复用（需读历史 artifact + 摘要策略）
+
+**长期（高复杂度，高价值）：**
+
+6. 浏览器自动化（Playwright + 会话管理 + 安全边界）
+
+7. 代码执行沙箱（Docker + 资源限制 + evaluator 联动）
 
 ## 13. 本阶段建议结论
 
-基于当前 `Mini-Manus` 的成熟度，下一阶段最值得推进的主线是：
+**已完成的核心目标：**
 
-1. 把 Token 统计补成“可持久化、可估算成本”
-2. 把 Planner 补成“结构合法 + 语义合法”
-3. 把 Workspace 和事件做成“有生命周期、可回放”
-4. 在此基础上，再上浏览器自动化与代码执行沙箱
-5. 最后让历史 Run 真正变成可利用的记忆
+1. ✅ Token 统计已做到”可持久化、可估算成本”
+2. ✅ Planner 已做到”结构合法 + 语义合法”，连续失败可终止 Run
+3. ✅ Workspace 已有基础生命周期（删除时清理）
+4. ✅ Task 级历史记忆已注入 Planner，同主题任务可复用上次调研结论
+5. ✅ 系统稳定性大幅提升：并发锁、事务、优雅关闭、速率限制均已到位
 
-一句话总结：
+**当前系统定位：**
 
-当前系统已经从“能跑起来”进入了“该把系统边界、资源治理和高价值执行能力做实”的阶段。
+从”能跑起来”升级到了”稳定可用、可观测、有基础资源治理”。
+
+**下阶段核心目标：**
+
+把执行过程做成”可回放、可审计”（事件持久化），再上浏览器自动化与代码沙箱把闭环能力做实。

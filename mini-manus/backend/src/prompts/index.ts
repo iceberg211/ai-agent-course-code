@@ -40,7 +40,7 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
   [
     'human',
     `任务：{revisionInput}
-当前任务ID（用于文件操作）：{taskId}{completedContext}`,
+当前任务ID（用于文件操作）：{taskId}{completedContext}{memoryContext}{validationErrors}`,
   ],
 ]);
 

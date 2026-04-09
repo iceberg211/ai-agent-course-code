@@ -26,6 +26,7 @@ import { EventPublisher } from '@/event/event.publisher';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { detectInjection, sanitizeInput } from '@/common/utils/prompt-safety';
+import { WorkspaceService } from '@/workspace/workspace.service';
 
 @Injectable()
 export class TaskService implements OnModuleInit, OnModuleDestroy {
@@ -48,6 +49,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     private readonly dataSource: DataSource,
     private readonly agentService: AgentService,
     private readonly eventPublisher: EventPublisher,
+    private readonly workspace: WorkspaceService,
   ) {}
 
   // ─── Zombie run recovery ────────────────────────────────────────────────
@@ -284,6 +286,52 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         return this.artifactRepo.save(artifact);
       },
 
+      getRecentMemory: async (tId) => {
+        // 读取最近 3 次已完成 run 的 JSON 摘要 artifact，供 Planner 参考
+        const completedRuns = await this.runRepo.find({
+          where: { taskId: tId, status: RunStatus.COMPLETED },
+          order: { completedAt: 'DESC' },
+          take: 3,
+          select: ['id'],
+        });
+        if (completedRuns.length === 0) return '';
+
+        const runIds = completedRuns.map((r) => r.id);
+        const summaries = await this.artifactRepo.find({
+          where: { runId: In(runIds), type: ArtifactType.JSON },
+          order: { createdAt: 'DESC' },
+          take: 3,
+          select: ['content', 'createdAt', 'runId'],
+        });
+        if (summaries.length === 0) return '';
+
+        return summaries
+          .map((s, i) => {
+            try {
+              const json = JSON.parse(s.content) as {
+                summary?: string;
+                key_points?: string[];
+              };
+              const date = s.createdAt.toLocaleDateString('zh-CN');
+              const keyPoints = (json.key_points ?? []).slice(0, 3).join('、');
+              return `历史 Run ${i + 1}（${date}）：${json.summary ?? '无摘要'}${keyPoints ? `\n要点：${keyPoints}` : ''}`;
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean)
+          .join('\n\n');
+      },
+
+      saveTokenUsage: async (rId, stats) => {
+        await this.runRepo.update(rId, {
+          inputTokens: stats.inputTokens,
+          outputTokens: stats.outputTokens,
+          totalTokens: stats.totalTokens,
+          estimatedCostUsd: stats.estimatedCostUsd,
+        });
+      },
+
       finalize: async (tId) => {
         await this.finalizeRun(tId);
       },
@@ -449,6 +497,9 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.logger.log(`Task ${taskId} deleted`);
+
+    // 文件删除在事务提交后执行，文件系统操作不可回滚，不放进事务
+    await this.workspace.cleanTaskDir(taskId);
   }
 
   // ─── Queries ─────────────────────────────────────────────────────────────
