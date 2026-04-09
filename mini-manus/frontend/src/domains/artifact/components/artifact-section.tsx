@@ -52,7 +52,9 @@ function DiagramPreview({ content }: { content: string }) {
         })
         .catch(() => {
           if (containerRef.current) {
-            containerRef.current.innerHTML = `<pre>${content}</pre>`
+            const pre = document.createElement('pre')
+            pre.textContent = content
+            containerRef.current.replaceChildren(pre)
           }
         })
     })

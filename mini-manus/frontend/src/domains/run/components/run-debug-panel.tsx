@@ -37,8 +37,9 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
       lastError: runDetail.errorMessage ?? lastFailedStep?.errorMessage ?? null,
       artifactTypes: Array.from(new Set(runDetail.artifacts.map((artifact) => artifact.type))).join(', '),
       startedAt: formatDateTime(runDetail.startedAt ?? runDetail.createdAt),
+      tokenUsage: liveRunFeed?.tokenUsage ?? null,
     }
-  }, [liveRunFeed?.steps, runDetail])
+  }, [liveRunFeed?.steps, liveRunFeed?.tokenUsage, runDetail])
 
   if (!metrics) {
     return (
@@ -58,6 +59,18 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
     { label: 'Cache Hit', value: formatMetric(metrics.cacheHits) },
     { label: 'Cache Miss', value: formatMetric(metrics.cacheMisses) },
     { label: '产物类型', value: metrics.artifactTypes || '--' },
+    {
+      label: 'Input Tokens',
+      value: metrics.tokenUsage ? String(metrics.tokenUsage.inputTokens) : '--',
+    },
+    {
+      label: 'Output Tokens',
+      value: metrics.tokenUsage ? String(metrics.tokenUsage.outputTokens) : '--',
+    },
+    {
+      label: 'Total Tokens',
+      value: metrics.tokenUsage ? String(metrics.tokenUsage.totalTokens) : '--',
+    },
   ]
 
   return (

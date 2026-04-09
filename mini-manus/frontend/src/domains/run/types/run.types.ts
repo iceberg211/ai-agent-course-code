@@ -75,6 +75,12 @@ export interface LiveStepFeed {
   toolCalls: LiveToolCall[]
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 export interface LiveRunFeed {
   taskId: string
   runId: string
@@ -85,4 +91,5 @@ export interface LiveRunFeed {
   activeStepRunId: string | null
   stepOrder: string[]
   steps: Record<string, LiveStepFeed>
+  tokenUsage: TokenUsage | null
 }

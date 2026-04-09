@@ -154,4 +154,11 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(this.taskRoom(payload))
       .emit(TASK_EVENTS.ARTIFACT_CREATED, payload);
   }
+
+  @OnEvent(TASK_EVENTS.RUN_TOKEN_USAGE)
+  onRunTokenUsage(payload: Record<string, unknown>) {
+    this.server
+      .to(this.taskRoom(payload))
+      .emit(TASK_EVENTS.RUN_TOKEN_USAGE, payload);
+  }
 }

@@ -26,7 +26,7 @@ export interface Tool {
   execute(input: unknown): Promise<ToolResult>;
 }
 
-export const TOOL_OUTPUT_MAX_LENGTH = 5000;
+export const TOOL_OUTPUT_MAX_LENGTH = 20000;
 
 export function truncateOutput(output: string): string {
   if (output.length <= TOOL_OUTPUT_MAX_LENGTH) return output;

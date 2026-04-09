@@ -1,9 +1,13 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/core/api/query-keys'
-import { getTaskSocket } from '@/core/socket/socket-client'
+import {
+  acquireTaskSocket,
+  getTaskSocket,
+  releaseTaskSocket,
+} from '@/core/socket/socket-client'
 import { TASK_EVENTS } from '@/core/socket/task-events'
-import type { LiveRunFeed, LiveStepFeed } from '@/domains/run/types/run.types'
+import type { LiveRunFeed, LiveStepFeed, TokenUsage } from '@/domains/run/types/run.types'
 import type { TaskDetail } from '@/domains/task/types/task.types'
 import type { ExecutorType, RunStatus } from '@/shared/types/status'
 
@@ -56,6 +60,11 @@ interface PlanCreatedPayload extends BasePayload {
 interface ArtifactCreatedPayload extends BasePayload {
   title?: string
 }
+interface RunTokenUsagePayload extends BasePayload {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+}
 
 // ─── Live feed helpers ────────────────────────────────────────────────────────
 
@@ -103,6 +112,7 @@ function makeRunFeed(
     activeStepRunId: current?.activeStepRunId ?? null,
     stepOrder: current?.stepOrder ?? [],
     steps: current?.steps ?? {},
+    tokenUsage: current?.tokenUsage ?? null,
   }
 }
 
@@ -112,6 +122,42 @@ function addStepOrder(stepOrder: string[], stepRunId: string) {
 
 function trimProgressMessages(messages: string[]) {
   return messages.slice(-4)
+}
+
+function getUnixTime(iso: string | null | undefined) {
+  if (!iso) return 0
+  return new Date(iso).getTime()
+}
+
+function normalizeSnapshot(snapshot: TaskDetail): TaskDetail {
+  const revisions = [...snapshot.revisions].sort((left, right) => right.version - left.version)
+  const runs = [...snapshot.runs].sort(
+    (left, right) => getUnixTime(right.createdAt) - getUnixTime(left.createdAt),
+  )
+  const currentRun = snapshot.currentRun
+    ? {
+        ...snapshot.currentRun,
+        plans: [...snapshot.currentRun.plans]
+          .sort((left, right) => right.version - left.version)
+          .map((plan) => ({
+            ...plan,
+            steps: [...plan.steps].sort((left, right) => left.stepIndex - right.stepIndex),
+          })),
+        stepRuns: [...snapshot.currentRun.stepRuns].sort(
+          (left, right) => left.executionOrder - right.executionOrder,
+        ),
+        artifacts: [...snapshot.currentRun.artifacts].sort(
+          (left, right) => getUnixTime(right.createdAt) - getUnixTime(left.createdAt),
+        ),
+      }
+    : null
+
+  return {
+    ...snapshot,
+    revisions,
+    runs,
+    currentRun,
+  }
 }
 
 /**
@@ -172,11 +218,12 @@ export function useTaskSocketSync(
 
   const handleSnapshot = useEffectEvent((snapshot: TaskDetail) => {
     if (!selectedTaskId || snapshot.task.id !== selectedTaskId) return
-    queryClient.setQueryData(queryKeys.taskDetail(selectedTaskId), snapshot)
-    if (snapshot.currentRun) {
+    const normalizedSnapshot = normalizeSnapshot(snapshot)
+    queryClient.setQueryData(queryKeys.taskDetail(selectedTaskId), normalizedSnapshot)
+    if (normalizedSnapshot.currentRun) {
       queryClient.setQueryData(
-        queryKeys.runDetail(selectedTaskId, snapshot.currentRun.id),
-        snapshot.currentRun,
+        queryKeys.runDetail(selectedTaskId, normalizedSnapshot.currentRun.id),
+        normalizedSnapshot.currentRun,
       )
     }
   })
@@ -440,11 +487,23 @@ export function useTaskSocketSync(
     )
   })
 
+  const handleRunTokenUsage = useEffectEvent((payload: RunTokenUsagePayload) => {
+    setLiveRunFeeds((cur) =>
+      patchFeed(cur, payload.taskId, payload.runId, (feed) => ({
+        ...feed,
+        tokenUsage: {
+          inputTokens: payload.inputTokens ?? 0,
+          outputTokens: payload.outputTokens ?? 0,
+          totalTokens: payload.totalTokens ?? 0,
+        } satisfies TokenUsage,
+      })),
+    )
+  })
+
   // ── Socket 生命周期 ────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const socket = getTaskSocket()
-    socket.connect()
+    const socket = acquireTaskSocket()
 
     const onConnect = () => setSocketConnected(true)
     const onDisconnect = () => setSocketConnected(false)
@@ -470,6 +529,7 @@ export function useTaskSocketSync(
     socket.on(TASK_EVENTS.runFailed, onRunFailed)
     socket.on(TASK_EVENTS.runCancelled, onRunCancelled)
     socket.on(TASK_EVENTS.artifactCreated, handleArtifactCreated)
+    socket.on(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
 
     return () => {
       socket.off('connect', onConnect)
@@ -489,8 +549,9 @@ export function useTaskSocketSync(
       socket.off(TASK_EVENTS.runFailed, onRunFailed)
       socket.off(TASK_EVENTS.runCancelled, onRunCancelled)
       socket.off(TASK_EVENTS.artifactCreated, handleArtifactCreated)
-      socket.disconnect()
+      socket.off(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
       setSocketConnected(false)
+      releaseTaskSocket()
     }
   }, [])
 

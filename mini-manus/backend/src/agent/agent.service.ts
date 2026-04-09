@@ -15,6 +15,7 @@ import { evaluatorNode } from '@/agent/nodes/evaluator.node';
 import { finalizerNode } from '@/agent/nodes/finalizer.node';
 import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
+import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 
 function readBoolean(
   value: string | undefined,
@@ -127,7 +128,15 @@ export class AgentService {
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
-        return evaluatorNode(state, llm, callbacks, eventPublisher, soMethod);
+        return evaluatorNode(
+          state,
+          llm,
+          callbacks,
+          eventPublisher,
+          soMethod,
+          this.maxRetries,
+          this.maxReplans,
+        );
       })
       .addNode('finalizer', async (state: AgentState) => {
         return finalizerNode(
@@ -187,22 +196,38 @@ export class AgentService {
     eventPublisher.emit(TASK_EVENTS.RUN_STARTED, { taskId, runId });
     await callbacks.setRunStatus(runId, RunStatus.RUNNING);
 
+    const tokenTracker = new TokenTrackerCallback();
+
     try {
-      const finalState = await compiled.invoke(initialState);
+      const finalState = await compiled.invoke(initialState, {
+        callbacks: [tokenTracker],
+      });
+
+      // 检测因重试/重规划/fail 耗尽而退出的情况：
+      // evaluator 返回 END 时不设 errorMessage，若不主动识别会被误判为 completed
+      const decision = finalState.evaluation?.decision;
+      const isExhausted =
+        decision === 'fail' ||
+        (decision === 'retry' && finalState.retryCount >= this.maxRetries) ||
+        (decision === 'replan' && finalState.replanCount >= this.maxReplans);
 
       if (finalState.shouldStop || finalState.errorMessage === 'cancelled') {
         await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
         eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
-      } else if (finalState.errorMessage) {
-        await callbacks.setRunStatus(
-          runId,
-          RunStatus.FAILED,
-          finalState.errorMessage ?? undefined,
-        );
+      } else if (finalState.errorMessage || isExhausted) {
+        const msg =
+          finalState.errorMessage ??
+          finalState.evaluation?.reason ??
+          (decision === 'retry'
+            ? `重试次数已耗尽（上限 ${this.maxRetries}）`
+            : decision === 'replan'
+              ? `重规划次数已耗尽（上限 ${this.maxReplans}）`
+              : '任务执行失败');
+        await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
         eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
           taskId,
           runId,
-          error: finalState.errorMessage,
+          error: msg,
         });
       } else {
         await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
@@ -218,6 +243,19 @@ export class AgentService {
         error: msg,
       });
     } finally {
+      // Emit token usage regardless of run outcome
+      if (tokenTracker.totalTokens > 0) {
+        this.logger.log(
+          `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}`,
+        );
+        eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
+          taskId,
+          runId,
+          inputTokens: tokenTracker.inputTokens,
+          outputTokens: tokenTracker.outputTokens,
+          totalTokens: tokenTracker.totalTokens,
+        });
+      }
       await callbacks.finalize(taskId);
     }
   }

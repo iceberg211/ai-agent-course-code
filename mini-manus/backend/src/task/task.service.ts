@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -23,6 +24,7 @@ import { AgentService } from '@/agent/agent.service';
 import { EventPublisher } from '@/event/event.publisher';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { detectInjection, sanitizeInput } from '@/common/utils/prompt-safety';
 
 @Injectable()
 export class TaskService implements OnModuleInit {
@@ -78,38 +80,43 @@ export class TaskService implements OnModuleInit {
 
   // ─── Create task + revision + run ───────────────────────────────────────
   async createTask(input: string): Promise<Task> {
-    const title = input.slice(0, 100) + (input.length > 100 ? '...' : '');
+    const cleaned = sanitizeInput(input);
+    if (detectInjection(cleaned)) {
+      throw new BadRequestException('任务描述包含不允许的内容，请修改后重试');
+    }
+    const title = cleaned.slice(0, 100) + (cleaned.length > 100 ? '...' : '');
 
-    return this.dataSource.transaction(async (em) => {
+    // 事件和 startRun 必须在事务提交后再触发，避免前端在数据未落库时读到空数据
+    const { task, revision } = await this.dataSource.transaction(async (em) => {
       const task = em.create(Task, { title, status: TaskStatus.PENDING });
       await em.save(task);
 
       const revision = em.create(TaskRevision, {
         taskId: task.id,
         version: 1,
-        input,
+        input: cleaned,
       });
       await em.save(revision);
 
       task.currentRevisionId = revision.id;
       await em.save(task);
 
-      this.eventPublisher.emit(TASK_EVENTS.TASK_CREATED, {
-        taskId: task.id,
-        title,
-      });
-      this.eventPublisher.emit(TASK_EVENTS.REVISION_CREATED, {
-        taskId: task.id,
-        revisionId: revision.id,
-        version: 1,
-        input,
-      });
-
-      // Start execution immediately
-      setImmediate(() => void this.startRun(task.id, revision.id, input));
-
-      return task;
+      return { task, revision };
     });
+
+    this.eventPublisher.emit(TASK_EVENTS.TASK_CREATED, {
+      taskId: task.id,
+      title,
+    });
+    this.eventPublisher.emit(TASK_EVENTS.REVISION_CREATED, {
+      taskId: task.id,
+      revisionId: revision.id,
+      version: 1,
+      input: cleaned,
+    });
+    setImmediate(() => void this.startRun(task.id, revision.id, cleaned));
+
+    return task;
   }
 
   // ─── Start a new run ────────────────────────────────────────────────────
@@ -119,7 +126,11 @@ export class TaskService implements OnModuleInit {
     revisionInput: string,
   ): Promise<void> {
     const run = await this.dataSource.transaction(async (em) => {
-      const task = await em.findOneOrFail(Task, { where: { id: taskId } });
+      // 悲观锁：同一 task 的并发 startRun 调用序列化，防止 run_number 冲突
+      const task = await em.findOneOrFail(Task, {
+        where: { id: taskId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
       // Count existing runs under this revision for run_number
       const count = await em.count(TaskRun, { where: { revisionId } });
@@ -337,6 +348,11 @@ export class TaskService implements OnModuleInit {
 
   // ─── Edit task (new revision) ─────────────────────────────────────────
   async editTask(taskId: string, newInput: string): Promise<TaskRevision> {
+    const cleaned = sanitizeInput(newInput);
+    if (detectInjection(cleaned)) {
+      throw new BadRequestException('任务描述包含不允许的内容，请修改后重试');
+    }
+
     // Cancel current running run
     await this.cancelRun(taskId);
 
@@ -344,7 +360,7 @@ export class TaskService implements OnModuleInit {
     const revision = this.revisionRepo.create({
       taskId,
       version: count + 1,
-      input: newInput,
+      input: cleaned,
     });
     await this.revisionRepo.save(revision);
     await this.taskRepo.update(taskId, { currentRevisionId: revision.id });
@@ -353,11 +369,11 @@ export class TaskService implements OnModuleInit {
       taskId,
       revisionId: revision.id,
       version: revision.version,
-      input: newInput,
+      input: cleaned,
     });
 
     // Queue new run (will start after old run finishes or immediately if no running run)
-    void this.startRun(taskId, revision.id, newInput);
+    void this.startRun(taskId, revision.id, cleaned);
     return revision;
   }
 
@@ -366,31 +382,36 @@ export class TaskService implements OnModuleInit {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new NotFoundException('任务不存在');
 
-    // Cancel any running execution first
+    // 先中止后台执行（设置 cancel_requested + 触发 AbortController）
     await this.cancelRun(taskId);
 
-    // Delete in reverse dependency order (no ON DELETE CASCADE in schema)
-    const runs = await this.runRepo.find({ where: { taskId }, select: ['id'] });
-    const runIds = runs.map((r) => r.id);
-
-    if (runIds.length > 0) {
-      const plans = await this.planRepo.find({
-        where: { runId: In(runIds) },
+    // 用事务做级联删除，防止部分删除留下孤儿数据
+    await this.dataSource.transaction(async (em) => {
+      const runs = await em.find(TaskRun, {
+        where: { taskId },
         select: ['id'],
       });
-      const planIds = plans.map((p) => p.id);
+      const runIds = runs.map((r) => r.id);
 
-      if (planIds.length > 0) {
-        await this.planStepRepo.delete({ planId: In(planIds) });
+      if (runIds.length > 0) {
+        const plans = await em.find(TaskPlan, {
+          where: { runId: In(runIds) },
+          select: ['id'],
+        });
+        const planIds = plans.map((p) => p.id);
+
+        if (planIds.length > 0) {
+          await em.delete(PlanStep, { planId: In(planIds) });
+        }
+        await em.delete(Artifact, { runId: In(runIds) });
+        await em.delete(StepRun, { runId: In(runIds) });
+        await em.delete(TaskPlan, { runId: In(runIds) });
       }
-      await this.artifactRepo.delete({ runId: In(runIds) });
-      await this.stepRunRepo.delete({ runId: In(runIds) });
-      await this.planRepo.delete({ runId: In(runIds) });
-    }
 
-    await this.runRepo.delete({ taskId });
-    await this.revisionRepo.delete({ taskId });
-    await this.taskRepo.delete(taskId);
+      await em.delete(TaskRun, { taskId });
+      await em.delete(TaskRevision, { taskId });
+      await em.delete(Task, taskId);
+    });
 
     this.logger.log(`Task ${taskId} deleted`);
   }

@@ -20,6 +20,8 @@ function runPreChecks(
   output: string,
   retryCount: number,
   replanCount: number,
+  maxRetries: number,
+  maxReplans: number,
 ): EvaluationResult | null {
   const trimmed = output.trim();
   const lower = trimmed.toLowerCase();
@@ -37,7 +39,7 @@ function runPreChecks(
   const isBadOutput = isEmpty || isError || isTimeout;
 
   // 空/错误/超时 + 还有重试次数 → 直接 retry
-  if (isBadOutput && retryCount < 2) {
+  if (isBadOutput && retryCount < maxRetries) {
     return {
       decision: 'retry',
       reason: `输出为空或出错，自动重试（第 ${retryCount + 1} 次）`,
@@ -45,7 +47,11 @@ function runPreChecks(
   }
 
   // 空/错误 + 重试耗尽 + 还有重规划次数 → 直接 replan
-  if ((isEmpty || isError) && retryCount >= 2 && replanCount < 2) {
+  if (
+    (isEmpty || isError) &&
+    retryCount >= maxRetries &&
+    replanCount < maxReplans
+  ) {
     return { decision: 'replan', reason: '多次重试后仍未成功，自动重新规划' };
   }
 
@@ -141,6 +147,8 @@ export async function evaluatorNode(
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
+  maxRetries = 3,
+  maxReplans = 2,
 ): Promise<Partial<AgentState>> {
   const lastStepRunId = state.lastStepRunId;
   const lastStepOutput = state.lastStepOutput;
@@ -154,6 +162,12 @@ export async function evaluatorNode(
         errorMessage: '任务已取消',
         completedAt: new Date(),
       });
+      eventPublisher.emit(TASK_EVENTS.STEP_FAILED, {
+        taskId: state.taskId,
+        runId: state.runId,
+        stepRunId: lastStepRunId,
+        error: '任务已取消',
+      });
     }
     return { shouldStop: true, errorMessage: 'cancelled' };
   }
@@ -165,9 +179,22 @@ export async function evaluatorNode(
   const currentStep = state.currentPlan.steps[state.currentStepIndex];
 
   // 2. 规则前置检查 — 明显结果直接决策，不调用 LLM
-  const preCheck = runPreChecks(lastStepOutput, state.retryCount, state.replanCount);
+  const preCheck = runPreChecks(
+    lastStepOutput,
+    state.retryCount,
+    state.replanCount,
+    maxRetries,
+    maxReplans,
+  );
   if (preCheck !== null) {
-    return applyDecision(preCheck, state, lastStepRunId, currentStep, callbacks, eventPublisher);
+    return applyDecision(
+      preCheck,
+      state,
+      lastStepRunId,
+      currentStep,
+      callbacks,
+      eventPublisher,
+    );
   }
 
   // 3. LLM 评估 — 处理无法规则判断的情况
@@ -188,5 +215,12 @@ export async function evaluatorNode(
     replanCount: String(state.replanCount),
   })) as EvaluationResult;
 
-  return applyDecision(result, state, lastStepRunId, currentStep, callbacks, eventPublisher);
+  return applyDecision(
+    result,
+    state,
+    lastStepRunId,
+    currentStep,
+    callbacks,
+    eventPublisher,
+  );
 }
