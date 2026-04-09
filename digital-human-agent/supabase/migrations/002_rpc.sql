@@ -1,5 +1,5 @@
 CREATE OR REPLACE FUNCTION match_knowledge(
-  query_embedding  VECTOR(1536),
+  query_embedding  VECTOR(1024),
   p_persona_id     UUID,
   match_threshold  FLOAT,
   match_count      INT

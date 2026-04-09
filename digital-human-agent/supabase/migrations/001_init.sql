@@ -57,7 +57,7 @@ CREATE TABLE persona_knowledge (
   content     TEXT NOT NULL,
   source      TEXT NOT NULL,
   category    TEXT,
-  embedding   VECTOR(1536),
+  embedding   VECTOR(1024),
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 

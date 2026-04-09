@@ -27,9 +27,13 @@ export interface RunAgentParams {
 @Injectable()
 export class AgentService {
   private readonly llm = new ChatOpenAI({
-    model: 'gpt-4o-mini',
+    model: process.env.MODEL_NAME ?? 'qwen-plus',
     streaming: true,
     temperature: 0.7,
+    configuration: {
+      baseURL: process.env.OPENAI_BASE_URL,
+      apiKey: process.env.OPENAI_API_KEY,
+    },
   });
 
   constructor(

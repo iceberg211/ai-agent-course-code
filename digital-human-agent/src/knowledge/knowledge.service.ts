@@ -20,7 +20,11 @@ export interface KnowledgeChunk {
 export class KnowledgeService {
   private readonly logger = new Logger(KnowledgeService.name);
   private readonly embeddings = new OpenAIEmbeddings({
-    model: 'text-embedding-3-small',
+    model: process.env.EMBEDDINGS_MODEL_NAME ?? 'text-embedding-v3',
+    configuration: {
+      baseURL: process.env.OPENAI_BASE_URL,
+      apiKey: process.env.OPENAI_API_KEY,
+    },
   });
   private readonly splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 500,
