@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -27,7 +28,7 @@ import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { detectInjection, sanitizeInput } from '@/common/utils/prompt-safety';
 
 @Injectable()
-export class TaskService implements OnModuleInit {
+export class TaskService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TaskService.name);
   // Active AbortControllers keyed by runId
   private readonly abortControllers = new Map<string, AbortController>();
@@ -75,6 +76,20 @@ export class TaskService implements OnModuleInit {
           })
           .execute();
       }
+    }
+  }
+
+  // ─── Graceful shutdown ─────────────────────────────────────────────────
+  onModuleDestroy() {
+    // SIGTERM 时中止所有正在执行的 run，避免进程退出后留下僵尸状态
+    if (this.abortControllers.size > 0) {
+      this.logger.warn(
+        `Aborting ${this.abortControllers.size} running run(s) on shutdown`,
+      );
+      for (const [, controller] of this.abortControllers) {
+        controller.abort();
+      }
+      this.abortControllers.clear();
     }
   }
 
@@ -289,38 +304,58 @@ export class TaskService implements OnModuleInit {
 
   // ─── finalize_run: activate next pending run ─────────────────────────────
   private async finalizeRun(taskId: string): Promise<void> {
-    const pendingRuns = await this.runRepo.find({
-      where: { taskId, status: RunStatus.PENDING },
-      order: { createdAt: 'DESC' },
-    });
-
-    if (pendingRuns.length === 0) return;
-
-    const [latest, ...older] = pendingRuns;
-
-    // Cancel stale pending runs
-    for (const r of older) {
-      await this.runRepo.update(r.id, {
-        status: RunStatus.CANCELLED,
-        errorMessage: '被更新的修订取代',
-        completedAt: new Date(),
+    // 事务 + task 行锁，串行化“激活 run”流程，避免并发激活多个 RUNNING
+    const next = await this.dataSource.transaction(async (em) => {
+      await em.findOneOrFail(Task, {
+        where: { id: taskId },
+        lock: { mode: 'pessimistic_write' },
       });
+
+      // 并发 retry/startRun 可能已经激活了新的 RUNNING run，这里需要二次校验
+      const activeRun = await em.findOne(TaskRun, {
+        where: { taskId, status: RunStatus.RUNNING },
+      });
+      if (activeRun) return null;
+
+      const pendingRuns = await em.find(TaskRun, {
+        where: { taskId, status: RunStatus.PENDING },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (pendingRuns.length === 0) return null;
+
+      const [latest, ...older] = pendingRuns;
+
+      // 取消过期的 pending run（同一 task 下只保留最新）
+      for (const r of older) {
+        await em.update(TaskRun, r.id, {
+          status: RunStatus.CANCELLED,
+          errorMessage: '被更新的修订取代',
+          completedAt: new Date(),
+        });
+      }
+
+      await em.update(TaskRun, latest.id, {
+        status: RunStatus.RUNNING,
+        startedAt: new Date(),
+      });
+
+      const revision = await em.findOneOrFail(TaskRevision, {
+        where: { id: latest.revisionId },
+      });
+
+      await em.update(Task, taskId, {
+        status: TaskStatus.RUNNING,
+        currentRunId: latest.id,
+      });
+
+      return { runId: latest.id, revisionInput: revision.input };
+    });
+
+    // 事务提交后再启动执行，避免执行过程中读到未提交数据
+    if (next) {
+      void this.executeRun(next.runId, taskId, next.revisionInput);
     }
-
-    // Activate the latest pending run
-    await this.runRepo.update(latest.id, {
-      status: RunStatus.RUNNING,
-      startedAt: new Date(),
-    });
-    const revision = await this.revisionRepo.findOneOrFail({
-      where: { id: latest.revisionId },
-    });
-    await this.taskRepo.update(taskId, {
-      status: TaskStatus.RUNNING,
-      currentRunId: latest.id,
-    });
-
-    void this.executeRun(latest.id, taskId, revision.input);
   }
 
   // ─── Cancel run ─────────────────────────────────────────────────────────
@@ -417,8 +452,21 @@ export class TaskService implements OnModuleInit {
   }
 
   // ─── Queries ─────────────────────────────────────────────────────────────
-  async listTasks(): Promise<Task[]> {
-    return this.taskRepo.find({ order: { createdAt: 'DESC' } });
+  async listTasks(take = 50, skip = 0): Promise<Task[]> {
+    return this.taskRepo.find({
+      order: { createdAt: 'DESC' },
+      take,
+      skip,
+      // 列表只需要摘要字段，不加载大字段
+      select: [
+        'id',
+        'title',
+        'status',
+        'createdAt',
+        'currentRunId',
+        'currentRevisionId',
+      ],
+    });
   }
 
   async getTask(taskId: string): Promise<Task> {
@@ -438,6 +486,17 @@ export class TaskService implements OnModuleInit {
     const runs = await this.runRepo.find({
       where: { taskId },
       order: { createdAt: 'DESC' },
+      take: 20, // 只取最近 20 条，避免长期任务历史过大
+      select: [
+        'id',
+        'revisionId',
+        'runNumber',
+        'status',
+        'createdAt',
+        'startedAt',
+        'completedAt',
+        'errorMessage',
+      ],
     });
 
     const currentRun = task.currentRunId

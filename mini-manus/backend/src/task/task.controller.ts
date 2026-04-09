@@ -6,10 +6,13 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { TaskService } from '@/task/task.service';
 import { CreateTaskDto } from '@/task/dto/create-task.dto';
 
@@ -20,18 +23,24 @@ export class TaskController {
 
   // ─── 列表 ─────────────────────────────────────────────────
   @Get()
-  @ApiOperation({ summary: '获取所有任务列表（按创建时间倒序）' })
+  @ApiOperation({ summary: '获取任务列表（按创建时间倒序，支持分页）' })
   @ApiResponse({ status: 200, description: '任务摘要数组' })
-  list() {
-    return this.taskService.listTasks();
+  list(@Query('take') take?: string, @Query('skip') skip?: string) {
+    return this.taskService.listTasks(
+      take ? Math.min(Number(take), 100) : 50,
+      skip ? Number(skip) : 0,
+    );
   }
 
   // ─── 新建任务 ─────────────────────────────────────────────
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  // 任务创建触发 LLM 调用链，单独限流：每分钟最多 10 次
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: '创建任务并立即开始执行' })
   @ApiResponse({ status: 201, description: '新建的任务对象' })
   @ApiResponse({ status: 400, description: '请求参数不合法' })
+  @ApiResponse({ status: 429, description: '请求过于频繁' })
   create(@Body() dto: CreateTaskDto) {
     return this.taskService.createTask(dto.input);
   }
@@ -42,7 +51,7 @@ export class TaskController {
   @ApiParam({ name: 'id', description: '任务 UUID' })
   @ApiResponse({ status: 200, description: '任务对象' })
   @ApiResponse({ status: 404, description: '任务不存在' })
-  get(@Param('id') id: string) {
+  get(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.taskService.getTask(id);
   }
 
@@ -59,7 +68,7 @@ export class TaskController {
     description: '{ task, revisions, runs, currentRun }',
   })
   @ApiResponse({ status: 404, description: '任务不存在' })
-  detail(@Param('id') id: string) {
+  detail(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.taskService.getTaskDetail(id);
   }
 
@@ -72,7 +81,10 @@ export class TaskController {
   @ApiParam({ name: 'runId', description: 'Run UUID' })
   @ApiResponse({ status: 200, description: 'Run 对象（含关联数据）' })
   @ApiResponse({ status: 404, description: 'Run 不存在' })
-  getRun(@Param('id') taskId: string, @Param('runId') runId: string) {
+  getRun(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) taskId: string,
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+  ) {
     return this.taskService.getRunDetail(taskId, runId);
   }
 
@@ -83,7 +95,7 @@ export class TaskController {
   @ApiParam({ name: 'id', description: '任务 UUID' })
   @ApiResponse({ status: 200, description: '{ message }' })
   @ApiResponse({ status: 404, description: '任务不存在或没有正在运行的 Run' })
-  async cancel(@Param('id') id: string) {
+  async cancel(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     await this.taskService.cancelRun(id);
     return { message: 'cancel requested' };
   }
@@ -95,7 +107,7 @@ export class TaskController {
   @ApiParam({ name: 'id', description: '任务 UUID' })
   @ApiResponse({ status: 200, description: '{ message }' })
   @ApiResponse({ status: 404, description: '任务不存在' })
-  async retry(@Param('id') id: string) {
+  async retry(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     await this.taskService.retryTask(id);
     return { message: 'retry started' };
   }
@@ -107,7 +119,7 @@ export class TaskController {
   @ApiParam({ name: 'id', description: '任务 UUID' })
   @ApiResponse({ status: 204, description: '删除成功，无响应体' })
   @ApiResponse({ status: 404, description: '任务不存在' })
-  async delete(@Param('id') id: string) {
+  async delete(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     await this.taskService.deleteTask(id);
   }
 
@@ -121,7 +133,10 @@ export class TaskController {
   @ApiResponse({ status: 200, description: '新建的 TaskRevision 对象' })
   @ApiResponse({ status: 400, description: '请求参数不合法' })
   @ApiResponse({ status: 404, description: '任务不存在' })
-  edit(@Param('id') id: string, @Body() dto: CreateTaskDto) {
+  edit(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: CreateTaskDto,
+  ) {
     return this.taskService.editTask(id, dto.input);
   }
 }
