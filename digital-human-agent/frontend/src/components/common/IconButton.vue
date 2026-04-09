@@ -33,10 +33,10 @@ defineProps({
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 150ms ease-out;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
 }
 .icon-btn:hover { background: var(--primary-bg); border-color: var(--primary-muted); color: var(--primary); }
-.icon-btn.active { background: rgba(124,58,237,0.08); border-color: var(--primary); color: var(--primary); }
+.icon-btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.ghost { border-color: transparent; background: transparent; }
 .icon-btn.ghost:hover { background: var(--primary-bg); border-color: transparent; }

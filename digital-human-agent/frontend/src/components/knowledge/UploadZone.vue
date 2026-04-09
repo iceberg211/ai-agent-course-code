@@ -9,6 +9,7 @@
     tabindex="0"
     aria-label="上传文档，支持 TXT、PDF、MD"
     @keydown.enter="triggerInput"
+    @keydown.space.prevent="triggerInput"
   >
     <UploadCloudIcon :size="22" :color="isDragover ? 'var(--primary)' : 'var(--primary-light)'" aria-hidden="true" />
     <span class="label-text">{{ uploading ? '上传中...' : '点击或拖拽上传' }}</span>
@@ -44,11 +45,11 @@ function onDrop(e) {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   margin: 12px; padding: 16px 12px;
   border: 1.5px dashed var(--border-muted); border-radius: 12px;
-  background: var(--primary-bg); cursor: pointer;
-  transition: all 150ms ease-out;
+  background: var(--surface-soft); cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
 }
 .upload-zone:hover, .upload-zone.dragover {
-  border-color: var(--primary); background: rgba(124,58,237,0.05);
+  border-color: var(--primary); background: var(--primary-bg);
 }
 .upload-zone.uploading { opacity: 0.6; pointer-events: none; }
 .label-text { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 4px; }

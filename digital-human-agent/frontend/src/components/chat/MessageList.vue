@@ -1,19 +1,28 @@
 <template>
   <div class="message-list" ref="listEl" role="log" aria-live="polite" aria-label="对话记录">
+    <div v-if="loading" class="loading-list" role="status" aria-label="正在加载对话">
+      <div v-for="i in 4" :key="i" class="loading-row" :class="{ right: i % 2 === 0 }">
+        <span class="loading-avatar" />
+        <span class="loading-bubble" />
+      </div>
+    </div>
+
     <!-- 空态 -->
-    <div v-if="!messages.length" class="empty-state" role="status">
+    <div v-else-if="!messages.length" class="empty-state" role="status">
       <div class="empty-icon">
         <MessageCircleIcon :size="28" color="var(--primary-light)" aria-hidden="true" />
       </div>
       <p class="empty-title">开始对话</p>
-      <p class="empty-desc">选择角色后，按住麦克风按钮说话</p>
+      <p class="empty-desc">支持语音和文字输入，开始你的第一句对话</p>
     </div>
 
-    <MessageItem
-      v-for="msg in messages"
-      :key="msg.id"
-      :message="msg"
-    />
+    <template v-else>
+      <MessageItem
+        v-for="msg in messages"
+        :key="msg.id"
+        :message="msg"
+      />
+    </template>
   </div>
 </template>
 
@@ -24,6 +33,7 @@ import MessageItem from './MessageItem.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
+  loading: { type: Boolean, default: false },
 })
 
 const listEl = ref(null)
@@ -45,6 +55,39 @@ defineExpose({ listEl })
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.loading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+}
+.loading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.loading-row.right {
+  justify-content: flex-end;
+}
+.loading-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d7e5ff, #c7dcff);
+}
+.loading-bubble {
+  width: min(58%, 360px);
+  height: 34px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eef4ff 25%, #dde9fb 37%, #eef4ff 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
 }
 
 .empty-state {

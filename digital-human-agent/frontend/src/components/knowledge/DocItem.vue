@@ -24,7 +24,7 @@ defineEmits(['delete'])
 .doc-item {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 8px; border-radius: 6px;
-  list-style: none; transition: background 150ms ease-out;
+  list-style: none; transition: background-color 150ms ease-out;
 }
 .doc-item:hover { background: var(--primary-bg); }
 .file-icon { flex-shrink: 0; }
@@ -40,7 +40,8 @@ defineEmits(['delete'])
 .del-btn {
   width: 26px; height: 26px; border-radius: 6px; border: none; background: none;
   color: var(--text-muted); display: flex; align-items: center; justify-content: center;
-  cursor: pointer; opacity: 0; flex-shrink: 0; transition: all 150ms ease-out;
+  cursor: pointer; opacity: 0; flex-shrink: 0;
+  transition: opacity 150ms ease-out, background-color 150ms ease-out, color 150ms ease-out;
 }
 .doc-item:hover .del-btn { opacity: 1; }
 .del-btn:hover { background: #FEE2E2; color: var(--error); }

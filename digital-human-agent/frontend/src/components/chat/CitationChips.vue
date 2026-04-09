@@ -27,7 +27,7 @@ defineProps({ citations: { type: Array, default: () => [] } })
   font-size: 11px;
   font-weight: 500;
   padding: 3px 9px;
-  background: rgba(124,58,237,0.07);
+  background: var(--primary-bg);
   border: 1px solid var(--border-muted);
   color: var(--primary);
   border-radius: 20px;

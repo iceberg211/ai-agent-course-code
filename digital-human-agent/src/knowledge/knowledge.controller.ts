@@ -9,8 +9,10 @@ import {
   Body,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from './knowledge.service';
 
+@ApiTags('knowledge')
 @Controller('knowledge')
 export class KnowledgeController {
   constructor(private readonly service: KnowledgeService) {}

@@ -7,39 +7,71 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --page-bg: #f2f6ff;
+  --page-bg-accent: #eef4ff;
+  --surface: #ffffff;
+  --surface-soft: #f8fbff;
+  --primary-bg: #edf3ff;
+  --primary: #1f6feb;
+  --primary-hover: #1759bd;
+  --primary-light: #4c85f5;
+  --primary-muted: #bfd5ff;
+  --border: #d7e2f1;
+  --border-muted: #e5edf8;
+  --text: #1b2535;
+  --text-secondary: #36445a;
+  --text-muted: #65758d;
+  --user-bubble: linear-gradient(135deg, #2f78ff, #1f6feb);
+  --ai-bubble: #ffffff;
+  --success: #0f9f6e;
+  --warning: #cc7a1b;
+  --error: #d33f49;
+  --shadow-sm: 0 6px 18px rgba(26, 48, 79, 0.08);
+  --shadow-md: 0 18px 42px rgba(24, 44, 74, 0.1);
 }
 
 html,
 body,
 #app {
   height: 100%;
+}
+
+body {
   overflow: hidden;
-  background: #03070e;
-  color: #eaf1ff;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(95, 149, 255, 0.17), transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(152, 201, 255, 0.22), transparent 35%),
+    linear-gradient(180deg, var(--page-bg-accent), var(--page-bg));
+  color: var(--text);
+  font-family: 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+#app {
+  overflow: hidden;
+  padding: 14px;
+}
+
 *:focus-visible {
-  outline: 2px solid #45deff;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(136, 159, 210, 0.12);
+  background: rgba(196, 210, 232, 0.3);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(61, 217, 255, 0.65), rgba(255, 74, 212, 0.65));
+  background: linear-gradient(180deg, rgba(76, 133, 245, 0.75), rgba(58, 111, 216, 0.75));
   border-radius: 999px;
 }
 
@@ -51,5 +83,11 @@ body,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  #app {
+    padding: 8px;
   }
 }

@@ -18,14 +18,25 @@
     </div>
 
     <ul class="doc-list" role="list" aria-label="文档列表">
-      <DocItem
-        v-for="doc in documents"
-        :key="doc.id"
-        :doc="doc"
-        :status-label="statusLabel"
-        @delete="handleDelete"
-      />
-      <li v-if="!documents.length" class="doc-empty" role="status">
+      <template v-if="loading">
+        <li v-for="i in 4" :key="`doc-skeleton-${i}`" class="doc-skeleton" aria-hidden="true">
+          <span class="sk-icon" />
+          <span class="sk-body">
+            <span class="sk-line sk-main" />
+            <span class="sk-line sk-sub" />
+          </span>
+        </li>
+      </template>
+      <template v-else>
+        <DocItem
+          v-for="doc in documents"
+          :key="doc.id"
+          :doc="doc"
+          :status-label="statusLabel"
+          @delete="handleDelete"
+        />
+      </template>
+      <li v-if="!loading && !documents.length" class="doc-empty" role="status">
         上传文档后可供 AI 检索引用
       </li>
     </ul>
@@ -41,6 +52,7 @@ const props = defineProps({
   personaId: { type: String, default: '' },
   documents: { type: Array,  default: () => [] },
   uploading: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
   statusLabel: { type: Function, required: true },
 })
 const emit = defineEmits(['close', 'upload', 'delete'])
@@ -52,7 +64,7 @@ function handleDelete(docId) { emit('delete', docId) }
 <style scoped>
 .docs-drawer {
   width: 292px; flex-shrink: 0;
-  background: var(--surface); border-left: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff, #f9fbff); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .drawer-header {
@@ -63,7 +75,8 @@ function handleDelete(docId) { emit('delete', docId) }
 .close-btn {
   width: 28px; height: 28px; border-radius: 6px; border: none; background: none;
   color: var(--text-muted); display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 150ms ease-out;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
 }
 .close-btn:hover { background: var(--primary-bg); color: var(--text); }
 .list-header {
@@ -71,7 +84,55 @@ function handleDelete(docId) { emit('delete', docId) }
   padding: 8px 16px 6px; font-size: 10px; font-weight: 700;
   color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
 }
-.badge { background: var(--border-muted); color: var(--text-secondary); border-radius: 10px; padding: 1px 7px; font-size: 11px; }
+.badge { background: var(--primary-bg); color: var(--text-secondary); border-radius: 10px; padding: 1px 7px; font-size: 11px; }
 .doc-list { flex: 1; overflow-y: auto; padding: 2px 8px 12px; list-style: none; }
 .doc-empty { text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px; list-style: none; }
+.doc-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  list-style: none;
+}
+.sk-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #eef4ff 20%, #dbe8ff 45%, #eef4ff 75%);
+  background-size: 240% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+.sk-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.sk-line {
+  display: block;
+  height: 8px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eef4ff 20%, #dbe8ff 45%, #eef4ff 75%);
+  background-size: 240% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+.sk-main { width: 72%; }
+.sk-sub { width: 44%; }
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (max-width: 960px) {
+  .docs-drawer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 300px);
+    z-index: 20;
+    box-shadow: -12px 0 24px rgba(26, 48, 79, 0.14);
+  }
+}
 </style>

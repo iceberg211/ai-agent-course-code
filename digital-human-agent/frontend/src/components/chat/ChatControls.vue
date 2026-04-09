@@ -29,6 +29,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { MicIcon, StopCircleIcon, PauseIcon } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -40,7 +41,7 @@ defineEmits(['mic-down', 'mic-up'])
 const labelMap = { idle: '待命', recording: '录音中...', thinking: '思考中', speaking: '播报中', closed: '已结束' }
 const hintMap  = { idle: '按住说话', recording: '松开发送', thinking: '点击打断', speaking: '点击打断' }
 const ariaMap  = { idle: '按住开始录音', recording: '松开发送语音', thinking: '点击打断 AI', speaking: '点击打断 AI' }
-const ariaLabel = ariaMap[props.state] ?? '麦克风'
+const ariaLabel = computed(() => ariaMap[props.state] ?? '麦克风')
 </script>
 
 <style scoped>
@@ -50,7 +51,7 @@ const ariaLabel = ariaMap[props.state] ?? '麦克风'
   justify-content: space-between;
   padding: 14px 28px 18px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), var(--surface));
   flex-shrink: 0;
 }
 
@@ -73,14 +74,15 @@ const ariaLabel = ariaMap[props.state] ?? '麦克风'
   display: flex; align-items: center; justify-content: center;
   transition: transform 100ms ease-in, background 150ms ease-out, box-shadow 150ms ease-out;
   flex-shrink: 0;
+  touch-action: manipulation;
 }
 .mic-btn:active:not(:disabled) { transform: scale(0.92); }
-.mic-btn.idle      { background: var(--primary); box-shadow: 0 4px 14px rgba(124,58,237,0.35); }
-.mic-btn.idle:hover { background: #6D28D9; box-shadow: 0 6px 20px rgba(124,58,237,0.45); }
+.mic-btn.idle      { background: var(--primary); box-shadow: 0 6px 20px rgba(31, 111, 235, 0.35); }
+.mic-btn.idle:hover { background: var(--primary-hover); box-shadow: 0 8px 24px rgba(31, 111, 235, 0.42); }
 .mic-btn.recording { background: var(--error); animation: pulse-ring 1s infinite; }
 .mic-btn.thinking  { background: var(--warning); animation: breathe 1.5s infinite; }
 .mic-btn.speaking  { background: var(--success); animation: glow-green 1.5s infinite; }
-.mic-btn:disabled  { background: #E5E7EB; color: #9CA3AF; box-shadow: none; cursor: not-allowed; opacity: 0.7; }
+.mic-btn:disabled  { background: #dce4f2; color: #8b99ad; box-shadow: none; cursor: not-allowed; opacity: 0.75; }
 
 .mic-hint { min-width: 100px; text-align: right; font-size: 12px; color: var(--text-muted); }
 
@@ -97,5 +99,18 @@ const ariaLabel = ariaMap[props.state] ?? '麦克风'
 @keyframes glow-green {
   0%,100% { box-shadow: 0 0 0 0 rgba(5,150,105,0.4); }
   50%     { box-shadow: 0 0 0 10px rgba(5,150,105,0); }
+}
+
+@media (max-width: 960px) {
+  .controls {
+    padding: 12px;
+  }
+  .status-info,
+  .mic-hint {
+    min-width: auto;
+  }
+  .mic-hint {
+    display: none;
+  }
 }
 </style>

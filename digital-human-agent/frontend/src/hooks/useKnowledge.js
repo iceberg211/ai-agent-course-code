@@ -7,11 +7,17 @@ import { ref } from 'vue'
 export function useKnowledge() {
   const documents = ref([])
   const uploading = ref(false)
+  const loading = ref(false)
 
   async function fetchDocuments(personaId) {
     if (!personaId) return
-    const res = await fetch(`/api/knowledge/${personaId}/documents`).catch(() => null)
-    if (res?.ok) documents.value = await res.json()
+    loading.value = true
+    try {
+      const res = await fetch(`/api/knowledge/${personaId}/documents`).catch(() => null)
+      if (res?.ok) documents.value = await res.json()
+    } finally {
+      loading.value = false
+    }
   }
 
   async function uploadDocument(personaId, file) {
@@ -44,5 +50,9 @@ export function useKnowledge() {
     return { pending: '排队中', processing: '处理中', completed: '就绪', failed: '失败' }[status] ?? status
   }
 
-  return { documents, uploading, fetchDocuments, uploadDocument, deleteDocument, statusLabel }
+  function clearDocuments() {
+    documents.value = []
+  }
+
+  return { documents, uploading, loading, fetchDocuments, uploadDocument, deleteDocument, clearDocuments, statusLabel }
 }

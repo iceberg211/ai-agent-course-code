@@ -12,6 +12,23 @@ import { PersonaService } from '../persona/persona.service';
 import { RealtimeSessionRegistry } from '../realtime-session/realtime-session.registry';
 import { RealtimeSession } from '../realtime-session/realtime-session.interface';
 
+interface TtsAudioFrameMeta {
+  sessionId: string;
+  turnId: string;
+  seq: number;
+  codec: 'audio/mpeg';
+  isFinal?: boolean;
+}
+
+interface SessionHistoryMessage {
+  id: string;
+  turnId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: 'completed' | 'interrupted' | 'failed';
+  createdAt: Date;
+}
+
 @Injectable()
 @WebSocketGateway({ path: '/ws/conversation' })
 export class ConversationGateway implements OnModuleInit {
@@ -38,12 +55,26 @@ export class ConversationGateway implements OnModuleInit {
       this.clients.set(clientId, client);
       this.logger.log(`Client connected: ${clientId}`);
 
-      client.on('message', (data: Buffer | string) => {
-        this.handleMessage(client, clientId, data);
+      client.on('message', (data: Buffer, isBinary: boolean) => {
+        void this.handleMessage(client, clientId, data, isBinary).catch((err) => {
+          this.logger.error(
+            `Handle message failed: ${
+              err instanceof Error ? err.stack ?? err.message : String(err)
+            }`,
+          );
+          this.send(client, {
+            type: 'error',
+            sessionId: '',
+            payload: { message: '消息处理失败' },
+          });
+        });
       });
 
-      client.on('close', () => {
-        this.handleDisconnect(clientId);
+      client.on('close', (code: number, reason: Buffer) => {
+        this.logger.log(
+          `Client closing: ${clientId} code=${code} reason=${reason?.toString() ?? ''}`,
+        );
+        void this.cleanupClientById(clientId);
       });
     });
   }
@@ -53,28 +84,39 @@ export class ConversationGateway implements OnModuleInit {
   private async handleMessage(
     client: WebSocket,
     clientId: string,
-    data: Buffer | string,
+    data: Buffer,
+    isBinary: boolean,
   ) {
     // Binary：麦克风音频
-    if (Buffer.isBuffer(data)) {
+    if (isBinary) {
       await this.handleAudio(client, clientId, data);
       return;
     }
 
     let msg: any;
     try {
-      msg = JSON.parse(data.toString());
+      msg = JSON.parse(data.toString('utf-8'));
     } catch {
       this.send(client, { type: 'error', sessionId: '', payload: { message: 'Invalid JSON' } });
       return;
     }
 
     switch (msg.type) {
+      case 'ping':
+        this.send(client, {
+          type: 'pong',
+          sessionId: '',
+          payload: { ts: Date.now() },
+        });
+        break;
       case 'session:start':
         await this.handleSessionStart(client, clientId, msg);
         break;
+      case 'conversation:text':
+        await this.handleTextInput(client, clientId, msg);
+        break;
       case 'conversation:interrupt':
-        await this.handleInterrupt(msg.sessionId);
+        await this.handleInterrupt(client, msg);
         break;
       default:
         this.logger.warn(`Unknown message type: ${msg.type}`);
@@ -96,9 +138,16 @@ export class ConversationGateway implements OnModuleInit {
       await this.cleanupSession(oldSession.sessionId);
     }
 
-    // 创建新会话
+    // 复用该角色最近会话（用于历史对话恢复）
     await this.personaService.findOne(personaId); // 验证 persona 存在
-    const conversation = await this.conversationService.createConversation(personaId);
+    const lastConversation =
+      await this.conversationService.getLatestConversationByPersona(personaId);
+    const conversation =
+      lastConversation ??
+      (await this.conversationService.createConversation(personaId));
+    const history = await this.conversationService.getAllMessages(
+      conversation.id,
+    );
     const sessionId = uuidv4();
 
     this.sessionRegistry.create(sessionId, {
@@ -107,13 +156,29 @@ export class ConversationGateway implements OnModuleInit {
       activeTurnId: null,
       abortController: null,
       sentenceBuffer: '',
+      ttsTurnId: null,
+      ttsQueue: [],
+      ttsProcessing: false,
+      ttsSeq: 0,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
       wsClientId: clientId,
     });
 
     this.send(client, {
       type: 'session:ready',
       sessionId,
-      payload: { conversationId: conversation.id },
+      payload: {
+        conversationId: conversation.id,
+        history: history.map<SessionHistoryMessage>((m) => ({
+          id: m.id,
+          turnId: m.turnId,
+          role: m.role,
+          content: m.content,
+          status: m.status,
+          createdAt: m.createdAt,
+        })),
+      },
     });
 
     this.logger.log(`Session started: ${sessionId} persona=${personaId}`);
@@ -151,7 +216,17 @@ export class ConversationGateway implements OnModuleInit {
 
     // 写入用户消息
     const turnId = uuidv4();
-    this.sessionRegistry.update(session.sessionId, { activeTurnId: turnId });
+    this.sessionRegistry.update(session.sessionId, {
+      activeTurnId: turnId,
+      sentenceBuffer: '',
+      abortController: null,
+      ttsTurnId: turnId,
+      ttsQueue: [],
+      ttsProcessing: false,
+      ttsSeq: 0,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
+    });
 
     await this.conversationService.addMessage({
       conversationId: session.conversationId,
@@ -163,6 +238,47 @@ export class ConversationGateway implements OnModuleInit {
     });
 
     // 启动 Agent
+    await this.runAgent(client, session, text, turnId);
+  }
+
+  // ── 文字输入 ─────────────────────────────────────────────────────────
+
+  private async handleTextInput(client: WebSocket, clientId: string, msg: any) {
+    const session = this.sessionRegistry.findByWsClientId(clientId);
+    if (!session) {
+      this.send(client, {
+        type: 'error',
+        sessionId: '',
+        payload: { message: 'No active session' },
+      });
+      return;
+    }
+
+    const text = String(msg?.payload?.text ?? '').trim();
+    if (!text) return;
+
+    const turnId = uuidv4();
+    this.sessionRegistry.update(session.sessionId, {
+      activeTurnId: turnId,
+      sentenceBuffer: '',
+      abortController: null,
+      ttsTurnId: turnId,
+      ttsQueue: [],
+      ttsProcessing: false,
+      ttsSeq: 0,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
+    });
+
+    await this.conversationService.addMessage({
+      conversationId: session.conversationId,
+      turnId,
+      role: 'user',
+      seq: 0,
+      content: text,
+      status: 'completed',
+    });
+
     await this.runAgent(client, session, text, turnId);
   }
 
@@ -204,7 +320,7 @@ export class ConversationGateway implements OnModuleInit {
           });
 
           // 按句缓冲 → TTS
-          this.flushBuffer(client, session, token, false);
+          this.flushBuffer(client, session, turnId, token, false);
         },
         onCitations: (citations) => {
           this.send(client, {
@@ -217,7 +333,8 @@ export class ConversationGateway implements OnModuleInit {
       });
 
       // 刷出剩余缓冲
-      this.flushBuffer(client, session, '', true);
+      this.flushBuffer(client, session, turnId, '', true);
+      this.markTtsFinalize(client, session, turnId);
 
       const status = abortController.signal.aborted ? 'interrupted' : 'completed';
       await this.conversationService.addMessage({
@@ -245,9 +362,8 @@ export class ConversationGateway implements OnModuleInit {
         });
       }
     } finally {
+      this.markTtsFinalize(client, session, turnId);
       this.sessionRegistry.update(session.sessionId, {
-        activeTurnId: null,
-        abortController: null,
         sentenceBuffer: '',
       });
     }
@@ -258,9 +374,11 @@ export class ConversationGateway implements OnModuleInit {
   private flushBuffer(
     client: WebSocket,
     session: RealtimeSession,
+    turnId: string,
     token: string,
     isEnd: boolean,
   ) {
+    if (session.ttsTurnId !== turnId) return;
     session.sentenceBuffer += token;
 
     const SENTENCE_END = /[。？！；]/;
@@ -275,59 +393,159 @@ export class ConversationGateway implements OnModuleInit {
     if (shouldFlush && session.sentenceBuffer.trim()) {
       const text = session.sentenceBuffer.trim();
       session.sentenceBuffer = '';
-      this.sendTts(client, session, text);
+      this.enqueueTtsSegment(client, session, turnId, text);
     }
   }
 
   // ── TTS 推流 ─────────────────────────────────────────────────────────
 
-  private async sendTts(client: WebSocket, session: RealtimeSession, text: string) {
-    const turnId = session.activeTurnId ?? '';
-    const abortController = session.abortController;
+  private enqueueTtsSegment(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+    text: string,
+  ) {
+    if (!text.trim()) return;
+    if (session.ttsTurnId !== turnId) return;
 
-    // 先拿 persona 获取 voiceId
-    // 注意：这里不 await，避免阻塞 token 流；TTS 骨架实现时为空操作
-    this.personaService.findOne(session.personaId).then(async (persona) => {
+    session.ttsQueue.push(text);
+    void this.drainTtsQueue(client, session, turnId);
+  }
+
+  private async drainTtsQueue(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+  ) {
+    if (session.ttsProcessing) return;
+    if (session.ttsTurnId !== turnId) return;
+
+    session.ttsProcessing = true;
+
+    if (!session.ttsStarted) {
       this.send(client, {
         type: 'tts:start',
         sessionId: session.sessionId,
         turnId,
         payload: { encoding: 'mp3' },
       });
+      session.ttsStarted = true;
+    }
 
-      try {
+    try {
+      const persona = await this.personaService.findOne(session.personaId);
+      const voiceId = persona.voiceId ?? null;
+
+      while (session.ttsQueue.length > 0) {
+        if (session.ttsTurnId !== turnId) break;
+
+        const text = session.ttsQueue.shift();
+        if (!text) continue;
+
+        const signal =
+          session.abortController?.signal ?? new AbortController().signal;
+
         await this.ttsService.synthesizeStream(
           text,
-          persona.voiceId,
-          abortController?.signal ?? new AbortController().signal,
+          voiceId,
+          signal,
           (chunk: Buffer) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(chunk);
-            }
+            if (session.ttsTurnId !== turnId) return;
+            if (client.readyState !== WebSocket.OPEN) return;
+
+            const meta: TtsAudioFrameMeta = {
+              sessionId: session.sessionId,
+              turnId,
+              seq: session.ttsSeq++,
+              codec: 'audio/mpeg',
+            };
+            client.send(this.wrapAudioFrame(meta, chunk));
           },
         );
-      } finally {
-        this.send(client, {
-          type: 'tts:end',
-          sessionId: session.sessionId,
-          turnId,
-        });
       }
-    }).catch((err) => {
+    } catch (err) {
       this.logger.error('TTS error', err);
-    });
+      this.send(client, {
+        type: 'error',
+        sessionId: session.sessionId,
+        payload: { message: 'TTS failed' },
+      });
+    } finally {
+      session.ttsProcessing = false;
+      this.completeTtsTurnIfNeeded(client, session, turnId);
+    }
+  }
+
+  private markTtsFinalize(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+  ) {
+    if (session.ttsTurnId !== turnId) return;
+    session.ttsFinalizeRequested = true;
+    this.completeTtsTurnIfNeeded(client, session, turnId);
+  }
+
+  private completeTtsTurnIfNeeded(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+  ) {
+    if (session.ttsTurnId !== turnId) return;
+    if (session.ttsProcessing) return;
+    if (session.ttsQueue.length > 0) return;
+    if (!session.ttsFinalizeRequested) return;
+
+    if (session.ttsStarted) {
+      this.send(client, {
+        type: 'tts:end',
+        sessionId: session.sessionId,
+        turnId,
+      });
+    }
+
+    session.ttsTurnId = null;
+    session.ttsStarted = false;
+    session.ttsFinalizeRequested = false;
+    session.ttsSeq = 0;
+
+    if (session.activeTurnId === turnId) {
+      session.activeTurnId = null;
+    }
+    session.abortController = null;
+  }
+
+  private wrapAudioFrame(meta: TtsAudioFrameMeta, audioBytes: Buffer): Buffer {
+    const metaBytes = Buffer.from(JSON.stringify(meta), 'utf-8');
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(metaBytes.length, 0);
+    return Buffer.concat([head, metaBytes, audioBytes]);
   }
 
   // ── 打断 ──────────────────────────────────────────────────────────────
 
-  private async handleInterrupt(sessionId: string) {
+  private async handleInterrupt(client: WebSocket, msg: any) {
+    const sessionId = msg?.sessionId as string;
     const session = this.sessionRegistry.get(sessionId);
     if (!session) return;
 
+    const turnId = (msg?.turnId as string | undefined) ?? session.ttsTurnId;
+
     session.abortController?.abort();
-    this.sessionRegistry.update(sessionId, {
-      sentenceBuffer: '',
-      activeTurnId: null,
+    session.sentenceBuffer = '';
+    session.activeTurnId = null;
+    session.ttsQueue = [];
+    session.ttsFinalizeRequested = true;
+
+    if (turnId) {
+      this.completeTtsTurnIfNeeded(client, session, turnId);
+    }
+
+    this.send(client, {
+      type: 'conversation:interrupted',
+      sessionId,
+      turnId: turnId ?? undefined,
+      payload: { status: 'interrupted' },
     });
 
     this.logger.log(`Interrupted session: ${sessionId}`);
@@ -335,7 +553,7 @@ export class ConversationGateway implements OnModuleInit {
 
   // ── 断开清理 ──────────────────────────────────────────────────────────
 
-  private async handleDisconnect(clientId: string) {
+  private async cleanupClientById(clientId: string) {
     this.clients.delete(clientId);
     const session = this.sessionRegistry.findByWsClientId(clientId);
     if (session) {

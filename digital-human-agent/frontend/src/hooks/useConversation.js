@@ -38,6 +38,19 @@ export function useConversation() {
       id: `user-${Date.now()}`,
       role: 'user',
       content,
+      status: 'completed',
+      citations: [],
+      streaming: false,
+    })
+    scrollToBottom()
+  }
+
+  function pushUserMessageWithId(id, content) {
+    messages.value.push({
+      id: id || `user-${Date.now()}`,
+      role: 'user',
+      content,
+      status: 'completed',
       citations: [],
       streaming: false,
     })
@@ -49,6 +62,7 @@ export function useConversation() {
       id: turnId,
       role: 'assistant',
       content: '',
+      status: 'completed',
       citations: [],
       streaming: true,
     })
@@ -77,6 +91,20 @@ export function useConversation() {
     messages.value = []
   }
 
+  function hydrateMessages(history = []) {
+    messages.value = history
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
+      .map((m, idx) => ({
+        id: m.id ?? `${m.turnId}-${m.role}-${idx}`,
+        role: m.role,
+        content: m.content ?? '',
+        status: m.status ?? 'completed',
+        citations: [],
+        streaming: false,
+      }))
+    scrollToBottom()
+  }
+
   // ── 工具 ──────────────────────────────────────────────────────────
 
   function scrollToBottom() {
@@ -93,11 +121,13 @@ export function useConversation() {
     stateLabel,
     micHint,
     pushUserMessage,
+    pushUserMessageWithId,
     startAssistantMessage,
     appendToken,
     finishAssistantMessage,
     setCitations,
     clearMessages,
+    hydrateMessages,
     scrollToBottom,
   }
 }

@@ -97,14 +97,31 @@ export class KnowledgeService {
     topK = 5,
     threshold = 0.6,
   ): Promise<KnowledgeChunk[]> {
-    const [queryEmbedding] = await this.embeddings.embedDocuments([query]);
+    const [queryEmbedding] = await this.withTransientRetry(
+      'embed query',
+      () => this.embeddings.embedDocuments([query]),
+      2,
+    );
 
-    const { data, error } = await this.supabase.rpc('match_knowledge', {
-      query_embedding: queryEmbedding,
-      p_persona_id: personaId,
-      match_threshold: threshold,
-      match_count: topK,
-    });
+    const { data, error } = await this.withTransientRetry<{
+      data: KnowledgeChunk[] | null;
+      error: { message: string } | null;
+    }>(
+      'match_knowledge rpc',
+      async () => {
+        const result = await this.supabase.rpc('match_knowledge', {
+          query_embedding: queryEmbedding,
+          p_persona_id: personaId,
+          match_threshold: threshold,
+          match_count: topK,
+        });
+        return {
+          data: (result.data as KnowledgeChunk[] | null) ?? null,
+          error: result.error ? { message: result.error.message } : null,
+        };
+      },
+      2,
+    );
 
     if (error) throw new Error(error.message);
     return (data as KnowledgeChunk[]) ?? [];
@@ -120,5 +137,37 @@ export class KnowledgeService {
   async deleteDocument(documentId: string): Promise<void> {
     // persona_knowledge 的 ON DELETE CASCADE 会级联删向量
     await this.docRepo.delete(documentId);
+  }
+
+  private isTransientError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error ?? '');
+    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly/i.test(
+      msg,
+    );
+  }
+
+  private async withTransientRetry<T>(
+    op: string,
+    fn: () => Promise<T>,
+    attempts = 2,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let i = 1; i <= attempts; i += 1) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (!this.isTransientError(error) || i === attempts) {
+          break;
+        }
+        this.logger.warn(
+          `${op} 第 ${i} 次失败，准备重试：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200 * i));
+      }
+    }
+    throw lastError;
   }
 }

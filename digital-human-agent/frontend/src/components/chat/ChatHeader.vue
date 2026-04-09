@@ -50,7 +50,7 @@ defineEmits(['toggle-docs'])
 .avatar {
   width: 30px; height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #C4B5FD, #7C3AED);
+  background: linear-gradient(135deg, #87b4ff, #1f6feb);
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; color: #fff;
 }
@@ -69,9 +69,21 @@ defineEmits(['toggle-docs'])
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 150ms ease-out;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
   font-family: inherit;
 }
 .docs-btn:hover { background: var(--primary-bg); border-color: var(--primary-muted); color: var(--primary); }
-.docs-btn.active { background: rgba(124,58,237,0.08); border-color: var(--primary); color: var(--primary); }
+.docs-btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+
+@media (max-width: 960px) {
+  .chat-header {
+    padding: 10px 12px;
+  }
+  .sub {
+    display: none;
+  }
+  .docs-btn {
+    padding: 6px 10px;
+  }
+}
 </style>
