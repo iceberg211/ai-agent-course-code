@@ -36,6 +36,10 @@ export class ConversationGateway implements OnModuleInit {
   private server: Server;
 
   private readonly logger = new Logger(ConversationGateway.name);
+  private readonly historyLimit = Math.min(
+    Math.max(Number(process.env.SESSION_HISTORY_LIMIT ?? 80), 1),
+    500,
+  );
   // clientId → WebSocket
   private readonly clients = new Map<string, WebSocket>();
 
@@ -145,8 +149,9 @@ export class ConversationGateway implements OnModuleInit {
     const conversation =
       lastConversation ??
       (await this.conversationService.createConversation(personaId));
-    const history = await this.conversationService.getAllMessages(
+    const history = await this.conversationService.getRecentMessages(
       conversation.id,
+      this.historyLimit,
     );
     const sessionId = uuidv4();
 
@@ -178,6 +183,7 @@ export class ConversationGateway implements OnModuleInit {
           status: m.status,
           createdAt: m.createdAt,
         })),
+        historyLimit: this.historyLimit,
       },
     });
 

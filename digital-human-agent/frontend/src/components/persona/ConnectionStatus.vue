@@ -5,7 +5,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 defineProps({ connected: { type: Boolean, default: false } })
 </script>
 

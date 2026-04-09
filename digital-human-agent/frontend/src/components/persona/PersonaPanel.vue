@@ -39,18 +39,23 @@
   </nav>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { BotIcon, UserIcon } from 'lucide-vue-next'
 import PersonaItem from './PersonaItem.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
+import type { Persona } from '../../types'
 
-defineProps({
-  personas:   { type: Array,   default: () => [] },
-  selectedId: { type: String,  default: '' },
-  connected:  { type: Boolean, default: false },
-  loading: { type: Boolean, default: false },
-})
-defineEmits(['select', 'delete'])
+defineProps<{
+  personas: Persona[]
+  selectedId: string
+  connected: boolean
+  loading: boolean
+}>()
+
+defineEmits<{
+  (e: 'select', id: string): void
+  (e: 'delete', id: string): void
+}>()
 </script>
 
 <style scoped>

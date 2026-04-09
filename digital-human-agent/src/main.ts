@@ -10,6 +10,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { RequestNormalizePipe } from './common/pipes/request-normalize.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -18,19 +19,22 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   app.useWebSocketAdapter(new WsAdapter(app));
-  app.useGlobalPipes(new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    validationError: { target: false, value: false },
-    exceptionFactory: (errors: ValidationError[]) =>
-      new BadRequestException({
-        message: '请求参数校验失败',
-        errors: errors.map((e) => ({
-          field: e.property,
-          errors: Object.values(e.constraints ?? {}),
-        })),
-      }),
-  }));
+  app.useGlobalPipes(
+    new RequestNormalizePipe(),
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      validationError: { target: false, value: false },
+      exceptionFactory: (errors: ValidationError[]) =>
+        new BadRequestException({
+          message: '请求参数校验失败',
+          errors: errors.map((e) => ({
+            field: e.property,
+            errors: Object.values(e.constraints ?? {}),
+          })),
+        }),
+    }),
+  );
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableCors();

@@ -70,6 +70,16 @@ flowchart TB
     CTL -->|WebSocket 控制指令| GW
 ```
 
+### 2.1 编排边界（LangGraph 与 Vercel AI SDK）
+
+为了避免同一条对话链路出现两套编排逻辑，V1 明确如下边界：
+
+1. 后端只保留一套编排：`LangGraph (或 LangChain LCEL)`，负责检索、Prompt、流式生成、记忆与工具调用。
+2. 后端不引入 AI SDK Core 作为第二套 Agent 编排框架，避免状态与重试语义重复。
+3. 前端可选接入 `@ai-sdk/vue`，仅用于文本聊天 UI 状态管理与流式渲染。
+4. 语音链路不受影响：`WebSocket(binary) + ASR/TTS + WebRTC` 仍按当前方案执行。
+5. 如果前端使用 `@ai-sdk/vue`，通过 transport 适配现有后端接口，不改后端核心推理流程。
+
 ---
 
 ## 3. 两种模式
@@ -330,6 +340,12 @@ V1 里这些状态放在进程内的 `RealtimeSessionRegistry`。如果后续做
 但本项目仍选择 **LangGraph 作为 AgentService 的运行时骨架**，原因是教学连贯性——学生在 mini-manus 里刚学了 StateGraph，这里继续使用同一套模式，只是图退化成一个线性流程：`retrieve -> buildPrompt -> streamAnswer`。Prompt、Model、Parser、Embeddings 这些底层组件依然复用 LangChain。
 
 如果是独立项目而非课程的一部分，直接用 LCEL 也完全合理。
+
+在此基础上补充一条工程约束：
+
+- 不在后端同时引入 “LangGraph 编排 + AI SDK Core 编排” 两套链路。
+- 若使用 Vercel AI SDK，仅放在前端文本聊天层（`@ai-sdk/vue`），用于消息状态与渲染，不进入后端推理编排。
+- 这样可以保持后端“单一真相来源”：会话状态、重试策略、历史记忆都由现有 Nest + LangGraph 代码维护。
 
 ### 5.6 流式输出与 TTS 衔接
 
@@ -980,6 +996,76 @@ pc.ontrack = (event) => {
 
 云厂商 SDK 通常会把上面这些封装成一个 `init()` 方法。但理解底层流程对排查连接问题至关重要。
 
+### 10.4 前端接入 `@ai-sdk/vue` 最小改造清单
+
+目标是只替换“文本聊天 UI 层”，不动后端推理编排与语音链路。
+
+边界约束：
+
+1. 后端 Agent 仍是 `Nest + LangGraph`，不改成 AI SDK Core。
+2. 语音链路保持原样：`WebSocket(binary) + ASR/TTS + WebRTC`。
+3. `@ai-sdk/vue` 只管理文本消息状态、流式渲染、停止生成等前端交互。
+
+最小改造步骤：
+
+1. 前端安装依赖（`frontend`）：
+   - `pnpm add ai @ai-sdk/vue`
+2. 增加文本聊天适配层 `useTextChatAdapter`：
+   - 输出统一的 `messages / status / send / stop / error`
+   - 对外屏蔽“当前是旧实现还是 AI SDK 实现”
+3. 文本区接入 `useChat`：
+   - `MessageList` 读 `messages`
+   - `ChatComposer` 调 `sendMessage`
+   - “停止生成”按钮调用 `stop`
+4. 增加后端文本接口适配（推荐）：
+   - 新增 `POST /api/chat`（仅文本）
+   - 入参：`personaId`、`conversationId`、`messages`
+   - 出参：按 AI SDK UIMessage 流协议返回
+   - 该接口内部调用现有 `AgentService`，不新增第二套编排
+5. 增加特性开关：
+   - `VITE_TEXT_CHAT_MODE=legacy|ai-sdk`
+   - 默认 `legacy`，联调稳定后切 `ai-sdk`
+
+推荐的 `useChat` 初始化方式（示意）：
+
+```typescript
+import { useChat } from '@ai-sdk/vue';
+import { DefaultChatTransport } from 'ai';
+
+const { messages, status, sendMessage, stop, error } = useChat({
+  transport: new DefaultChatTransport({
+    api: '/api/chat',
+    body: () => ({
+      personaId: currentPersonaId.value,
+      conversationId: currentConversationId.value,
+    }),
+  }),
+});
+```
+
+接口约定（最小）：
+
+| 项目 | 约定 |
+| --- | --- |
+| 请求方法 | `POST /api/chat` |
+| 请求体 | `messages`（最近上下文）、`personaId`、`conversationId` |
+| 响应 | `text/event-stream` 或 AI SDK UIMessage stream |
+| 错误码 | `400` 参数错误，`401` 未鉴权，`429` 频率限制，`503` 上游暂不可用 |
+
+回退策略：
+
+1. `ai-sdk` 模式下连续 2 次请求失败，自动退回 `legacy` 文本实现。
+2. 语音相关能力（按住说话、打断、TTS/数字人播报）不依赖该开关，始终可用。
+3. 回退事件写日志，便于定位是传输协议问题还是上游模型问题。
+
+验收清单（文本层）：
+
+1. 发送文本可流式显示，首包延迟可观测。
+2. `stop` 能中断当前文本生成。
+3. 刷新页面后可恢复最近会话文本历史。
+4. 同一角色切换后，`personaId` 传参正确。
+5. `429/503` 错误有明确提示，不影响语音按钮可用性。
+
 ---
 
 ## 11. 后端模块划分
@@ -1150,7 +1236,7 @@ realtime_session                 // 运行时内存结构（V1）
 5. 语音克隆：上传语音样本 → 生成 voice_id
 6. 按句缓冲的流式 TTS 衔接
 7. 对话历史持久化
-8. 前端：数字人视频区 + 对话文字区 + 按住说话 + 角色选择
+8. 前端：数字人视频区 + 对话文字区 + 按住说话 + 角色选择（文本聊天层可选 `@ai-sdk/vue`，但仅作为 UI 状态层；后端编排仍是 LangGraph）
 9. 基础接入控制：JWT 鉴权、单用户单会话、关键接口限流
 
 ### 不做

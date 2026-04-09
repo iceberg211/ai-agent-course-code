@@ -1,4 +1,13 @@
 import { ref, nextTick } from 'vue'
+import type { ChatMessage, Citation, ConversationState, MessageRole, MessageStatus } from '../types'
+
+interface HistoryMessage {
+  id?: string
+  turnId?: string
+  role?: MessageRole
+  content?: string
+  status?: MessageStatus
+}
 
 /**
  * 对话状态机 + 消息列表
@@ -6,13 +15,13 @@ import { ref, nextTick } from 'vue'
  */
 export function useConversation() {
   // 状态机
-  const state = ref('idle') // idle | recording | thinking | speaking | closed
+  const state = ref<ConversationState>('idle')
 
   // 消息列表
-  const messages = ref([])
+  const messages = ref<ChatMessage[]>([])
 
   // 滚动容器引用（由父组件传入）
-  const messagesEl = ref(null)
+  const messagesEl = ref<HTMLElement | null>(null)
 
   // ── 状态计算 ──────────────────────────────────────────────────────
   const stateLabel = {
@@ -33,7 +42,7 @@ export function useConversation() {
 
   // ── 消息操作 ──────────────────────────────────────────────────────
 
-  function pushUserMessage(content) {
+  function pushUserMessage(content: string) {
     messages.value.push({
       id: `user-${Date.now()}`,
       role: 'user',
@@ -45,7 +54,7 @@ export function useConversation() {
     scrollToBottom()
   }
 
-  function pushUserMessageWithId(id, content) {
+  function pushUserMessageWithId(id: string, content: string) {
     messages.value.push({
       id: id || `user-${Date.now()}`,
       role: 'user',
@@ -57,7 +66,7 @@ export function useConversation() {
     scrollToBottom()
   }
 
-  function startAssistantMessage(turnId) {
+  function startAssistantMessage(turnId: string) {
     messages.value.push({
       id: turnId,
       role: 'assistant',
@@ -69,7 +78,7 @@ export function useConversation() {
     scrollToBottom()
   }
 
-  function appendToken(turnId, token) {
+  function appendToken(turnId: string, token: string) {
     const msg = messages.value.find((m) => m.id === turnId)
     if (msg) {
       msg.content += token
@@ -77,12 +86,12 @@ export function useConversation() {
     }
   }
 
-  function finishAssistantMessage(turnId) {
+  function finishAssistantMessage(turnId: string) {
     const msg = messages.value.find((m) => m.id === turnId)
     if (msg) msg.streaming = false
   }
 
-  function setCitations(turnId, citations) {
+  function setCitations(turnId: string, citations: Citation[]) {
     const msg = messages.value.find((m) => m.id === turnId)
     if (msg) msg.citations = citations
   }
@@ -91,7 +100,7 @@ export function useConversation() {
     messages.value = []
   }
 
-  function hydrateMessages(history = []) {
+  function hydrateMessages(history: HistoryMessage[] = []) {
     messages.value = history
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
       .map((m, idx) => ({

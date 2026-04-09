@@ -1,12 +1,25 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { usePersonaStore } from '../stores/persona.js'
-import { useSessionStore } from '../stores/session.js'
-import { useWebSocket } from './useWebSocket.js'
-import { useAudio } from './useAudio.js'
-import { useConversation } from './useConversation.js'
-import { useKnowledge } from './useKnowledge.js'
+import { usePersonaStore } from '../stores/persona'
+import { useSessionStore } from '../stores/session'
+import { useWebSocket } from './useWebSocket'
+import { useAudio } from './useAudio'
+import { useConversation } from './useConversation'
+import { useKnowledge } from './useKnowledge'
+import type { Citation, WsEnvelope } from '../types'
+
+interface SessionReadyPayload {
+  conversationId?: string
+  history?: Array<Record<string, any>>
+}
+
+interface BaseWsMessage<T = Record<string, any>> extends WsEnvelope<T> {
+  payload?: T
+}
 
 export function useAppController() {
+  const MIC_SEND_DELAY_MS = 1000
+  const MIC_MIN_HOLD_MS = 180
+
   const personaStore = usePersonaStore()
   const sessionStore = useSessionStore()
 
@@ -17,9 +30,12 @@ export function useAppController() {
 
   const docsOpen = ref(false)
   const toastMsg = ref('')
-  const audioEl = ref(null)
+  const audioEl = ref<HTMLAudioElement | null>(null)
   const historyLoading = ref(false)
   const pendingText = ref('')
+  const pendingVoiceSend = ref(false)
+  const micPressedAt = ref(0)
+  let voiceSendTimer: ReturnType<typeof setTimeout> | null = null
 
   const messages = computed(() => conversation.messages.value)
   const state = computed(() => conversation.state.value)
@@ -34,6 +50,7 @@ export function useAppController() {
 
       if (!val) {
         sessionStore.reset()
+        clearPendingVoiceSend()
         if (conversation.state.value !== 'recording') {
           conversation.state.value = 'idle'
         }
@@ -53,7 +70,7 @@ export function useAppController() {
     { immediate: true },
   )
 
-  on('session:ready', (msg) => {
+  on('session:ready', (msg: BaseWsMessage<SessionReadyPayload>) => {
     sessionStore.setSession(msg.sessionId, msg.payload?.conversationId ?? '')
     conversation.hydrateMessages(msg.payload?.history ?? [])
     historyLoading.value = false
@@ -66,36 +83,39 @@ export function useAppController() {
     }
   })
 
-  on('asr:final', (msg) => {
-    conversation.pushUserMessage(msg.payload.text)
+  on('asr:final', (msg: BaseWsMessage<{ text?: string }>) => {
+    const text = typeof msg.payload?.text === 'string' ? msg.payload.text.trim() : ''
+    if (text) {
+      conversation.pushUserMessage(text)
+    }
   })
 
-  on('conversation:start', (msg) => {
+  on('conversation:start', (msg: BaseWsMessage) => {
     conversation.state.value = 'thinking'
-    conversation.startAssistantMessage(msg.turnId)
+    conversation.startAssistantMessage(msg.turnId ?? '')
   })
 
-  on('conversation:text_chunk', (msg) => {
-    conversation.appendToken(msg.turnId, msg.payload.token)
+  on('conversation:text_chunk', (msg: BaseWsMessage<{ token?: string }>) => {
+    conversation.appendToken(msg.turnId ?? '', msg.payload?.token ?? '')
   })
 
-  on('conversation:done', (msg) => {
-    conversation.finishAssistantMessage(msg.turnId)
+  on('conversation:done', (msg: BaseWsMessage) => {
+    conversation.finishAssistantMessage(msg.turnId ?? '')
     if (conversation.state.value === 'thinking') {
       conversation.state.value = 'idle'
     }
   })
 
-  on('conversation:citations', (msg) => {
-    conversation.setCitations(msg.turnId, msg.payload.citations)
+  on('conversation:citations', (msg: BaseWsMessage<{ citations?: Citation[] }>) => {
+    conversation.setCitations(msg.turnId ?? '', msg.payload?.citations ?? [])
   })
 
-  on('tts:start', (msg) => {
+  on('tts:start', (msg: BaseWsMessage) => {
     conversation.state.value = 'speaking'
-    audio.onTtsStart(msg.turnId)
+    audio.onTtsStart(msg.turnId ?? '')
   })
 
-  on('audio:chunk', ({ meta, audioBytes }) => {
+  on('audio:chunk', ({ meta, audioBytes }: { meta: { turnId?: string } | null; audioBytes: ArrayBuffer }) => {
     const frameTurnId = meta?.turnId ?? audio.activeTurnId.get()
     audio.onAudioChunk(audioBytes, frameTurnId)
   })
@@ -107,7 +127,8 @@ export function useAppController() {
     }
   })
 
-  on('conversation:interrupted', (msg) => {
+  on('conversation:interrupted', (msg: BaseWsMessage) => {
+    clearPendingVoiceSend()
     if (msg.turnId) {
       conversation.finishAssistantMessage(msg.turnId)
     }
@@ -120,7 +141,8 @@ export function useAppController() {
     }
   })
 
-  on('error', (msg) => {
+  on('error', (msg: BaseWsMessage<{ message?: string }>) => {
+    clearPendingVoiceSend()
     const message = msg.payload?.message ?? '发生错误'
     if (typeof message === 'string' && message.includes('No active session')) {
       sessionStore.reset()
@@ -142,8 +164,9 @@ export function useAppController() {
     historyLoading.value = false
   })
 
-  function onSelectPersona(id) {
+  function onSelectPersona(id: string) {
     if (id === personaStore.selectedId) return
+    clearPendingVoiceSend()
     personaStore.select(id)
     conversation.clearMessages()
     sessionStore.reset()
@@ -155,7 +178,7 @@ export function useAppController() {
     send({ type: 'session:start', sessionId: '', payload: { personaId: id } })
   }
 
-  function sendTextNow(text) {
+  function sendTextNow(text: string) {
     if (!sessionStore.sessionId) return
     conversation.pushUserMessageWithId(`user-${Date.now()}`, text)
     conversation.state.value = 'thinking'
@@ -166,10 +189,11 @@ export function useAppController() {
     })
   }
 
-  function onSendText(text) {
+  function onSendText(text: string) {
     const normalized = String(text ?? '').trim()
     if (!normalized) return
     if (!personaStore.selectedId) return
+    clearPendingVoiceSend()
 
     if (!sessionStore.sessionId) {
       pendingText.value = normalized
@@ -191,6 +215,11 @@ export function useAppController() {
   }
 
   async function onMicDown() {
+    if (pendingVoiceSend.value) {
+      clearPendingVoiceSend(true)
+      conversation.state.value = 'idle'
+    }
+
     if (!sessionStore.sessionId) {
       if (!personaStore.selectedId) return
       if (!wsConnected.value) {
@@ -207,6 +236,8 @@ export function useAppController() {
       return
     }
 
+    clearPendingVoiceSend()
+
     if (
       conversation.state.value === 'thinking' ||
       conversation.state.value === 'speaking'
@@ -217,35 +248,76 @@ export function useAppController() {
       })
       audio.stopPlayback()
       conversation.state.value = 'recording'
-      await audio.startRecording()
+      micPressedAt.value = Date.now()
+      try {
+        await audio.startRecording()
+      } catch {
+        conversation.state.value = 'idle'
+        showToast('无法开启麦克风，请检查浏览器权限')
+      }
       return
     }
 
     if (conversation.state.value !== 'idle') return
     conversation.state.value = 'recording'
-    await audio.startRecording()
+    micPressedAt.value = Date.now()
+    try {
+      await audio.startRecording()
+    } catch {
+      conversation.state.value = 'idle'
+      showToast('无法开启麦克风，请检查浏览器权限')
+    }
   }
 
   async function onMicUp() {
     if (conversation.state.value !== 'recording') return
+    const holdMs = Date.now() - micPressedAt.value
+    micPressedAt.value = 0
+
+    let buffer
+    try {
+      buffer = await audio.stopRecording()
+    } catch {
+      conversation.state.value = 'idle'
+      showToast('录音失败，请重试')
+      return
+    }
+
+    if (!buffer || buffer.byteLength === 0) {
+      conversation.state.value = 'idle'
+      showToast('未检测到有效语音，已取消发送')
+      return
+    }
+
+    if (holdMs < MIC_MIN_HOLD_MS) {
+      conversation.state.value = 'idle'
+      showToast('按住时间太短，已取消发送')
+      return
+    }
+
     conversation.state.value = 'thinking'
-    const buffer = await audio.stopRecording()
-    sendBinary(buffer)
+    pendingVoiceSend.value = true
+    showToast('录音已结束，1 秒后发送')
+    voiceSendTimer = setTimeout(() => {
+      voiceSendTimer = null
+      pendingVoiceSend.value = false
+      sendBinary(buffer)
+    }, MIC_SEND_DELAY_MS)
   }
 
-  async function onUpload(file) {
+  async function onUpload(file: File) {
     showToast(`上传中：${file.name}`)
     const { ok } = await knowledge.uploadDocument(personaStore.selectedId, file)
     showToast(ok ? `✓ ${file.name} 上传成功` : '上传失败，请重试')
   }
 
-  async function onDeleteDoc(docId) {
+  async function onDeleteDoc(docId: string) {
     if (!confirm('删除后相关向量也将同步清除，确认继续？')) return
     const { ok } = await knowledge.deleteDocument(personaStore.selectedId, docId)
     if (!ok) showToast('删除失败')
   }
 
-  async function onDeletePersona(personaId) {
+  async function onDeletePersona(personaId: string) {
     const target = personaStore.personas.find((p) => p.id === personaId)
     const name = target?.name ?? '该角色'
     if (!confirm(`确认删除「${name}」？其对话与知识库会一并删除。`)) return
@@ -266,6 +338,7 @@ export function useAppController() {
 
     if (deletingSelected) {
       sessionStore.reset()
+      clearPendingVoiceSend()
       conversation.clearMessages()
       conversation.state.value = 'idle'
       historyLoading.value = false
@@ -277,13 +350,24 @@ export function useAppController() {
     showToast(`✓ 已删除「${name}」`)
   }
 
-  let toastTimer = null
-  function showToast(msg) {
+  let toastTimer: ReturnType<typeof setTimeout> | null = null
+  function showToast(msg: string) {
     toastMsg.value = msg
-    clearTimeout(toastTimer)
+    if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
       toastMsg.value = ''
     }, 3500)
+  }
+
+  function clearPendingVoiceSend(showNotice = false) {
+    if (voiceSendTimer) {
+      clearTimeout(voiceSendTimer)
+      voiceSendTimer = null
+    }
+    if (pendingVoiceSend.value && showNotice) {
+      showToast('已取消待发送语音')
+    }
+    pendingVoiceSend.value = false
   }
 
   onMounted(async () => {
@@ -293,7 +377,8 @@ export function useAppController() {
   })
 
   onUnmounted(() => {
-    clearTimeout(toastTimer)
+    clearPendingVoiceSend()
+    if (toastTimer) clearTimeout(toastTimer)
   })
 
   return {

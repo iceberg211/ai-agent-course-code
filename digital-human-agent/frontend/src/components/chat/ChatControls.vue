@@ -10,10 +10,10 @@
     <button
       class="mic-btn"
       :class="state"
-      @mousedown="$emit('mic-down')"
-      @mouseup="$emit('mic-up')"
-      @touchstart.prevent="$emit('mic-down')"
-      @touchend.prevent="$emit('mic-up')"
+      @pointerdown.stop.prevent="onPointerDown"
+      @pointerup.stop.prevent="onPointerUp"
+      @pointercancel.stop.prevent="onPointerCancel"
+      @click.stop.prevent
       :disabled="disabled"
       :aria-label="ariaLabel"
       :aria-pressed="state === 'recording'"
@@ -28,20 +28,47 @@
   </footer>
 </template>
 
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
+import { computed, ref } from 'vue'
 import { MicIcon, StopCircleIcon, PauseIcon } from 'lucide-vue-next'
 
 const props = defineProps({
   state:    { type: String,  default: 'idle' },
   disabled: { type: Boolean, default: false },
 })
-defineEmits(['mic-down', 'mic-up'])
+const emit = defineEmits(['mic-down', 'mic-up'])
 
 const labelMap = { idle: '待命', recording: '录音中...', thinking: '思考中', speaking: '播报中', closed: '已结束' }
-const hintMap  = { idle: '按住说话', recording: '松开发送', thinking: '点击打断', speaking: '点击打断' }
+const hintMap  = { idle: '按住说话', recording: '松开后 1 秒发送', thinking: '点击打断', speaking: '点击打断' }
 const ariaMap  = { idle: '按住开始录音', recording: '松开发送语音', thinking: '点击打断 AI', speaking: '点击打断 AI' }
 const ariaLabel = computed(() => ariaMap[props.state] ?? '麦克风')
+const pointerPressed = ref(false)
+
+function onPointerDown(event) {
+  if (props.disabled) return
+  pointerPressed.value = true
+  try {
+    event.currentTarget?.setPointerCapture?.(event.pointerId)
+  } catch {
+    // 忽略不支持 Pointer Capture 的环境
+  }
+  emit('mic-down')
+}
+
+function onPointerUp(event) {
+  if (!pointerPressed.value) return
+  pointerPressed.value = false
+  try {
+    event.currentTarget?.releasePointerCapture?.(event.pointerId)
+  } catch {
+    // 忽略不支持 Pointer Capture 的环境
+  }
+  emit('mic-up')
+}
+
+function onPointerCancel() {
+  pointerPressed.value = false
+}
 </script>
 
 <style scoped>

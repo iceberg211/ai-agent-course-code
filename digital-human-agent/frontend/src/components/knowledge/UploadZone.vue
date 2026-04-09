@@ -18,7 +18,7 @@
   </label>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { UploadCloudIcon } from 'lucide-vue-next'
 

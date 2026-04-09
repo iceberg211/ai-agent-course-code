@@ -26,17 +26,21 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch } from 'vue'
 import { MessageCircleIcon } from 'lucide-vue-next'
 import MessageItem from './MessageItem.vue'
+import type { ChatMessage } from '../../types'
 
-const props = defineProps({
-  messages: { type: Array, default: () => [] },
-  loading: { type: Boolean, default: false },
+const props = withDefaults(defineProps<{
+  messages: ChatMessage[]
+  loading: boolean
+}>(), {
+  messages: () => [],
+  loading: false,
 })
 
-const listEl = ref(null)
+const listEl = ref<HTMLElement | null>(null)
 
 // 新消息时自动滚到底部
 watch(() => props.messages.length, () => {

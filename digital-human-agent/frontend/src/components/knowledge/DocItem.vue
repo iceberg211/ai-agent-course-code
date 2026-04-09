@@ -14,7 +14,7 @@
   </li>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { FileTextIcon, Trash2Icon } from 'lucide-vue-next'
 defineProps({ doc: { type: Object, required: true }, statusLabel: { type: Function, required: true } })
 defineEmits(['delete'])

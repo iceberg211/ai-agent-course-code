@@ -2,8 +2,8 @@ import { ref } from 'vue'
 
 export function useAudio() {
   // ── 录音 ──────────────────────────────────────────────
-  let mediaRecorder = null
-  const chunks = []
+  let mediaRecorder: MediaRecorder | null = null
+  const chunks: Blob[] = []
 
   async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -16,9 +16,19 @@ export function useAudio() {
   }
 
   async function stopRecording() {
-    return new Promise((resolve) => {
+    if (!mediaRecorder) {
+      return new ArrayBuffer(0)
+    }
+
+    if (mediaRecorder.state === 'inactive') {
+      const blob = new Blob(chunks, { type: 'audio/webm' })
+      return blob.arrayBuffer()
+    }
+
+    return new Promise<ArrayBuffer>((resolve) => {
       mediaRecorder.onstop = async () => {
         const blob = new Blob(chunks, { type: 'audio/webm' })
+        mediaRecorder = null
         resolve(await blob.arrayBuffer())
       }
       mediaRecorder.stop()
@@ -27,21 +37,22 @@ export function useAudio() {
   }
 
   // ── TTS 流式播放 ──────────────────────────────────────
-  const audioEl = ref(null)        // <audio> 元素引用
-  let mediaSource = null
-  let sourceBuffer = null
-  let appendQueue = []
-  let activeTurnId = null
+  const audioEl = ref<HTMLAudioElement | null>(null)
+  let mediaSource: MediaSource | null = null
+  let sourceBuffer: SourceBuffer | null = null
+  let appendQueue: ArrayBuffer[] = []
+  let activeTurnId: string | null = null
 
-  function initAudioElement(el) {
+  function initAudioElement(el: HTMLAudioElement | null) {
     audioEl.value = el
   }
 
-  function onTtsStart(turnId) {
+  function onTtsStart(turnId: string) {
     activeTurnId = turnId
     appendQueue = []
 
     mediaSource = new MediaSource()
+    if (!audioEl.value) return
     audioEl.value.src = URL.createObjectURL(mediaSource)
 
     mediaSource.addEventListener('sourceopen', () => {
@@ -56,15 +67,17 @@ export function useAudio() {
     audioEl.value.play().catch(() => { })
   }
 
-  function onAudioChunk(buffer, turnId) {
+  function onAudioChunk(buffer: ArrayBuffer, turnId: string | null | undefined) {
     if (turnId !== activeTurnId) return   // 旧 turn 的帧丢弃
-    appendQueue.push(new Uint8Array(buffer))
+    appendQueue.push(buffer.slice(0))
     flushQueue()
   }
 
   function flushQueue() {
     if (!sourceBuffer || sourceBuffer.updating || appendQueue.length === 0) return
-    sourceBuffer.appendBuffer(appendQueue.shift())
+    const chunk = appendQueue.shift()
+    if (!chunk) return
+    sourceBuffer.appendBuffer(chunk)
   }
 
   function onTtsEnd() {

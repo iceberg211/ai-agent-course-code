@@ -20,7 +20,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { BotIcon, UserIcon } from 'lucide-vue-next'
 import TypingIndicator from './TypingIndicator.vue'
 import CitationChips from './CitationChips.vue'

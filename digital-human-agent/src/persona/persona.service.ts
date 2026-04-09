@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { Persona } from './persona.entity';
 import { CreatePersonaDto } from './dto/create-persona.dto';
@@ -20,8 +21,11 @@ export class PersonaService {
   ) {}
 
   create(dto: CreatePersonaDto): Promise<Persona> {
-    const persona = this.repo.create(dto);
-    return this.withTransientRetry('create', () => this.repo.save(persona));
+    const persona = this.repo.create({
+      id: randomUUID(),
+      ...dto,
+    });
+    return this.saveCreateIdempotently(persona);
   }
 
   findAll(): Promise<Persona[]> {
@@ -75,6 +79,38 @@ export class PersonaService {
       );
       await new Promise((resolve) => setTimeout(resolve, 200));
       return fn();
+    }
+  }
+
+  /**
+   * create 场景下使用固定主键重试，避免“首写成功但连接断开”导致重复创建。
+   */
+  private async saveCreateIdempotently(persona: Persona): Promise<Persona> {
+    try {
+      return await this.repo.save(persona);
+    } catch (error) {
+      if (!this.isTransientDbError(error)) throw error;
+
+      this.logger.warn(
+        `create 首次失败，检测到数据库瞬时错误，准备按幂等策略重试：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+
+      // 如果首写其实已经成功，这里可直接读回
+      const existing = await this.repo.findOneBy({ id: persona.id });
+      if (existing) return existing;
+
+      try {
+        return await this.repo.save(persona);
+      } catch (retryError) {
+        const duplicateKeyCode = (retryError as { code?: string })?.code;
+        if (duplicateKeyCode === '23505') {
+          const duplicated = await this.repo.findOneBy({ id: persona.id });
+          if (duplicated) return duplicated;
+        }
+        throw retryError;
+      }
     }
   }
 }

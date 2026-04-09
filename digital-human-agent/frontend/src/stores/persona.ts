@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { Persona } from '../types'
 
 export const usePersonaStore = defineStore('persona', () => {
-  const personas = ref([])
+  const personas = ref<Persona[]>([])
   const selectedId = ref('')
   const loading = ref(false)
   const loadError = ref('')
@@ -35,7 +36,7 @@ export const usePersonaStore = defineStore('persona', () => {
     loading.value = false
   }
 
-  async function deletePersona(id) {
+  async function deletePersona(id: string) {
     if (!id) return { ok: false, message: '缺少角色 ID' }
     const res = await fetch(`/api/personas/${id}`, { method: 'DELETE' }).catch(() => null)
 
@@ -57,7 +58,7 @@ export const usePersonaStore = defineStore('persona', () => {
     return { ok: true }
   }
 
-  function select(id) {
+  function select(id: string) {
     selectedId.value = id
   }
 

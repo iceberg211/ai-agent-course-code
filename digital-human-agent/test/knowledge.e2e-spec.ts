@@ -63,6 +63,16 @@ describe('Knowledge API (e2e)', () => {
     });
   });
 
+  it('POST /knowledge/:personaId/documents 缺少文件返回 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/knowledge/persona-1/documents')
+      .field('category', 'faq')
+      .expect(400);
+
+    expect(service.ingestDocument).not.toHaveBeenCalled();
+    expect(res.body.message).toContain('缺少上传文件');
+  });
+
   it('GET /knowledge/:personaId/documents 返回文档列表', async () => {
     service.listDocuments.mockResolvedValue([
       {

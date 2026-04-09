@@ -52,6 +52,20 @@ export class ConversationService {
     });
   }
 
+  // 仅返回最近 N 条历史，按时间正序（旧 -> 新）
+  async getRecentMessages(
+    conversationId: string,
+    limit = 80,
+  ): Promise<ConversationMessage[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 500);
+    const recentDesc = await this.msgRepo.find({
+      where: { conversationId },
+      order: { createdAt: 'DESC' },
+      take: safeLimit,
+    });
+    return recentDesc.reverse();
+  }
+
   updateMessageStatus(id: string, status: MessageStatus): Promise<void> {
     return this.msgRepo.update(id, { status }).then(() => undefined);
   }

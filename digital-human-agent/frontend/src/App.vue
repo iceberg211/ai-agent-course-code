@@ -52,8 +52,8 @@
   </div>
 </template>
 
-<script setup>
-import { useAppController } from './hooks/useAppController.js'
+<script setup lang="ts">
+import { useAppController } from './hooks/useAppController'
 import PersonaPanel from './components/persona/PersonaPanel.vue'
 import ChatHeader from './components/chat/ChatHeader.vue'
 import MessageList from './components/chat/MessageList.vue'

@@ -55,6 +55,9 @@ pnpm add @langchain/community                # SupabaseVectorStore + reranker
 # 工具
 pnpm add uuid class-transformer class-validator
 pnpm add -D @types/ws @types/uuid
+
+# 前端文本层（可选，AI SDK）
+pnpm -C frontend add ai @ai-sdk/vue
 ```
 
 **目录结构：**
@@ -91,6 +94,12 @@ frontend/              # Vue 3 + Vite 前端（独立项目，端口 5173）
 
 > 前端使用 **Vue 3 + Vite**，与后端（NestJS，端口 3001）完全分离，开发时运行在端口 5173。
 > Vite proxy 将 `/api/*` 和 `/ws/*` 转发到后端，生产环境用 Nginx 反代。
+
+前端选型边界（和技术方案保持一致）：
+
+- [ ] 后端推理编排保持 `LangGraph/LangChain` 单链路，不新增 AI SDK Core 编排
+- [ ] `@ai-sdk/vue` 仅用于文本聊天 UI 状态与流式渲染
+- [ ] 语音链路（WS 二进制 + ASR/TTS + WebRTC）保持现有实现，不因文本层改造而变化
 
 ### 布局结构
 
@@ -543,26 +552,52 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 
 ### 1.11 前端（纯语音模式）
 
-单页 `frontend/index.html`，不引入构建工具，直接用原生 JS。
+当前仓库实现基于 `Vue 3 + Vite`（不是原生单页脚本），核心文件：
 
-核心状态机（5 个状态见技术方案 10.2）：
+- `frontend/src/hooks/useAppController.js`
+- `frontend/src/hooks/useWebSocket.js`
+- `frontend/src/hooks/useAudio.js`
+- `frontend/src/components/chat/ChatControls.vue`
+- `frontend/src/components/chat/ChatComposer.vue`
 
-```javascript
-let state = 'idle'; // idle | recording | thinking | speaking | closed
-let activeTurnId = null;
-const ws = new WebSocket('ws://localhost:3000/ws/conversation');
-const audio = document.getElementById('audio');
-const mediaSource = new MediaSource();
-audio.src = URL.createObjectURL(mediaSource);
-```
+状态机（5 个状态见技术方案 10.2）保持不变：
 
-麦克风按钮逻辑：
 - `idle` 按下 → `recording`，开始 `MediaRecorder`
-- `recording` 松开 → `thinking`，发送 Binary 音频
-- `thinking` / `speaking` 再次按下 → 发 `conversation:interrupt`，切 `recording`
+- `recording` 松开 → `thinking`，发送 Binary 音频（松开后延迟 1 秒发送）
+- `thinking` / `speaking` 再次按下 → 先发 `conversation:interrupt`，再切 `recording`
 
 - [ ] 按住说话，松开后听到 TTS 回复
 - [ ] 说话中途打断，LLM 立即停止，不再继续播放
+- [ ] 短按不会误发语音，文字发送不会误触麦克风
+
+### 1.12 可选：前端文本层接入 `@ai-sdk/vue`
+
+目标：仅替换文本聊天 UI 层，不改后端编排与语音链路。
+
+实施步骤：
+
+1. 新增开关 `VITE_TEXT_CHAT_MODE=legacy|ai-sdk`（默认 `legacy`）
+2. 新增文本适配层 `useTextChatAdapter`，统一导出：
+   - `messages`
+   - `status`
+   - `sendMessage`
+   - `stop`
+   - `error`
+3. `ai-sdk` 模式下使用 `@ai-sdk/vue` 的 `useChat`：
+   - transport 指向 `/api/chat`
+   - body 携带 `personaId`、`conversationId`
+4. 后端新增 `POST /api/chat` 文本接口（仅协议适配）：
+   - 内部仍调用现有 `AgentService`，不引入第二套编排
+5. 保持语音入口独立：
+   - 麦克风、ASR、TTS、WebRTC 不接入 `useChat`
+
+验收项：
+
+- [ ] `ai-sdk` 模式下文本消息可流式渲染
+- [ ] `stop` 可中断文本生成
+- [ ] 连续失败可自动回退 `legacy` 模式
+- [ ] 切换角色时 `personaId` 传参正确
+- [ ] 文本层异常不影响语音链路可用
 
 ---
 
@@ -574,6 +609,7 @@ audio.src = URL.createObjectURL(mediaSource);
 3. 问"React Compiler 是什么？"
 4. 收到基于知识库的流式语音回复
 5. 说话中途打断，立即停止
+6. （可选）切换 `ai-sdk` 文本模式，文字聊天可正常流式显示
 ```
 
 ---
@@ -675,7 +711,7 @@ POST   /knowledge/:personaId/search             # 检索测试（返回两阶段
 
 ### 2.4 知识库管理前端
 
-在 `frontend/index.html` 的侧边栏中补充：
+在 Vue 前端侧边栏中补充（建议落在 `frontend/src/components/knowledge/*` 与 `frontend/src/hooks/useKnowledge.js`）：
 
 - 文档列表（文件名 + 状态 + chunk 数量）
 - 上传按钮（调 `POST /knowledge/:personaId/documents`）
@@ -881,7 +917,7 @@ async cleanupSession(sessionId: string) {
 
 ### 4.6 前端扩展（数字人模式）
 
-在 `frontend/index.html` 中增加：
+在 Vue 前端中增加（建议落在 `frontend/src/App.vue`、`frontend/src/hooks/useAppController.js`）：
 
 - `<video>` 元素展示 WebRTC 数字人视频
 - WebRTC 信令处理（技术方案 10.3 的完整代码）
@@ -926,6 +962,9 @@ TENCENT_TTS_APP_ID=
 # 数字人 SDK（具体字段按厂商确定）
 DIGITAL_HUMAN_APP_ID=
 DIGITAL_HUMAN_API_KEY=
+
+# Frontend（可选文本层）
+VITE_TEXT_CHAT_MODE=legacy
 ```
 
 ---
@@ -945,6 +984,8 @@ DIGITAL_HUMAN_API_KEY=
   "@langchain/langgraph": "^0.2",
   "@langchain/openai": "^0.3",
   "@langchain/community": "^0.3",
-  "ws": "^8"
+  "ws": "^8",
+  "ai": "^5",
+  "@ai-sdk/vue": "^2"
 }
 ```

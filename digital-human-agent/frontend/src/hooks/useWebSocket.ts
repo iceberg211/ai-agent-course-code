@@ -1,12 +1,23 @@
 import { ref, onUnmounted } from 'vue'
+import type { WsEnvelope } from '../types'
+
+interface AudioFrameMeta {
+  sessionId?: string
+  turnId?: string
+  seq?: number
+  codec?: string
+  isFinal?: boolean
+}
+
+type Listener = (payload: any) => void
 
 export function useWebSocket() {
-  const ws = ref(null)
+  const ws = ref<WebSocket | null>(null)
   const sessionId = ref('')
   const connected = ref(false)
-  const listeners = new Map()
-  let reconnectTimer = null
-  let heartbeatTimer = null
+  const listeners = new Map<string, Listener[]>()
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let manualClose = false
 
   function connect() {
@@ -53,35 +64,35 @@ export function useWebSocket() {
     }
   }
 
-  function send(msg) {
+  function send(msg: WsEnvelope | Record<string, unknown>) {
     if (ws.value?.readyState === WebSocket.OPEN) {
       ws.value.send(JSON.stringify(msg))
     }
   }
 
-  function sendBinary(buffer) {
+  function sendBinary(buffer: ArrayBuffer) {
     if (ws.value?.readyState === WebSocket.OPEN) {
       ws.value.send(buffer)
     }
   }
 
-  function on(type, handler) {
+  function on(type: string, handler: Listener) {
     if (!listeners.has(type)) listeners.set(type, [])
-    listeners.get(type).push(handler)
+    listeners.get(type)?.push(handler)
   }
 
-  function off(type, handler) {
+  function off(type: string, handler: Listener) {
     const arr = listeners.get(type) ?? []
     const idx = arr.indexOf(handler)
     if (idx !== -1) arr.splice(idx, 1)
   }
 
-  function emit(type, data) {
+  function emit(type: string, data: any) {
     ;(listeners.get(type) ?? []).forEach((fn) => fn(data))
   }
 
   function scheduleReconnect() {
-    clearTimeout(reconnectTimer)
+    if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = setTimeout(() => {
       connect()
     }, 3000)
@@ -95,11 +106,11 @@ export function useWebSocket() {
   }
 
   function stopHeartbeat() {
-    clearInterval(heartbeatTimer)
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
     heartbeatTimer = null
   }
 
-  async function decodeAudioFrame(blob) {
+  async function decodeAudioFrame(blob: Blob): Promise<{ meta: AudioFrameMeta | null; audioBytes: ArrayBuffer }> {
     const raw = await blob.arrayBuffer()
     if (raw.byteLength < 4) {
       return { meta: null, audioBytes: raw }
@@ -116,7 +127,7 @@ export function useWebSocket() {
     try {
       const metaBytes = new Uint8Array(raw, 4, metaLength)
       const metaText = new TextDecoder().decode(metaBytes)
-      const meta = JSON.parse(metaText)
+      const meta = JSON.parse(metaText) as AudioFrameMeta
       const audioBytes = raw.slice(totalHeader)
       return { meta, audioBytes }
     } catch {
@@ -126,7 +137,7 @@ export function useWebSocket() {
 
   onUnmounted(() => {
     manualClose = true
-    clearTimeout(reconnectTimer)
+    if (reconnectTimer) clearTimeout(reconnectTimer)
     stopHeartbeat()
     ws.value?.close()
     ws.value = null

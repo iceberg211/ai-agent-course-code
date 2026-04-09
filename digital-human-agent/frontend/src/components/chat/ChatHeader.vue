@@ -24,7 +24,7 @@
   </header>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { BookOpenIcon } from 'lucide-vue-next'
 defineProps({
   persona:  { type: Object,  default: null },

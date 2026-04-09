@@ -26,7 +26,7 @@
   </li>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { CheckIcon, Trash2Icon } from 'lucide-vue-next'
 defineProps({
   persona: { type: Object, required: true },

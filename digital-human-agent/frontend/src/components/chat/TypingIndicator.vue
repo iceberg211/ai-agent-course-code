@@ -4,7 +4,7 @@
   </div>
 </template>
 
-<script setup></script>
+<script setup lang="ts"></script>
 
 <style scoped>
 .typing { display: flex; gap: 5px; align-items: center; padding: 2px 0; }

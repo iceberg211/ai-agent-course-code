@@ -11,7 +11,7 @@
   </button>
 </template>
 
-<script setup>
+<script setup lang="ts">
 defineProps({
   label:    { type: String, required: true },
   active:   { type: Boolean, default: false },

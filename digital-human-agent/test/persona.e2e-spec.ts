@@ -8,6 +8,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { PersonaController } from '../src/persona/persona.controller';
 import { PersonaService } from '../src/persona/persona.service';
+import { RequestNormalizePipe } from '../src/common/pipes/request-normalize.pipe';
 
 describe('Persona API (e2e)', () => {
   let app: INestApplication;
@@ -32,6 +33,7 @@ describe('Persona API (e2e)', () => {
 
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
+      new RequestNormalizePipe(),
       new ValidationPipe({
         transform: true,
         whitelist: true,
@@ -111,6 +113,42 @@ describe('Persona API (e2e)', () => {
       name: '前端讲师',
       speakingStyle: '温和',
       expertise: ['Vue', 'TypeScript'],
+      voiceId: 'longxiaochun',
+    });
+  });
+
+  it('POST /personas 支持 snake_case 字段', async () => {
+    service.create.mockResolvedValue({
+      id: 'p-2b',
+      name: '后端专家',
+      speakingStyle: '直接',
+      expertise: ['NestJS'],
+      voiceId: 'longxiaochun',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/personas')
+      .send({
+        persona_name: '后端专家',
+        speaking_style: '直接',
+        expertise_list: ['NestJS'],
+        voice_id: 'longxiaochun',
+      })
+      .expect(201);
+
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: '后端专家',
+        speakingStyle: '直接',
+        expertise: ['NestJS'],
+        voiceId: 'longxiaochun',
+      }),
+    );
+    expect(res.body).toEqual({
+      id: 'p-2b',
+      name: '后端专家',
+      speakingStyle: '直接',
+      expertise: ['NestJS'],
       voiceId: 'longxiaochun',
     });
   });

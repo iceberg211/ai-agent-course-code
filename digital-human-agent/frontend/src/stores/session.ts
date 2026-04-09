@@ -6,12 +6,12 @@ export const useSessionStore = defineStore('session', () => {
   const conversationId = ref('')
   const connected = ref(false)
 
-  function setSession(sid, cid) {
+  function setSession(sid: string, cid: string) {
     sessionId.value = sid
     conversationId.value = cid
   }
 
-  function setConnected(val) {
+  function setConnected(val: boolean) {
     connected.value = val
   }
 

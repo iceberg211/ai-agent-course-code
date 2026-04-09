@@ -14,7 +14,11 @@
       class="send-btn"
       type="button"
       :disabled="sendDisabled"
-      @click="submit"
+      @mousedown.stop
+      @mouseup.stop
+      @touchstart.stop.prevent
+      @touchend.stop.prevent
+      @click.stop.prevent="submit"
       aria-label="发送文本消息"
     >
       <SendHorizonalIcon :size="16" aria-hidden="true" />
@@ -23,7 +27,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { SendHorizonalIcon } from 'lucide-vue-next'
 

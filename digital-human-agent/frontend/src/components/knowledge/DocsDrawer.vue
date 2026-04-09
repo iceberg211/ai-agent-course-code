@@ -43,22 +43,32 @@
   </aside>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { BookOpenIcon, XIcon } from 'lucide-vue-next'
 import UploadZone from './UploadZone.vue'
 import DocItem from './DocItem.vue'
+import type { KnowledgeDocument } from '../../types'
 
-const props = defineProps({
-  personaId: { type: String, default: '' },
-  documents: { type: Array,  default: () => [] },
-  uploading: { type: Boolean, default: false },
-  loading: { type: Boolean, default: false },
-  statusLabel: { type: Function, required: true },
+const props = withDefaults(defineProps<{
+  personaId: string
+  documents: KnowledgeDocument[]
+  uploading: boolean
+  loading: boolean
+  statusLabel: (status: string) => string
+}>(), {
+  personaId: '',
+  documents: () => [],
+  uploading: false,
+  loading: false,
 })
-const emit = defineEmits(['close', 'upload', 'delete'])
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'upload', file: File): void
+  (e: 'delete', docId: string): void
+}>()
 
-function handleUpload(file) { emit('upload', file) }
-function handleDelete(docId) { emit('delete', docId) }
+function handleUpload(file: File) { emit('upload', file) }
+function handleDelete(docId: string) { emit('delete', docId) }
 </script>
 
 <style scoped>

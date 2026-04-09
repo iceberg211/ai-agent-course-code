@@ -5,17 +5,31 @@
       :key="i"
       class="chip"
       role="listitem"
-      :title="`来源：${c.source} 第${c.chunk_index + 1}段`"
+      :title="`来源：${resolveSource(c)} 第${resolveChunkNumber(c)}段`"
     >
       <LinkIcon :size="10" aria-hidden="true" />
-      {{ c.source }} · §{{ c.chunk_index + 1 }}
+      {{ resolveSource(c) }} · §{{ resolveChunkNumber(c) }}
     </span>
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { LinkIcon } from 'lucide-vue-next'
-defineProps({ citations: { type: Array, default: () => [] } })
+import type { Citation } from '../../types'
+
+defineProps<{
+  citations: Citation[]
+}>()
+
+function resolveChunkNumber(citation: Citation): number {
+  const raw = citation.chunk_index ?? citation.chunkIndex ?? 0
+  const base = Number.isFinite(Number(raw)) ? Number(raw) : 0
+  return base + 1
+}
+
+function resolveSource(citation: Citation): string {
+  return citation.source ?? '未知来源'
+}
 </script>
 
 <style scoped>
