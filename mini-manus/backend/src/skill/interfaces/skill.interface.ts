@@ -5,7 +5,14 @@ import { ChatOpenAI } from '@langchain/openai';
 
 export type SkillEvent =
   | { type: 'tool_call'; tool: string; input: unknown }
-  | { type: 'tool_result'; tool: string; output: string }
+  | {
+      type: 'tool_result';
+      tool: string;
+      output: string;
+      cached?: boolean;
+      error?: string | null;
+      errorCode?: string | null;
+    }
   | { type: 'reasoning'; content: string }
   | { type: 'progress'; message: string }
   | { type: 'result'; output: unknown };
@@ -15,6 +22,7 @@ export interface SkillContext {
   llm: ChatOpenAI;
   workspace: WorkspaceService;
   signal: AbortSignal;
+  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
 }
 
 export interface Skill {

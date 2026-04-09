@@ -12,10 +12,16 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log', 'debug'],
   });
   const logger = new Logger('Bootstrap');
+  const allowedOrigins = (
+    process.env.CORS_ALLOWED_ORIGINS ?? process.env.FRONTEND_URL ?? 'http://localhost:5173'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
 
   // ─── 跨域 ────────────────────────────────────────────────
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true,
   });
 
@@ -27,7 +33,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true, // 剔除 DTO 未声明的字段
       transform: true, // 自动类型转换
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true, // 非白名单字段直接 400，而非静默丢弃
     }),
   );
 
@@ -57,6 +63,8 @@ async function bootstrap() {
   }
 
   // ─── 启动 ────────────────────────────────────────────────
+  // 优雅关闭：收到 SIGTERM 时等待进行中的请求处理完再退出
+  app.enableShutdownHooks();
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   logger.log(`Backend running on http://localhost:${port}/api`);

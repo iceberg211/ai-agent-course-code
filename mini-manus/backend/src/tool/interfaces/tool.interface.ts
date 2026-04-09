@@ -1,9 +1,21 @@
 import { z } from 'zod';
 
+export type ToolErrorCode =
+  | 'timeout'
+  | 'network'
+  | 'tool_input_invalid'
+  | 'tool_execution_failed'
+  | 'artifact_generation_failed'
+  | 'cancelled'
+  | 'unknown';
+
 export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  errorCode?: ToolErrorCode;
+  cached?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Tool {
@@ -14,7 +26,7 @@ export interface Tool {
   execute(input: unknown): Promise<ToolResult>;
 }
 
-export const TOOL_OUTPUT_MAX_LENGTH = 5000;
+export const TOOL_OUTPUT_MAX_LENGTH = 20000;
 
 export function truncateOutput(output: string): string {
   if (output.length <= TOOL_OUTPUT_MAX_LENGTH) return output;

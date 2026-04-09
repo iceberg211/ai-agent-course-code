@@ -14,6 +14,7 @@ export const TASK_EVENTS = {
   TOOL_CALLED: 'tool.called',
   TOOL_COMPLETED: 'tool.completed',
   ARTIFACT_CREATED: 'artifact.created',
+  RUN_TOKEN_USAGE: 'run.token_usage',
 } as const;
 
 export type TaskEventName = (typeof TASK_EVENTS)[keyof typeof TASK_EVENTS];

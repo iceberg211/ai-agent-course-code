@@ -14,6 +14,10 @@ export class ThinkTool implements Tool {
 
   execute(input: unknown): Promise<ToolResult> {
     const { thought } = schema.parse(input);
-    return Promise.resolve({ success: true, output: thought });
+    return Promise.resolve({
+      success: true,
+      output: thought,
+      cached: false,
+    });
   }
 }

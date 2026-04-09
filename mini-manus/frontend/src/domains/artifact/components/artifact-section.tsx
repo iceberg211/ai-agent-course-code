@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ArtifactDetail } from '@/domains/artifact/types/artifact.types'
+import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { formatDateTime } from '@/shared/utils/date'
@@ -51,7 +52,9 @@ function DiagramPreview({ content }: { content: string }) {
         })
         .catch(() => {
           if (containerRef.current) {
-            containerRef.current.innerHTML = `<pre>${content}</pre>`
+            const pre = document.createElement('pre')
+            pre.textContent = content
+            containerRef.current.replaceChildren(pre)
           }
         })
     })
@@ -85,6 +88,79 @@ const TYPE_LABELS: Record<string, string> = {
   file: '文件',
   code: '代码',
   diagram: '图表',
+}
+
+const TYPE_EXTENSIONS: Record<string, string> = {
+  markdown: 'md',
+  json: 'json',
+  file: 'bin',
+  code: 'txt',
+  diagram: 'mmd',
+}
+
+const LANGUAGE_EXTENSIONS: Record<string, string> = {
+  javascript: 'js',
+  typescript: 'ts',
+  python: 'py',
+  json: 'json',
+  bash: 'sh',
+  shell: 'sh',
+  html: 'html',
+  css: 'css',
+  sql: 'sql',
+}
+
+function sanitizeFilenamePart(input: string) {
+  return input.replace(/[^a-zA-Z0-9\u4e00-\u9fa5-_]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function getArtifactFilename(artifact: ArtifactDetail) {
+  const metadataName =
+    typeof artifact.metadata?.fileName === 'string' ? artifact.metadata.fileName : null
+  if (metadataName) return metadataName
+
+  const extension =
+    artifact.type === 'code' && typeof artifact.metadata?.language === 'string'
+      ? (LANGUAGE_EXTENSIONS[artifact.metadata.language] ?? artifact.metadata.language)
+      : TYPE_EXTENSIONS[artifact.type] ?? 'txt'
+
+  return `${sanitizeFilenamePart(artifact.title || 'artifact')}.${extension}`
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadArtifact(artifact: ArtifactDetail) {
+  const filename = getArtifactFilename(artifact)
+  if (
+    artifact.type === 'file' &&
+    artifact.metadata?.encoding === 'base64' &&
+    typeof artifact.metadata?.mimeType === 'string'
+  ) {
+    const binary = atob(artifact.content)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    triggerDownload(new Blob([bytes], { type: artifact.metadata.mimeType }), filename)
+    return
+  }
+
+  const mimeType =
+    artifact.type === 'json'
+      ? 'application/json'
+      : artifact.type === 'markdown'
+        ? 'text/markdown'
+        : artifact.type === 'diagram'
+          ? 'text/plain'
+          : 'text/plain'
+  triggerDownload(new Blob([artifact.content], { type: mimeType }), filename)
 }
 
 export function ArtifactSection({
@@ -140,6 +216,20 @@ export function ArtifactSection({
 
       {/* 按类型渲染内容 */}
       <div className="artifact-preview">
+        {selectedArtifact ? (
+          <div className="artifact-preview__toolbar">
+            <div className="artifact-preview__meta">
+              <span className="artifact-preview__pill">
+                {TYPE_LABELS[selectedArtifact.type] ?? selectedArtifact.type}
+              </span>
+              <span>{getArtifactFilename(selectedArtifact)}</span>
+            </div>
+            <Button variant="ghost" onClick={() => downloadArtifact(selectedArtifact)}>
+              下载产物
+            </Button>
+          </div>
+        ) : null}
+
         {selectedArtifact?.type === 'markdown' ? (
           <MarkdownPreview content={selectedArtifact.content} />
         ) : selectedArtifact?.type === 'code' ? (
@@ -151,7 +241,16 @@ export function ArtifactSection({
         ) : (
           <div className="artifact-file-placeholder">
             <strong>文件型产物</strong>
-            <pre>{selectedArtifact?.content}</pre>
+            <p>文件名：{getArtifactFilename(selectedArtifact)}</p>
+            <p>
+              MIME：
+              {typeof selectedArtifact?.metadata?.mimeType === 'string'
+                ? selectedArtifact.metadata.mimeType
+                : 'application/octet-stream'}
+            </p>
+            {typeof selectedArtifact?.metadata?.sizeBytes === 'number' ? (
+              <p>大小：{selectedArtifact.metadata.sizeBytes} bytes</p>
+            ) : null}
           </div>
         )}
       </div>

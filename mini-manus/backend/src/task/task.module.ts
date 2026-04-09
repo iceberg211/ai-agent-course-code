@@ -11,6 +11,7 @@ import { StepRun } from '@/task/entities/step-run.entity';
 import { Artifact } from '@/task/entities/artifact.entity';
 import { AgentModule } from '@/agent/agent.module';
 import { EventModule } from '@/event/event.module';
+import { WorkspaceModule } from '@/workspace/workspace.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { EventModule } from '@/event/event.module';
     ]),
     AgentModule,
     EventModule,
+    WorkspaceModule,
   ],
   providers: [TaskService],
   controllers: [TaskController],

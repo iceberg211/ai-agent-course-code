@@ -49,7 +49,25 @@ export interface AgentCallbacks {
     title: string,
     content: string,
     type?: ArtifactType,
+    metadata?: Record<string, unknown> | null,
   ): Promise<Artifact>;
+  /**
+   * 读取当前 task 最近完成 run 的摘要，注入 Planner 作为参考记忆。
+   * 返回空字符串表示没有历史记忆。
+   */
+  getRecentMemory(taskId: string): Promise<string>;
+  /**
+   * 将本次 run 的 token 用量和成本估算持久化到 task_runs 表。
+   */
+  saveTokenUsage(
+    runId: string,
+    stats: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      estimatedCostUsd: number | null;
+    },
+  ): Promise<void>;
   finalize(taskId: string): Promise<void>;
 }
 

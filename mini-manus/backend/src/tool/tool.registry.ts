@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
 
 interface CacheEntry {
@@ -10,10 +11,12 @@ interface CacheEntry {
 export class ToolRegistry implements OnModuleInit {
   private readonly logger = new Logger(ToolRegistry.name);
   private readonly tools = new Map<string, Tool>();
-
-  /** read-only 工具结果缓存，key = "toolName:JSON(input)"，TTL 5 分钟 */
   private readonly toolCache = new Map<string, CacheEntry>();
-  private readonly CACHE_TTL_MS = 5 * 60 * 1000;
+  private readonly cacheTtlMs: number;
+
+  constructor(private readonly config: ConfigService) {
+    this.cacheTtlMs = config.get<number>('TOOL_CACHE_TTL_MS', 5 * 60 * 1000);
+  }
 
   onModuleInit() {
     this.logger.log(`ToolRegistry initialized with ${this.tools.size} tools`);
@@ -62,14 +65,18 @@ export class ToolRegistry implements OnModuleInit {
 
     if (cached && cached.expiresAt > now) {
       this.logger.debug(`Cache hit: ${name}`);
-      return cached.result;
+      return { ...cached.result, cached: true };
     }
 
     const result = await tool.execute(input);
+    const normalizedResult = { ...result, cached: false };
     // 只缓存成功结果，失败结果不缓存（下次重试应真正执行）
-    if (result.success) {
-      this.toolCache.set(key, { result, expiresAt: now + this.CACHE_TTL_MS });
+    if (normalizedResult.success) {
+      this.toolCache.set(key, {
+        result: normalizedResult,
+        expiresAt: now + this.cacheTtlMs,
+      });
     }
-    return result;
+    return normalizedResult;
   }
 }

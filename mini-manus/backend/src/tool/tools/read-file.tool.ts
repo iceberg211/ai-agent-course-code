@@ -6,6 +6,7 @@ import {
   ToolResult,
   truncateOutput,
 } from '@/tool/interfaces/tool.interface';
+import { classifyToolError } from '@/tool/utils/tool-error';
 import { WorkspaceService } from '@/workspace/workspace.service';
 
 const schema = z.object({
@@ -24,14 +25,13 @@ export class ReadFileTool implements Tool {
   constructor(private readonly workspace: WorkspaceService) {}
 
   async execute(input: unknown): Promise<ToolResult> {
-    const { task_id, path: filePath } = schema.parse(input);
     try {
+      const { task_id, path: filePath } = schema.parse(input);
       const safePath = this.workspace.resolveSafePath(task_id, filePath);
       const content = await fs.readFile(safePath, 'utf-8');
       return { success: true, output: truncateOutput(content) };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: '', error: `Cannot read file: ${msg}` };
+      return classifyToolError(err, 'Cannot read file');
     }
   }
 }

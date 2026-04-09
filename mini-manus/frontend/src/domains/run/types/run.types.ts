@@ -49,9 +49,12 @@ export interface RunDetail extends RunSummary {
 export interface LiveToolCall {
   id: string
   toolName: string
-  state: 'pending' | 'completed'
+  state: 'pending' | 'completed' | 'failed'
   input: Record<string, unknown> | null
   output: string | null
+  cached: boolean
+  error: string | null
+  errorCode: string | null
   startedAt: string
   completedAt: string | null
 }
@@ -72,6 +75,12 @@ export interface LiveStepFeed {
   toolCalls: LiveToolCall[]
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 export interface LiveRunFeed {
   taskId: string
   runId: string
@@ -82,4 +91,5 @@ export interface LiveRunFeed {
   activeStepRunId: string | null
   stepOrder: string[]
   steps: Record<string, LiveStepFeed>
+  tokenUsage: TokenUsage | null
 }

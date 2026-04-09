@@ -76,6 +76,9 @@ export class DocumentWritingSkill implements Skill {
       type: 'tool_result',
       tool: 'write_file',
       output: writeResult.output,
+      cached: writeResult.cached ?? false,
+      error: writeResult.error ?? null,
+      errorCode: writeResult.errorCode ?? null,
     };
 
     if (!writeResult.success) {

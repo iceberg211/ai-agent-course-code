@@ -15,15 +15,53 @@ import { evaluatorNode } from '@/agent/nodes/evaluator.node';
 import { finalizerNode } from '@/agent/nodes/finalizer.node';
 import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
+import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 
-const MAX_RETRIES = 3;
-const MAX_REPLANS = 2;
-const MAX_STEPS = 20;
+/** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
+const MODEL_PRICING: Record<
+  string,
+  { inputPerMillion: number; outputPerMillion: number }
+> = {
+  'gpt-4o': { inputPerMillion: 5.0, outputPerMillion: 15.0 },
+  'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+  'gpt-4-turbo': { inputPerMillion: 10.0, outputPerMillion: 30.0 },
+  'qwen-plus': { inputPerMillion: 0.4, outputPerMillion: 1.2 },
+  'qwen-max': { inputPerMillion: 1.6, outputPerMillion: 4.8 },
+  'qwen-turbo': { inputPerMillion: 0.05, outputPerMillion: 0.2 },
+  'deepseek-chat': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  'deepseek-reasoner': { inputPerMillion: 0.55, outputPerMillion: 2.19 },
+};
+
+function estimateCostUsd(
+  modelName: string,
+  inputTokens: number,
+  outputTokens: number,
+): number | null {
+  const pricing = MODEL_PRICING[modelName];
+  if (!pricing) return null;
+  return (
+    (inputTokens / 1_000_000) * pricing.inputPerMillion +
+    (outputTokens / 1_000_000) * pricing.outputPerMillion
+  );
+}
+
+function readBoolean(
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean {
+  if (value == null) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
 
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
   readonly llm: ChatOpenAI;
+  private readonly maxRetries: number;
+  private readonly maxReplans: number;
+  private readonly maxSteps: number;
+  private readonly stepTimeoutMs: number;
+  private readonly exportPdfEnabled: boolean;
   /**
    * 结构化输出方式：
    * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
@@ -32,7 +70,10 @@ export class AgentService {
    *
    * 通过 STRUCTURED_OUTPUT_METHOD 环境变量覆盖，默认 functionCalling。
    */
-  readonly structuredOutputMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
+  readonly structuredOutputMethod:
+    | 'functionCalling'
+    | 'json_schema'
+    | 'jsonMode';
 
   constructor(
     private readonly config: ConfigService,
@@ -41,17 +82,34 @@ export class AgentService {
     private readonly workspace: WorkspaceService,
     private readonly eventPublisher: EventPublisher,
   ) {
+    const llmCacheEnabled = readBoolean(
+      config.get<string>('LLM_CACHE_ENABLED'),
+      true,
+    );
     this.llm = new ChatOpenAI({
       modelName: config.get<string>('MODEL_NAME', 'gpt-4o-mini'),
       apiKey: config.get<string>('OPENAI_API_KEY', ''),
       configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
       temperature: 0,
-      cache: new InMemoryCache(), // 相同 prompt 直接命中缓存，减少 token 消耗
+      cache: llmCacheEnabled ? new InMemoryCache() : undefined,
     });
+    this.maxRetries = config.get<number>('MAX_RETRIES', 3);
+    this.maxReplans = config.get<number>('MAX_REPLANS', 2);
+    this.maxSteps = config.get<number>('MAX_STEPS', 20);
+    this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 60_000);
+    this.exportPdfEnabled = readBoolean(
+      config.get<string>('EXPORT_PDF_ENABLED'),
+      false,
+    );
 
-    const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling');
+    const raw = config.get<string>(
+      'STRUCTURED_OUTPUT_METHOD',
+      'functionCalling',
+    );
     this.structuredOutputMethod = (
-      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw) ? raw : 'functionCalling'
+      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw)
+        ? raw
+        : 'functionCalling'
     ) as this['structuredOutputMethod'];
 
     this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
@@ -94,13 +152,29 @@ export class AgentService {
           callbacks,
           eventPublisher,
           signal,
+          this.stepTimeoutMs,
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
-        return evaluatorNode(state, llm, callbacks, eventPublisher, soMethod);
+        return evaluatorNode(
+          state,
+          llm,
+          callbacks,
+          eventPublisher,
+          soMethod,
+          this.maxRetries,
+          this.maxReplans,
+        );
       })
       .addNode('finalizer', async (state: AgentState) => {
-        return finalizerNode(state, llm, callbacks, eventPublisher);
+        return finalizerNode(
+          state,
+          llm,
+          callbacks,
+          eventPublisher,
+          this.exportPdfEnabled,
+          soMethod,
+        );
       })
       .addEdge(START, 'planner')
       .addEdge('planner', 'executor')
@@ -114,17 +188,17 @@ export class AgentService {
         if (eval_.decision === 'fail') return END;
 
         if (eval_.decision === 'retry') {
-          if (state.retryCount >= MAX_RETRIES) return END;
+          if (state.retryCount >= this.maxRetries) return END;
           return 'executor';
         }
         if (eval_.decision === 'replan') {
-          if (state.replanCount >= MAX_REPLANS) return END;
+          if (state.replanCount >= this.maxReplans) return END;
           return 'planner';
         }
         // continue: advance step or finalize
         const nextIndex = state.currentStepIndex + 1;
         const totalSteps = state.currentPlan?.steps.length ?? 0;
-        if (nextIndex >= totalSteps || state.executionOrder >= MAX_STEPS)
+        if (nextIndex >= totalSteps || state.executionOrder >= this.maxSteps)
           return 'finalizer';
         return 'executor';
       })
@@ -150,22 +224,38 @@ export class AgentService {
     eventPublisher.emit(TASK_EVENTS.RUN_STARTED, { taskId, runId });
     await callbacks.setRunStatus(runId, RunStatus.RUNNING);
 
+    const tokenTracker = new TokenTrackerCallback();
+
     try {
-      const finalState = await compiled.invoke(initialState);
+      const finalState = await compiled.invoke(initialState, {
+        callbacks: [tokenTracker],
+      });
+
+      // 检测因重试/重规划/fail 耗尽而退出的情况：
+      // evaluator 返回 END 时不设 errorMessage，若不主动识别会被误判为 completed
+      const decision = finalState.evaluation?.decision;
+      const isExhausted =
+        decision === 'fail' ||
+        (decision === 'retry' && finalState.retryCount >= this.maxRetries) ||
+        (decision === 'replan' && finalState.replanCount >= this.maxReplans);
 
       if (finalState.shouldStop || finalState.errorMessage === 'cancelled') {
         await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
         eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
-      } else if (finalState.errorMessage) {
-        await callbacks.setRunStatus(
-          runId,
-          RunStatus.FAILED,
-          finalState.errorMessage ?? undefined,
-        );
+      } else if (finalState.errorMessage || isExhausted) {
+        const msg =
+          finalState.errorMessage ??
+          finalState.evaluation?.reason ??
+          (decision === 'retry'
+            ? `重试次数已耗尽（上限 ${this.maxRetries}）`
+            : decision === 'replan'
+              ? `重规划次数已耗尽（上限 ${this.maxReplans}）`
+              : '任务执行失败');
+        await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
         eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
           taskId,
           runId,
-          error: finalState.errorMessage,
+          error: msg,
         });
       } else {
         await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
@@ -181,6 +271,38 @@ export class AgentService {
         error: msg,
       });
     } finally {
+      // 持久化 token 统计 + 推送实时事件
+      if (tokenTracker.totalTokens > 0) {
+        const estimatedCostUsd = estimateCostUsd(
+          this.llm.modelName ?? '',
+          tokenTracker.inputTokens,
+          tokenTracker.outputTokens,
+        );
+        this.logger.log(
+          `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}${estimatedCostUsd != null ? `, cost: $${estimatedCostUsd.toFixed(6)}` : ''}`,
+        );
+        // 持久化到 task_runs（失败不阻塞 finalize）
+        try {
+          await callbacks.saveTokenUsage(runId, {
+            inputTokens: tokenTracker.inputTokens,
+            outputTokens: tokenTracker.outputTokens,
+            totalTokens: tokenTracker.totalTokens,
+            estimatedCostUsd,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Failed to save token usage for run ${runId}: ${String(err)}`,
+          );
+        }
+        eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
+          taskId,
+          runId,
+          inputTokens: tokenTracker.inputTokens,
+          outputTokens: tokenTracker.outputTokens,
+          totalTokens: tokenTracker.totalTokens,
+          estimatedCostUsd,
+        });
+      }
       await callbacks.finalize(taskId);
     }
   }

@@ -13,6 +13,7 @@ export const TASK_EVENTS = {
   toolCalled: 'tool.called',
   toolCompleted: 'tool.completed',
   artifactCreated: 'artifact.created',
+  runTokenUsage: 'run.token_usage',
   taskSnapshot: 'task:snapshot',
 } as const
 
@@ -30,4 +31,5 @@ export const TASK_ROOM_EVENTS = [
   TASK_EVENTS.toolCalled,
   TASK_EVENTS.toolCompleted,
   TASK_EVENTS.artifactCreated,
+  TASK_EVENTS.runTokenUsage,
 ] as const

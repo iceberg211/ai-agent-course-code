@@ -8,8 +8,6 @@ import { ExecutorType, StepStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 
-const STEP_TIMEOUT_MS = 60_000;
-
 /** 给任意 Promise 加超时，超时视为可重试错误 */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -29,6 +27,8 @@ export async function executorNode(
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
   signal: AbortSignal,
+  stepTimeoutMs: number,
+  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
 ): Promise<Partial<AgentState>> {
   if (!state.currentPlan) throw new Error('No plan available');
 
@@ -79,6 +79,7 @@ export async function executorNode(
             llm,
             workspace,
             signal,
+            soMethod,
           })) {
             if (event.type === 'tool_call') {
               eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {
@@ -103,6 +104,9 @@ export async function executorNode(
                 stepRunId: stepRun.id,
                 toolName: event.tool,
                 toolOutput: event.output,
+                cached: event.cached ?? false,
+                error: event.error ?? null,
+                errorCode: event.errorCode ?? null,
               });
             } else if (event.type === 'progress') {
               eventPublisher.emit(TASK_EVENTS.STEP_PROGRESS, {
@@ -119,7 +123,7 @@ export async function executorNode(
             if (signal.aborted) break;
           }
         })(),
-        STEP_TIMEOUT_MS,
+        stepTimeoutMs,
       );
 
       const resultSummary =
@@ -157,7 +161,7 @@ export async function executorNode(
       // read-only 工具走缓存（executeWithCache），side-effect 工具直接执行
       const toolResult = await withTimeout(
         toolRegistry.executeWithCache(toolName, toolInput),
-        STEP_TIMEOUT_MS,
+        stepTimeoutMs,
       );
 
       eventPublisher.emit(TASK_EVENTS.TOOL_COMPLETED, {
@@ -165,12 +169,20 @@ export async function executorNode(
         runId: state.runId,
         stepRunId: stepRun.id,
         toolName,
-        toolOutput: toolResult.output,
+        toolOutput: toolResult.success
+          ? toolResult.output
+          : (toolResult.error ?? toolResult.output),
+        cached: toolResult.cached ?? false,
+        error: toolResult.error ?? null,
+        errorCode: toolResult.errorCode ?? null,
       });
 
+      const failureContext = toolResult.success
+        ? null
+        : `error (${toolResult.errorCode ?? 'tool_execution_failed'}): ${toolResult.error ?? toolResult.output ?? '工具执行失败'}`;
       const resultSummary = toolResult.success
         ? toolResult.output.slice(0, 500)
-        : (toolResult.error ?? '工具执行失败');
+        : failureContext;
 
       await callbacks.updateStepRun(stepRun.id, {
         executorType: ExecutorType.TOOL,
@@ -186,7 +198,9 @@ export async function executorNode(
         executionOrder: state.executionOrder + 1,
         evaluation: null,
         lastStepRunId: stepRun.id,
-        lastStepOutput: toolResult.output,
+        lastStepOutput: toolResult.success
+          ? toolResult.output
+          : failureContext!,
       };
     }
   } catch (err: unknown) {

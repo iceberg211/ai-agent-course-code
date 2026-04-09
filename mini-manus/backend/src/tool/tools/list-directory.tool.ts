@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import { z } from 'zod';
 import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
+import { classifyToolError } from '@/tool/utils/tool-error';
 import { WorkspaceService } from '@/workspace/workspace.service';
 
 const schema = z.object({
@@ -22,8 +23,8 @@ export class ListDirectoryTool implements Tool {
   constructor(private readonly workspace: WorkspaceService) {}
 
   async execute(input: unknown): Promise<ToolResult> {
-    const { task_id, path: dirPath } = schema.parse(input);
     try {
+      const { task_id, path: dirPath } = schema.parse(input);
       const safePath = this.workspace.resolveSafePath(task_id, dirPath);
       const entries = await fs.readdir(safePath, { withFileTypes: true });
       const lines = entries.map((e) =>
@@ -31,12 +32,7 @@ export class ListDirectoryTool implements Tool {
       );
       return { success: true, output: lines.join('\n') || '(empty directory)' };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        output: '',
-        error: `Cannot list directory: ${msg}`,
-      };
+      return classifyToolError(err, 'Cannot list directory');
     }
   }
 }
