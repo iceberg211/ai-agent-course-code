@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { z } from 'zod';
 import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
+import { classifyToolError } from '@/tool/utils/tool-error';
 import { WorkspaceService } from '@/workspace/workspace.service';
 
 const schema = z.object({
@@ -22,8 +23,8 @@ export class WriteFileTool implements Tool {
   constructor(private readonly workspace: WorkspaceService) {}
 
   async execute(input: unknown): Promise<ToolResult> {
-    const { task_id, path: filePath, content } = schema.parse(input);
     try {
+      const { task_id, path: filePath, content } = schema.parse(input);
       const safePath = this.workspace.resolveSafePath(task_id, filePath);
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, content, 'utf-8');
@@ -32,8 +33,7 @@ export class WriteFileTool implements Tool {
         output: `File written: ${filePath} (${content.length} chars)`,
       };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: '', error: `Cannot write file: ${msg}` };
+      return classifyToolError(err, 'Cannot write file');
     }
   }
 }

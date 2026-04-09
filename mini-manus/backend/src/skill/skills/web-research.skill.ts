@@ -49,6 +49,9 @@ export class WebResearchSkill implements Skill {
       type: 'tool_result',
       tool: 'web_search',
       output: searchResult.output,
+      cached: searchResult.cached ?? false,
+      error: searchResult.error ?? null,
+      errorCode: searchResult.errorCode ?? null,
     };
 
     if (ctx.signal.aborted) return;
@@ -59,20 +62,33 @@ export class WebResearchSkill implements Skill {
     const pageContents: string[] = [];
     const sources: string[] = [];
 
-    // Step 2: Browse top pages
-    const browseTool = ctx.tools.get('browse_url');
+    // Step 2: Browse top pages（同样走缓存，避免重复抓取）
     for (const url of urls) {
       if (ctx.signal.aborted) return;
-      yield { type: 'tool_call', tool: 'browse_url', input: { url } };
-      const pageResult = await browseTool.execute({ url });
+      yield {
+        type: 'progress',
+        message: `正在阅读来源：${url}`,
+      };
+      yield {
+        type: 'tool_call',
+        tool: 'fetch_url_as_markdown',
+        input: { url },
+      };
+      const pageResult = await ctx.tools.executeWithCache(
+        'fetch_url_as_markdown',
+        { url },
+      );
       if (pageResult.success) {
         pageContents.push(`--- ${url} ---\n${pageResult.output}`);
         sources.push(url);
       }
       yield {
         type: 'tool_result',
-        tool: 'browse_url',
-        output: pageResult.output.slice(0, 200) + '...',
+        tool: 'fetch_url_as_markdown',
+        output: (pageResult.output || pageResult.error || '').slice(0, 200) + '...',
+        cached: pageResult.cached ?? false,
+        error: pageResult.error ?? null,
+        errorCode: pageResult.errorCode ?? null,
       };
     }
 

@@ -29,7 +29,10 @@ function runPreChecks(
     lower.startsWith('error') ||
     lower.startsWith('failed') ||
     lower.startsWith('cannot') ||
-    lower.includes('exception');
+    lower.includes('exception') ||
+    lower.includes('tool_execution_failed') ||
+    lower.includes('tool_input_invalid') ||
+    lower.includes('artifact_generation_failed');
   const isTimeout = lower.includes('超时') || lower.includes('timeout');
   const isBadOutput = isEmpty || isError || isTimeout;
 

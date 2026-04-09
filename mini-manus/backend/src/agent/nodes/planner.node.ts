@@ -43,9 +43,14 @@ export async function plannerNode(
     '\n工具参数示例（toolInput 字段）：\n' +
     '- web_search:      {"query": "搜索词"}\n' +
     '- browse_url:      {"url": "https://..."}\n' +
+    '- fetch_url_as_markdown: {"url": "https://..."}\n' +
     '- read_file:       {"task_id": "<taskId>", "path": "文件名"}\n' +
     '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "..."}\n' +
     '- list_directory:  {"task_id": "<taskId>", "path": "."}\n' +
+    '- download_file:   {"task_id": "<taskId>", "url": "https://...", "path": "资料.pdf"}\n' +
+    '- extract_pdf_text: {"task_id": "<taskId>", "path": "资料.pdf"}\n' +
+    '- export_pdf:      {"task_id": "<taskId>", "title": "报告", "content": "...", "path": "report.pdf"}\n' +
+    '- github_search:   {"query": "langgraph agent", "max_results": 5}\n' +
     '- think:           {"thought": "推理内容"}';
 
   const completedContext =

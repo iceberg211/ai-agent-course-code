@@ -13,6 +13,9 @@ interface BasePayload {
   taskId?: string
   runId?: string
 }
+interface RunFailedPayload extends BasePayload {
+  error?: string
+}
 interface StepStartedPayload extends BasePayload {
   stepRunId?: string
   planStepId?: string
@@ -43,6 +46,9 @@ interface ToolCompletedPayload extends BasePayload {
   stepRunId?: string
   toolName?: string
   toolOutput?: string | null
+  cached?: boolean
+  error?: string | null
+  errorCode?: string | null
 }
 interface PlanCreatedPayload extends BasePayload {
   version?: number
@@ -296,6 +302,9 @@ export function useTaskSocketSync(
                   state: 'pending',
                   input: payload.toolInput ?? null,
                   output: null,
+                  cached: false,
+                  error: null,
+                  errorCode: null,
                   startedAt: at,
                   completedAt: null,
                 },
@@ -323,17 +332,23 @@ export function useTaskSocketSync(
           const realIdx = toolCalls.length - 1 - pendingIdx
           toolCalls[realIdx] = {
             ...toolCalls[realIdx],
-            state: 'completed',
+            state: payload.error ? 'failed' : 'completed',
             output: payload.toolOutput ?? null,
+            cached: payload.cached ?? false,
+            error: payload.error ?? null,
+            errorCode: payload.errorCode ?? null,
             completedAt: at,
           }
         } else {
           toolCalls.push({
             id: `${stepRunId}:${toolName}:${toolCalls.length + 1}`,
             toolName,
-            state: 'completed',
+            state: payload.error ? 'failed' : 'completed',
             input: null,
             output: payload.toolOutput ?? null,
+            cached: payload.cached ?? false,
+            error: payload.error ?? null,
+            errorCode: payload.errorCode ?? null,
             startedAt: at,
             completedAt: at,
           })
@@ -341,7 +356,7 @@ export function useTaskSocketSync(
 
         return {
           ...feed,
-          latestNarration: `已完成 ${toolName}`,
+          latestNarration: payload.error ? `${toolName} 执行失败` : `已完成 ${toolName}`,
           steps: { ...feed.steps, [stepRunId]: { ...currentStep, toolCalls } },
         }
       }),
@@ -434,7 +449,8 @@ export function useTaskSocketSync(
     const onConnect = () => setSocketConnected(true)
     const onDisconnect = () => setSocketConnected(false)
     const onRunCompleted = (p: BasePayload) => handleRunTerminal(p, 'completed', '本轮任务已完成')
-    const onRunFailed = (p: BasePayload) => handleRunTerminal(p, 'failed', '本轮任务执行失败')
+    const onRunFailed = (p: RunFailedPayload) =>
+      handleRunTerminal(p, 'failed', p.error ?? '本轮任务执行失败')
     const onRunCancelled = (p: BasePayload) => handleRunTerminal(p, 'cancelled', '本轮任务已取消')
 
     socket.on('connect', onConnect)

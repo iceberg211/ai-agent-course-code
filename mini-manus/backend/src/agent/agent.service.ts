@@ -16,14 +16,23 @@ import { finalizerNode } from '@/agent/nodes/finalizer.node';
 import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 
-const MAX_RETRIES = 3;
-const MAX_REPLANS = 2;
-const MAX_STEPS = 20;
+function readBoolean(
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean {
+  if (value == null) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
 
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
   readonly llm: ChatOpenAI;
+  private readonly maxRetries: number;
+  private readonly maxReplans: number;
+  private readonly maxSteps: number;
+  private readonly stepTimeoutMs: number;
+  private readonly exportPdfEnabled: boolean;
   /**
    * 结构化输出方式：
    * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
@@ -32,7 +41,10 @@ export class AgentService {
    *
    * 通过 STRUCTURED_OUTPUT_METHOD 环境变量覆盖，默认 functionCalling。
    */
-  readonly structuredOutputMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
+  readonly structuredOutputMethod:
+    | 'functionCalling'
+    | 'json_schema'
+    | 'jsonMode';
 
   constructor(
     private readonly config: ConfigService,
@@ -41,17 +53,34 @@ export class AgentService {
     private readonly workspace: WorkspaceService,
     private readonly eventPublisher: EventPublisher,
   ) {
+    const llmCacheEnabled = readBoolean(
+      config.get<string>('LLM_CACHE_ENABLED'),
+      true,
+    );
     this.llm = new ChatOpenAI({
       modelName: config.get<string>('MODEL_NAME', 'gpt-4o-mini'),
       apiKey: config.get<string>('OPENAI_API_KEY', ''),
       configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
       temperature: 0,
-      cache: new InMemoryCache(), // 相同 prompt 直接命中缓存，减少 token 消耗
+      cache: llmCacheEnabled ? new InMemoryCache() : undefined,
     });
+    this.maxRetries = config.get<number>('MAX_RETRIES', 3);
+    this.maxReplans = config.get<number>('MAX_REPLANS', 2);
+    this.maxSteps = config.get<number>('MAX_STEPS', 20);
+    this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 60_000);
+    this.exportPdfEnabled = readBoolean(
+      config.get<string>('EXPORT_PDF_ENABLED'),
+      false,
+    );
 
-    const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling');
+    const raw = config.get<string>(
+      'STRUCTURED_OUTPUT_METHOD',
+      'functionCalling',
+    );
     this.structuredOutputMethod = (
-      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw) ? raw : 'functionCalling'
+      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw)
+        ? raw
+        : 'functionCalling'
     ) as this['structuredOutputMethod'];
 
     this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
@@ -94,13 +123,21 @@ export class AgentService {
           callbacks,
           eventPublisher,
           signal,
+          this.stepTimeoutMs,
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
         return evaluatorNode(state, llm, callbacks, eventPublisher, soMethod);
       })
       .addNode('finalizer', async (state: AgentState) => {
-        return finalizerNode(state, llm, callbacks, eventPublisher);
+        return finalizerNode(
+          state,
+          llm,
+          callbacks,
+          eventPublisher,
+          this.exportPdfEnabled,
+          soMethod,
+        );
       })
       .addEdge(START, 'planner')
       .addEdge('planner', 'executor')
@@ -114,17 +151,17 @@ export class AgentService {
         if (eval_.decision === 'fail') return END;
 
         if (eval_.decision === 'retry') {
-          if (state.retryCount >= MAX_RETRIES) return END;
+          if (state.retryCount >= this.maxRetries) return END;
           return 'executor';
         }
         if (eval_.decision === 'replan') {
-          if (state.replanCount >= MAX_REPLANS) return END;
+          if (state.replanCount >= this.maxReplans) return END;
           return 'planner';
         }
         // continue: advance step or finalize
         const nextIndex = state.currentStepIndex + 1;
         const totalSteps = state.currentPlan?.steps.length ?? 0;
-        if (nextIndex >= totalSteps || state.executionOrder >= MAX_STEPS)
+        if (nextIndex >= totalSteps || state.executionOrder >= this.maxSteps)
           return 'finalizer';
         return 'executor';
       })

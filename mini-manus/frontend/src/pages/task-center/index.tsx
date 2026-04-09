@@ -4,6 +4,7 @@ import { ArtifactSection } from '@/domains/artifact/components/artifact-section'
 import { useArtifactSelectionSync } from '@/domains/artifact/hooks/use-artifact-selection-sync'
 import { useSelectedArtifact } from '@/domains/artifact/hooks/use-selected-artifact'
 import { PlanSection } from '@/domains/plan/components/plan-section'
+import { RunDebugPanel } from '@/domains/run/components/run-debug-panel'
 import { TimelineSection } from '@/domains/run/components/timeline-section'
 import { useRunDetailQuery } from '@/domains/run/hooks/use-run-detail-query'
 import { useSelectedRun } from '@/domains/run/hooks/use-selected-run'
@@ -148,6 +149,8 @@ export function TaskCenterPage() {
                 stepRuns={currentRun?.stepRuns ?? []}
               />
             </section>
+
+            <RunDebugPanel liveRunFeed={liveRunFeed} runDetail={currentRun ?? null} />
 
             <ArtifactSection
               artifacts={currentRun?.artifacts ?? []}

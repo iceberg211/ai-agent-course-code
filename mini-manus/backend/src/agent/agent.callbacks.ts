@@ -49,6 +49,7 @@ export interface AgentCallbacks {
     title: string,
     content: string,
     type?: ArtifactType,
+    metadata?: Record<string, unknown> | null,
   ): Promise<Artifact>;
   finalize(taskId: string): Promise<void>;
 }

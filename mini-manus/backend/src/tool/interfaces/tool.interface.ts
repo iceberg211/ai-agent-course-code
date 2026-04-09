@@ -1,9 +1,21 @@
 import { z } from 'zod';
 
+export type ToolErrorCode =
+  | 'timeout'
+  | 'network'
+  | 'tool_input_invalid'
+  | 'tool_execution_failed'
+  | 'artifact_generation_failed'
+  | 'cancelled'
+  | 'unknown';
+
 export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  errorCode?: ToolErrorCode;
+  cached?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Tool {

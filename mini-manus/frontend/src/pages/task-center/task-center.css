@@ -747,8 +747,26 @@
   align-items: center;
 }
 
+.timeline-live__tool-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .timeline-live__tool-name {
   font-weight: 700;
+}
+
+.timeline-live__cache,
+.artifact-preview__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(56, 135, 96, 0.12);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .timeline-item__detail pre,
@@ -809,6 +827,24 @@
   animation: artifact-rise 220ms ease;
 }
 
+.artifact-preview__toolbar,
+.artifact-preview__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.artifact-preview__toolbar {
+  margin-bottom: 18px;
+}
+
+.artifact-preview__meta {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
 .markdown-body {
   color: var(--ink);
 }
@@ -830,7 +866,40 @@
 }
 
 .artifact-file-placeholder p {
+  margin: 8px 0 0;
   color: var(--ink-soft);
+}
+
+.run-debug {
+  display: grid;
+  gap: 16px;
+}
+
+.run-debug__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.run-debug__card,
+.run-debug__error {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+}
+
+.run-debug__label {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.run-debug__value {
+  font-size: 16px;
+  line-height: 1.4;
 }
 
 .empty-state {

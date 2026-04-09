@@ -7,6 +7,7 @@ import {
   ToolResult,
   truncateOutput,
 } from '@/tool/interfaces/tool.interface';
+import { classifyToolError, toolFailure } from '@/tool/utils/tool-error';
 
 const schema = z.object({
   query: z.string().min(1).describe('Search query'),
@@ -24,18 +25,17 @@ export class WebSearchTool implements Tool {
   constructor(private readonly config: ConfigService) {}
 
   async execute(input: unknown): Promise<ToolResult> {
-    const parsed = schema.parse(input);
-    const apiKey = this.config.get<string>('TAVILY_API_KEY', '');
-
-    if (!apiKey) {
-      return {
-        success: false,
-        output: '',
-        error: 'TAVILY_API_KEY not configured',
-      };
-    }
-
     try {
+      const parsed = schema.parse(input);
+      const apiKey = this.config.get<string>('TAVILY_API_KEY', '');
+
+      if (!apiKey) {
+        return toolFailure(
+          'tool_execution_failed',
+          'TAVILY_API_KEY not configured',
+        );
+      }
+
       const response = await axios.post(
         'https://api.tavily.com/search',
         { query: parsed.query, max_results: parsed.max_results ?? 5 },
@@ -52,8 +52,7 @@ export class WebSearchTool implements Tool {
 
       return { success: true, output: truncateOutput(output || '无结果') };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: '', error: `Search failed: ${msg}` };
+      return classifyToolError(err, 'Search failed');
     }
   }
 }

@@ -85,12 +85,23 @@ export function TimelineSection({ liveRunFeed, plans, stepRuns }: TimelineSectio
                 {activeLiveStep.toolCalls.length ? (
                   <div className="timeline-live__tools">
                     {activeLiveStep.toolCalls.map((toolCall) => (
-                      <div key={toolCall.id} className="timeline-live__tool">
-                        <div className="timeline-live__tool-head">
-                          <span className="timeline-live__tool-name">{toolCall.toolName}</span>
-                          <StatusBadge
-                            status={toolCall.state === 'pending' ? 'running' : 'completed'}
-                          />
+                        <div key={toolCall.id} className="timeline-live__tool">
+                          <div className="timeline-live__tool-head">
+                            <span className="timeline-live__tool-name">{toolCall.toolName}</span>
+                            <div className="timeline-live__tool-status">
+                              {toolCall.cached ? (
+                                <span className="timeline-live__cache">缓存命中</span>
+                              ) : null}
+                              <StatusBadge
+                                status={
+                                  toolCall.state === 'pending'
+                                    ? 'running'
+                                    : toolCall.state === 'failed'
+                                      ? 'failed'
+                                      : 'completed'
+                                }
+                              />
+                            </div>
                         </div>
                         {toolCall.input ? (
                           <details className="timeline-item__detail">
@@ -103,6 +114,12 @@ export function TimelineSection({ liveRunFeed, plans, stepRuns }: TimelineSectio
                             <summary>工具输出</summary>
                             <pre>{toolCall.output}</pre>
                           </details>
+                        ) : null}
+                        {toolCall.error ? (
+                          <p className="timeline-item__error">
+                            {toolCall.errorCode ? `[${toolCall.errorCode}] ` : ''}
+                            {toolCall.error}
+                          </p>
                         ) : null}
                       </div>
                     ))}

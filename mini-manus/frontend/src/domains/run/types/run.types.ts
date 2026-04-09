@@ -49,9 +49,12 @@ export interface RunDetail extends RunSummary {
 export interface LiveToolCall {
   id: string
   toolName: string
-  state: 'pending' | 'completed'
+  state: 'pending' | 'completed' | 'failed'
   input: Record<string, unknown> | null
   output: string | null
+  cached: boolean
+  error: string | null
+  errorCode: string | null
   startedAt: string
   completedAt: string | null
 }
