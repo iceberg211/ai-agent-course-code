@@ -15,7 +15,8 @@ import { useTextChat } from './useTextChat'
  * - 删除 Persona（`onDeletePersona`）
  * - 切换对话模式（`onChangeMode`）
  *
- * 操作前后协调各 sub-hook 的状态重置，避免 useAppController 承担过多协调责任。
+ * historyLoading 改为直接操作 sessionStore，无需外部注入。
+ * docsOpen 移到 App.vue 本地 ref，与 Persona 操作无关。
  */
 export function usePersonaActions(
   conversation: ReturnType<typeof useConversation>,
@@ -23,8 +24,6 @@ export function usePersonaActions(
   voiceClone: ReturnType<typeof useVoiceClone>,
   digitalHuman: ReturnType<typeof useDigitalHuman>,
   textChat: ReturnType<typeof useTextChat>,
-  historyLoading: { value: boolean },
-  docsOpen: { value: boolean },
   send: (msg: object) => void,
   showToast: (msg: string) => void,
 ) {
@@ -43,7 +42,7 @@ export function usePersonaActions(
     knowledge.clearSearchResult()
     conversation.clearMessages()
     sessionStore.reset()
-    historyLoading.value = true
+    sessionStore.setHistoryLoading(true)
 
     if (!sessionStore.connected) {
       showToast('连接恢复后将自动建立语音会话')
@@ -78,15 +77,14 @@ export function usePersonaActions(
 
     if (deletingSelected) {
       sessionStore.reset()
+      sessionStore.setHistoryLoading(false)
       textChat.reset()
       void digitalHuman.close()
       conversation.clearMessages()
       conversation.state.value = 'idle'
-      historyLoading.value = false
       knowledge.clearDocuments()
       knowledge.clearSearchResult()
       voiceClone.clear()
-      docsOpen.value = false
     }
 
     showToast(`✓ 已删除「${name}」`)
@@ -99,7 +97,7 @@ export function usePersonaActions(
 
     if (!personaStore.selectedId || !sessionStore.connected) return
     sessionStore.reset()
-    historyLoading.value = true
+    sessionStore.setHistoryLoading(true)
     send({
       type: 'session:start',
       sessionId: '',

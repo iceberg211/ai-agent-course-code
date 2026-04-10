@@ -18,10 +18,9 @@ type BaseWsMessage<T = Record<string, unknown>> = {
 /**
  * WS 事件处理 Hook。
  *
- * 职责：集中注册所有 WebSocket `on(type, handler)` 监听，
- * 将分散在 useAppController 中的 15+ 个 on() 调用整合到一处。
+ * 职责：集中注册所有 WebSocket `on(type, handler)` 监听。
  *
- * 仅负责处理事件、更新状态，不直接操作 UI（Toast 通过回调注入）。
+ * historyLoading 改为直接操作 sessionStore，无需外部注入。
  */
 export function useWsEventHandler(
   {
@@ -32,7 +31,6 @@ export function useWsEventHandler(
     digitalHuman,
     textChat,
     mode,
-    historyLoading,
   }: {
     conversation: ReturnType<typeof useConversation>
     audio: ReturnType<typeof useAudio>
@@ -41,7 +39,6 @@ export function useWsEventHandler(
     digitalHuman: ReturnType<typeof useDigitalHuman>
     textChat: ReturnType<typeof useTextChat>
     mode: { value: string }
-    historyLoading: { value: boolean }
   },
   on: <T>(type: string, handler: (msg: any) => void) => void,
   showToast: (msg: string) => void,
@@ -58,14 +55,12 @@ export function useWsEventHandler(
   }>) => {
     if (msg.payload?.mode) {
       mode.value = msg.payload.mode
-      if (mode.value !== 'digital-human') {
-        void digitalHuman.close()
-      }
+      if (mode.value !== 'digital-human') void digitalHuman.close()
     }
     sessionStore.setSession(msg.sessionId ?? '', msg.payload?.conversationId ?? '')
     conversation.hydrateMessages(msg.payload?.history ?? [])
     textChat.reset()
-    historyLoading.value = false
+    sessionStore.setHistoryLoading(false)
     conversation.state.value = 'idle'
     knowledge.fetchDocuments(personaStore.selectedId)
     void voiceClone.fetchStatus(personaStore.selectedId)
@@ -111,7 +106,6 @@ export function useWsEventHandler(
     void digitalHuman.handleOffer(msg.sessionId, msg.payload ?? {})
   })
 
-
   // ── webrtc:ice-candidate ───────────────────────────────────────────────────
   on('webrtc:ice-candidate', (msg: BaseWsMessage<{ candidate?: Record<string, unknown> }>) => {
     if (!msg.sessionId || !msg.payload?.candidate) return
@@ -141,9 +135,7 @@ export function useWsEventHandler(
   // ── tts:end ────────────────────────────────────────────────────────────────
   on('tts:end', () => {
     audio.onTtsEnd()
-    if (conversation.state.value === 'speaking') {
-      conversation.state.value = 'idle'
-    }
+    if (conversation.state.value === 'speaking') conversation.state.value = 'idle'
   })
 
   // ── digital-human:start ────────────────────────────────────────────────────
@@ -162,10 +154,7 @@ export function useWsEventHandler(
   on('conversation:interrupted', (msg: BaseWsMessage) => {
     if (msg.turnId) conversation.finishAssistantMessage(msg.turnId)
     audio.stopPlayback()
-    if (
-      conversation.state.value === 'thinking' ||
-      conversation.state.value === 'speaking'
-    ) {
+    if (conversation.state.value === 'thinking' || conversation.state.value === 'speaking') {
       conversation.state.value = 'idle'
     }
   })
@@ -184,11 +173,11 @@ export function useWsEventHandler(
       }
       showToast('会话已失效，正在自动恢复')
       conversation.state.value = 'idle'
-      historyLoading.value = false
+      sessionStore.setHistoryLoading(false)
       return
     }
     showToast('⚠ ' + message)
     conversation.state.value = 'idle'
-    historyLoading.value = false
+    sessionStore.setHistoryLoading(false)
   })
 }

@@ -12,38 +12,33 @@
     />
     <button
       v-if="canStop"
-      class="stop-btn"
+      class="action-btn stop-btn"
       type="button"
-      @mousedown.stop
-      @mouseup.stop
-      @touchstart.stop.prevent
-      @touchend.stop.prevent
+      @mousedown.stop @mouseup.stop @touchstart.stop.prevent @touchend.stop.prevent
       @click.stop.prevent="$emit('stop')"
       aria-label="停止生成"
     >
-      停止
+      <StopCircleIcon :size="15" aria-hidden="true" />
+      <span>停止</span>
     </button>
     <button
       v-else
-      class="send-btn"
+      class="action-btn send-btn"
       type="button"
       :disabled="sendDisabled"
-      @mousedown.stop
-      @mouseup.stop
-      @touchstart.stop.prevent
-      @touchend.stop.prevent
+      @mousedown.stop @mouseup.stop @touchstart.stop.prevent @touchend.stop.prevent
       @click.stop.prevent="submit"
       aria-label="发送文本消息"
     >
-      <SendHorizonalIcon :size="16" aria-hidden="true" />
-      <span>{{ busy ? '发送中' : '发送' }}</span>
+      <SendHorizonalIcon :size="15" aria-hidden="true" />
+      <span>{{ busy ? '处理中' : '发送' }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { SendHorizonalIcon } from 'lucide-vue-next'
+import { SendHorizonalIcon, StopCircleIcon } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   disabled?: boolean
@@ -102,77 +97,89 @@ onMounted(() => nextTick(resize))
 .composer-wrap {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--border-muted, #edf2f9);
+  background: var(--surface, #fff);
 }
+
 .composer-input {
   flex: 1;
-  min-height: 42px;
-  max-height: 120px;
-  resize: vertical;
-  border: 1px solid var(--border);
+  min-height: 40px;
+  max-height: 140px;
+  resize: none;
+  border: 1.5px solid var(--border, #e2e8f0);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   outline: none;
   font-size: 14px;
-  color: var(--text);
-  background: #fff;
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+  line-height: 1.6;
+  color: var(--text, #0f172a);
+  background: var(--surface-soft, #f8fbff);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
   font-family: inherit;
+  overflow-y: auto;
 }
-.composer-input::placeholder {
-  color: var(--text-muted);
-}
+.composer-input::placeholder { color: var(--text-muted, #94a3b8); }
 .composer-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.16);
+  border-color: var(--primary, #2563eb);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 .composer-input:disabled {
-  background: #f3f6fc;
+  background: var(--surface-soft, #f8fbff);
   color: var(--text-muted);
-}
-.send-btn {
-  height: 42px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 10px;
-  background: var(--primary);
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 150ms ease-out, opacity 150ms ease-out;
-}
-.send-btn:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
-.send-btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.stop-btn {
-  height: 42px;
+/* ── 按钮公共 ──────────────────────────────────────────────────── */
+.action-btn {
+  height: 40px;
   padding: 0 14px;
-  border: 1px solid #d7dbe6;
   border-radius: 10px;
-  background: #fff;
-  color: #344054;
+  border: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+  white-space: nowrap;
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 120ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+.action-btn:active:not(:disabled) { transform: scale(0.94); }
+
+/* 发送按钮 */
+.send-btn {
+  background: var(--primary, #2563eb);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+.send-btn:hover:not(:disabled) {
+  background: var(--primary-hover, #1d4ed8);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+.send-btn:disabled {
+  background: var(--border, #e2e8f0);
+  color: var(--text-muted, #94a3b8);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* 停止按钮 */
+.stop-btn {
+  background: #fff;
+  color: var(--error, #dc2626);
+  border: 1.5px solid #fca5a5;
+  box-shadow: none;
 }
 .stop-btn:hover {
-  background: #f5f7fb;
-  border-color: #c6cedd;
+  background: #fff5f5;
+  border-color: var(--error, #dc2626);
 }
 </style>

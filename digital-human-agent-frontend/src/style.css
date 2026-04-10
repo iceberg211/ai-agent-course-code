@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -8,45 +8,75 @@
 
 :root {
   color-scheme: light;
-  --page-bg: #f2f6ff;
-  --page-bg-accent: #eef4ff;
+
+  /* ── 页面背景 ─────────────────────────────────────────────────── */
+  --page-bg: #eef3fc;
+  --page-bg-accent: #e8f0fd;
+
+  /* ── 表面 ────────────────────────────────────────────────────── */
   --surface: #ffffff;
   --surface-soft: #f8fbff;
-  --primary-bg: #edf3ff;
-  --primary: #1f6feb;
-  --primary-hover: #1759bd;
-  --primary-light: #4c85f5;
-  --primary-muted: #bfd5ff;
-  --border: #d7e2f1;
-  --border-muted: #e5edf8;
-  --text: #1b2535;
-  --text-secondary: #36445a;
-  --text-muted: #65758d;
-  --user-bubble: linear-gradient(135deg, #2f78ff, #1f6feb);
+  --surface-hover: #f3f8ff;
+
+  /* ── 主色调 ──────────────────────────────────────────────────── */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #3b82f6;
+  --primary-bg: #eff6ff;
+  --primary-muted: #bfdbfe;
+
+  /* ── 边框 ────────────────────────────────────────────────────── */
+  --border: #e2e8f0;
+  --border-muted: #edf2f9;
+  --border-focus: rgba(37, 99, 235, 0.5);
+
+  /* ── 文字 ────────────────────────────────────────────────────── */
+  --text: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+
+  /* ── 气泡 ────────────────────────────────────────────────────── */
+  --user-bubble: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   --ai-bubble: #ffffff;
-  --success: #0f9f6e;
-  --warning: #cc7a1b;
-  --error: #d33f49;
-  --shadow-sm: 0 6px 18px rgba(26, 48, 79, 0.08);
-  --shadow-md: 0 18px 42px rgba(24, 44, 74, 0.1);
+  --ai-bubble-border: #e2e8f0;
+
+  /* ── 状态色 ──────────────────────────────────────────────────── */
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+
+  /* ── 阴影 ────────────────────────────────────────────────────── */
+  --shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 16px 40px rgba(15, 23, 42, 0.1), 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-btn: 0 2px 8px rgba(37, 99, 235, 0.28);
+  --shadow-btn-hover: 0 4px 14px rgba(37, 99, 235, 0.38);
+
+  /* ── 圆角 ────────────────────────────────────────────────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ── 动画时长 ─────────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-html,
-body,
-#app {
-  height: 100%;
-}
+/* ── 基础 ─────────────────────────────────────────────────────────────────── */
+html, body, #app { height: 100%; }
 
 body {
   overflow: hidden;
   background:
-    radial-gradient(circle at 0% 0%, rgba(95, 149, 255, 0.17), transparent 38%),
-    radial-gradient(circle at 100% 100%, rgba(152, 201, 255, 0.22), transparent 35%),
-    linear-gradient(180deg, var(--page-bg-accent), var(--page-bg));
+    radial-gradient(ellipse 80% 50% at 0% 0%, rgba(99, 155, 255, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(147, 197, 253, 0.15), transparent 50%),
+    linear-gradient(160deg, #eef3fd 0%, #e8eef8 100%);
   color: var(--text);
-  font-family: 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -56,29 +86,38 @@ body {
   padding: 14px;
 }
 
+/* ── 焦点 ─────────────────────────────────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(196, 210, 232, 0.3);
-}
-
+/* ── 滚动条 ───────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(76, 133, 245, 0.75), rgba(58, 111, 216, 0.75));
-  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.5);
 }
 
+/* ── 选中文字 ──────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--text);
+}
+
+/* ── 通用工具 ──────────────────────────────────────────────────────────────── */
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ── 无障碍：减少动效 ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -87,7 +126,5 @@ body {
 }
 
 @media (max-width: 1024px) {
-  #app {
-    padding: 8px;
-  }
+  #app { padding: 8px; }
 }
