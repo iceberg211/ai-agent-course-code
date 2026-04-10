@@ -9,7 +9,7 @@ export interface TtsAudioFrameMeta {
   sessionId: string;
   turnId: string;
   seq: number;
-  codec: 'audio/mpeg';
+  codec: 'audio/mpeg' | 'audio/pcm';
   isFinal?: boolean;
 }
 

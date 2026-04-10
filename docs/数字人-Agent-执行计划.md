@@ -11,15 +11,16 @@
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| 环境前置 | SDK 选型验证 | ⚠️ 部分完成（当前用 Mock Provider）|
+| 环境前置 | SDK 选型验证 | ⚠️ 部分完成（架构方案已定，Simli 待接入）|
 | **第一阶段** | 纯语音对话（ASR → Agent → TTS）| ✅ **代码全部落地** |
 | **第二阶段** | RAG 两阶段检索 + 知识库管理 UI | ✅ **代码全部落地** |
 | **第三阶段** | 语音克隆 | ✅ **代码落地（训练流程为 Mock）** |
-| **第四阶段** | 数字人 SDK 接入 | 🔧 **架构/信令已落地，待接入真实 SDK Provider** |
+| **第四阶段** | 数字人 SDK 接入 | 🔧 **Provider 接口已重设计，待落地 Simli 实现** |
 | **附加工作** | 代码重构（Gateway 拆分、前端 Hook 模块化）| ✅ **已完成** |
 
 > **说明**：「代码落地」= 模块实现完整、TypeScript 编译通过；「已验收运行」= 端到端跑通过。
-> 真实 SDK Provider（Simli / D-ID）尚未接入，数字人视频流为 Mock 模式。
+> **架构决策（2026-04-10）**：采用 Provider 模式 + `speakMode` 标志位，首选 Simli（`pcm-stream`）。
+> `DigitalHumanService` 接口需按新设计重构，`WebRtcHandler` 整体移除，`TtsPipelineService` 加 PCM 输出分支。
 
 ---
 
@@ -38,13 +39,18 @@ pnpm add -g @nestjs/cli
 
 前置验证（第四阶段动工前完成，见技术方案第 14 节）：
 
-- [ ] 数字人 SDK 选型：优先评估 **Simli**（simli.ai）或 **D-ID**（d-id.com），均有免费 tier，支持 WebRTC
-  - > ⚠️ **当前状态**：`DigitalHumanService` 采用 **Mock Provider**，接口已定义完毕，待选定 SDK 后替换实现
-- [ ] 数字人 SDK `speak()` 支持排队——写最小脚本确认
-  - > ⚠️ 框架侧已实现 `speakQueue` FIFO 队列（`speak-pipeline.service.ts`），待验证真实 SDK 行为
-- [ ] `voice_id` 在独立 TTS 和数字人 SDK 中通用——调 API 确认
-- [ ] 数字人 SDK 自带 STUN/TURN——查文档 / 测 NAT 场景
-- [ ] `interrupt()` 延迟 < 500ms——测一下
+> **架构决策（2026-04-10）**：
+> 数字人 Provider 采用 **Strategy Pattern + `speakMode` 标志位**，详见技术方案第 9 节。
+> WebRTC 在**前端 ↔ Provider 服务器**之间建立，后端不再参与 SDP/ICE 信令交换。
+> 推荐首选 **Simli**（`pcm-stream` 模式），保留后端 TTS 和语音克隆能力。
+
+- [ ] **Simli 选型验证**：注册 simli.ai 免费账号，跑通 `e2eSessionToken` → `SimliClient.start()` 最小 demo
+  - > ⚠️ **当前状态**：`DigitalHumanProvider` 接口已按新架构定义，Mock 实现待替换
+- [ ] **PCM 格式对齐**：确认后端 TTS（DashScope/OpenAI）输出 PCM 格式与 Simli 要求一致（采样率/位深/声道）
+- [ ] **`sendAudioData()` 分片验证**：按句多次调用，确认口型连续不跳帧
+- [ ] **前端状态机事件**：确认 SimliClient 提供"开始/结束播报"回调，驱动 `speaking` 状态切换
+- [ ] **`voice_id` 通用性**：后端 TTS 克隆的 voice_id 在数字人模式下可复用
+- [ ] **打断延迟**：`simliClient.stop()` 后 < 500ms 内视频静止
 
 ---
 
@@ -833,118 +839,145 @@ async synthesizeStream(text: string, voiceId: string, signal: AbortSignal, onChu
 
 ---
 
-## 第四阶段：接入数字人 SDK
+## 第四阶段：接入数字人 SDK（Simli）
 
-> 目标：把语音输出替换为数字人 SDK 的 WebRTC 视频流（口型同步 + 表情）
+> 目标：把语音输出替换为 Simli WebRTC 视频流（口型与 PCM 音频同步）
 >
-> **SDK 选型**：优先尝试 [Simli](https://simli.ai)（免费 tier，WebRTC，API 简单）或 [D-ID](https://d-id.com)（14 天免费试用，有 Streaming API）。完成前置验证后再动工。
+> **架构**：Provider 模式 + `speakMode: 'pcm-stream'`，后端 TTS 保持不变，Simli 只负责驱动口型。
+> 详见技术方案第 9 节。
 
-### 4.1 DigitalHumanModule
+### 4.1 重构 DigitalHumanProvider 接口
 
-文件：`src/digital-human/digital-human.service.ts`
+文件：`src/digital-human/digital-human.types.ts`
 
-实现技术方案 9.2 定义的接口：
+按新设计替换接口（技术方案 9.2）：
 
 ```typescript
-interface DigitalHumanService {
-  createSession(personaId: string): Promise<{ sessionId: string; sdpOffer: RTCSessionDescriptionInit }>;
-  setAnswer(sessionId: string, sdpAnswer: RTCSessionDescriptionInit): Promise<void>;
-  addIceCandidate(sessionId: string, candidate: RTCIceCandidateInit): Promise<void>;
-  onIceCandidate(sessionId: string, cb: (c: RTCIceCandidateInit) => void): () => void;
-  speak(sessionId: string, turnId: string, text: string): Promise<void>;
-  interrupt(sessionId: string, turnId?: string): Promise<void>;
-  closeSession(sessionId: string): Promise<void>;
+export type DigitalHumanSpeakMode = 'pcm-stream' | 'text-direct';
+
+export interface DigitalHumanSessionInfo {
+  providerSessionId: string;
+  speakMode: DigitalHumanSpeakMode;
+  credentials: Record<string, unknown>; // 透传给前端
+}
+
+export interface DigitalHumanProvider {
+  readonly name: string;
+  createSession(personaId: string, voiceId?: string): Promise<DigitalHumanSessionInfo>;
+  interrupt(providerSessionId: string): Promise<void>;
+  closeSession(providerSessionId: string): Promise<void>;
+  speak?(providerSessionId: string, turnId: string, text: string): Promise<void>; // text-direct 专用
 }
 ```
 
-注意：如果 SDK `speak()` 不自带排队，需要在 Service 内部维护 FIFO 队列，等 SDK 回调"播报完毕"后再弹下一句。
-
-- [x] `createSession` / `setAnswer` / `addIceCandidate` / `speak` / `interrupt` / `closeSession` 接口已落地（当前默认 mock provider）
-- [x] `speak()` 和 `interrupt()` 行为已接入实时会话链路
+- [ ] `digital-human.types.ts` 替换为新接口
+- [ ] `digital-human.service.ts`（Mock Provider）实现新接口，`createSession` 返回 `speakMode: 'pcm-stream'` 和空 `credentials`
 
 ---
 
-### 4.2 RealtimeSessionModule 扩展
+### 4.2 实现 SimliProvider
 
-在 `RealtimeSession` 中增加：
+文件：`src/digital-human/providers/simli.provider.ts`
 
 ```typescript
-interface RealtimeSession {
-  // ...原有字段
-  speakQueue: Array<{ turnId: string; text: string }>;
-  iceUnsubscribe: (() => void) | null;
-}
+// 1. POST https://api.simli.ai/startE2ESession → 拿 simliToken
+// 2. createSession() 返回 { providerSessionId, speakMode: 'pcm-stream', credentials: { simliToken, faceId } }
+// 3. interrupt() 调用 Simli REST API 或靠前端 simliClient.stop()
+// 4. closeSession() 调用 Simli 关闭接口
 ```
+
+安装依赖：`pnpm add @simliai/simli-client`（如有后端 SDK）或直接调 REST API。
+
+- [ ] `SimliProvider.createSession()` 能拿到有效 `simliToken`
+- [ ] `.env.example` 增加 `SIMLI_API_KEY` / `DIGITAL_HUMAN_PROVIDER=simli`
 
 ---
 
-### 4.3 GatewayModule 扩展（数字人模式）
+### 4.3 移除 WebRTC 信令层（后端）
 
-增加 WebRTC 信令处理，`session:start` 时根据 `mode` 参数分支：
+删除以下内容：
+- `src/gateway/handlers/webrtc.handler.ts` — 整个文件删除
+- `gateway.types.ts` 中的 `WsWebRtcAnswerMessage` / `WsWebRtcIceCandidateMessage`
+- `conversation.gateway.ts` 中对 `webrtc:answer` / `webrtc:ice-candidate` 的路由
+- `RealtimeSession` 中的 `iceUnsubscribe` 字段
 
-- `mode: 'voice'` → 走 TtsService 路径（第一阶段）
-- `mode: 'digital-human'` → 走 DigitalHumanService 路径
+修改 `session.handler.ts`：`startDigitalHumanSession()` 改为发送 `digital-human:ready`（携带 Provider credentials）。
+
+- [ ] 删除 `WebRtcHandler` 后编译无报错
+- [ ] `session:start` (mode=digital-human) 触发后，前端收到 `digital-human:ready` 消息
+
+---
+
+### 4.4 TtsPipelineService 增加 PCM 输出分支
+
+文件：`src/gateway/pipeline/tts-pipeline.service.ts`
+
+数字人模式（`session.mode === 'digital-human'`）下，TTS 合成输出 PCM16 而非 MP3：
 
 ```typescript
-// 处理 webrtc:answer
-if (msg.type === 'webrtc:answer') {
-  await this.digitalHumanService.setAnswer(msg.sessionId, msg.payload.sdpAnswer);
-}
-
-// SDK → 浏览器的 ICE Candidate 回调
-const unsubscribe = this.digitalHumanService.onIceCandidate(sessionId, (candidate) => {
-  client.send(JSON.stringify({ type: 'webrtc:ice-candidate', sessionId, payload: { candidate } }));
-});
-session.iceUnsubscribe = unsubscribe;
+// TtsAudioFrameMeta.codec = 'audio/pcm'（数字人模式）
+// TTS 请求参数 response_format: 'pcm'
 ```
 
-- [x] 数字人模式下不再调 TtsService（改为 `DigitalHumanService.speak`）
-- [ ] 信令交换完成后浏览器收到数字人视频流（**待接入真实 SDK Provider**，当前 Mock 模式跳过 WebRTC）
+- [ ] 数字人模式下 binary 帧的 `codec` 为 `audio/pcm`
+- [ ] 纯语音模式不受影响，仍输出 `audio/mpeg`
 
 ---
 
-### 4.4 打断机制完整实现
+### 4.5 废弃 SpeakPipelineService（pcm-stream 模式）
+
+`SpeakPipelineService` 调用 `speak(text)` 的模式仅在 `text-direct` Provider 下使用。Simli（pcm-stream）下 TtsPipeline 直接推 PCM 帧，`SpeakPipeline` 可保留但对 Simli 路径不激活。
+
+- [ ] 数字人模式下确认 `SpeakPipelineService.enqueue()` 不再被调用（或守卫判断 `speakMode`）
+
+---
+
+### 4.6 打断机制适配
 
 ```typescript
 async handleInterrupt(session: RealtimeSession) {
-  session.abortController?.abort();          // LLM 停止生成
-  session.sentenceBuffer = '';               // 清空断句缓冲
-  session.speakQueue = [];                   // 清空播报队列
-  await this.digitalHumanService.interrupt(session.sessionId, session.activeTurnId);
+  session.abortController?.abort();   // LLM 停止生成
+  session.sentenceBuffer = '';        // 清空断句缓冲
+  session.ttsQueue = [];              // 清空 TTS 队列（PCM 帧停发）
+  await this.digitalHumanProvider.interrupt(session.digitalHumanSessionId);
 }
 ```
 
-- [x] 打断后数字人立即停止（mock 模式下即时返回）
-- [x] LLM 不再继续生成，不再扣 token
+PCM 帧停发后，前端自行调用 `simliClient.stop()` 停止口型（前端收到 `digital-human:end` 时触发）。
+
+- [x] 打断后 LLM 停止生成（已有）
+- [ ] PCM binary 帧停发，前端 Simli 口型停止
 
 ---
 
-### 4.5 会话清理
+### 4.7 会话清理
 
 ```typescript
 async cleanupSession(sessionId: string) {
   const session = this.sessionRegistry.get(sessionId);
   if (!session) return;
   session.abortController?.abort();
-  session.iceUnsubscribe?.();
-  await this.digitalHumanService.closeSession(sessionId);
+  if (session.digitalHumanSessionId) {
+    await this.digitalHumanProvider.closeSession(session.digitalHumanSessionId);
+  }
   this.sessionRegistry.delete(sessionId);
 }
 ```
 
-- [x] 切换角色后旧会话资源完全释放，新会话能正常建立
+- [x] 切换角色后旧会话资源完全释放（已有，移除 `iceUnsubscribe?.()` 调用）
 
 ---
 
-### 4.6 前端扩展（数字人模式）
+### 4.8 前端扩展（Simli 接入）
 
-在 Vue 前端中增加（建议落在 `digital-human-agent-frontend/src/App.vue`、`digital-human-agent-frontend/src/hooks/useAppController.ts`）：
+文件：`digital-human-agent-frontend/src/hooks/useDigitalHuman.ts`
 
-- `<video>` 元素展示 WebRTC 数字人视频
-- WebRTC 信令处理（技术方案 10.3 的完整代码）
-- 模式切换按钮：纯语音 / 数字人
+- 收到 `digital-human:ready` → `initSimli(credentials)` → `SimliClient.start()`
+- 收到 PCM binary 帧 → `simliClient.sendAudioData(pcmData)`
+- 收到 `digital-human:end` → `simliClient.stop()` → 切回 `idle`
+- `<video>` 元素绑定 SimliClient 输出
 
-- [ ] 数字人视频正常显示，口型同步（**待真实 SDK Provider 接入**）
+- [ ] 浏览器显示 Simli 数字人形象，口型与声音同步
 - [x] 文字字幕同步展示在视频区
 
 ---

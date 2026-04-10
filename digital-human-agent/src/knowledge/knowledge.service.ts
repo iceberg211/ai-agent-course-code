@@ -54,7 +54,7 @@ export class KnowledgeService {
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: SupabaseClient,
     private readonly rerankerService: RerankerService,
-  ) { }
+  ) {}
 
   async ingestDocument(
     personaId: string,
@@ -70,11 +70,15 @@ export class KnowledgeService {
     try {
       // 2. 切分
       const chunks = await this.splitter.createDocuments([content]);
-      this.logger.log(`[切分完成] filename=${filename} chunks=${chunks.length}`);
+      this.logger.log(
+        `[切分完成] filename=${filename} chunks=${chunks.length}`,
+      );
 
       // 3. 向量化（批量）
       const texts = chunks.map((c) => c.pageContent);
-      this.logger.log(`[开始 Embedding] model=${this.embeddings.model ?? this.embeddings.modelName} baseURL=${this.embeddings.clientConfig?.baseURL} texts=${texts.length}`);
+      this.logger.log(
+        `[开始 Embedding] model=${this.embeddings.model} texts=${texts.length}`,
+      );
       const embeddings = await this.embeddings.embedDocuments(texts);
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
@@ -94,14 +98,23 @@ export class KnowledgeService {
       const BATCH_SIZE = 50;
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
-        const { error } = await this.withTransientRetry(
+        const result = await this.withTransientRetry<{
+          error: { message: string } | null;
+        }>(
           `insert batch ${Math.floor(i / BATCH_SIZE) + 1}`,
-          () => this.supabase.from('persona_knowledge').insert(batch),
+          async () => {
+            const r = await this.supabase
+              .from('persona_knowledge')
+              .insert(batch);
+            return { error: r.error ? { message: r.error.message } : null };
+          },
           3,
         );
-        if (error) throw new Error((error as { message: string }).message);
+        if (result.error) throw new Error(result.error.message);
       }
-      this.logger.log(`[Insert 完成] doc=${doc.id} batches=${Math.ceil(rows.length / BATCH_SIZE)}`);
+      this.logger.log(
+        `[Insert 完成] doc=${doc.id} batches=${Math.ceil(rows.length / BATCH_SIZE)}`,
+      );
 
       // 5. 更新状态
       await this.docRepo.update(doc.id, {
@@ -129,7 +142,8 @@ export class KnowledgeService {
       return result.stage2;
     } catch (error) {
       this.logger.warn(
-        `知识检索失败，降级为空知识：${error instanceof Error ? error.message : String(error)
+        `知识检索失败，降级为空知识：${
+          error instanceof Error ? error.message : String(error)
         }`,
       );
       return [];
@@ -176,7 +190,8 @@ export class KnowledgeService {
         );
       } catch (error) {
         this.logger.warn(
-          `Reranker 失败，回退为向量检索结果：${error instanceof Error ? error.message : String(error)
+          `Reranker 失败，回退为向量检索结果：${
+            error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -203,7 +218,12 @@ export class KnowledgeService {
   }
 
   private isTransientError(error: unknown): boolean {
-    const msg = error instanceof Error ? error.message : String(error ?? '');
+    const msg =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : '';
     return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly|socket hang up|ECONNREFUSED|502|503|504|429/i.test(
       msg,
     );
@@ -224,7 +244,8 @@ export class KnowledgeService {
           break;
         }
         this.logger.warn(
-          `${op} 第 ${i} 次失败，准备重试：${error instanceof Error ? error.message : String(error)
+          `${op} 第 ${i} 次失败，准备重试：${
+            error instanceof Error ? error.message : String(error)
           }`,
         );
         await new Promise((resolve) => setTimeout(resolve, 200 * i));
