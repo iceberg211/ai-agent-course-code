@@ -11,16 +11,38 @@
       <span v-else class="hint">请从左侧选择角色</span>
     </div>
 
-    <button
-      class="docs-btn"
-      :class="{ active: docsOpen }"
-      @click="$emit('toggle-docs')"
-      :aria-pressed="docsOpen"
-      aria-label="打开知识库管理"
-    >
-      <BookOpenIcon :size="15" aria-hidden="true" />
-      <span>知识库</span>
-    </button>
+    <div class="header-actions">
+      <div class="mode-switch" role="tablist" aria-label="会话模式">
+        <button
+          class="mode-btn"
+          :class="{ active: mode === 'voice' }"
+          role="tab"
+          :aria-selected="mode === 'voice'"
+          @click="$emit('change-mode', 'voice')"
+        >
+          语音
+        </button>
+        <button
+          class="mode-btn"
+          :class="{ active: mode === 'digital-human' }"
+          role="tab"
+          :aria-selected="mode === 'digital-human'"
+          @click="$emit('change-mode', 'digital-human')"
+        >
+          数字人
+        </button>
+      </div>
+      <button
+        class="docs-btn"
+        :class="{ active: docsOpen }"
+        @click="$emit('toggle-docs')"
+        :aria-pressed="docsOpen"
+        aria-label="打开知识库管理"
+      >
+        <BookOpenIcon :size="15" aria-hidden="true" />
+        <span>知识库</span>
+      </button>
+    </div>
   </header>
 </template>
 
@@ -29,8 +51,9 @@ import { BookOpenIcon } from 'lucide-vue-next'
 defineProps({
   persona:  { type: Object,  default: null },
   docsOpen: { type: Boolean, default: false },
+  mode: { type: String, default: 'voice' },
 })
-defineEmits(['toggle-docs'])
+defineEmits(['toggle-docs', 'change-mode'])
 </script>
 
 <style scoped>
@@ -74,6 +97,33 @@ defineEmits(['toggle-docs'])
 }
 .docs-btn:hover { background: var(--primary-bg); border-color: var(--primary-muted); color: var(--primary); }
 .docs-btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  background: #fff;
+}
+.mode-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 150ms ease-out;
+}
+.mode-btn.active {
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-weight: 600;
+}
 
 @media (max-width: 960px) {
   .chat-header {
@@ -84,6 +134,9 @@ defineEmits(['toggle-docs'])
   }
   .docs-btn {
     padding: 6px 10px;
+  }
+  .mode-btn {
+    padding: 4px 8px;
   }
 }
 </style>

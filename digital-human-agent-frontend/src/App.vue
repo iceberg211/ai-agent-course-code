@@ -4,10 +4,16 @@
     <PersonaPanel
       :personas="personaStore.personas"
       :selected-id="personaStore.selectedId"
+      :selected-persona="personaStore.selectedPersona"
       :connected="sessionStore.connected"
       :loading="personaStore.loading"
+      :voice-clone-state="voiceCloneState"
+      :voice-clone-loading="voiceCloneLoading"
+      :voice-clone-uploading="voiceCloneUploading"
       @select="onSelectPersona"
       @delete="onDeletePersona"
+      @upload-voice-sample="onUploadVoiceSample"
+      @refresh-voice-clone="onRefreshVoiceCloneStatus"
     />
 
     <!-- 中间对话区 -->
@@ -15,8 +21,17 @@
       <ChatHeader
         :persona="personaStore.selectedPersona"
         :docs-open="docsOpen"
+        :mode="mode"
         @toggle-docs="docsOpen = !docsOpen"
+        @change-mode="onChangeMode"
       />
+      <section v-if="mode === 'digital-human'" class="digital-stage" aria-label="数字人视频区">
+        <video ref="digitalVideoEl" class="digital-video" autoplay playsinline muted />
+        <div class="digital-mask">
+          <div class="digital-status">数字人状态：{{ formatDigitalStatus(digitalHumanStatus) }}</div>
+          <div v-if="digitalHumanError" class="digital-error">{{ digitalHumanError }}</div>
+        </div>
+      </section>
       <MessageList :messages="messages" :loading="historyLoading" />
       <ChatComposer
         :disabled="!personaStore.selectedId"
@@ -71,8 +86,10 @@ const {
   personaStore,
   sessionStore,
   docsOpen,
+  mode,
   toastMsg,
   audioEl,
+  digitalVideoEl,
   messages,
   state,
   historyLoading,
@@ -81,17 +98,35 @@ const {
   knowledgeLoading,
   knowledgeSearching,
   knowledgeSearchResult,
+  voiceCloneState,
+  voiceCloneLoading,
+  voiceCloneUploading,
+  digitalHumanStatus,
+  digitalHumanError,
   knowledge,
   onSelectPersona,
+  onChangeMode,
   onMicDown,
   onMicUp,
   onSendText,
   onStopText,
   onUpload,
+  onUploadVoiceSample,
+  onRefreshVoiceCloneStatus,
   onDeleteDoc,
   onSearchKnowledge,
   onDeletePersona,
 } = useAppController()
+
+function formatDigitalStatus(status: string) {
+  return {
+    idle: '待命',
+    connecting: '连接中',
+    connected: '已连接',
+    mock: 'Mock 模式',
+    error: '异常',
+  }[status] ?? status
+}
 </script>
 
 <style scoped>
@@ -111,6 +146,37 @@ const {
   flex-direction: column;
   overflow: hidden;
   background: var(--surface);
+}
+.digital-stage {
+  position: relative;
+  margin: 12px 16px 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: radial-gradient(120% 140% at 20% 10%, #f7fbff, #edf4ff);
+  min-height: 180px;
+}
+.digital-video {
+  width: 100%;
+  height: 220px;
+  display: block;
+  object-fit: cover;
+  background: #e7eefb;
+}
+.digital-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, rgba(20, 31, 56, 0), rgba(20, 31, 56, 0.72));
+  color: #fff;
+  font-size: 12px;
+}
+.digital-error {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #ffd3d3;
 }
 
 /* 知识库抽屉滑入动画 */

@@ -7,11 +7,21 @@ import { useWebSocket } from './useWebSocket'
 import { useAudio } from './useAudio'
 import { useConversation } from './useConversation'
 import { useKnowledge } from './useKnowledge'
-import type { ChatMessage, Citation, MessageStatus, WsEnvelope } from '../types'
+import { useVoiceClone } from './useVoiceClone'
+import { useDigitalHuman } from './useDigitalHuman'
+import type {
+  ChatMessage,
+  Citation,
+  ConversationMode,
+  MessageStatus,
+  VoiceCloneState,
+  WsEnvelope,
+} from '../types'
 
 interface SessionReadyPayload {
   conversationId?: string
   history?: Array<Record<string, unknown>>
+  mode?: ConversationMode
 }
 
 interface BaseWsMessage<T = Record<string, unknown>> extends WsEnvelope<T> {
@@ -23,6 +33,12 @@ interface StreamMetadata {
   turnId?: string
   status?: MessageStatus | 'streaming'
   citations?: Citation[]
+}
+
+interface WebRtcOfferPayload {
+  sdpOffer?: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } | null
+  digitalSessionId?: string
+  mock?: boolean
 }
 
 type StreamUIMessage = UIMessage<StreamMetadata>
@@ -38,14 +54,18 @@ export function useAppController() {
   const audio = useAudio()
   const conversation = useConversation()
   const knowledge = useKnowledge()
+  const voiceClone = useVoiceClone()
+  const digitalHuman = useDigitalHuman((msg) => send(msg))
 
   const docsOpen = ref(false)
   const toastMsg = ref('')
   const audioEl = ref<HTMLAudioElement | null>(null)
+  const digitalVideoEl = ref<HTMLVideoElement | null>(null)
   const historyLoading = ref(false)
   const pendingVoiceSend = ref(false)
   const micPressedAt = ref(0)
   const textRequestActive = ref(false)
+  const mode = ref<ConversationMode>('voice')
   let voiceSendTimer: ReturnType<typeof setTimeout> | null = null
 
   const textChat = new Chat<StreamUIMessage>({
@@ -83,6 +103,11 @@ export function useAppController() {
   const knowledgeLoading = computed(() => knowledge.loading.value)
   const knowledgeSearching = computed(() => knowledge.searching.value)
   const knowledgeSearchResult = computed(() => knowledge.searchResult.value)
+  const voiceCloneState = computed<VoiceCloneState | null>(() => voiceClone.state.value)
+  const voiceCloneLoading = computed(() => voiceClone.loading.value)
+  const voiceCloneUploading = computed(() => voiceClone.uploading.value)
+  const digitalHumanStatus = computed(() => digitalHuman.status.value)
+  const digitalHumanError = computed(() => digitalHuman.lastError.value)
 
   watch(
     wsConnected,
@@ -92,6 +117,7 @@ export function useAppController() {
       if (!val) {
         sessionStore.setSession('', sessionStore.conversationId)
         clearPendingVoiceSend()
+        void digitalHuman.close()
         if (conversation.state.value !== 'recording') {
           conversation.state.value = 'idle'
         }
@@ -104,7 +130,7 @@ export function useAppController() {
         send({
           type: 'session:start',
           sessionId: '',
-          payload: { personaId: personaStore.selectedId },
+          payload: { personaId: personaStore.selectedId, mode: mode.value },
         })
       }
     },
@@ -138,7 +164,26 @@ export function useAppController() {
     syncMessagesFromTextChat()
   })
 
+  watch(digitalVideoEl, (el) => {
+    digitalHuman.bindVideo(el)
+  })
+
+  watch(
+    () => voiceClone.state.value?.status,
+    (status) => {
+      if (status === 'ready') {
+        void personaStore.fetchPersonas()
+      }
+    },
+  )
+
   on('session:ready', (msg: BaseWsMessage<SessionReadyPayload>) => {
+    if (msg.payload?.mode) {
+      mode.value = msg.payload.mode
+      if (mode.value !== 'digital-human') {
+        void digitalHuman.close()
+      }
+    }
     sessionStore.setSession(msg.sessionId, msg.payload?.conversationId ?? '')
     conversation.hydrateMessages(msg.payload?.history ?? [])
     textChat.messages = []
@@ -146,6 +191,7 @@ export function useAppController() {
     historyLoading.value = false
     conversation.state.value = 'idle'
     knowledge.fetchDocuments(personaStore.selectedId)
+    void voiceClone.fetchStatus(personaStore.selectedId)
   })
 
   on('asr:final', (msg: BaseWsMessage<{ text?: string }>) => {
@@ -175,6 +221,24 @@ export function useAppController() {
     conversation.setCitations(msg.turnId ?? '', msg.payload?.citations ?? [])
   })
 
+  on('webrtc:offer', (msg: BaseWsMessage<WebRtcOfferPayload>) => {
+    if (!msg.sessionId) return
+    void digitalHuman.handleOffer(msg.sessionId, msg.payload ?? {})
+  })
+
+  on('webrtc:ice-candidate', (msg: BaseWsMessage<{ candidate?: Record<string, unknown> }>) => {
+    if (!msg.sessionId || !msg.payload?.candidate) return
+    void digitalHuman.handleRemoteCandidate(
+      msg.sessionId,
+      msg.payload.candidate as {
+        candidate?: string
+        sdpMid?: string | null
+        sdpMLineIndex?: number | null
+        usernameFragment?: string | null
+      },
+    )
+  })
+
   on('tts:start', (msg: BaseWsMessage) => {
     conversation.state.value = 'speaking'
     audio.onTtsStart(msg.turnId ?? '')
@@ -188,6 +252,16 @@ export function useAppController() {
   on('tts:end', () => {
     audio.onTtsEnd()
     if (conversation.state.value === 'speaking') {
+      conversation.state.value = 'idle'
+    }
+  })
+
+  on('digital-human:start', () => {
+    conversation.state.value = 'speaking'
+  })
+
+  on('digital-human:end', () => {
+    if (conversation.state.value === 'speaking' && !textRequestActive.value) {
       conversation.state.value = 'idle'
     }
   })
@@ -215,7 +289,7 @@ export function useAppController() {
         send({
           type: 'session:start',
           sessionId: '',
-          payload: { personaId: personaStore.selectedId },
+          payload: { personaId: personaStore.selectedId, mode: mode.value },
         })
       }
       showToast('会话已失效，正在自动恢复')
@@ -234,9 +308,11 @@ export function useAppController() {
     clearPendingVoiceSend()
     textRequestActive.value = false
     void textChat.stop().catch(() => undefined)
+    void digitalHuman.close()
     textChat.messages = []
 
     personaStore.select(id)
+    voiceClone.clear()
     knowledge.clearSearchResult()
     conversation.clearMessages()
     sessionStore.reset()
@@ -245,7 +321,11 @@ export function useAppController() {
       showToast('连接恢复后将自动建立语音会话')
       return
     }
-    send({ type: 'session:start', sessionId: '', payload: { personaId: id } })
+    send({
+      type: 'session:start',
+      sessionId: '',
+      payload: { personaId: id, mode: mode.value },
+    })
   }
 
   async function onSendText(text: string) {
@@ -315,7 +395,7 @@ export function useAppController() {
       send({
         type: 'session:start',
         sessionId: '',
-        payload: { personaId: personaStore.selectedId },
+        payload: { personaId: personaStore.selectedId, mode: mode.value },
       })
       historyLoading.value = true
       showToast('会话建立中，请再按一次开始说话')
@@ -418,6 +498,43 @@ export function useAppController() {
     showToast(`检索完成：stage1 ${stage1Count} 条，stage2 ${stage2Count} 条`)
   }
 
+  async function onUploadVoiceSample(file: File) {
+    if (!personaStore.selectedId) {
+      showToast('请先选择角色')
+      return
+    }
+    showToast(`上传语音样本：${file.name}`)
+    const result = await voiceClone.uploadSample(personaStore.selectedId, file)
+    if (!result.ok) {
+      showToast(result.message ?? '语音克隆发起失败')
+      return
+    }
+    showToast('语音克隆任务已提交，正在训练')
+  }
+
+  async function onRefreshVoiceCloneStatus() {
+    if (!personaStore.selectedId) return
+    const result = await voiceClone.fetchStatus(personaStore.selectedId)
+    if (!result.ok) {
+      showToast(result.message ?? '查询语音克隆状态失败')
+    }
+  }
+
+  async function onChangeMode(nextMode: ConversationMode) {
+    if (mode.value === nextMode) return
+    mode.value = nextMode
+    void digitalHuman.close()
+
+    if (!personaStore.selectedId || !wsConnected.value) return
+    sessionStore.reset()
+    historyLoading.value = true
+    send({
+      type: 'session:start',
+      sessionId: '',
+      payload: { personaId: personaStore.selectedId, mode: mode.value },
+    })
+  }
+
   async function onDeletePersona(personaId: string) {
     const target = personaStore.personas.find((p) => p.id === personaId)
     const name = target?.name ?? '该角色'
@@ -442,12 +559,14 @@ export function useAppController() {
       clearPendingVoiceSend()
       textRequestActive.value = false
       void textChat.stop().catch(() => undefined)
+      void digitalHuman.close()
       textChat.messages = []
       conversation.clearMessages()
       conversation.state.value = 'idle'
       historyLoading.value = false
       knowledge.clearDocuments()
       knowledge.clearSearchResult()
+      voiceClone.clear()
       docsOpen.value = false
     }
 
@@ -533,6 +652,7 @@ export function useAppController() {
 
   onMounted(async () => {
     audio.initAudioElement(audioEl.value)
+    digitalHuman.bindVideo(digitalVideoEl.value)
     connect()
     await personaStore.fetchPersonas()
   })
@@ -540,6 +660,8 @@ export function useAppController() {
   onUnmounted(() => {
     clearPendingVoiceSend()
     void textChat.stop().catch(() => undefined)
+    void digitalHuman.close()
+    voiceClone.stopPolling()
     if (toastTimer) clearTimeout(toastTimer)
   })
 
@@ -547,8 +669,10 @@ export function useAppController() {
     personaStore,
     sessionStore,
     docsOpen,
+    mode,
     toastMsg,
     audioEl,
+    digitalVideoEl,
     messages,
     state,
     historyLoading,
@@ -557,13 +681,21 @@ export function useAppController() {
     knowledgeLoading,
     knowledgeSearching,
     knowledgeSearchResult,
+    voiceCloneState,
+    voiceCloneLoading,
+    voiceCloneUploading,
+    digitalHumanStatus,
+    digitalHumanError,
     knowledge,
     onSelectPersona,
+    onChangeMode,
     onMicDown,
     onMicUp,
     onSendText,
     onStopText,
     onUpload,
+    onUploadVoiceSample,
+    onRefreshVoiceCloneStatus,
     onDeleteDoc,
     onSearchKnowledge,
     onDeletePersona,

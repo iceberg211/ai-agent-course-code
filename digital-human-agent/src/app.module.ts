@@ -10,6 +10,8 @@ import { RealtimeSessionModule } from './realtime-session/realtime-session.modul
 import { AgentModule } from './agent/agent.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { ChatModule } from './chat/chat.module';
+import { VoiceCloneModule } from './voice-clone/voice-clone.module';
+import { DigitalHumanModule } from './digital-human/digital-human.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { ChatModule } from './chat/chat.module';
     AgentModule,
     GatewayModule,
     ChatModule,
+    VoiceCloneModule,
+    DigitalHumanModule,
   ],
 })
 export class AppModule {}

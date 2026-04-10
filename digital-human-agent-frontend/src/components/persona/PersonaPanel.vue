@@ -33,6 +33,46 @@
       </li>
     </ul>
 
+    <section v-if="selectedPersona" class="clone-card" aria-label="语音克隆">
+      <div class="clone-title">语音克隆</div>
+      <div class="clone-row">
+        <span class="clone-label">状态</span>
+        <span class="clone-status" :class="cloneStatusClass">
+          {{ cloneStatusLabel }}
+        </span>
+      </div>
+      <div class="clone-row" v-if="voiceCloneState?.voiceId">
+        <span class="clone-label">音色 ID</span>
+        <span class="clone-value" :title="voiceCloneState.voiceId">{{ voiceCloneState.voiceId }}</span>
+      </div>
+      <div class="clone-actions">
+        <button
+          class="clone-btn"
+          type="button"
+          :disabled="voiceCloneUploading"
+          @click="openFilePicker"
+        >
+          {{ voiceCloneUploading ? '上传中' : '上传样本' }}
+        </button>
+        <button
+          class="clone-btn light"
+          type="button"
+          :disabled="voiceCloneLoading"
+          @click="$emit('refresh-voice-clone')"
+        >
+          刷新
+        </button>
+      </div>
+      <p class="clone-tip">建议 3-10 分钟，wav/mp3/m4a/aac</p>
+      <input
+        ref="voiceInputEl"
+        type="file"
+        accept=".wav,.mp3,.m4a,.aac,audio/*"
+        style="display:none"
+        @change="onVoiceFileChange"
+      />
+    </section>
+
     <div class="panel-footer">
       <ConnectionStatus :connected="connected" />
     </div>
@@ -40,22 +80,59 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { BotIcon, UserIcon } from 'lucide-vue-next'
 import PersonaItem from './PersonaItem.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
-import type { Persona } from '../../types'
+import type { Persona, VoiceCloneState } from '../../types'
 
-defineProps<{
-  personas: Persona[]
-  selectedId: string
-  connected: boolean
-  loading: boolean
-}>()
-
-defineEmits<{
+const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'delete', id: string): void
+  (e: 'upload-voice-sample', file: File): void
+  (e: 'refresh-voice-clone'): void
 }>()
+
+const props = defineProps<{
+  personas: Persona[]
+  selectedId: string
+  selectedPersona?: Persona
+  connected: boolean
+  loading: boolean
+  voiceCloneState: VoiceCloneState | null
+  voiceCloneLoading: boolean
+  voiceCloneUploading: boolean
+}>()
+
+const voiceInputEl = ref<HTMLInputElement | null>(null)
+
+const cloneStatusLabel = computed(() => {
+  const status = props.voiceCloneState?.status ?? 'not_started'
+  return {
+    not_started: '未开始',
+    pending: '排队中',
+    training: '训练中',
+    ready: '已就绪',
+    failed: '失败',
+  }[status] ?? status
+})
+
+const cloneStatusClass = computed(() => {
+  const status = props.voiceCloneState?.status ?? 'not_started'
+  return `status-${status}`
+})
+
+function openFilePicker() {
+  voiceInputEl.value?.click()
+}
+
+function onVoiceFileChange(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  const file = target?.files?.[0]
+  if (!file) return
+  emit('upload-voice-sample', file)
+  target.value = ''
+}
 </script>
 
 <style scoped>
@@ -87,6 +164,75 @@ defineEmits<{
 .persona-list { flex: 1; overflow-y: auto; padding: 4px 8px; list-style: none; }
 .empty-hint { display: flex; align-items: center; gap: 8px; padding: 16px; color: var(--text-muted); font-size: 12px; list-style: none; }
 .panel-footer { padding: 12px 16px; border-top: 1px solid var(--border-muted); }
+.clone-card {
+  margin: 6px 10px 0;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-muted);
+  background: #ffffff;
+}
+.clone-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.clone-row {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.clone-label {
+  color: var(--text-muted);
+}
+.clone-value {
+  color: var(--text);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-status {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.status-not_started { background: #f3f4f6; color: #6b7280; }
+.status-pending { background: #fef3c7; color: #b45309; }
+.status-training { background: #dbeafe; color: #1d4ed8; }
+.status-ready { background: #dcfce7; color: #15803d; }
+.status-failed { background: #fee2e2; color: #b91c1c; }
+.clone-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+.clone-btn {
+  flex: 1;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.clone-btn.light {
+  border-color: var(--border-muted);
+  background: #fff;
+  color: var(--text-secondary);
+}
+.clone-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.clone-tip {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--text-muted);
+}
 .persona-skeleton {
   display: flex;
   align-items: center;
@@ -148,6 +294,16 @@ defineEmits<{
   }
   .panel-footer {
     padding: 10px 8px;
+  }
+  .clone-card {
+    margin: 6px;
+    padding: 8px;
+  }
+  .clone-title,
+  .clone-row,
+  .clone-tip,
+  .clone-actions {
+    display: none;
   }
 }
 </style>

@@ -5,6 +5,8 @@ export type ConversationState =
   | 'speaking'
   | 'closed'
 
+export type ConversationMode = 'voice' | 'digital-human'
+
 export type MessageRole = 'user' | 'assistant'
 export type MessageStatus = 'completed' | 'interrupted' | 'failed'
 
@@ -37,6 +39,23 @@ export interface Persona {
   systemPromptExtra?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export type VoiceCloneStatus =
+  | 'not_started'
+  | 'pending'
+  | 'training'
+  | 'ready'
+  | 'failed'
+
+export interface VoiceCloneState {
+  personaId: string
+  status: VoiceCloneStatus
+  voiceId: string | null
+  providerTaskId: string | null
+  sampleFilename: string | null
+  updatedAt: string
+  errorMessage?: string
 }
 
 export interface KnowledgeDocument {

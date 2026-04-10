@@ -10,7 +10,11 @@ import { TtsService } from '../tts/tts.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { PersonaService } from '../persona/persona.service';
 import { RealtimeSessionRegistry } from '../realtime-session/realtime-session.registry';
-import { RealtimeSession } from '../realtime-session/realtime-session.interface';
+import {
+  RealtimeSession,
+  SessionMode,
+} from '../realtime-session/realtime-session.interface';
+import { DigitalHumanService } from '../digital-human/digital-human.service';
 
 interface TtsAudioFrameMeta {
   sessionId: string;
@@ -27,6 +31,18 @@ interface SessionHistoryMessage {
   content: string;
   status: 'completed' | 'interrupted' | 'failed';
   createdAt: Date;
+}
+
+interface RTCSessionDescriptionInit {
+  type: 'answer' | 'offer' | 'pranswer' | 'rollback';
+  sdp?: string;
+}
+
+interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
 }
 
 @Injectable()
@@ -47,6 +63,7 @@ export class ConversationGateway implements OnModuleInit {
     private readonly agentService: AgentService,
     private readonly asrService: AsrService,
     private readonly ttsService: TtsService,
+    private readonly digitalHumanService: DigitalHumanService,
     private readonly conversationService: ConversationService,
     private readonly personaService: PersonaService,
     private readonly sessionRegistry: RealtimeSessionRegistry,
@@ -122,6 +139,12 @@ export class ConversationGateway implements OnModuleInit {
       case 'conversation:interrupt':
         await this.handleInterrupt(client, msg);
         break;
+      case 'webrtc:answer':
+        await this.handleWebRtcAnswer(client, msg);
+        break;
+      case 'webrtc:ice-candidate':
+        await this.handleWebRtcIceCandidate(client, msg);
+        break;
       default:
         this.logger.warn(`Unknown message type: ${msg.type}`);
     }
@@ -135,6 +158,7 @@ export class ConversationGateway implements OnModuleInit {
       this.send(client, { type: 'error', sessionId: '', payload: { message: 'personaId required' } });
       return;
     }
+    const mode = this.parseSessionMode(msg?.payload?.mode);
 
     // 关闭旧会话（如果有）
     const oldSession = this.sessionRegistry.findByWsClientId(clientId);
@@ -158,6 +182,9 @@ export class ConversationGateway implements OnModuleInit {
     this.sessionRegistry.create(sessionId, {
       conversationId: conversation.id,
       personaId,
+      mode,
+      digitalHumanSessionId: null,
+      iceUnsubscribe: null,
       activeTurnId: null,
       abortController: null,
       sentenceBuffer: '',
@@ -167,14 +194,21 @@ export class ConversationGateway implements OnModuleInit {
       ttsSeq: 0,
       ttsStarted: false,
       ttsFinalizeRequested: false,
+      speakQueue: [],
+      speakProcessing: false,
       wsClientId: clientId,
     });
+
+    if (mode === 'digital-human') {
+      await this.startDigitalHumanSession(client, sessionId, personaId);
+    }
 
     this.send(client, {
       type: 'session:ready',
       sessionId,
       payload: {
         conversationId: conversation.id,
+        mode,
         history: history.map<SessionHistoryMessage>((m) => ({
           id: m.id,
           turnId: m.turnId,
@@ -187,7 +221,9 @@ export class ConversationGateway implements OnModuleInit {
       },
     });
 
-    this.logger.log(`Session started: ${sessionId} persona=${personaId}`);
+    this.logger.log(
+      `Session started: ${sessionId} persona=${personaId} mode=${mode}`,
+    );
   }
 
   // ── 音频（ASR） ──────────────────────────────────────────────────────
@@ -232,6 +268,8 @@ export class ConversationGateway implements OnModuleInit {
       ttsSeq: 0,
       ttsStarted: false,
       ttsFinalizeRequested: false,
+      speakQueue: [],
+      speakProcessing: false,
     });
 
     await this.conversationService.addMessage({
@@ -274,6 +312,8 @@ export class ConversationGateway implements OnModuleInit {
       ttsSeq: 0,
       ttsStarted: false,
       ttsFinalizeRequested: false,
+      speakQueue: [],
+      speakProcessing: false,
     });
 
     await this.conversationService.addMessage({
@@ -399,7 +439,11 @@ export class ConversationGateway implements OnModuleInit {
     if (shouldFlush && session.sentenceBuffer.trim()) {
       const text = session.sentenceBuffer.trim();
       session.sentenceBuffer = '';
-      this.enqueueTtsSegment(client, session, turnId, text);
+      if (session.mode === 'digital-human') {
+        this.enqueueSpeakSegment(client, session, turnId, text);
+      } else {
+        this.enqueueTtsSegment(client, session, turnId, text);
+      }
     }
   }
 
@@ -416,6 +460,20 @@ export class ConversationGateway implements OnModuleInit {
 
     session.ttsQueue.push(text);
     void this.drainTtsQueue(client, session, turnId);
+  }
+
+  private enqueueSpeakSegment(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+    text: string,
+  ) {
+    if (!text.trim()) return;
+    if (session.ttsTurnId !== turnId) return;
+    if (session.mode !== 'digital-human') return;
+
+    session.speakQueue.push({ turnId, text });
+    void this.drainSpeakQueue(client, session, turnId);
   }
 
   private async drainTtsQueue(
@@ -482,6 +540,60 @@ export class ConversationGateway implements OnModuleInit {
     }
   }
 
+  private async drainSpeakQueue(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+  ) {
+    if (session.mode !== 'digital-human') return;
+    if (session.speakProcessing) return;
+    if (session.ttsTurnId !== turnId) return;
+
+    session.speakProcessing = true;
+    if (!session.ttsStarted) {
+      this.send(client, {
+        type: 'digital-human:start',
+        sessionId: session.sessionId,
+        turnId,
+      });
+      session.ttsStarted = true;
+    }
+
+    try {
+      while (session.speakQueue.length > 0) {
+        if (session.ttsTurnId !== turnId) break;
+
+        const item = session.speakQueue.shift();
+        if (!item) continue;
+        const digitalSessionId = session.digitalHumanSessionId;
+        if (!digitalSessionId) break;
+
+        this.send(client, {
+          type: 'digital-human:subtitle',
+          sessionId: session.sessionId,
+          turnId,
+          payload: { text: item.text },
+        });
+
+        await this.digitalHumanService.speak(
+          digitalSessionId,
+          turnId,
+          item.text,
+        );
+      }
+    } catch (err) {
+      this.logger.error('Digital human speak error', err);
+      this.send(client, {
+        type: 'error',
+        sessionId: session.sessionId,
+        payload: { message: 'Digital human speak failed' },
+      });
+    } finally {
+      session.speakProcessing = false;
+      this.completeTtsTurnIfNeeded(client, session, turnId);
+    }
+  }
+
   private markTtsFinalize(
     client: WebSocket,
     session: RealtimeSession,
@@ -498,22 +610,35 @@ export class ConversationGateway implements OnModuleInit {
     turnId: string,
   ) {
     if (session.ttsTurnId !== turnId) return;
-    if (session.ttsProcessing) return;
-    if (session.ttsQueue.length > 0) return;
+    if (session.mode === 'digital-human') {
+      if (session.speakProcessing) return;
+      if (session.speakQueue.length > 0) return;
+    } else {
+      if (session.ttsProcessing) return;
+      if (session.ttsQueue.length > 0) return;
+    }
     if (!session.ttsFinalizeRequested) return;
 
     if (session.ttsStarted) {
-      this.send(client, {
-        type: 'tts:end',
-        sessionId: session.sessionId,
-        turnId,
-      });
+      this.send(client, session.mode === 'voice'
+        ? {
+            type: 'tts:end',
+            sessionId: session.sessionId,
+            turnId,
+          }
+        : {
+            type: 'digital-human:end',
+            sessionId: session.sessionId,
+            turnId,
+          });
     }
 
     session.ttsTurnId = null;
     session.ttsStarted = false;
     session.ttsFinalizeRequested = false;
     session.ttsSeq = 0;
+    session.speakQueue = [];
+    session.speakProcessing = false;
 
     if (session.activeTurnId === turnId) {
       session.activeTurnId = null;
@@ -541,7 +666,23 @@ export class ConversationGateway implements OnModuleInit {
     session.sentenceBuffer = '';
     session.activeTurnId = null;
     session.ttsQueue = [];
+    session.speakQueue = [];
     session.ttsFinalizeRequested = true;
+
+    if (session.mode === 'digital-human' && session.digitalHumanSessionId) {
+      try {
+        await this.digitalHumanService.interrupt(
+          session.digitalHumanSessionId,
+          turnId ?? undefined,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `数字人打断失败：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     if (turnId) {
       this.completeTtsTurnIfNeeded(client, session, turnId);
@@ -555,6 +696,52 @@ export class ConversationGateway implements OnModuleInit {
     });
 
     this.logger.log(`Interrupted session: ${sessionId}`);
+  }
+
+  // ── WebRTC 信令 ───────────────────────────────────────────────────────
+
+  private async handleWebRtcAnswer(client: WebSocket, msg: any) {
+    const sessionId = String(msg?.sessionId ?? '');
+    const session = this.sessionRegistry.get(sessionId);
+    if (!session) return;
+    if (session.mode !== 'digital-human' || !session.digitalHumanSessionId) {
+      this.send(client, {
+        type: 'error',
+        sessionId,
+        payload: { message: '当前会话不是数字人模式' },
+      });
+      return;
+    }
+
+    const sdpAnswer = msg?.payload?.sdpAnswer as RTCSessionDescriptionInit;
+    if (!sdpAnswer?.type) return;
+
+    await this.digitalHumanService.setAnswer(
+      session.digitalHumanSessionId,
+      sdpAnswer,
+    );
+  }
+
+  private async handleWebRtcIceCandidate(client: WebSocket, msg: any) {
+    const sessionId = String(msg?.sessionId ?? '');
+    const session = this.sessionRegistry.get(sessionId);
+    if (!session) return;
+    if (session.mode !== 'digital-human' || !session.digitalHumanSessionId) {
+      this.send(client, {
+        type: 'error',
+        sessionId,
+        payload: { message: '当前会话不是数字人模式' },
+      });
+      return;
+    }
+
+    const candidate = msg?.payload?.candidate as RTCIceCandidateInit;
+    if (!candidate || typeof candidate !== 'object') return;
+
+    await this.digitalHumanService.addIceCandidate(
+      session.digitalHumanSessionId,
+      candidate,
+    );
   }
 
   // ── 断开清理 ──────────────────────────────────────────────────────────
@@ -572,6 +759,10 @@ export class ConversationGateway implements OnModuleInit {
     const session = this.sessionRegistry.get(sessionId);
     if (!session) return;
     session.abortController?.abort();
+    session.iceUnsubscribe?.();
+    if (session.digitalHumanSessionId) {
+      await this.digitalHumanService.closeSession(session.digitalHumanSessionId);
+    }
     this.sessionRegistry.delete(sessionId);
   }
 
@@ -581,5 +772,48 @@ export class ConversationGateway implements OnModuleInit {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(msg));
     }
+  }
+
+  private parseSessionMode(mode: unknown): SessionMode {
+    return mode === 'digital-human' ? 'digital-human' : 'voice';
+  }
+
+  private async startDigitalHumanSession(
+    client: WebSocket,
+    sessionId: string,
+    personaId: string,
+  ) {
+    const created = await this.digitalHumanService.createSession(personaId);
+    const session = this.sessionRegistry.get(sessionId);
+    if (!session) {
+      await this.digitalHumanService.closeSession(created.sessionId);
+      return;
+    }
+
+    const unsubscribe = this.digitalHumanService.onIceCandidate(
+      created.sessionId,
+      (candidate) => {
+        this.send(client, {
+          type: 'webrtc:ice-candidate',
+          sessionId,
+          payload: { candidate },
+        });
+      },
+    );
+
+    this.sessionRegistry.update(sessionId, {
+      digitalHumanSessionId: created.sessionId,
+      iceUnsubscribe: unsubscribe,
+    });
+
+    this.send(client, {
+      type: 'webrtc:offer',
+      sessionId,
+      payload: {
+        digitalSessionId: created.sessionId,
+        sdpOffer: created.sdpOffer,
+        mock: created.sdpOffer ? false : true,
+      },
+    });
   }
 }

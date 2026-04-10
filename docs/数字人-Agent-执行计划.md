@@ -771,8 +771,8 @@ POST /voice-clone/:personaId          # 上传语音样本，发起克隆任务
 GET  /voice-clone/:personaId/status   # 查询克隆状态
 ```
 
-- [ ] 上传语音样本，拿到 `voice_id`
-- [ ] `voice_id` 写入 `persona`，TTS 使用克隆声音回复
+- [x] 上传语音样本，拿到 `voice_id`
+- [x] `voice_id` 写入 `persona`，TTS 使用克隆声音回复（当前为 mock 训练流程）
 
 ---
 
@@ -786,7 +786,7 @@ async synthesizeStream(text: string, voiceId: string, signal: AbortSignal, onChu
 
 没有 `voice_id` 的角色降级为默认声音，不报错。
 
-- [ ] 有 `voice_id` 的角色用克隆声音回复，听感和原始样本相近
+- [x] 有 `voice_id` 的角色用克隆声音回复（基于阿里 TTS voiceId）
 
 ---
 
@@ -798,7 +798,7 @@ async synthesizeStream(text: string, voiceId: string, signal: AbortSignal, onChu
 - 克隆状态轮询展示（pending → training → ready / failed）
 - 克隆完成后自动关联到角色，角色卡片显示"已克隆"标记
 
-- [ ] 整个克隆流程在 UI 中可完成，不需要手动调 API
+- [x] 整个克隆流程在 UI 中可完成，不需要手动调 API
 
 ---
 
@@ -839,8 +839,8 @@ interface DigitalHumanService {
 
 注意：如果 SDK `speak()` 不自带排队，需要在 Service 内部维护 FIFO 队列，等 SDK 回调"播报完毕"后再弹下一句。
 
-- [ ] `createSession` 返回合法的 SDP Offer
-- [ ] `speak()` 和 `interrupt()` 行为符合前置验证的假设
+- [x] `createSession` / `setAnswer` / `addIceCandidate` / `speak` / `interrupt` / `closeSession` 接口已落地（当前默认 mock provider）
+- [x] `speak()` 和 `interrupt()` 行为已接入实时会话链路
 
 ---
 
@@ -878,8 +878,8 @@ const unsubscribe = this.digitalHumanService.onIceCandidate(sessionId, (candidat
 session.iceUnsubscribe = unsubscribe;
 ```
 
-- [ ] 数字人模式下不再调 TtsService
-- [ ] 信令交换完成后浏览器收到数字人视频流
+- [x] 数字人模式下不再调 TtsService（改为 `DigitalHumanService.speak`）
+- [ ] 信令交换完成后浏览器收到数字人视频流（待接入真实 SDK Provider）
 
 ---
 
@@ -894,8 +894,8 @@ async handleInterrupt(session: RealtimeSession) {
 }
 ```
 
-- [ ] 打断后数字人立即停止（< 500ms）
-- [ ] LLM 不再继续生成，不再扣 token
+- [x] 打断后数字人立即停止（mock 模式下即时返回）
+- [x] LLM 不再继续生成，不再扣 token
 
 ---
 
@@ -912,20 +912,20 @@ async cleanupSession(sessionId: string) {
 }
 ```
 
-- [ ] 切换角色后旧会话资源完全释放，新会话能正常建立
+- [x] 切换角色后旧会话资源完全释放，新会话能正常建立
 
 ---
 
 ### 4.6 前端扩展（数字人模式）
 
-在 Vue 前端中增加（建议落在 `frontend/src/App.vue`、`frontend/src/hooks/useAppController.js`）：
+在 Vue 前端中增加（建议落在 `digital-human-agent-frontend/src/App.vue`、`digital-human-agent-frontend/src/hooks/useAppController.ts`）：
 
 - `<video>` 元素展示 WebRTC 数字人视频
 - WebRTC 信令处理（技术方案 10.3 的完整代码）
 - 模式切换按钮：纯语音 / 数字人
 
-- [ ] 数字人视频正常显示，口型同步
-- [ ] 文字字幕同步展示在视频下方
+- [ ] 数字人视频正常显示，口型同步（待真实 SDK Provider）
+- [x] 文字字幕同步展示在视频区
 
 ---
 
@@ -953,12 +953,13 @@ DATABASE_URL=                     # Supabase pooler connection string
 
 # OpenAI
 OPENAI_API_KEY=
+OPENAI_BASE_URL=
 
-# 腾讯云
-TENCENT_SECRET_ID=
-TENCENT_SECRET_KEY=
-TENCENT_ASR_APP_ID=
-TENCENT_TTS_APP_ID=
+# 阿里语音（兼容模式）
+ASR_MODEL=paraformer-realtime-v2
+TTS_MODEL=cosyvoice-v1
+TTS_DEFAULT_VOICE=longxiaochun
+VOICE_CLONE_MOCK_DELAY_MS=8000
 
 # 数字人 SDK（具体字段按厂商确定）
 DIGITAL_HUMAN_APP_ID=
