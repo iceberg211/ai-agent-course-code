@@ -11,8 +11,9 @@ import {
 } from '@nestjs/common';
 import { extname } from 'node:path';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from './knowledge.service';
+import { KnowledgeSearchDto } from './dto/knowledge-search.dto';
 
 @ApiTags('knowledge')
 @Controller('knowledge')
@@ -43,6 +44,21 @@ export class KnowledgeController {
   @Get(':personaId/documents')
   listDocuments(@Param('personaId') personaId: string) {
     return this.service.listDocuments(personaId);
+  }
+
+  // POST /knowledge/:personaId/search
+  @Post(':personaId/search')
+  @ApiOperation({ summary: '检索调试（返回 stage1 + stage2）' })
+  search(
+    @Param('personaId') personaId: string,
+    @Body() body: KnowledgeSearchDto,
+  ) {
+    return this.service.retrieveWithStages(personaId, body.query, {
+      rerank: body.rerank,
+      threshold: body.threshold,
+      stage1TopK: body.stage1TopK,
+      finalTopK: body.finalTopK,
+    });
   }
 
   // DELETE /knowledge/:personaId/documents/:docId

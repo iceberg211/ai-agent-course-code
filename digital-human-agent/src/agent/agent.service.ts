@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import {
   HumanMessage,
@@ -26,8 +26,6 @@ export interface RunAgentParams {
 
 @Injectable()
 export class AgentService {
-  private readonly logger = new Logger(AgentService.name);
-
   private readonly llm = new ChatOpenAI({
     model: process.env.MODEL_NAME ?? 'qwen-plus',
     streaming: true,
@@ -55,20 +53,16 @@ export class AgentService {
     } = params;
 
     // 1. retrieve
-    let chunks: KnowledgeChunk[] = [];
-    try {
-      chunks = await this.knowledgeService.retrieve(
-        personaId,
-        userMessage,
-        5,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `知识检索失败，本轮按无知识模式继续：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+    const chunks: KnowledgeChunk[] = await this.knowledgeService.retrieve(
+      personaId,
+      userMessage,
+      {
+        rerank: true,
+        stage1TopK: 20,
+        finalTopK: 5,
+        threshold: 0.6,
+      },
+    );
 
     // 2. 推送引用来源
     if (chunks.length > 0) onCitations(chunks);

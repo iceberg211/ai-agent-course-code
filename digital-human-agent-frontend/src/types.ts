@@ -47,6 +47,27 @@ export interface KnowledgeDocument {
   createdAt?: string
 }
 
+export interface KnowledgeSearchChunk {
+  id: string
+  source: string
+  chunk_index: number
+  content: string
+  similarity: number
+  rerank_score?: number
+}
+
+export interface KnowledgeSearchResult {
+  query: string
+  options?: {
+    rerank: boolean
+    threshold: number
+    stage1TopK: number
+    finalTopK: number
+  }
+  stage1: KnowledgeSearchChunk[]
+  stage2: KnowledgeSearchChunk[]
+}
+
 export interface WsEnvelope<T = Record<string, unknown>> {
   type: string
   sessionId: string

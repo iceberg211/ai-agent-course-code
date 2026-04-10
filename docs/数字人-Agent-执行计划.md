@@ -651,9 +651,10 @@ ${candidates.map((c, i) => `[${i}] ${c.content}`).join('\n')}
 - `retrieve(query, { rerank: false })` → 单阶段结果
 - `retrieve(query, { rerank: true })` → 两阶段结果
 - 展示哪些 chunk 被 Reranker 提升/降级
+- 运行链路采用 fail-open：重排失败自动回退 stage1，检索失败按无知识继续，不阻断主对话
 
-- [ ] 两阶段检索结果和单阶段结果有可观察的差异
-- [ ] Reranker 开关通过参数控制，方便演示对比
+- [x] 两阶段检索结果和单阶段结果有可观察的差异
+- [x] Reranker 开关通过参数控制，方便演示对比
 
 ---
 
@@ -678,7 +679,7 @@ ws.send(JSON.stringify({
 
 前端文字区在助手回复下方展示引用列表（语音不读，仅文字显示）。
 
-- [ ] 每轮回复下方显示"引用来源：xxx.pdf 第 3 段"
+- [x] 每轮回复下方显示"引用来源：xxx.pdf 第 3 段"
 
 ---
 
@@ -703,22 +704,22 @@ POST   /knowledge/:personaId/search             # 检索测试（返回两阶段
 }
 ```
 
-- [ ] 上传 PDF，处理完成后能检索到内容
-- [ ] 删除文档后，对应的 `persona_knowledge` 向量也被清理
-- [ ] `/search` 接口能直观展示两阶段检索差异
+- [x] 上传 PDF，处理完成后能检索到内容
+- [x] 删除文档后，对应的 `persona_knowledge` 向量也被清理
+- [x] `/search` 接口能直观展示两阶段检索差异
 
 ---
 
 ### 2.4 知识库管理前端
 
-在 Vue 前端侧边栏中补充（建议落在 `frontend/src/components/knowledge/*` 与 `frontend/src/hooks/useKnowledge.js`）：
+在 Vue 前端侧边栏中补充（建议落在 `digital-human-agent-frontend/src/components/knowledge/*` 与 `digital-human-agent-frontend/src/hooks/useKnowledge.ts`）：
 
 - 文档列表（文件名 + 状态 + chunk 数量）
 - 上传按钮（调 `POST /knowledge/:personaId/documents`）
 - 删除按钮
 - 检索测试入口（输入查询，展示 stage1 / stage2 对比）
 
-- [ ] 能在 UI 中完成上传 → 处理 → 查询的完整流程
+- [x] 能在 UI 中完成上传 → 处理 → 查询的完整流程
 
 ---
 

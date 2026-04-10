@@ -81,6 +81,8 @@ export function useAppController() {
   const documents = computed(() => knowledge.documents.value)
   const uploading = computed(() => knowledge.uploading.value)
   const knowledgeLoading = computed(() => knowledge.loading.value)
+  const knowledgeSearching = computed(() => knowledge.searching.value)
+  const knowledgeSearchResult = computed(() => knowledge.searchResult.value)
 
   watch(
     wsConnected,
@@ -235,6 +237,7 @@ export function useAppController() {
     textChat.messages = []
 
     personaStore.select(id)
+    knowledge.clearSearchResult()
     conversation.clearMessages()
     sessionStore.reset()
     historyLoading.value = true
@@ -400,6 +403,21 @@ export function useAppController() {
     if (!ok) showToast('删除失败')
   }
 
+  async function onSearchKnowledge(query: string) {
+    if (!personaStore.selectedId) {
+      showToast('请先选择角色')
+      return
+    }
+    const result = await knowledge.searchKnowledge(personaStore.selectedId, query)
+    if (!result.ok) {
+      showToast(result.message ?? '检索测试失败')
+      return
+    }
+    const stage1Count = knowledge.searchResult.value?.stage1.length ?? 0
+    const stage2Count = knowledge.searchResult.value?.stage2.length ?? 0
+    showToast(`检索完成：stage1 ${stage1Count} 条，stage2 ${stage2Count} 条`)
+  }
+
   async function onDeletePersona(personaId: string) {
     const target = personaStore.personas.find((p) => p.id === personaId)
     const name = target?.name ?? '该角色'
@@ -429,6 +447,7 @@ export function useAppController() {
       conversation.state.value = 'idle'
       historyLoading.value = false
       knowledge.clearDocuments()
+      knowledge.clearSearchResult()
       docsOpen.value = false
     }
 
@@ -536,6 +555,8 @@ export function useAppController() {
     documents,
     uploading,
     knowledgeLoading,
+    knowledgeSearching,
+    knowledgeSearchResult,
     knowledge,
     onSelectPersona,
     onMicDown,
@@ -544,6 +565,7 @@ export function useAppController() {
     onStopText,
     onUpload,
     onDeleteDoc,
+    onSearchKnowledge,
     onDeletePersona,
   }
 }

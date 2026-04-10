@@ -42,10 +42,13 @@
         :documents="documents"
         :uploading="uploading"
         :loading="knowledgeLoading"
+        :searching="knowledgeSearching"
+        :search-result="knowledgeSearchResult"
         :status-label="knowledge.statusLabel"
         @close="docsOpen = false"
         @upload="onUpload"
         @delete="onDeleteDoc"
+        @search="onSearchKnowledge"
       />
     </Transition>
 
@@ -76,6 +79,8 @@ const {
   documents,
   uploading,
   knowledgeLoading,
+  knowledgeSearching,
+  knowledgeSearchResult,
   knowledge,
   onSelectPersona,
   onMicDown,
@@ -84,6 +89,7 @@ const {
   onStopText,
   onUpload,
   onDeleteDoc,
+  onSearchKnowledge,
   onDeletePersona,
 } = useAppController()
 </script>

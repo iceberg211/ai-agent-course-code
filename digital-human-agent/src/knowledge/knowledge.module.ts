@@ -3,10 +3,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { KnowledgeDocument } from './knowledge-document.entity';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeController } from './knowledge.controller';
+import { RerankerService } from './reranker.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([KnowledgeDocument])],
-  providers: [KnowledgeService],
+  providers: [KnowledgeService, RerankerService],
   controllers: [KnowledgeController],
   exports: [KnowledgeService],
 })

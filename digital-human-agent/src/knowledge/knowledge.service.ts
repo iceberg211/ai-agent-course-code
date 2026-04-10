@@ -6,6 +6,7 @@ import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { SUPABASE_CLIENT } from '../database/supabase.provider';
 import { KnowledgeDocument } from './knowledge-document.entity';
+import { RerankerService } from './reranker.service';
 
 export interface KnowledgeChunk {
   id: string;
@@ -14,6 +15,21 @@ export interface KnowledgeChunk {
   chunk_index: number;
   category: string | null;
   similarity: number;
+  rerank_score?: number;
+}
+
+export interface RetrieveKnowledgeOptions {
+  threshold?: number;
+  rerank?: boolean;
+  stage1TopK?: number;
+  finalTopK?: number;
+}
+
+export interface RetrieveKnowledgeDebugResult {
+  query: string;
+  options: Required<RetrieveKnowledgeOptions>;
+  stage1: KnowledgeChunk[];
+  stage2: KnowledgeChunk[];
 }
 
 @Injectable()
@@ -37,6 +53,7 @@ export class KnowledgeService {
     private readonly docRepo: Repository<KnowledgeDocument>,
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: SupabaseClient,
+    private readonly rerankerService: RerankerService,
   ) {}
 
   async ingestDocument(
@@ -94,37 +111,74 @@ export class KnowledgeService {
   async retrieve(
     personaId: string,
     query: string,
-    topK = 5,
-    threshold = 0.6,
+    options: RetrieveKnowledgeOptions = {},
   ): Promise<KnowledgeChunk[]> {
-    const [queryEmbedding] = await this.withTransientRetry(
+    try {
+      const result = await this.retrieveWithStages(personaId, query, options);
+      return result.stage2;
+    } catch (error) {
+      this.logger.warn(
+        `知识检索失败，降级为空知识：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+  }
+
+  async retrieveWithStages(
+    personaId: string,
+    query: string,
+    options: RetrieveKnowledgeOptions = {},
+  ): Promise<RetrieveKnowledgeDebugResult> {
+    const normalizedQuery = query.trim();
+    const normalizedOptions = this.normalizeRetrieveOptions(options);
+
+    if (!normalizedQuery) {
+      return {
+        query: normalizedQuery,
+        options: normalizedOptions,
+        stage1: [],
+        stage2: [],
+      };
+    }
+
+    const queryEmbedding = await this.withTransientRetry(
       'embed query',
-      () => this.embeddings.embedDocuments([query]),
-      2,
+      () => this.embeddings.embedQuery(normalizedQuery),
+      3,
     );
 
-    const { data, error } = await this.withTransientRetry<{
-      data: KnowledgeChunk[] | null;
-      error: { message: string } | null;
-    }>(
-      'match_knowledge rpc',
-      async () => {
-        const result = await this.supabase.rpc('match_knowledge', {
-          query_embedding: queryEmbedding,
-          p_persona_id: personaId,
-          match_threshold: threshold,
-          match_count: topK,
-        });
-        return {
-          data: (result.data as KnowledgeChunk[] | null) ?? null,
-          error: result.error ? { message: result.error.message } : null,
-        };
-      },
-      2,
+    const stage1 = await this.retrieveStage1(
+      personaId,
+      queryEmbedding,
+      normalizedOptions.threshold,
+      normalizedOptions.stage1TopK,
     );
 
-    if (error) throw new Error(error.message);
-    return (data as KnowledgeChunk[]) ?? [];
+    let stage2 = stage1.slice(0, normalizedOptions.finalTopK);
+    if (normalizedOptions.rerank && stage1.length > 1) {
+      try {
+        stage2 = await this.rerankerService.rerank(
+          normalizedQuery,
+          stage1,
+          normalizedOptions.finalTopK,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Reranker 失败，回退为向量检索结果：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    return {
+      query: normalizedQuery,
+      options: normalizedOptions,
+      stage1,
+      stage2,
+    };
   }
 
   listDocuments(personaId: string): Promise<KnowledgeDocument[]> {
@@ -141,7 +195,7 @@ export class KnowledgeService {
 
   private isTransientError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error ?? '');
-    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly/i.test(
+    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly|socket hang up|ECONNREFUSED|502|503|504|429/i.test(
       msg,
     );
   }
@@ -169,5 +223,68 @@ export class KnowledgeService {
       }
     }
     throw lastError;
+  }
+
+  private normalizeRetrieveOptions(
+    options: RetrieveKnowledgeOptions,
+  ): Required<RetrieveKnowledgeOptions> {
+    const finalTopK = this.toNumber(options.finalTopK, 5, 1, 20);
+    const rerank = options.rerank !== false;
+    const stage1Default = rerank ? Math.max(20, finalTopK) : finalTopK;
+    const stage1TopK = this.toNumber(
+      options.stage1TopK,
+      stage1Default,
+      finalTopK,
+      50,
+    );
+    const threshold = this.toNumber(options.threshold, 0.6, 0, 1);
+
+    return {
+      threshold,
+      rerank,
+      stage1TopK,
+      finalTopK,
+    };
+  }
+
+  private toNumber(
+    raw: unknown,
+    defaultValue: number,
+    min: number,
+    max: number,
+  ): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return defaultValue;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  private async retrieveStage1(
+    personaId: string,
+    queryEmbedding: number[],
+    threshold: number,
+    matchCount: number,
+  ): Promise<KnowledgeChunk[]> {
+    const { data, error } = await this.withTransientRetry<{
+      data: KnowledgeChunk[] | null;
+      error: { message: string } | null;
+    }>(
+      'match_knowledge rpc',
+      async () => {
+        const result = await this.supabase.rpc('match_knowledge', {
+          query_embedding: queryEmbedding,
+          p_persona_id: personaId,
+          match_threshold: threshold,
+          match_count: matchCount,
+        });
+        return {
+          data: (result.data as KnowledgeChunk[] | null) ?? null,
+          error: result.error ? { message: result.error.message } : null,
+        };
+      },
+      3,
+    );
+
+    if (error) throw new Error(error.message);
+    return (data as KnowledgeChunk[]) ?? [];
   }
 }
