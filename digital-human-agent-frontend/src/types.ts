@@ -87,6 +87,16 @@ export interface KnowledgeSearchResult {
   stage2: KnowledgeSearchChunk[]
 }
 
+/**
+ * 文字流消息的附加元数据（由 AI SDK Chat 回调携带）。
+ */
+export interface StreamMetadata {
+  conversationId?: string
+  turnId?: string
+  status?: MessageStatus | 'streaming'
+  citations?: Citation[]
+}
+
 export interface WsEnvelope<T = Record<string, unknown>> {
   type: string
   sessionId: string

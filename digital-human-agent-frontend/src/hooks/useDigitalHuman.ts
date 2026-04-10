@@ -73,7 +73,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       send({
         type: 'webrtc:answer',
         sessionId,
-        payload: { sdpAnswer: answer.toJSON() },
+        payload: { sdpAnswer: { type: answer.type, sdp: answer.sdp } },
+
       })
     } catch (error) {
       status.value = 'error'
