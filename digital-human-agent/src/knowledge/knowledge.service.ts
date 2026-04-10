@@ -54,7 +54,7 @@ export class KnowledgeService {
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: SupabaseClient,
     private readonly rerankerService: RerankerService,
-  ) {}
+  ) { }
 
   async ingestDocument(
     personaId: string,
@@ -70,10 +70,13 @@ export class KnowledgeService {
     try {
       // 2. 切分
       const chunks = await this.splitter.createDocuments([content]);
+      this.logger.log(`[切分完成] filename=${filename} chunks=${chunks.length}`);
 
       // 3. 向量化（批量）
       const texts = chunks.map((c) => c.pageContent);
+      this.logger.log(`[开始 Embedding] model=${this.embeddings.model ?? this.embeddings.modelName} baseURL=${this.embeddings.clientConfig?.baseURL} texts=${texts.length}`);
       const embeddings = await this.embeddings.embedDocuments(texts);
+      this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
       // 4. 写入 Supabase
       const rows = chunks.map((chunk, i) => ({
@@ -85,12 +88,20 @@ export class KnowledgeService {
         category: category ?? null,
         embedding: JSON.stringify(embeddings[i]),
       }));
+      this.logger.log(`[开始 Insert] 准备插入 Supabase rows=${rows.length}`);
 
-      const { error } = await this.supabase
-        .from('persona_knowledge')
-        .insert(rows);
-
-      if (error) throw new Error(error.message);
+      // 分批写入，避免单次 insert 请求体过大（向量数据量很大）
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const batch = rows.slice(i, i + BATCH_SIZE);
+        const { error } = await this.withTransientRetry(
+          `insert batch ${Math.floor(i / BATCH_SIZE) + 1}`,
+          () => this.supabase.from('persona_knowledge').insert(batch),
+          3,
+        );
+        if (error) throw new Error((error as { message: string }).message);
+      }
+      this.logger.log(`[Insert 完成] doc=${doc.id} batches=${Math.ceil(rows.length / BATCH_SIZE)}`);
 
       // 5. 更新状态
       await this.docRepo.update(doc.id, {
@@ -118,8 +129,7 @@ export class KnowledgeService {
       return result.stage2;
     } catch (error) {
       this.logger.warn(
-        `知识检索失败，降级为空知识：${
-          error instanceof Error ? error.message : String(error)
+        `知识检索失败，降级为空知识：${error instanceof Error ? error.message : String(error)
         }`,
       );
       return [];
@@ -166,8 +176,7 @@ export class KnowledgeService {
         );
       } catch (error) {
         this.logger.warn(
-          `Reranker 失败，回退为向量检索结果：${
-            error instanceof Error ? error.message : String(error)
+          `Reranker 失败，回退为向量检索结果：${error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -215,8 +224,7 @@ export class KnowledgeService {
           break;
         }
         this.logger.warn(
-          `${op} 第 ${i} 次失败，准备重试：${
-            error instanceof Error ? error.message : String(error)
+          `${op} 第 ${i} 次失败，准备重试：${error instanceof Error ? error.message : String(error)
           }`,
         );
         await new Promise((resolve) => setTimeout(resolve, 200 * i));

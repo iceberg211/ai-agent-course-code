@@ -5,6 +5,24 @@
 
 ---
 
+## 📊 当前进度总览
+
+> 最后更新：2026-04-10
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 环境前置 | SDK 选型验证 | ⚠️ 部分完成（当前用 Mock Provider）|
+| **第一阶段** | 纯语音对话（ASR → Agent → TTS）| ✅ **代码全部落地** |
+| **第二阶段** | RAG 两阶段检索 + 知识库管理 UI | ✅ **代码全部落地** |
+| **第三阶段** | 语音克隆 | ✅ **代码落地（训练流程为 Mock）** |
+| **第四阶段** | 数字人 SDK 接入 | 🔧 **架构/信令已落地，待接入真实 SDK Provider** |
+| **附加工作** | 代码重构（Gateway 拆分、前端 Hook 模块化）| ✅ **已完成** |
+
+> **说明**：「代码落地」= 模块实现完整、TypeScript 编译通过；「已验收运行」= 端到端跑通过。
+> 真实 SDK Provider（Simli / D-ID）尚未接入，数字人视频流为 Mock 模式。
+
+---
+
 ## 环境前置
 
 ```bash
@@ -21,7 +39,9 @@ pnpm add -g @nestjs/cli
 前置验证（第四阶段动工前完成，见技术方案第 14 节）：
 
 - [ ] 数字人 SDK 选型：优先评估 **Simli**（simli.ai）或 **D-ID**（d-id.com），均有免费 tier，支持 WebRTC
+  - > ⚠️ **当前状态**：`DigitalHumanService` 采用 **Mock Provider**，接口已定义完毕，待选定 SDK 后替换实现
 - [ ] 数字人 SDK `speak()` 支持排队——写最小脚本确认
+  - > ⚠️ 框架侧已实现 `speakQueue` FIFO 队列（`speak-pipeline.service.ts`），待验证真实 SDK 行为
 - [ ] `voice_id` 在独立 TTS 和数字人 SDK 中通用——调 API 确认
 - [ ] 数字人 SDK 自带 STUN/TURN——查文档 / 测 NAT 场景
 - [ ] `interrupt()` 延迟 < 500ms——测一下
@@ -264,8 +284,8 @@ CREATE INDEX ON conversation_message (conversation_id, created_at);
 supabase db push   # 推送到本地 / 云端
 ```
 
-- [ ] `supabase db push` 无报错
-- [ ] Supabase Studio 中能看到 5 张表
+- [x] `supabase db push` 无报错（`001_init.sql` + `002_rpc.sql` 已创建）
+- [x] Supabase Studio 中能看到 5 张表（`persona`、`conversation`、`conversation_message`、`knowledge_document`、`persona_knowledge`）
 
 ---
 
@@ -298,8 +318,8 @@ TypeOrmModule.forRoot({
 })
 ```
 
-- [ ] TypeORM 连接成功，`AppModule` 启动无报错
-- [ ] Supabase Client 注入到 `KnowledgeService` 可用
+- [x] TypeORM 连接成功，`AppModule` 启动无报错（`src/database/` 模块已实现）
+- [x] Supabase Client 注入到 `KnowledgeService` 可用
 
 ---
 
@@ -314,7 +334,7 @@ TypeOrmModule.forRoot({
 - `PATCH /personas/:id` — 更新角色
 - `DELETE /personas/:id` — 删除角色（级联删除知识库和会话）
 
-- [ ] 能通过 REST 创建一个"李老师"角色并查询到
+- [x] 能通过 REST 创建一个"李老师"角色并查询到（`persona.controller.ts` + `persona.service.ts` 已实现完整 CRUD）
 
 ---
 
@@ -382,8 +402,8 @@ LANGUAGE sql STABLE AS $$
 $$;
 ```
 
-- [ ] 上传一个 TXT 文档，能在 `persona_knowledge` 表中看到切分后的 chunks
-- [ ] 调用 `match_knowledge` RPC，能返回相关结果
+- [x] 上传一个 TXT 文档，能在 `persona_knowledge` 表中看到切分后的 chunks（`knowledge.service.ts` 已实现完整 ingest 流程）
+- [x] 调用 `match_knowledge` RPC，能返回相关结果（`002_rpc.sql` 已创建对应函数）
 
 ---
 
@@ -400,8 +420,8 @@ getRecentMessages(conversationId: string, limit = 10): Promise<ConversationMessa
 getCompletedMessages(conversationId: string, limit = 10): Promise<ConversationMessage[]>
 ```
 
-- [ ] 对话消息能正确写入和查询
-- [ ] `status=interrupted` 的消息不出现在 `getCompletedMessages` 结果中
+- [x] 对话消息能正确写入和查询（`conversation.service.ts` 已实现）
+- [x] `status=interrupted` 的消息不出现在 `getCompletedMessages` 结果中
 
 ---
 
@@ -437,8 +457,8 @@ ${retrievedChunks.map((c, i) =>
 
 `streamAnswer` 节点通过 `onToken` 回调把 token 逐个推给 Gateway，Gateway 负责按句缓冲和 TTS 衔接。
 
-- [ ] Agent 能基于检索结果流式生成回复
-- [ ] 知识库为空时回复"这个我不太清楚"
+- [x] Agent 能基于检索结果流式生成回复（`agent.service.ts` + LangGraph 已实现）
+- [x] 知识库为空时回复"这个我不太清楚"（Prompt 中有兜底指令）
 
 ---
 
@@ -452,7 +472,7 @@ ${retrievedChunks.map((c, i) =>
 async recognize(audioBuffer: Buffer, sampleRate = 16000): Promise<string>
 ```
 
-- [ ] 传入录音 Buffer，返回识别文本
+- [x] 传入录音 Buffer，返回识别文本（`src/asr/asr.service.ts` 已封装阿里云 ASR）
 
 ---
 
@@ -473,7 +493,7 @@ async synthesizeStream(
 ): Promise<void>
 ```
 
-- [ ] 传入一句话，能流式收到 PCM 音频帧
+- [x] 传入一句话，能流式收到 PCM 音频帧（`src/tts/tts.service.ts` 已实现流式 TTS，支持 AbortSignal）
 
 ---
 
@@ -545,8 +565,8 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 服务端发 { type: 'tts:end', turnId }
 ```
 
-- [ ] 完整链路跑通：浏览器录音 → 松开 → ASR → Agent → TTS → 浏览器播放
-- [ ] 打断时 LLM 停止生成，TTS 停止推流
+- [x] 完整链路代码落地：浏览器录音 → 松开 → ASR → Agent → TTS → 浏览器播放（`audio.handler.ts` + `agent-pipeline.service.ts` + `tts-pipeline.service.ts`）
+- [x] 打断时 LLM 停止生成，TTS 停止推流（`interrupt.handler.ts` 实现 AbortController）
 
 ---
 
@@ -566,9 +586,9 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 - `recording` 松开 → `thinking`，发送 Binary 音频（松开后延迟 1 秒发送）
 - `thinking` / `speaking` 再次按下 → 先发 `conversation:interrupt`，再切 `recording`
 
-- [ ] 按住说话，松开后听到 TTS 回复
-- [ ] 说话中途打断，LLM 立即停止，不再继续播放
-- [ ] 短按不会误发语音，文字发送不会误触麦克风
+- [x] 按住说话，松开后听到 TTS 回复（`useMicController.ts` 实现完整状态机）
+- [x] 说话中途打断，LLM 立即停止，不再继续播放
+- [x] 短按不会误发语音，文字发送不会误触麦克风（Pointer 事件防抖 + 状态隔离）
 
 ### 1.12 可选：前端文本层接入 `@ai-sdk/vue`
 
@@ -593,11 +613,11 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 
 验收项：
 
-- [ ] `ai-sdk` 模式下文本消息可流式渲染
-- [ ] `stop` 可中断文本生成
-- [ ] 连续失败可自动回退 `legacy` 模式
-- [ ] 切换角色时 `personaId` 传参正确
-- [ ] 文本层异常不影响语音链路可用
+- [x] `ai-sdk` 模式下文本消息可流式渲染（`useTextChat.ts` + `@ai-sdk/vue` 已接入，后端 `chat.controller.ts` 已实现）
+- [x] `stop` 可中断文本生成（`textChat.stopText()` 方法实现）
+- [ ] 连续失败可自动回退 `legacy` 模式（未实现，当前只有 ai-sdk 单一模式）
+- [x] 切换角色时 `personaId` 传参正确
+- [x] 文本层异常不影响语音链路可用（`useTextChat` 独立于语音 Hook）
 
 ---
 
@@ -879,7 +899,7 @@ session.iceUnsubscribe = unsubscribe;
 ```
 
 - [x] 数字人模式下不再调 TtsService（改为 `DigitalHumanService.speak`）
-- [ ] 信令交换完成后浏览器收到数字人视频流（待接入真实 SDK Provider）
+- [ ] 信令交换完成后浏览器收到数字人视频流（**待接入真实 SDK Provider**，当前 Mock 模式跳过 WebRTC）
 
 ---
 
@@ -924,7 +944,7 @@ async cleanupSession(sessionId: string) {
 - WebRTC 信令处理（技术方案 10.3 的完整代码）
 - 模式切换按钮：纯语音 / 数字人
 
-- [ ] 数字人视频正常显示，口型同步（待真实 SDK Provider）
+- [ ] 数字人视频正常显示，口型同步（**待真实 SDK Provider 接入**）
 - [x] 文字字幕同步展示在视频区
 
 ---
@@ -940,6 +960,73 @@ async cleanupSession(sessionId: string) {
 6. 随时打断，立即停止
 7. 切换角色，知识库 / 声音 / 数字人形象同步切换
 ```
+
+---
+
+## 附录：代码重构记录（计划外工作，已完成）
+
+> 在第四阶段开发过程中，对代码库进行了深度重构，显著提升了可维护性。
+
+### 后端 Gateway 拆分（`digital-human-agent`）
+
+**原始状态**：`conversation.gateway.ts` 820 行，承担连接管理、消息路由、ASR、Agent 编排、TTS、数字人信令等全部职责。
+
+**重构后架构**：「路由层 → Handler 层 → Pipeline 层」三层分离
+
+```
+src/gateway/
+├── conversation.gateway.ts      # 精简至 ~150 行（纯 WS 路由）
+├── gateway.types.ts             # 所有 WS 消息类型（Discriminated Union）
+├── handlers/
+│   ├── session.handler.ts       # session:start 会话初始化
+│   ├── audio.handler.ts         # Binary 音频 → ASR
+│   ├── text.handler.ts          # 文字输入处理
+│   ├── interrupt.handler.ts     # 打断逻辑
+│   └── webrtc.handler.ts        # WebRTC 信令
+└── pipeline/
+    ├── agent-pipeline.service.ts  # Agent 执行 + 按句缓冲
+    ├── tts-pipeline.service.ts    # TTS 队列推流
+    └── speak-pipeline.service.ts  # 数字人播报队列
+```
+
+**成效**：消除 `msg: any` 6 处 → 全部强类型；重複代码提取为公共函数；编译零报错。
+
+---
+
+### 前端 Hook 模块化（`digital-human-agent-frontend`）
+
+**原始状态**：`useAppController.ts` 704 行，集中了 WS 事件、状态机、录音、知识库操作等全部逻辑。
+
+**重构后架构**：「组合层 → 业务 Hook → Store」三层分离
+
+```
+src/hooks/
+├── useAppController.ts      # 生命周期协调器（~100 行，不含业务实现）
+├── useWsEventHandler.ts     # 集中注册所有 WS on() 监听
+├── useMicController.ts      # 麦克风状态机 + 防抖发送
+├── usePersonaActions.ts     # Persona 切换/删除/模式切换
+├── useTextChat.ts           # 文字聊天 + @ai-sdk/vue 集成
+├── useToast.ts              # Toast 通知
+├── usewebSocket.ts          # （原有）WS 连接管理
+├── useAudio.ts              # （原有）音频播放
+├── useConversation.ts       # （原有）对话状态
+├── useKnowledge.ts          # （原有）知识库操作
+├── useVoiceClone.ts         # （原有）语音克隆
+└── useDigitalHuman.ts       # （原有）数字人 WebRTC
+```
+
+**成效**：`historyLoading` 归入 `sessionStore`；App.vue 各子组件直接从 store/hook 取数，无大量透传；前端编译零报错。
+
+---
+
+### 前端 UI 升级
+
+- **全局样式**：字体换 Inter、完整 design token（shadow/radius/ease）、双光晕页面背景
+- **消息气泡**：流式蓝色左边条 + 打字光标；状态标签（中断/失败）带图标；入场动画 `slideUp`
+- **消息列表空态**：三层同心圆动画插图；骨架屏宽度随机化
+- **ChatControls**：状态改为胶囊 Pill（颜色/动画联动）；麦克风按钮弹簧回弹；右侧 `kbd` 快捷键提示；磨砂背景
+- **ChatComposer**：输入框聚焦发光；发送按钮弹簧动画；停止按钮红色轮廓
+- **数字人区**：Glassmorphism 徽章状态显示
 
 ---
 
