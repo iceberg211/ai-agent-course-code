@@ -12,10 +12,12 @@ import { GatewayModule } from './gateway/gateway.module';
 import { ChatModule } from './chat/chat.module';
 import { VoiceCloneModule } from './voice-clone/voice-clone.module';
 import { DigitalHumanModule } from './digital-human/digital-human.module';
+import { validateEnv } from './config/env.validation';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     DatabaseModule,
     PersonaModule,
     ConversationModule,
@@ -28,6 +30,7 @@ import { DigitalHumanModule } from './digital-human/digital-human.module';
     ChatModule,
     VoiceCloneModule,
     DigitalHumanModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

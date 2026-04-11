@@ -1,3 +1,5 @@
+import { DigitalHumanSpeakMode } from '../digital-human/digital-human.types';
+
 export type SessionMode = 'voice' | 'digital-human';
 
 export interface RealtimeSession {
@@ -6,7 +8,7 @@ export interface RealtimeSession {
   personaId: string;
   mode: SessionMode;
   digitalHumanSessionId: string | null;
-  iceUnsubscribe: (() => void) | null;
+  digitalHumanSpeakMode: DigitalHumanSpeakMode | null;
   activeTurnId: string | null;
   abortController: AbortController | null;
   sentenceBuffer: string; // 按句缓冲区

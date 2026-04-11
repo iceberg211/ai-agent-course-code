@@ -7,7 +7,7 @@
 
 ## 📊 当前进度总览
 
-> 最后更新：2026-04-10
+> 最后更新：2026-04-11
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
@@ -21,6 +21,21 @@
 > **说明**：「代码落地」= 模块实现完整、TypeScript 编译通过；「已验收运行」= 端到端跑通过。
 > **架构决策（2026-04-10）**：采用 Provider 模式 + `speakMode` 标志位，首选 Simli（`pcm-stream`）。
 > `DigitalHumanService` 接口需按新设计重构，`WebRtcHandler` 整体移除，`TtsPipelineService` 加 PCM 输出分支。
+
+---
+
+## 评审结论与本轮调整（2026-04-11）
+
+本次按 `nestjs-best-practices` 做执行计划审阅，已同步以下调整：
+
+- [x] **架构与 DI 对齐**（`arch-*` / `di-*`）：第四阶段补充 `DIGITAL_HUMAN_PROVIDER` 注入令牌与 Provider 工厂约束，避免 Gateway 直接依赖具体厂商实现
+- [x] **错误处理对齐**（`error-*`）：补充数字人外部调用失败的超时、重试、降级策略与统一异常映射要求
+- [x] **配置管理对齐**（`devops-use-config-module`）：新增 `ConfigModule + Joi` 环境变量校验为阶段门禁
+- [x] **健康检查对齐**（`micro-use-health-checks`）：新增 `/health` 与依赖探针（DB、Simli、LLM）验收项
+- [x] **测试基线对齐**（`test-*`）：新增第四阶段最小 e2e 与集成测试清单
+- [x] **前端 TS 一致性修订**：将文档内遗留 `.js` 路径更新为 `.ts`
+- [x] **AI SDK 文本层修订**：将 `@ai-sdk/vue` 接入描述统一为 `Chat` 实现，避免版本歧义
+- [x] **重构记录纠偏**：附录明确标注 `webrtc.handler.ts` 为当前状态，第四阶段完成后移除
 
 ---
 
@@ -106,12 +121,12 @@ supabase/
 frontend/              # Vue 3 + Vite 前端（独立项目，端口 5173）
 ├── src/
 │   ├── App.vue                   # 主组件（三栏布局）
-│   ├── main.js
+│   ├── main.ts
 │   ├── style.css                 # 全局样式 + CSS 变量
 │   └── hooks/
-│       ├── useWebSocket.js       # WS 连接管理 + 事件总线
-│       └── useAudio.js           # MediaRecorder + MediaSource
-└── vite.config.js                # proxy: /api → 3001, /ws → 3001
+│       ├── useWebSocket.ts       # WS 连接管理 + 事件总线
+│       └── useAudio.ts           # MediaRecorder + MediaSource
+└── vite.config.ts                # proxy: /api → 3001, /ws → 3001
 ```
 
 ---
@@ -580,9 +595,9 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 
 当前仓库实现基于 `Vue 3 + Vite`（不是原生单页脚本），核心文件：
 
-- `frontend/src/hooks/useAppController.js`
-- `frontend/src/hooks/useWebSocket.js`
-- `frontend/src/hooks/useAudio.js`
+- `frontend/src/hooks/useAppController.ts`
+- `frontend/src/hooks/useWebSocket.ts`
+- `frontend/src/hooks/useAudio.ts`
 - `frontend/src/components/chat/ChatControls.vue`
 - `frontend/src/components/chat/ChatComposer.vue`
 
@@ -602,26 +617,26 @@ private flushBuffer(session: RealtimeSession, token: string, isEnd = false) {
 
 实施步骤：
 
-1. 新增开关 `VITE_TEXT_CHAT_MODE=legacy|ai-sdk`（默认 `legacy`）
+1. 锁定 `@ai-sdk/vue@^2`，统一使用 `Chat` 类（不再引入并行的 `legacy` 文本实现）
 2. 新增文本适配层 `useTextChatAdapter`，统一导出：
    - `messages`
    - `status`
    - `sendMessage`
    - `stop`
    - `error`
-3. `ai-sdk` 模式下使用 `@ai-sdk/vue` 的 `useChat`：
+3. `ai-sdk` 模式下由 `useTextChat.ts` 封装 `Chat` 实例：
    - transport 指向 `/api/chat`
    - body 携带 `personaId`、`conversationId`
 4. 后端新增 `POST /api/chat` 文本接口（仅协议适配）：
    - 内部仍调用现有 `AgentService`，不引入第二套编排
 5. 保持语音入口独立：
-   - 麦克风、ASR、TTS、WebRTC 不接入 `useChat`
+   - 麦克风、ASR、TTS、WebRTC 不接入 `Chat`
 
 验收项：
 
 - [x] `ai-sdk` 模式下文本消息可流式渲染（`useTextChat.ts` + `@ai-sdk/vue` 已接入，后端 `chat.controller.ts` 已实现）
 - [x] `stop` 可中断文本生成（`textChat.stopText()` 方法实现）
-- [ ] 连续失败可自动回退 `legacy` 模式（未实现，当前只有 ai-sdk 单一模式）
+- [x] 文本层统一单实现（AI SDK），不再维护 `legacy` 分叉
 - [x] 切换角色时 `personaId` 传参正确
 - [x] 文本层异常不影响语音链路可用（`useTextChat` 独立于语音 Hook）
 
@@ -870,8 +885,17 @@ export interface DigitalHumanProvider {
 }
 ```
 
-- [ ] `digital-human.types.ts` 替换为新接口
-- [ ] `digital-human.service.ts`（Mock Provider）实现新接口，`createSession` 返回 `speakMode: 'pcm-stream'` 和空 `credentials`
+- NestJS DI 约束（必须）：通过注入令牌解耦具体厂商 Provider，禁止在 Gateway 里 `new SimliProvider()`
+
+```typescript
+// src/digital-human/digital-human.constants.ts
+export const DIGITAL_HUMAN_PROVIDER = Symbol('DIGITAL_HUMAN_PROVIDER');
+```
+
+- [x] `digital-human.types.ts` 替换为新接口
+- [x] `MockDigitalHumanProvider` 已实现新接口（当前 `speakMode: 'text-direct'`，用于本地兜底）
+- [x] `DigitalHumanModule` 已通过工厂绑定 `DIGITAL_HUMAN_PROVIDER`（`simli|mock` 可切换）
+- [x] `SessionHandler` / `InterruptHandler` 仅依赖 `DIGITAL_HUMAN_PROVIDER` 令牌，不依赖具体实现类
 
 ---
 
@@ -888,8 +912,16 @@ export interface DigitalHumanProvider {
 
 安装依赖：`pnpm add @simliai/simli-client`（如有后端 SDK）或直接调 REST API。
 
+调用策略（错误处理基线）：
+
+- 所有 Simli 外部调用设置超时（建议 5s）
+- `createSession` 采用有限重试（最多 2 次，指数退避）
+- 超时或 5xx 统一映射为 `ServiceUnavailableException`
+- 单次会话失败不影响系统存活：返回可观测错误并允许用户重试
+
 - [ ] `SimliProvider.createSession()` 能拿到有效 `simliToken`
-- [ ] `.env.example` 增加 `SIMLI_API_KEY` / `DIGITAL_HUMAN_PROVIDER=simli`
+- [x] `.env.example` 增加 `SIMLI_API_KEY` / `DIGITAL_HUMAN_PROVIDER`
+- [ ] `createSession` 失败时日志包含 `requestId/sessionId/provider`，便于追踪
 
 ---
 
@@ -903,8 +935,8 @@ export interface DigitalHumanProvider {
 
 修改 `session.handler.ts`：`startDigitalHumanSession()` 改为发送 `digital-human:ready`（携带 Provider credentials）。
 
-- [ ] 删除 `WebRtcHandler` 后编译无报错
-- [ ] `session:start` (mode=digital-human) 触发后，前端收到 `digital-human:ready` 消息
+- [x] 删除 `WebRtcHandler` 后编译无报错
+- [x] `session:start` (mode=digital-human) 触发后，后端发送 `digital-human:ready`，前端已加监听
 
 ---
 
@@ -919,8 +951,8 @@ export interface DigitalHumanProvider {
 // TTS 请求参数 response_format: 'pcm'
 ```
 
-- [ ] 数字人模式下 binary 帧的 `codec` 为 `audio/pcm`
-- [ ] 纯语音模式不受影响，仍输出 `audio/mpeg`
+- [x] 数字人模式下 binary 帧的 `codec` 为 `audio/pcm`
+- [x] 纯语音模式不受影响，仍输出 `audio/mpeg`
 
 ---
 
@@ -928,7 +960,7 @@ export interface DigitalHumanProvider {
 
 `SpeakPipelineService` 调用 `speak(text)` 的模式仅在 `text-direct` Provider 下使用。Simli（pcm-stream）下 TtsPipeline 直接推 PCM 帧，`SpeakPipeline` 可保留但对 Simli 路径不激活。
 
-- [ ] 数字人模式下确认 `SpeakPipelineService.enqueue()` 不再被调用（或守卫判断 `speakMode`）
+- [x] `SpeakPipelineService` 已加 `speakMode==='text-direct'` 守卫
 
 ---
 
@@ -982,6 +1014,26 @@ async cleanupSession(sessionId: string) {
 
 ---
 
+### 4.9 NestJS 基线能力补齐（第四阶段门禁）
+
+> 本节是第四阶段上线前的质量门禁，遵循 `nestjs-best-practices`。
+
+1. 配置与启动
+   - [x] `ConfigModule.forRoot({ isGlobal: true, validate })` 启用
+   - [x] 对 `DATABASE_URL`、`SUPABASE_*`、`SIMLI_API_KEY`、`DIGITAL_HUMAN_PROVIDER` 做必填校验（含 provider 条件校验）
+2. 健康检查
+   - [x] 增加 `GET /health`，返回 `app/db/simli/llm` 子状态
+   - [x] `db` 与 `simli` 探针失败时返回 `503`
+3. 安全与 API
+   - [x] 全局 `ValidationPipe`（`whitelist + forbidNonWhitelisted + transform`）
+   - [ ] 上传接口加入限流与文件大小上限（防止异常请求压垮服务）
+4. 测试
+   - [ ] e2e：`session:start(mode=digital-human)` 返回 `digital-human:ready`
+   - [ ] e2e：`conversation:interrupt` 后停止 token 与 PCM 推送
+   - [ ] 集成：`SimliProvider.createSession` 超时/5xx 映射为 `503`
+
+---
+
 **第四阶段验收（= 项目完整成功标准）：**
 
 ```
@@ -1015,7 +1067,7 @@ src/gateway/
 │   ├── audio.handler.ts         # Binary 音频 → ASR
 │   ├── text.handler.ts          # 文字输入处理
 │   ├── interrupt.handler.ts     # 打断逻辑
-│   └── webrtc.handler.ts        # WebRTC 信令
+│   └── webrtc.handler.ts        # WebRTC 信令（当前状态；第四阶段删除）
 └── pipeline/
     ├── agent-pipeline.service.ts  # Agent 执行 + 按句缓冲
     ├── tts-pipeline.service.ts    # TTS 队列推流
@@ -1040,12 +1092,12 @@ src/hooks/
 ├── usePersonaActions.ts     # Persona 切换/删除/模式切换
 ├── useTextChat.ts           # 文字聊天 + @ai-sdk/vue 集成
 ├── useToast.ts              # Toast 通知
-├── usewebSocket.ts          # （原有）WS 连接管理
+├── useWebSocket.ts          # （原有）WS 连接管理
 ├── useAudio.ts              # （原有）音频播放
 ├── useConversation.ts       # （原有）对话状态
 ├── useKnowledge.ts          # （原有）知识库操作
 ├── useVoiceClone.ts         # （原有）语音克隆
-└── useDigitalHuman.ts       # （原有）数字人 WebRTC
+└── useDigitalHuman.ts       # （原有）数字人 Provider 客户端（Simli）
 ```
 
 **成效**：`historyLoading` 归入 `sessionStore`；App.vue 各子组件直接从 store/hook 取数，无大量透传；前端编译零报错。
@@ -1081,12 +1133,14 @@ TTS_MODEL=cosyvoice-v1
 TTS_DEFAULT_VOICE=longxiaochun
 VOICE_CLONE_MOCK_DELAY_MS=8000
 
-# 数字人 SDK（具体字段按厂商确定）
-DIGITAL_HUMAN_APP_ID=
-DIGITAL_HUMAN_API_KEY=
+# 数字人 SDK（Simli）
+DIGITAL_HUMAN_PROVIDER=simli
+SIMLI_API_KEY=
+SIMLI_FACE_ID=
+SIMLI_BASE_URL=https://api.simli.ai
 
-# Frontend（可选文本层）
-VITE_TEXT_CHAT_MODE=legacy
+# Frontend（文本聊天，默认 AI SDK）
+VITE_TEXT_CHAT_MODE=ai-sdk
 ```
 
 ---

@@ -34,7 +34,7 @@ export function useAppController() {
   const knowledge = useKnowledge()
   const voiceClone = useVoiceClone()
   const digitalHuman = useDigitalHuman((msg) => send(msg))
-  const { showToast } = useToast()
+  const { toastMsg, showToast } = useToast()
 
   const textChat = useTextChat(conversation)
   textChat.setErrorHandler(showToast)
@@ -91,7 +91,7 @@ export function useAppController() {
     voiceClone.stopPolling()
   })
 
-  // ── 暴露：只暴露跨组件操作句柄和需要 template ref 绑定的接口 ──────────────
+  // ── 暴露：操作句柄 + 渲染状态（确保全局只使用这一套 Hook 实例） ─────────────
 
   return {
     // 操作（子组件 emit 到 App.vue，App.vue 调用这些）
@@ -148,6 +148,11 @@ export function useAppController() {
       const result = await voiceClone.fetchStatus(personaStore.selectedId)
       if (!result.ok) showToast(result.message ?? '查询语音克隆状态失败')
     },
+    // 状态对象（App.vue 直接渲染，避免重复创建 useConversation/useKnowledge/useToast）
+    conversation,
+    knowledge,
+    voiceClone,
+    toastMsg,
     // 需要在 App.vue 模板中 ref 绑定的 hook 实例
     audio,
     digitalHuman,

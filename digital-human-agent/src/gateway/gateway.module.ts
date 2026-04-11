@@ -12,7 +12,6 @@ import { SessionHandler } from './handlers/session.handler';
 import { AudioHandler } from './handlers/audio.handler';
 import { TextHandler } from './handlers/text.handler';
 import { InterruptHandler } from './handlers/interrupt.handler';
-import { WebRtcHandler } from './handlers/webrtc.handler';
 // Pipelines
 import { AgentPipelineService } from './pipeline/agent-pipeline.service';
 import { TtsPipelineService } from './pipeline/tts-pipeline.service';
@@ -35,7 +34,6 @@ import { SpeakPipelineService } from './pipeline/speak-pipeline.service';
     AudioHandler,
     TextHandler,
     InterruptHandler,
-    WebRtcHandler,
     // Pipelines
     AgentPipelineService,
     TtsPipelineService,

@@ -1,14 +1,14 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { RealtimeSessionRegistry } from '../realtime-session/realtime-session.registry';
-import { DigitalHumanService } from '../digital-human/digital-human.service';
+import { DIGITAL_HUMAN_PROVIDER } from '../digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '../digital-human/digital-human.types';
 import { SessionHandler } from './handlers/session.handler';
 import { AudioHandler } from './handlers/audio.handler';
 import { TextHandler } from './handlers/text.handler';
 import { InterruptHandler } from './handlers/interrupt.handler';
-import { WebRtcHandler } from './handlers/webrtc.handler';
 import { WsInboundMessage } from './gateway.types';
 
 /**
@@ -34,12 +34,12 @@ export class ConversationGateway implements OnModuleInit {
 
   constructor(
     private readonly sessionRegistry: RealtimeSessionRegistry,
-    private readonly digitalHumanService: DigitalHumanService,
+    @Inject(DIGITAL_HUMAN_PROVIDER)
+    private readonly digitalHumanProvider: DigitalHumanProvider,
     private readonly sessionHandler: SessionHandler,
     private readonly audioHandler: AudioHandler,
     private readonly textHandler: TextHandler,
     private readonly interruptHandler: InterruptHandler,
-    private readonly webRtcHandler: WebRtcHandler,
   ) {}
 
   onModuleInit(): void {
@@ -127,14 +127,6 @@ export class ConversationGateway implements OnModuleInit {
         await this.interruptHandler.handle(client, msg);
         break;
 
-      case 'webrtc:answer':
-        await this.webRtcHandler.handleAnswer(client, msg);
-        break;
-
-      case 'webrtc:ice-candidate':
-        await this.webRtcHandler.handleIceCandidate(client, msg);
-        break;
-
       default:
         this.logger.warn(`Unknown message type: ${(msg as WsInboundMessage).type}`);
     }
@@ -155,9 +147,8 @@ export class ConversationGateway implements OnModuleInit {
     const session = this.sessionRegistry.get(sessionId);
     if (!session) return;
     session.abortController?.abort();
-    session.iceUnsubscribe?.();
     if (session.digitalHumanSessionId) {
-      await this.digitalHumanService.closeSession(session.digitalHumanSessionId);
+      await this.digitalHumanProvider.closeSession(session.digitalHumanSessionId);
     }
     this.sessionRegistry.delete(sessionId);
   }

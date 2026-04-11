@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { PersonaService } from '../../persona/persona.service';
 import { ConversationService } from '../../conversation/conversation.service';
-import { DigitalHumanService } from '../../digital-human/digital-human.service';
+import { DIGITAL_HUMAN_PROVIDER } from '../../digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '../../digital-human/digital-human.types';
 import { RealtimeSessionRegistry } from '../../realtime-session/realtime-session.registry';
 import { SessionMode } from '../../realtime-session/realtime-session.interface';
 import { SessionHistoryMessage, WsSessionStartMessage } from '../gateway.types';
@@ -17,7 +18,7 @@ import { SessionHistoryMessage, WsSessionStartMessage } from '../gateway.types';
  * - 复用或新建 Conversation
  * - 加载历史消息
  * - 创建 RealtimeSession
- * - 如为数字人模式，启动 WebRTC 会话并发送 offer
+ * - 如为数字人模式，创建 Provider 会话并发送 credentials
  * - 发送 `session:ready`
  */
 @Injectable()
@@ -28,7 +29,8 @@ export class SessionHandler {
   constructor(
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
-    private readonly digitalHumanService: DigitalHumanService,
+    @Inject(DIGITAL_HUMAN_PROVIDER)
+    private readonly digitalHumanProvider: DigitalHumanProvider,
     private readonly sessionRegistry: RealtimeSessionRegistry,
   ) {
     this.historyLimit = Math.min(
@@ -62,7 +64,7 @@ export class SessionHandler {
     }
 
     // 验证 persona
-    await this.personaService.findOne(personaId);
+    const persona = await this.personaService.findOne(personaId);
 
     // 复用或新建 Conversation
     const lastConversation =
@@ -83,7 +85,7 @@ export class SessionHandler {
       personaId,
       mode,
       digitalHumanSessionId: null,
-      iceUnsubscribe: null,
+      digitalHumanSpeakMode: null,
       activeTurnId: null,
       abortController: null,
       sentenceBuffer: '',
@@ -99,7 +101,12 @@ export class SessionHandler {
     });
 
     if (mode === 'digital-human') {
-      await this.startDigitalHumanSession(client, sessionId, personaId);
+      await this.startDigitalHumanSession(
+        client,
+        sessionId,
+        personaId,
+        persona.voiceId ?? undefined,
+      );
     }
 
     this.sendJson(client, {
@@ -129,38 +136,32 @@ export class SessionHandler {
     client: WebSocket,
     sessionId: string,
     personaId: string,
+    voiceId?: string,
   ): Promise<void> {
-    const created = await this.digitalHumanService.createSession(personaId);
+    const created = await this.digitalHumanProvider.createSession(
+      personaId,
+      voiceId,
+    );
     const session = this.sessionRegistry.get(sessionId);
 
     if (!session) {
-      await this.digitalHumanService.closeSession(created.sessionId);
+      await this.digitalHumanProvider.closeSession(created.providerSessionId);
       return;
     }
 
-    const unsubscribe = this.digitalHumanService.onIceCandidate(
-      created.sessionId,
-      (candidate) => {
-        this.sendJson(client, {
-          type: 'webrtc:ice-candidate',
-          sessionId,
-          payload: { candidate },
-        });
-      },
-    );
-
     this.sessionRegistry.update(sessionId, {
-      digitalHumanSessionId: created.sessionId,
-      iceUnsubscribe: unsubscribe,
+      digitalHumanSessionId: created.providerSessionId,
+      digitalHumanSpeakMode: created.speakMode,
     });
 
     this.sendJson(client, {
-      type: 'webrtc:offer',
+      type: 'digital-human:ready',
       sessionId,
       payload: {
-        digitalSessionId: created.sessionId,
-        sdpOffer: created.sdpOffer,
-        mock: !created.sdpOffer,
+        provider: this.digitalHumanProvider.name,
+        digitalSessionId: created.providerSessionId,
+        speakMode: created.speakMode,
+        credentials: created.credentials,
       },
     });
   }

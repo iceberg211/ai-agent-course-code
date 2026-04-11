@@ -149,7 +149,10 @@ export class AgentPipelineService {
       const text = session.sentenceBuffer.trim();
       session.sentenceBuffer = '';
 
-      if (session.mode === 'digital-human') {
+      if (
+        session.mode === 'digital-human' &&
+        session.digitalHumanSpeakMode === 'text-direct'
+      ) {
         this.speakPipeline.enqueue(client, session, turnId, text);
       } else {
         this.ttsPipeline.enqueue(client, session, turnId, text);
@@ -162,7 +165,10 @@ export class AgentPipelineService {
     session: RealtimeSession,
     turnId: string,
   ): void {
-    if (session.mode === 'digital-human') {
+    if (
+      session.mode === 'digital-human' &&
+      session.digitalHumanSpeakMode === 'text-direct'
+    ) {
       this.speakPipeline.markFinalize(client, session, turnId);
     } else {
       this.ttsPipeline.markFinalize(client, session, turnId);

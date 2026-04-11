@@ -28,7 +28,7 @@
 
       <!-- 数字人视频区 -->
       <section v-if="mode === 'digital-human'" class="digital-stage" aria-label="数字人视频区">
-        <video ref="digitalVideoEl" class="digital-video" autoplay playsinline muted />
+        <video ref="digitalVideoEl" class="digital-video" autoplay playsinline />
         <div class="digital-mask">
           <div class="digital-badge" :class="digitalHumanStatus">
             <span class="badge-dot" />
@@ -89,10 +89,6 @@ import { computed, ref, watch } from 'vue'
 import { useAppController } from './hooks/useAppController'
 import { usePersonaStore } from './stores/persona'
 import { useSessionStore } from './stores/session'
-import { useConversation } from './hooks/useConversation'
-import { useKnowledge } from './hooks/useKnowledge'
-import { useVoiceClone } from './hooks/useVoiceClone'
-import { useToast } from './hooks/useToast'
 import PersonaPanel from './components/persona/PersonaPanel.vue'
 import ChatHeader from './components/chat/ChatHeader.vue'
 import MessageList from './components/chat/MessageList.vue'
@@ -105,27 +101,12 @@ import ToastAlert from './components/common/ToastAlert.vue'
 const personaStore = usePersonaStore()
 const sessionStore = useSessionStore()
 
-// ── 子 Hook 直接消费（不经过 useAppController 转发）──────────────────────────
-const conversation = useConversation()
-const knowledge = useKnowledge()
-const voiceClone = useVoiceClone()
-const { toastMsg } = useToast()
-
-// 从各 hook 派生模板绑定的 computed
-const conversationMessages = computed(() => conversation.messages.value)
-const conversationState = computed(() => conversation.state.value)
-const knowledgeDocuments = computed(() => knowledge.documents.value)
-const knowledgeUploading = computed(() => knowledge.uploading.value)
-const knowledgeLoading = computed(() => knowledge.loading.value)
-const knowledgeSearching = computed(() => knowledge.searching.value)
-const knowledgeSearchResult = computed(() => knowledge.searchResult.value)
-const knowledgeStatusLabel = computed(() => knowledge.statusLabel)
-const voiceCloneState = computed(() => voiceClone.state.value)
-const voiceCloneLoading = computed(() => voiceClone.loading.value)
-const voiceCloneUploading = computed(() => voiceClone.uploading.value)
-
 // ── AppController：仅获取操作句柄 + ref 绑定接口 ────────────────────────────
 const {
+  conversation,
+  knowledge,
+  voiceClone,
+  toastMsg,
   audio,
   digitalHuman,
   mode,
@@ -142,6 +123,19 @@ const {
   onUploadVoiceSample,
   onRefreshVoiceCloneStatus,
 } = useAppController()
+
+// 从 useAppController 返回的同一套 Hook 派生模板绑定的 computed
+const conversationMessages = computed(() => conversation.messages.value)
+const conversationState = computed(() => conversation.state.value)
+const knowledgeDocuments = computed(() => knowledge.documents.value)
+const knowledgeUploading = computed(() => knowledge.uploading.value)
+const knowledgeLoading = computed(() => knowledge.loading.value)
+const knowledgeSearching = computed(() => knowledge.searching.value)
+const knowledgeSearchResult = computed(() => knowledge.searchResult.value)
+const knowledgeStatusLabel = computed(() => knowledge.statusLabel)
+const voiceCloneState = computed(() => voiceClone.state.value)
+const voiceCloneLoading = computed(() => voiceClone.loading.value)
+const voiceCloneUploading = computed(() => voiceClone.uploading.value)
 
 // ── Template refs ─────────────────────────────────────────────────────────────
 const audioEl = ref<HTMLAudioElement | null>(null)

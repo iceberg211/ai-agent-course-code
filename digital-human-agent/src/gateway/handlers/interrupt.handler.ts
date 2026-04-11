@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { DigitalHumanService } from '../../digital-human/digital-human.service';
+import { DIGITAL_HUMAN_PROVIDER } from '../../digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '../../digital-human/digital-human.types';
 import { RealtimeSessionRegistry } from '../../realtime-session/realtime-session.registry';
 import { TtsPipelineService } from '../pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '../pipeline/speak-pipeline.service';
@@ -22,7 +23,8 @@ export class InterruptHandler {
 
   constructor(
     private readonly sessionRegistry: RealtimeSessionRegistry,
-    private readonly digitalHumanService: DigitalHumanService,
+    @Inject(DIGITAL_HUMAN_PROVIDER)
+    private readonly digitalHumanProvider: DigitalHumanProvider,
     private readonly ttsPipeline: TtsPipelineService,
     private readonly speakPipeline: SpeakPipelineService,
   ) {}
@@ -45,7 +47,7 @@ export class InterruptHandler {
     // 通知数字人打断
     if (session.mode === 'digital-human' && session.digitalHumanSessionId) {
       try {
-        await this.digitalHumanService.interrupt(
+        await this.digitalHumanProvider.interrupt(
           session.digitalHumanSessionId,
           turnId,
         );
@@ -58,7 +60,10 @@ export class InterruptHandler {
 
     // 触发 Pipeline 完成当前 turn
     if (turnId) {
-      if (session.mode === 'digital-human') {
+      if (
+        session.mode === 'digital-human' &&
+        session.digitalHumanSpeakMode === 'text-direct'
+      ) {
         this.speakPipeline.completeTurnIfNeeded(client, session, turnId);
       } else {
         this.ttsPipeline.completeTurnIfNeeded(client, session, turnId);

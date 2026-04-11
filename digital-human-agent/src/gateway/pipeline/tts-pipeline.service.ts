@@ -68,13 +68,16 @@ export class TtsPipelineService {
 
     session.ttsProcessing = true;
 
+    const outputFormat = this.getOutputFormat(session);
+    const codec = outputFormat === 'pcm' ? 'audio/pcm' : 'audio/mpeg';
+
     // 发送 tts:start（仅第一次）
     if (!session.ttsStarted) {
       this.sendJson(client, {
         type: 'tts:start',
         sessionId: session.sessionId,
         turnId,
-        payload: { encoding: 'mp3' },
+        payload: { encoding: outputFormat },
       });
       session.ttsStarted = true;
     }
@@ -104,10 +107,11 @@ export class TtsPipelineService {
               sessionId: session.sessionId,
               turnId,
               seq: session.ttsSeq++,
-              codec: 'audio/mpeg',
+              codec,
             };
             client.send(this.wrapAudioFrame(meta, chunk));
           },
+          outputFormat,
         );
       }
     } catch (err) {
@@ -169,5 +173,15 @@ export class TtsPipelineService {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(msg));
     }
+  }
+
+  private getOutputFormat(session: RealtimeSession): 'mp3' | 'pcm' {
+    if (
+      session.mode === 'digital-human' &&
+      session.digitalHumanSpeakMode === 'pcm-stream'
+    ) {
+      return 'pcm';
+    }
+    return 'mp3';
   }
 }

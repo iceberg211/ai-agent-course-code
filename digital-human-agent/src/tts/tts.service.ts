@@ -37,7 +37,8 @@ export class TtsService {
     text: string,
     voiceId: string | null,
     signal: AbortSignal,
-    onChunk: (pcm: Buffer) => void,
+    onChunk: (chunk: Buffer) => void,
+    outputFormat: 'mp3' | 'pcm' = 'mp3',
   ): Promise<void> {
     if (signal.aborted || !text.trim()) return;
     this.ensureConfigReady();
@@ -52,13 +53,13 @@ export class TtsService {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
+        Accept: outputFormat === 'pcm' ? 'audio/pcm' : 'audio/mpeg',
       },
       body: JSON.stringify({
         model: this.modelName,
         input: text,
         voice,
-        response_format: 'mp3',
+        response_format: outputFormat,
       }),
       signal,
     });

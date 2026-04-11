@@ -24,6 +24,7 @@ async function bootstrap() {
     new ValidationPipe({
       transform: true,
       whitelist: true,
+      forbidNonWhitelisted: true,
       validationError: { target: false, value: false },
       exceptionFactory: (errors: ValidationError[]) =>
         new BadRequestException({

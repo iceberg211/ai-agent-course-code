@@ -96,7 +96,18 @@ export function useWsEventHandler(
     conversation.setCitations(msg.turnId ?? '', msg.payload?.citations ?? [])
   })
 
-  // ── webrtc:offer ───────────────────────────────────────────────────────────
+  // ── digital-human:ready ────────────────────────────────────────────────────
+  on('digital-human:ready', (msg: BaseWsMessage<{
+    provider?: string
+    digitalSessionId?: string
+    speakMode?: 'pcm-stream' | 'text-direct'
+    credentials?: Record<string, unknown>
+  }>) => {
+    if (!msg.sessionId) return
+    digitalHuman.handleReady(msg.sessionId, msg.payload ?? {})
+  })
+
+  // ── webrtc:offer（兼容旧协议）────────────────────────────────────────────────
   on('webrtc:offer', (msg: BaseWsMessage<{
     sdpOffer?: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } | null
     digitalSessionId?: string
@@ -106,7 +117,7 @@ export function useWsEventHandler(
     void digitalHuman.handleOffer(msg.sessionId, msg.payload ?? {})
   })
 
-  // ── webrtc:ice-candidate ───────────────────────────────────────────────────
+  // ── webrtc:ice-candidate（兼容旧协议）───────────────────────────────────────
   on('webrtc:ice-candidate', (msg: BaseWsMessage<{ candidate?: Record<string, unknown> }>) => {
     if (!msg.sessionId || !msg.payload?.candidate) return
     void digitalHuman.handleRemoteCandidate(
@@ -121,16 +132,24 @@ export function useWsEventHandler(
   })
 
   // ── tts:start ──────────────────────────────────────────────────────────────
-  on('tts:start', (msg: BaseWsMessage) => {
+  on('tts:start', (msg: BaseWsMessage<{ encoding?: string }>) => {
     conversation.state.value = 'speaking'
+    if (msg.payload?.encoding === 'pcm') return
     audio.onTtsStart(msg.turnId ?? '')
   })
 
   // ── audio:chunk ────────────────────────────────────────────────────────────
-  on('audio:chunk', ({ meta, audioBytes }: { meta: { turnId?: string } | null; audioBytes: ArrayBuffer }) => {
-    const frameTurnId = meta?.turnId ?? audio.activeTurnId.get()
-    audio.onAudioChunk(audioBytes, frameTurnId)
-  })
+  on(
+    'audio:chunk',
+    ({ meta, audioBytes }: { meta: { turnId?: string; codec?: string } | null; audioBytes: ArrayBuffer }) => {
+      if (meta?.codec === 'audio/pcm') {
+        digitalHuman.handlePcmChunk(audioBytes)
+        return
+      }
+      const frameTurnId = meta?.turnId ?? audio.activeTurnId.get()
+      audio.onAudioChunk(audioBytes, frameTurnId)
+    },
+  )
 
   // ── tts:end ────────────────────────────────────────────────────────────────
   on('tts:end', () => {

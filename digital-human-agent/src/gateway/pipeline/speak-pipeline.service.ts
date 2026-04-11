@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { DigitalHumanService } from '../../digital-human/digital-human.service';
+import { DIGITAL_HUMAN_PROVIDER } from '../../digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '../../digital-human/digital-human.types';
 import { RealtimeSession } from '../../realtime-session/realtime-session.interface';
 
 /**
@@ -8,7 +9,7 @@ import { RealtimeSession } from '../../realtime-session/realtime-session.interfa
  *
  * 职责：
  * - 维护 speakQueue 的串行消费（避免并发播报乱序）
- * - 调用 DigitalHumanService.speak() 驱动数字人说话
+ * - 调用 DigitalHumanProvider.speak() 驱动数字人说话
  * - 推送 `digital-human:subtitle` 字幕和 `digital-human:end` 事件
  */
 @Injectable()
@@ -16,7 +17,8 @@ export class SpeakPipelineService {
   private readonly logger = new Logger(SpeakPipelineService.name);
 
   constructor(
-    private readonly digitalHumanService: DigitalHumanService,
+    @Inject(DIGITAL_HUMAN_PROVIDER)
+    private readonly digitalHumanProvider: DigitalHumanProvider,
   ) {}
 
   /**
@@ -31,6 +33,7 @@ export class SpeakPipelineService {
     if (!text.trim()) return;
     if (session.ttsTurnId !== turnId) return;
     if (session.mode !== 'digital-human') return;
+    if (session.digitalHumanSpeakMode !== 'text-direct') return;
 
     session.speakQueue.push({ turnId, text });
     void this.drain(client, session, turnId);
@@ -45,6 +48,7 @@ export class SpeakPipelineService {
     turnId: string,
   ): void {
     if (session.ttsTurnId !== turnId) return;
+    if (session.digitalHumanSpeakMode !== 'text-direct') return;
     session.ttsFinalizeRequested = true;
     this.completeTurnIfNeeded(client, session, turnId);
   }
@@ -58,6 +62,7 @@ export class SpeakPipelineService {
     turnId: string,
   ): Promise<void> {
     if (session.mode !== 'digital-human') return;
+    if (session.digitalHumanSpeakMode !== 'text-direct') return;
     if (session.speakProcessing) return;
     if (session.ttsTurnId !== turnId) return;
 
@@ -90,7 +95,7 @@ export class SpeakPipelineService {
           payload: { text: item.text },
         });
 
-        await this.digitalHumanService.speak(
+        await this.digitalHumanProvider.speak?.(
           digitalSessionId,
           turnId,
           item.text,

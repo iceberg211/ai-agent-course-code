@@ -24,20 +24,6 @@ export interface SessionHistoryMessage {
   createdAt: Date;
 }
 
-// ── WebRTC 信令类型 ────────────────────────────────────────────────────────────
-
-export interface RTCSessionDescriptionInit {
-  type: 'answer' | 'offer' | 'pranswer' | 'rollback';
-  sdp?: string;
-}
-
-export interface RTCIceCandidateInit {
-  candidate?: string;
-  sdpMid?: string | null;
-  sdpMLineIndex?: number | null;
-  usernameFragment?: string | null;
-}
-
 // ── WebSocket 消息结构（强类型） ───────────────────────────────────────────────
 
 export interface WsBaseMessage {
@@ -65,25 +51,9 @@ export interface WsInterruptMessage extends WsBaseMessage {
   type: 'conversation:interrupt';
 }
 
-export interface WsWebRtcAnswerMessage extends WsBaseMessage {
-  type: 'webrtc:answer';
-  payload?: {
-    sdpAnswer?: RTCSessionDescriptionInit;
-  };
-}
-
-export interface WsWebRtcIceCandidateMessage extends WsBaseMessage {
-  type: 'webrtc:ice-candidate';
-  payload?: {
-    candidate?: RTCIceCandidateInit;
-  };
-}
-
 /** 所有入站消息的联合类型 */
 export type WsInboundMessage =
   | WsSessionStartMessage
   | WsTextInputMessage
   | WsInterruptMessage
-  | WsWebRtcAnswerMessage
-  | WsWebRtcIceCandidateMessage
   | ({ type: 'ping' } & WsBaseMessage);
