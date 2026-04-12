@@ -36,6 +36,7 @@ export class SkillRegistry implements OnModuleInit {
     return this.getAll().map((s) => ({
       name: s.name,
       description: s.description,
+      effect: s.effect,
       inputShape: JSON.stringify(
         s.inputSchema.description ?? s.inputSchema._def,
       ),
@@ -48,7 +49,10 @@ export class SkillRegistry implements OnModuleInit {
     return (
       '当前系统已加载以下 skills（含输入参数定义）：\n' +
       skills
-        .map((s) => `- ${s.name}(${s.inputShape}): ${s.description}`)
+        .map(
+          (s) =>
+            `- ${s.name} [${s.effect}](${s.inputShape}): ${s.description}`,
+        )
         .join('\n')
     );
   }

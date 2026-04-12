@@ -23,6 +23,7 @@ export interface Tool {
   readonly description: string;
   readonly schema: z.ZodTypeAny;
   readonly type: 'read-only' | 'side-effect';
+  readonly cacheable?: boolean;
   execute(input: unknown): Promise<ToolResult>;
 }
 

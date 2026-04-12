@@ -5,6 +5,7 @@ import express, { Express } from 'express';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { TaskStatus } from '@/common/enums';
+import { EventLogService } from '@/event/event-log.service';
 import { TaskController } from '@/task/task.controller';
 import { TaskService } from '@/task/task.service';
 
@@ -15,16 +16,25 @@ describe('TaskController (e2e)', () => {
     listTasks: jest.Mock;
     createTask: jest.Mock;
   };
+  let eventLog: {
+    listTaskEvents: jest.Mock;
+  };
 
   beforeEach(async () => {
     taskService = {
       listTasks: jest.fn(),
       createTask: jest.fn(),
     };
+    eventLog = {
+      listTaskEvents: jest.fn(),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [TaskController],
-      providers: [{ provide: TaskService, useValue: taskService }],
+      providers: [
+        { provide: TaskService, useValue: taskService },
+        { provide: EventLogService, useValue: eventLog },
+      ],
     }).compile();
 
     expressServer = express();
@@ -90,6 +100,41 @@ describe('TaskController (e2e)', () => {
       .expect(400);
 
     expect(taskService.createTask).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/tasks/:id/events 返回任务事件日志', async () => {
+    const taskId = '00000000-0000-4000-8000-000000000001';
+    eventLog.listTaskEvents.mockResolvedValue([
+      {
+        id: 'event-1',
+        taskId,
+        runId: null,
+        eventName: 'task.created',
+        payload: { taskId },
+        createdAt: '2026-04-12T00:00:00.000Z',
+      },
+    ]);
+
+    await request(expressServer)
+      .get(`/api/tasks/${taskId}/events?take=20&skip=0`)
+      .expect(200)
+      .expect([
+        {
+          id: 'event-1',
+          taskId,
+          runId: null,
+          eventName: 'task.created',
+          payload: { taskId },
+          createdAt: '2026-04-12T00:00:00.000Z',
+        },
+      ]);
+
+    expect(eventLog.listTaskEvents).toHaveBeenCalledWith({
+      taskId,
+      runId: undefined,
+      take: 20,
+      skip: 0,
+    });
   });
 
   afterEach(async () => {

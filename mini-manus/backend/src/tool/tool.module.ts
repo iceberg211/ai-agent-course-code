@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { WebSearchTool } from '@/tool/tools/web-search.tool';
 import { BrowseUrlTool } from '@/tool/tools/browse-url.tool';
@@ -11,10 +12,19 @@ import { ExtractPdfTextTool } from '@/tool/tools/extract-pdf-text.tool';
 import { FetchUrlAsMarkdownTool } from '@/tool/tools/fetch-url-as-markdown.tool';
 import { ExportPdfTool } from '@/tool/tools/export-pdf.tool';
 import { GitHubSearchTool } from '@/tool/tools/github-search.tool';
+import { BrowserOpenTool } from '@/tool/tools/browser/browser-open.tool';
+import { BrowserExtractTool } from '@/tool/tools/browser/browser-extract.tool';
+import { BrowserScreenshotTool } from '@/tool/tools/browser/browser-screenshot.tool';
 import { WorkspaceModule } from '@/workspace/workspace.module';
+import { BrowserModule } from '@/browser/browser.module';
+
+function readBoolean(value: string | undefined, defaultValue: boolean): boolean {
+  if (value == null) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
 
 @Module({
-  imports: [WorkspaceModule],
+  imports: [WorkspaceModule, BrowserModule],
   providers: [
     ToolRegistry,
     WebSearchTool,
@@ -27,6 +37,9 @@ import { WorkspaceModule } from '@/workspace/workspace.module';
     FetchUrlAsMarkdownTool,
     ExportPdfTool,
     GitHubSearchTool,
+    BrowserOpenTool,
+    BrowserExtractTool,
+    BrowserScreenshotTool,
     {
       provide: 'THINK_TOOL',
       useClass: ThinkTool,
@@ -36,6 +49,7 @@ import { WorkspaceModule } from '@/workspace/workspace.module';
 })
 export class ToolModule {
   constructor(
+    private readonly config: ConfigService,
     private readonly registry: ToolRegistry,
     private readonly webSearch: WebSearchTool,
     private readonly browseUrl: BrowseUrlTool,
@@ -47,6 +61,9 @@ export class ToolModule {
     private readonly fetchUrlAsMarkdown: FetchUrlAsMarkdownTool,
     private readonly exportPdf: ExportPdfTool,
     private readonly githubSearch: GitHubSearchTool,
+    private readonly browserOpen: BrowserOpenTool,
+    private readonly browserExtract: BrowserExtractTool,
+    private readonly browserScreenshot: BrowserScreenshotTool,
   ) {}
 
   onModuleInit() {
@@ -60,6 +77,16 @@ export class ToolModule {
     this.registry.register(this.fetchUrlAsMarkdown);
     this.registry.register(this.exportPdf);
     this.registry.register(this.githubSearch);
+    if (
+      readBoolean(
+        this.config.get<string>('BROWSER_AUTOMATION_ENABLED'),
+        false,
+      )
+    ) {
+      this.registry.register(this.browserOpen);
+      this.registry.register(this.browserExtract);
+      this.registry.register(this.browserScreenshot);
+    }
     this.registry.register(new ThinkTool());
   }
 }

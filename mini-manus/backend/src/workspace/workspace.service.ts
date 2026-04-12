@@ -19,6 +19,18 @@ export class WorkspaceService {
     return path.join(this.baseDir, taskId);
   }
 
+  async listTaskWorkspaceDirs(): Promise<string[]> {
+    try {
+      const entries = await fs.readdir(this.baseDir, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
   async ensureTaskDir(taskId: string): Promise<string> {
     const dir = this.getTaskDir(taskId);
     await fs.mkdir(dir, { recursive: true });

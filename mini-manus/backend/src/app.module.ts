@@ -13,6 +13,7 @@ import { AgentModule } from '@/agent/agent.module';
 import { EventModule } from '@/event/event.module';
 import { GatewayModule } from '@/gateway/gateway.module';
 import { HealthModule } from '@/health/health.module';
+import { ApiKeyGuard } from '@/common/auth/api-key.guard';
 
 const envSchema = z
   .object({
@@ -22,13 +23,49 @@ const envSchema = z
     FRONTEND_URL: z.string().default('http://localhost:5173'),
     WS_ALLOWED_ORIGINS: z.string().default(''),
     WS_AUTH_TOKEN: z.string().default(''),
+    APP_API_KEYS: z.string().default(''),
     MODEL_NAME: z.string().default('gpt-4o-mini'),
     TAVILY_API_KEY: z.string().default(''),
     MAX_RETRIES: z.coerce.number().int().min(0).default(3),
     MAX_REPLANS: z.coerce.number().int().min(0).default(2),
     MAX_STEPS: z.coerce.number().int().min(1).default(20),
+    PLANNER_MAX_STEPS: z.coerce.number().int().min(1).optional(),
+    PLANNER_ALLOWED_SIDE_EFFECT_TOOLS: z
+      .string()
+      .default('write_file,download_file,export_pdf,browser_screenshot'),
+    PLANNER_ALLOWED_SIDE_EFFECT_SKILLS: z
+      .string()
+      .default('document_writing,report_packaging'),
     STEP_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60_000),
     TOOL_CACHE_TTL_MS: z.coerce.number().int().min(0).default(300_000),
+    WORKSPACE_CLEANUP_ENABLED: z.string().default('false'),
+    WORKSPACE_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+    WORKSPACE_CLEANUP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .default(6 * 60 * 60 * 1000),
+    BROWSER_AUTOMATION_ENABLED: z.string().default('false'),
+    BROWSER_HEADLESS: z.string().default('true'),
+    BROWSER_MAX_SESSIONS_PER_RUN: z.coerce.number().int().min(1).max(10).default(2),
+    BROWSER_DEFAULT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(60_000)
+      .default(15_000),
+    BROWSER_ACTION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(60_000)
+      .default(10_000),
+    BROWSER_SESSION_TTL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .max(60 * 60_000)
+      .default(10 * 60_000),
   })
   .passthrough();
 
@@ -47,6 +84,12 @@ function validateEnv(config: Record<string, unknown>) {
   ) {
     throw new Error('配置校验失败：生产环境必须配置 WS_AUTH_TOKEN');
   }
+  if (
+    result.data.NODE_ENV === 'production' &&
+    result.data.APP_API_KEYS.trim().length === 0
+  ) {
+    throw new Error('配置校验失败：生产环境必须配置 APP_API_KEYS');
+  }
 
   return result.data;
 }
@@ -55,6 +98,8 @@ function validateEnv(config: Record<string, unknown>) {
   providers: [
     // 全局速率限制：每个 IP 每分钟最多 60 次请求
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // 写接口 API Key 保护。未配置 APP_API_KEYS 时保持开发环境免鉴权。
+    { provide: APP_GUARD, useClass: ApiKeyGuard },
   ],
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),

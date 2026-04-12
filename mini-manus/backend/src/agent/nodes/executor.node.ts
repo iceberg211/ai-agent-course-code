@@ -18,6 +18,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+function attachRuntimeToolContext(
+  input: unknown,
+  state: AgentState,
+): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return input;
+  }
+
+  const record = input as Record<string, unknown>;
+  return {
+    ...record,
+    task_id: record.task_id ?? state.taskId,
+    run_id: record.run_id ?? state.runId,
+  };
+}
+
 export async function executorNode(
   state: AgentState,
   llm: ChatOpenAI,
@@ -148,7 +164,8 @@ export async function executorNode(
     } else {
       // ─── Tool 路径 ────────────────────────────────────────────────────────
       const toolName = step.toolHint ?? 'think';
-      const toolInput = step.toolInput ?? { thought: step.description };
+      const rawToolInput = step.toolInput ?? { thought: step.description };
+      const toolInput = attachRuntimeToolContext(rawToolInput, state);
 
       eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {
         taskId: state.taskId,

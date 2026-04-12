@@ -4,6 +4,7 @@ import { EventPublisher } from '@/event/event.publisher';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
+import { BrowserSessionService } from '@/browser/browser-session.service';
 
 type ConfigValue = string | number | boolean | undefined;
 
@@ -23,6 +24,7 @@ function createService(values: Record<string, ConfigValue>) {
     {} as SkillRegistry,
     {} as WorkspaceService,
     { emit: jest.fn() } as unknown as EventPublisher,
+    { closeRun: jest.fn() } as unknown as BrowserSessionService,
   );
 }
 

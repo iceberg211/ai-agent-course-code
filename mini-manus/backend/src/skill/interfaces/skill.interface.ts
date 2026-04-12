@@ -37,5 +37,6 @@ export interface Skill {
 export interface SkillForPlanner {
   name: string;
   description: string;
+  effect: Skill['effect'];
   inputShape: string;
 }

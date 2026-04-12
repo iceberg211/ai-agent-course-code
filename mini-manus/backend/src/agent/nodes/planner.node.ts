@@ -9,6 +9,7 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { plannerPrompt } from '@/prompts';
 import {
+  PlanSemanticValidationOptions,
   validatePlanSemantics,
   formatValidationErrors,
 } from '@/agent/plan-semantic-validator';
@@ -38,27 +39,40 @@ export async function plannerNode(
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
+  validationOptions: PlanSemanticValidationOptions = {},
 ): Promise<Partial<AgentState>> {
   const skillSection = skillRegistry.getPlannerPromptSection();
+
+  const toolInputExamples = [
+    '- web_search:      {"query": "搜索词"}\n' +
+      '- browse_url:      {"url": "https://..."}\n' +
+      '- fetch_url_as_markdown: {"url": "https://..."}\n' +
+      '- read_file:       {"task_id": "<taskId>", "path": "文件名"}\n' +
+      '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "..."}\n' +
+      '- list_directory:  {"task_id": "<taskId>", "path": "."}\n' +
+      '- download_file:   {"task_id": "<taskId>", "url": "https://...", "path": "资料.pdf"}\n' +
+      '- extract_pdf_text: {"task_id": "<taskId>", "path": "资料.pdf"}\n' +
+      '- export_pdf:      {"task_id": "<taskId>", "title": "报告", "content": "...", "path": "report.pdf"}\n' +
+      '- github_search:   {"query": "langgraph agent", "max_results": 5}\n' +
+      '- think:           {"thought": "推理内容"}',
+  ];
+
+  if (toolRegistry.has('browser_open')) {
+    toolInputExamples.push(
+      '- browser_open:   {"task_id": "<taskId>", "url": "https://...", "timeout_ms": 15000}\n' +
+        '- browser_extract: {"session_id": "<browser_open 返回的 session_id>", "selector": "main", "max_length": 12000}\n' +
+        '- browser_screenshot: {"task_id": "<taskId>", "session_id": "<browser_open 返回的 session_id>", "path": "browser-screenshots/page.png", "full_page": true}',
+    );
+  }
 
   const toolSection =
     '可直接使用的工具（无对应 skill 时使用，需填写 toolHint 和 toolInput）：\n' +
     toolRegistry
       .getAll()
-      .map((t) => `- ${t.name}: ${t.description}`)
+      .map((t) => `- ${t.name} [${t.type}]: ${t.description}`)
       .join('\n') +
     '\n工具参数示例（toolInput 字段）：\n' +
-    '- web_search:      {"query": "搜索词"}\n' +
-    '- browse_url:      {"url": "https://..."}\n' +
-    '- fetch_url_as_markdown: {"url": "https://..."}\n' +
-    '- read_file:       {"task_id": "<taskId>", "path": "文件名"}\n' +
-    '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "..."}\n' +
-    '- list_directory:  {"task_id": "<taskId>", "path": "."}\n' +
-    '- download_file:   {"task_id": "<taskId>", "url": "https://...", "path": "资料.pdf"}\n' +
-    '- extract_pdf_text: {"task_id": "<taskId>", "path": "资料.pdf"}\n' +
-    '- export_pdf:      {"task_id": "<taskId>", "title": "报告", "content": "...", "path": "report.pdf"}\n' +
-    '- github_search:   {"query": "langgraph agent", "max_results": 5}\n' +
-    '- think:           {"thought": "推理内容"}';
+    toolInputExamples.join('\n');
 
   const completedContext =
     state.stepResults.length > 0
@@ -107,6 +121,7 @@ export async function plannerNode(
     result1.steps,
     skillRegistry,
     toolRegistry,
+    validationOptions,
   );
 
   if (errors1.length === 0) {
@@ -121,6 +136,7 @@ export async function plannerNode(
       result2.steps,
       skillRegistry,
       toolRegistry,
+      validationOptions,
     );
 
     if (errors2.length === 0) {

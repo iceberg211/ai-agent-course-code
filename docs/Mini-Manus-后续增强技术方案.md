@@ -27,7 +27,7 @@
 
 ## 2. 当前现状评估
 
-> **文档更新说明**（2026-04-12）：工程健康已复核，后端和前端 `pnpm build` 均通过；后端已补初始单元测试和 e2e 冒烟测试，当前 `pnpm test` 为 5 个测试套件、13 条测试，`pnpm test:e2e` 为 1 个测试套件、3 条测试。
+> **文档更新说明**（2026-04-12）：工程健康和第二阶段可维护能力已复核；后端 `pnpm test` 为 8 个测试套件、22 条测试，`pnpm test:e2e` 为 1 个测试套件、4 条测试，后端 `pnpm build` 通过。
 
 ### 2.1 已经具备的能力
 
@@ -51,9 +51,10 @@
 - cancel 分支会补 `step.failed` 事件
 - deleteTask 使用事务删除数据库记录，并在事务提交后清理 workspace
 - 提示词安全：用户输入注入检测（detectInjection）+ 6 个 prompt 安全声明
-- Planner 语义校验：`skillName/toolHint` 注册校验 + `safeParse` 输入校验 + `stepIndex` 顺序校验 + 带错误反馈最多两次重试
+- Planner 语义校验：`skillName/toolHint` 注册校验 + `safeParse` 输入校验 + `stepIndex` 顺序校验 + 最大步骤数 + side-effect 白名单策略 + 带错误反馈最多两次重试
 - 速率限制：`@nestjs/throttler`，全局 60次/分，任务创建 10次/分
 - WebSocket 认证：`WS_AUTH_TOKEN` 环境变量开启 token 鉴权
+- HTTP API Key：写接口通过 `x-api-key` 保护，开发环境未配置时免鉴权，生产环境强制配置 `APP_API_KEYS`
 - 配置校验：Zod schema 校验必填项，启动时失败快速抛出
 
 **可观测性**
@@ -61,11 +62,13 @@
 - Token 持久化：`task_runs` 新增 `input_tokens / output_tokens / total_tokens / estimated_cost_usd` 列
 - 成本估算：内置模型价格表（gpt-4o / gpt-4o-mini / qwen-plus / deepseek 等）
 - 前端 Run Debug：优先展示实时 token 数据，刷新后回退读取持久化 token 和成本字段
+- 事件持久化：`EventPublisher` 写入 `task_events`，并提供 `GET /api/tasks/:id/events`
 - 健康检查：`GET /api/health` 含 DB 连通性探测
 - 请求日志：`LoggingInterceptor` 记录每个 HTTP 请求耗时
 
 **资源治理**
 - Workspace 清理：deleteTask 事务提交后自动清理任务目录
+- Workspace 定期清理：`WorkspaceCleanupService` 可按 `WORKSPACE_CLEANUP_ENABLED` 启用，扫描缺失 task 或超期终态 task 的目录
 - Task 级跨 Run 记忆（第一层）：Planner 从最近 3 次 completed run 的 JSON 摘要中读取历史上下文
 - 优雅关闭：`enableShutdownHooks` + `OnModuleDestroy` 中止所有 in-flight run
 
@@ -75,8 +78,8 @@
 **工程健康**
 - 后端 `pnpm build` 通过
 - 前端 `pnpm build` 通过
-- 后端 `pnpm test` 已覆盖 TaskService 主链路、Planner 语义校验、Agent 配置和 token 统计
-- 后端 `pnpm test:e2e` 已覆盖 `/api/tasks` 列表、创建和 DTO 校验
+- 后端 `pnpm test` 已覆盖 TaskService 主链路、Planner 语义校验、Agent 配置、token 统计、API Key、事件发布和 Workspace 清理
+- 后端 `pnpm test:e2e` 已覆盖 `/api/tasks` 列表、创建、DTO 校验和事件日志接口
 - 后端 `ChatOpenAI.modelName` 类型问题已通过 `AgentService.modelName` 收口
 - 后端 `PlanSchema._type` 类型问题已改为 `z.infer<typeof PlanSchema>['steps']`
 - 前端 `mermaid` 依赖已可参与构建
@@ -88,10 +91,12 @@
 | 能力 | 当前状态 | 需要补齐 |
 | --- | --- | --- |
 | Token / 成本观测 | Run 级统计、持久化、实时事件、前端刷新后展示已完成 | 还缺 `model_name` 追溯和节点级明细 |
-| Planner 语义校验 | 已校验执行器存在、input schema、`stepIndex` 顺序/重复/跳号 | 还缺 side-effect 白名单策略和规划阶段步数限制 |
-| 配置管理 | `ConfigModule` + Zod schema 已接入，`.env.example` 已补 CORS / WebSocket / LLM / 导出相关项 | 下一步应把更多运行时开关纳入 schema 显式校验 |
+| Planner 语义校验 | 已校验执行器存在、input schema、`stepIndex` 顺序/重复/跳号、最大步骤数、side-effect 白名单 | 后续需要接入人工审批和更细的工具预算 |
+| 配置管理 | `ConfigModule` + Zod schema 已接入，`.env.example` 已补 CORS / WebSocket / API Key / Planner / Workspace / LLM / 导出相关项 | 后续可抽独立配置 schema 模块 |
 | WebSocket 认证 | 配 token 时可鉴权 | 前端需统一配置 `VITE_WS_AUTH_TOKEN`，生产环境部署要有密钥注入说明 |
-| Workspace 清理 | 删除任务时会清理目录 | 缺定期扫描，进程异常或手动删除数据库后仍可能残留目录 |
+| HTTP API Key | 写接口 Guard 已接入 | 后续可升级为 api_clients + 配额表 |
+| 事件持久化 | `task_events` 表、发布链路和任务事件接口已接入 | 前端还未用历史事件恢复 live feed |
+| Workspace 清理 | 删除任务时会清理目录，可选定期扫描已接入 | 默认关闭，生产部署需显式开启和设置保留天数 |
 | Task 级记忆 | Planner 可读取最近 completed run 的 JSON 摘要 | 只按 task 读取，没有 artifact/source 级记忆，也没有相似任务匹配 |
 | 工程健康 | 构建已恢复，后端初始业务测试已补 | 前端仍无自动化测试，前端 Mermaid 相关 chunk 偏大 |
 
@@ -115,19 +120,19 @@
 
 #### 可观测性缺口
 
-- 事件没有持久化，无法真正回放执行过程（刷新后 live feed 消失）
+- 事件已经写入 `task_events`，但前端尚未用历史事件恢复 live feed
 - 节点级 LLM 调用明细（planner/evaluator/finalizer/skill 各用了多少 token）尚无独立表记录
 - 工具调用只有 live 事件和 stepRun 字段，没有独立审计表
 
 #### 记忆与生命周期缺口
 
-- Workspace 定期清理（定时任务扫描超期目录）尚未实现
+- Workspace 定期清理已接入，但默认关闭，部署时需要显式配置
 - Artifact 级记忆复用（第二层）和来源级记忆（第三层）尚未实现
 - 输出截断仍偏粗暴，长内容没有先摘要再截断
 
 #### 认证与配额缺口
 
-- HTTP 接口无 API Key 认证（WebSocket 已有 token 鉴权）
+- HTTP 写接口已有 API Key Guard，但还没有每日配额表
 - 无每日配额表（`api_clients` / `api_usage_daily`）
 - 无浏览器会话、代码执行等高价值执行能力
 
@@ -135,9 +140,9 @@
 
 当前项目处在：
 
-**单 Agent 核心系统已成型，构建健康和后端初始测试已恢复，但事件回放、写接口保护和前端测试还没达到长期维护标准。**
+**单 Agent 核心系统已成型，构建健康、后端初始测试和第二阶段可维护能力已恢复；下一步应把事件回放接入前端，并进入浏览器只读能力。**
 
-因此下一阶段不要直接从多 Agent 开始。多 Agent 会放大已有问题：事件不可回放、side-effect 无审批、工具审计不足。正确顺序是先补事件持久化、HTTP 认证和前端可观测性，再把浏览器和沙箱作为能力模块接入，最后再做多 Agent 编排。
+因此下一阶段仍不要直接从多 Agent 开始。现在可以进入浏览器只读工具，但边界要保持小：只做打开页面、抽取 DOM 文本、截图，不做登录态、点击和输入。
 
 ## 3. 轻量认证、限流与 API 配额保护
 
@@ -340,7 +345,7 @@ estimated_cost_usd = input_cost + output_cost
 
 ### 5.1 当前状态
 
-当前 Planner 已经有结构校验和部分语义校验：
+当前 Planner 已经有结构校验和主要语义校验：
 
 - `steps` 数组
 - `stepIndex`
@@ -351,18 +356,21 @@ estimated_cost_usd = input_cost + output_cost
 - `toolHint` 是否注册
 - `skillInput / toolInput` 是否通过 schema
 - `stepIndex` 是否按数组顺序从 0 连续递增，是否存在重复或跳号
+- 计划步骤数是否超过 `PLANNER_MAX_STEPS`
+- side-effect 工具是否在 `PLANNER_ALLOWED_SIDE_EFFECT_TOOLS` 中启用
+- side-effect Skill 是否在 `PLANNER_ALLOWED_SIDE_EFFECT_SKILLS` 中启用
 - 语义校验失败时，最多带错误反馈重试一次
 
-这部分方向正确，基础规则已覆盖，下一步重点是副作用工具治理和规划阶段步数限制。
+这部分方向正确，基础规则和第一版副作用策略已覆盖。
 
 ### 5.2 当前风险
 
 当前仍可能出现：
 
-1. 读写副作用工具被 Planner 无约束地使用
-2. 高风险工具没有按任务类型或环境变量做启用控制
-3. Planner 输出的步骤数量虽然受 `MAX_STEPS` 控制执行，但规划阶段没有先限制计划长度
-4. schema 错误信息对 Planner 仍偏底层，复杂对象修正效果不稳定
+1. side-effect 只有白名单，没有人工审批
+2. 高风险工具还没有单独预算，例如最大调用次数、最大输出长度、最大下载体积
+3. schema 错误信息对 Planner 仍偏底层，复杂对象修正效果不稳定
+4. 未来浏览器、沙箱接入后，需要独立开关，不应复用当前文件类 side-effect 白名单
 
 ### 5.3 推荐架构
 
@@ -377,7 +385,7 @@ planner llm output
 
 ### 5.4 语义校验规则
 
-`PlanSemanticValidator` 已经覆盖基础规则，下一步建议继续补副作用和高风险工具规则：
+`PlanSemanticValidator` 已经覆盖基础规则和第一版副作用规则：
 
 #### 基础规则
 
@@ -401,7 +409,7 @@ planner llm output
 
 - 对 `side-effect` skill/tool 加一层白名单策略
 - 默认 Planner 优先选择 read-only 能力
-- 对高风险工具可增加显式开关，例如：
+- 对高风险工具继续增加显式开关，例如：
   - `ENABLE_BROWSER_AUTOMATION`
   - `ENABLE_CODE_SANDBOX`
 
@@ -424,14 +432,18 @@ planner llm output
 - `getTaskDir(taskId)`
 - `ensureTaskDir(taskId)`
 - `cleanTaskDir(taskId)`
+- `listTaskWorkspaceDirs()`
 - `deleteTask(taskId)` 事务提交后调用 `cleanTaskDir(taskId)`
+- `WorkspaceCleanupService` 可选定时扫描并清理：
+  - 数据库已不存在的 task 目录
+  - 已完成、已失败、已取消且超过保留期的 task 目录
 
-也就是说，“删除任务时清理目录”已经纳入任务生命周期。
+也就是说，“删除任务时清理目录”和“定期清理残留目录”都已纳入任务生命周期。
 
 当前还缺两件事：
 
-1. 定期清理过期目录
-2. 进程异常、数据库手动删除、任务长时间失败后产生的残留目录治理
+1. 生产部署中显式开启清理任务
+2. 如果未来 artifact 文件改为文件存储，需要区分 workspace 临时文件和长期交付文件
 
 ### 6.2 当前风险
 
@@ -462,14 +474,12 @@ await workspace.cleanTaskDir(taskId)
 
 #### 场景二：定期清理过期工作区
 
-新增一个定时清理任务，例如每 6 小时执行一次。
-
-建议新增：
+已新增一个可配置定时清理任务，默认关闭。
 
 - `WorkspaceCleanupService`
-- `@nestjs/schedule` 的 `ScheduleModule`
 - 配置项：`WORKSPACE_RETENTION_DAYS`
 - 配置项：`WORKSPACE_CLEANUP_ENABLED`
+- 配置项：`WORKSPACE_CLEANUP_INTERVAL_MS`
 
 规则建议：
 
@@ -661,7 +671,7 @@ BrowserModule
 
 ### 8.3 推荐工具设计
 
-第一批工具建议保守设计，不先开放依赖安装：
+第一批工具建议保守设计，只开放固定运行时，不先开放任意命令和依赖安装：
 
 1. `sandbox_run_node`
    - 输入：`task_id`, `entry`, `timeoutMs`
@@ -670,15 +680,15 @@ BrowserModule
 2. `sandbox_run_python`
    - 输入：`task_id`, `entry`, `timeoutMs`
 
-3. `sandbox_run_command`
-   - 输入：`task_id`, `command`, `args`, `timeoutMs`
-   - 仅允许命中白名单的命令
-
 第二阶段再考虑：
 
-4. `sandbox_install_dependencies`
+3. `sandbox_install_dependencies`
    - 输入：`task_id`, `packageManager`, `packages`
    - 默认不开启，需要环境变量和审批策略
+
+4. `sandbox_run_command`
+   - 输入：`task_id`, `command`, `args`, `timeoutMs`
+   - 仅允许命中白名单的命令
 
 ### 8.4 安全约束
 
@@ -723,60 +733,51 @@ evaluator 判断依据可增加：
 
 ### 9.1 当前状态
 
-当前系统已经有实时事件和持久化业务数据：
+当前系统已经有实时事件、持久化业务数据和事件日志表：
 
 - 实时事件：`step.started / step.progress / tool.called / tool.completed / run.token_usage`
 - 持久化数据：`plans / step_runs / artifacts / runs`
+- 事件日志：`task_events`
 
-但细粒度事件没有真正落库，因此：
+当前后端已经把 `EventPublisher.emit()` 的 payload 异步写入 `task_events`，并提供：
 
-- 刷新页面后 live feed 会消失
-- 无法真正做“执行回放”
+- `GET /api/tasks/:id/events`
 
-### 9.2 推荐架构
+当前还缺：
 
-新增 `task_events` 表，用于记录所有需要回放的细粒度事件。
+- 前端首次进入任务详情时拉取历史事件
+- 将历史事件还原成 `liveRunFeed`
+- 运行中任务的历史事件和 socket 实时事件合并
 
-建议字段：
+### 9.2 当前架构
+
+`task_events` 表用于记录需要回放的细粒度事件。
+
+当前字段：
 
 - `id`
 - `task_id`
 - `run_id`
-- `step_run_id`
 - `event_name`
-- `sequence`
 - `payload` `jsonb`
 - `created_at`
 
 ### 9.3 记录策略
 
-不是所有事件都要记录。
-
-建议第一版持久化这些事件：
-
-- `run.started`
-- `plan.created`
-- `step.started`
-- `step.progress`
-- `tool.called`
-- `tool.completed`
-- `step.completed`
-- `step.failed`
-- `artifact.created`
-- `run.failed`
-- `run.completed`
-- `run.cancelled`
-- `run.token_usage`
+第一版采用统一策略：通过 `EventPublisher` 发布的任务事件都会写入 `task_events`。后续如果事件量变大，再按 `event_name` 增加采样或保留策略。
 
 ### 9.4 回放方式
 
-新增接口：
+已新增接口：
 
-1. `GET /tasks/:id/runs/:runId/events`
-   - 返回事件流
+1. `GET /api/tasks/:id/events`
+   - 按 `created_at ASC` 返回事件流
+   - 支持 `runId / take / skip`
 
-2. `GET /tasks/:id/runs/:runId/replay`
-   - 返回按 sequence 排序的完整回放视图
+后续可继续新增：
+
+2. `GET /api/tasks/:id/runs/:runId/replay`
+   - 返回完整回放视图
 
 前端回放策略：
 
@@ -1124,17 +1125,17 @@ interface AgentWorkerOutput {
 |---|---|---|---|
 | 0 | 构建恢复 | 已完成 | 后端、前端 `pnpm build` 均通过 |
 | 1 | 依赖和 lockfile 同步 | 已完成 | 当前依赖可支持后端、前端构建 |
-| 2 | 关键路径测试 | 部分完成 | 后端已补 TaskService、Planner、Agent 配置、token 统计和任务 API e2e 初始测试 |
+| 2 | 关键路径测试 | 部分完成 | 后端已补 TaskService、Planner、Agent 配置、token 统计、API Key、事件发布、Workspace 清理和任务 API e2e 初始测试 |
 | 3 | Token 持久展示 | 已完成 | 前端类型、API 映射、RunDebugPanel 和实时事件均已接入 `estimatedCostUsd` |
-| 4 | Planner 语义校验 | 部分完成 | 注册、schema、stepIndex 顺序/重复/跳号已做，side-effect 策略未做 |
-| 5 | Workspace 删除清理 | 已完成 | deleteTask 事务后调 cleanTaskDir |
+| 4 | Planner 语义校验 | 已完成 | 注册、schema、stepIndex 顺序/重复/跳号、最大步骤数、side-effect 白名单已做 |
+| 5 | Workspace 删除和定期清理 | 已完成 | deleteTask 事务后调 cleanTaskDir；可选定期扫描超期目录 |
 | 6 | Task 级跨 Run 记忆（第一层） | 已完成 | 最近 3 次 completed run 的 JSON 摘要注入 Planner |
 | 7 | 限流 | 已完成 | @nestjs/throttler，全局 + 任务创建单独限流 |
 | 8 | WebSocket 认证 | 部分完成 | 后端支持 token，`.env.example` 已补示例；前端和部署说明仍需补齐 |
 | 9 | 健康检查 | 已完成 | GET /api/health，含 DB 连通性 |
-| 10 | HTTP API Key 认证 | 待实现 | x-api-key 全局 Guard |
-| 11 | 事件持久化回放 | 待实现 | 需新增 task_events 表，改事件发布链路 |
-| 12 | Workspace 定期清理 | 待实现 | 定时扫描超期目录 |
+| 10 | HTTP API Key 认证 | 已完成 | 写接口走 x-api-key；生产环境必须配置 APP_API_KEYS |
+| 11 | 事件持久化回放 | 部分完成 | task_events 表、事件发布链路、后端查询接口已完成；前端回放未接 |
+| 12 | Workspace 定期清理 | 已完成 | WorkspaceCleanupService 默认关闭，可用环境变量开启 |
 | 13 | Artifact 级记忆（第二层） | 待实现 | 读取历史 artifact 做结构化摘要复用 |
 | 14 | 节点级 token 明细 | 待实现 | 新增 llm_call_logs 表，按 node 拆分统计 |
 | 15 | 每日配额表 | 待实现 | api_clients + api_usage_daily |
@@ -1156,13 +1157,14 @@ interface AgentWorkerOutput {
 6. 后端补 TaskService 主链路、Planner 语义校验、Agent 配置和 token 统计测试
 7. 后端 e2e 改为 `/api/tasks` 冒烟测试，并对齐全局 `/api` 前缀
 8. `.env.example` 补 CORS、WebSocket、LLM、结构化输出和导出相关配置项
+9. 补 HTTP API Key、事件持久化、Workspace 定期清理、Planner side-effect 策略
 
 下一步继续完成：
 
 1. 补 `cancelRun`、`deleteTask`、`finalizeRun` 的服务层测试
 2. 补 retry/replan 超限把 run 标记为 failed 的 Agent 层测试
 3. 补 `GET /api/health` e2e 和异常过滤器输出格式测试
-4. 将更多运行时开关纳入 `app.module.ts` 的 Zod schema 显式校验
+4. 前端接入 `task_events`，刷新后恢复执行时间线
 
 ### 13.2 第二个迭代：单 Agent 可维护性
 
@@ -1170,10 +1172,10 @@ interface AgentWorkerOutput {
 
 建议顺序：
 
-1. Planner 补 side-effect 策略和规划阶段步数限制
-2. HTTP API Key 认证
-3. 事件持久化 `task_events`
-4. Workspace 定期清理
+1. 前端接入 `task_events`，刷新后恢复 live feed
+2. 给 `task_events` 增加保留策略或分页游标
+3. 增加 `api_clients / api_usage_daily` 配额表
+4. 补真实数据库集成测试
 
 ### 13.3 第三个迭代：高价值执行能力
 
@@ -1214,11 +1216,11 @@ interface AgentWorkerOutput {
 **当前最大问题：**
 
 1. 测试还没有覆盖真实数据库集成、失败恢复和并发 run 场景
-2. 事件不能回放
-3. HTTP 写接口没有 API Key
-4. 高风险工具还没有统一策略
-5. `.env.example` 与实际 Zod 配置没有完全对齐
+2. 后端事件已持久化，但前端还不能基于历史事件恢复 live feed
+3. HTTP 写接口已有 API Key，但还没有客户端级配额
+4. 高风险工具只有白名单，还没有人工审批和预算
+5. 前端没有自动化测试
 
 **下阶段核心目标：**
 
-先把单 Agent 系统修到“关键链路有测试、执行过程可回放、写接口受保护、调试信息刷新后仍可见”，再上浏览器自动化、代码沙箱和多 Agent。这样后期维护成本会低很多。
+先补前端事件回放和少量集成测试，然后进入浏览器只读工具。浏览器第一版只做 `browser_open / browser_extract / browser_screenshot`，不做登录态、点击、输入。

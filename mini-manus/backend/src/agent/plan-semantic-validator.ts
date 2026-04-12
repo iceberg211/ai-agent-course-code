@@ -16,6 +16,16 @@ export interface PlanValidationError {
   message: string;
 }
 
+export interface PlanSemanticValidationOptions {
+  maxSteps?: number;
+  allowedSideEffectTools?: string[];
+  allowedSideEffectSkills?: string[];
+}
+
+function toNameSet(values: string[] | undefined): Set<string> {
+  return new Set((values ?? []).map((value) => value.trim()).filter(Boolean));
+}
+
 /**
  * Plan 语义校验。
  *
@@ -32,9 +42,12 @@ export function validatePlanSemantics(
   steps: RawStep[],
   skillRegistry: SkillRegistry,
   toolRegistry: ToolRegistry,
+  options: PlanSemanticValidationOptions = {},
 ): PlanValidationError[] {
   const errors: PlanValidationError[] = [];
   const seenStepIndexes = new Set<number>();
+  const allowedSideEffectTools = toNameSet(options.allowedSideEffectTools);
+  const allowedSideEffectSkills = toNameSet(options.allowedSideEffectSkills);
 
   if (steps.length === 0) {
     errors.push({
@@ -43,6 +56,14 @@ export function validatePlanSemantics(
       message: '计划至少需要包含一个步骤',
     });
     return errors;
+  }
+
+  if (options.maxSteps != null && steps.length > options.maxSteps) {
+    errors.push({
+      stepIndex: -1,
+      field: 'steps',
+      message: `计划步骤数不能超过 ${options.maxSteps}`,
+    });
   }
 
   for (const [expectedIndex, step] of steps.entries()) {
@@ -110,6 +131,16 @@ export function validatePlanSemantics(
         });
       } else if (step.skillInput != null) {
         const skill = skillRegistry.get(name);
+        if (
+          skill.effect === 'side-effect' &&
+          !allowedSideEffectSkills.has(name)
+        ) {
+          errors.push({
+            stepIndex: idx,
+            field: 'skillName',
+            message: `Side-effect Skill "${name}" 未在 PLANNER_ALLOWED_SIDE_EFFECT_SKILLS 中启用`,
+          });
+        }
         const result = skill.inputSchema.safeParse(step.skillInput);
         if (!result.success) {
           const msg = result.error.issues.map((i) => i.message).join('; ');
@@ -117,6 +148,18 @@ export function validatePlanSemantics(
             stepIndex: idx,
             field: 'skillInput',
             message: `skillInput 不符合 ${name} 的输入 schema: ${msg}`,
+          });
+        }
+      } else {
+        const skill = skillRegistry.get(name);
+        if (
+          skill.effect === 'side-effect' &&
+          !allowedSideEffectSkills.has(name)
+        ) {
+          errors.push({
+            stepIndex: idx,
+            field: 'skillName',
+            message: `Side-effect Skill "${name}" 未在 PLANNER_ALLOWED_SIDE_EFFECT_SKILLS 中启用`,
           });
         }
       }
@@ -136,6 +179,13 @@ export function validatePlanSemantics(
         });
       } else if (step.toolInput != null) {
         const tool = toolRegistry.get(name);
+        if (tool.type === 'side-effect' && !allowedSideEffectTools.has(name)) {
+          errors.push({
+            stepIndex: idx,
+            field: 'toolHint',
+            message: `Side-effect Tool "${name}" 未在 PLANNER_ALLOWED_SIDE_EFFECT_TOOLS 中启用`,
+          });
+        }
         const result = tool.schema.safeParse(step.toolInput);
         if (!result.success) {
           const msg = result.error.issues.map((i) => i.message).join('; ');
@@ -143,6 +193,15 @@ export function validatePlanSemantics(
             stepIndex: idx,
             field: 'toolInput',
             message: `toolInput 不符合 ${name} 的输入 schema: ${msg}`,
+          });
+        }
+      } else {
+        const tool = toolRegistry.get(name);
+        if (tool.type === 'side-effect' && !allowedSideEffectTools.has(name)) {
+          errors.push({
+            stepIndex: idx,
+            field: 'toolHint',
+            message: `Side-effect Tool "${name}" 未在 PLANNER_ALLOWED_SIDE_EFFECT_TOOLS 中启用`,
           });
         }
       }

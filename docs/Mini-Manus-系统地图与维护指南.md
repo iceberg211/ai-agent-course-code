@@ -46,8 +46,8 @@
 | `AgentModule` | 执行图、LLM、planner/executor/evaluator/finalizer |
 | `ToolModule` | 原子工具注册与调用 |
 | `SkillModule` | 复合能力封装 |
-| `WorkspaceModule` | 工作目录、文件边界、路径安全 |
-| `EventModule` | 事件发布 |
+| `WorkspaceModule` | 工作目录、文件边界、路径安全、定期清理 |
+| `EventModule` | 事件发布、事件持久化、事件查询 |
 | `GatewayModule` | WebSocket 推送、task room |
 | `DatabaseModule` | PostgreSQL / TypeORM 接入 |
 | `HealthModule` | 健康检查 |
@@ -71,7 +71,7 @@
 
 ### 2.4 当前完成度快照
 
-> 更新时间：2026-04-11，基于 `mini-manus/backend` 和 `mini-manus/frontend` 代码与本地构建结果。
+> 更新时间：2026-04-12，基于 `mini-manus/backend` 和 `mini-manus/frontend` 代码与本地构建、测试结果。
 
 当前完成度可以这样判断：
 
@@ -79,39 +79,35 @@
 | --- | --- | --- |
 | 核心领域模型 | 已成型 | `task / revision / run / plan / step_run / artifact` 模型完整，已经具备任务历史和产物记录 |
 | Agent 主链路 | 已成型 | `planner -> executor -> evaluator -> finalizer` 已接入 LangGraph，支持 retry、replan、cancel 和 finalizer 产物生成 |
-| 工具与 Skill | 可用但仍需治理 | 工具注册、缓存、side-effect 类型、文件边界已有基础；浏览器、沙箱、高风险工具授权还没有 |
-| 实时体验 | 可用但不可回放 | socket live feed 已完整接入；细粒度事件没有落库，刷新后只剩数据库最终态 |
-| 可观测性 | 后端部分完成 | Run 级 token 字段和实时事件已实现；前端 debug 面板仍主要依赖 live token，刷新后展示不完整 |
-| 安全与资源治理 | 基础阶段 | 有输入校验、简单提示词防护、URL 私网正则拦截、限流、WebSocket token；HTTP API Key、配额、审批和 DNS 级 SSRF 防护未完成 |
-| 测试与构建 | 当前不达标 | 后端和前端构建当前失败；测试仍是 Nest 默认样例，未覆盖核心链路 |
+| 工具与 Skill | 可用并已有第一版治理 | 工具注册、缓存、side-effect 类型、Planner 白名单、文件边界已有基础；浏览器、沙箱、高风险工具预算还没有 |
+| 实时体验 | 可用，后端事件已落库 | socket live feed 已完整接入；`task_events` 已写入，前端还未用历史事件恢复 live feed |
+| 可观测性 | Run 级已收口 | Run 级 token、成本、实时事件、刷新后展示已完成；节点级 token 明细还没有 |
+| 安全与资源治理 | 第二阶段基础完成 | 有输入校验、提示词防护、URL 私网正则拦截、限流、WebSocket token、HTTP API Key、Workspace 定期清理；配额、审批和 DNS 级 SSRF 防护未完成 |
+| 测试与构建 | 后端基础已恢复 | 后端构建、单元测试、e2e 通过；前端构建和 lint 通过；真实数据库集成、失败恢复、并发 run、前端自动化测试还没有 |
 
 一句话结论：
 
-**Mini-Manus 已经完成“单 Agent 任务系统骨架和主要业务链路”，但还没有到“可长期稳定迭代”的阶段。现在最优先的不是直接叠浏览器、沙箱、多 Agent，而是先做一次工程收口，把构建、测试、事件持久化和接口安全补稳。**
+**Mini-Manus 已经完成“单 Agent 任务系统骨架、主要业务链路和第二阶段可维护能力基础”。下一步可以进入浏览器只读能力，但不能直接跳到多 Agent 或开放高风险交互。**
 
 ### 2.5 当前已发现的问题
 
 本次检查跑了后端和前端构建，发现这些问题需要优先处理：
 
-1. 后端 `pnpm build` 当前失败。
-   - `package.json` 已声明 `@nestjs/swagger`、`@nestjs/throttler`、`@nestjs/terminus`、`pdf-lib`、`pdf-parse`，但当前 `pnpm-lock.yaml` 和 `node_modules` 没有同步。
-   - 代码层还有两个类型问题：`ChatOpenAI` 类型上没有 `modelName`；Zod v4 下 `PlanSchema._type` 不可用，应改成 `z.infer<typeof PlanSchema>` 或显式类型。
+1. 前端还没有用 `task_events` 恢复历史 live feed。
+   - 后端已经落库事件，并提供 `GET /api/tasks/:id/events`。
+   - 前端当前仍主要依赖 socket 实时事件构建过程视图。
 
-2. 前端 `pnpm build` 当前失败。
-   - `package.json` 已声明 `mermaid`，但当前安装状态和 lockfile 没有同步。
-   - `artifact-section.tsx` 动态导入 `mermaid` 后，`svg` 解构参数没有类型。
+2. 测试还没有覆盖所有关键运行风险。
+   - 后端已有 TaskService、Planner、Agent 配置、token、API Key、事件发布、Workspace 清理和任务 API e2e 初始测试。
+   - 还缺真实数据库集成、失败恢复、并发 run 和前端自动化测试。
 
-3. 测试没有真正覆盖 Mini-Manus。
-   - 后端 `app.controller.spec.ts` 和 e2e 测试仍是 Nest 默认 `Hello World` 样例。
-   - 当前缺少 `create -> run -> complete`、`cancel`、`retry`、`edit -> new revision`、`artifact generated` 等关键路径测试。
+3. 高风险能力还只有第一版治理。
+   - Planner 已有 side-effect 白名单和最大步骤数限制。
+   - 还没有人工审批、工具预算、浏览器/沙箱独立开关和 DNS 级 SSRF 防护。
 
-4. 文档和代码状态已经出现漂移。
-   - 增强方案里把部分能力写成“已完成”，但实际只有后端部分完成，前端展示、回放、配额、定期清理等还没有。
-   - 后续每次引入新能力，都要同步更新这份系统地图和增强方案。
-
-5. 高风险能力还没有统一治理层。
-   - `Tool` 有 `read-only / side-effect` 分类，但没有统一审批、白名单、运行预算和审计记录。
-   - 浏览器和沙箱一旦接入，不能直接暴露给 Planner 任意调用，必须先有工具安全策略。
+4. 配额体系还没有。
+   - HTTP 写接口已有 `x-api-key`。
+   - 还没有 `api_clients / api_usage_daily` 这种客户端级统计和限额。
 
 ## 3. 先掌握这 5 条关键链路
 
@@ -191,16 +187,18 @@
 核心语义：
 
 1. 后端发布事件
-2. Gateway 按 task room 推给前端
-3. 前端 `liveRunFeed` 内存态接收事件
-4. 时间线、摘要区、debug 面板即时更新
-5. 持久化数据仍通过 React Query 保证最终一致性
+2. `EventPublisher` 异步写入 `task_events`
+3. Gateway 按 task room 推给前端
+4. 前端 `liveRunFeed` 内存态接收事件
+5. 时间线、摘要区、debug 面板即时更新
+6. 持久化数据仍通过 React Query 保证最终一致性
 
 你必须能讲清楚：
 
 - 哪些信息来自数据库
 - 哪些信息来自 live event
-- 为什么刷新页面后部分实时态会消失
+- 哪些信息来自 `task_events`
+- 为什么后端已有历史事件，但前端还需要额外逻辑才能恢复过程视图
 
 ### 3.4 数据落库链路
 
@@ -228,6 +226,7 @@
 - `planner` 输出的 plan 最终存到哪
 - `executor` 的结果最终落到哪
 - artifact 是在哪里保存的
+- 过程事件为什么写到 `task_events`，而不是只依赖 `step_runs`
 
 ### 3.5 前端任务中心展示链路
 
@@ -560,14 +559,11 @@ AI 项目非常容易只扩张不收缩。
 
 基于目前项目状态，不建议马上直接做浏览器、沙箱、多 Agent。推荐先按下面顺序推进：
 
-1. **恢复构建**：修复依赖、lockfile、TypeScript 类型问题，让后端和前端都能 `pnpm build`。
-2. **补关键路径测试**：先覆盖 `create -> run -> complete`、`cancel`、`retry`、`edit -> new revision`、`artifact generated`。
-3. **补事件持久化**：新增 `task_events`，让时间线和工具调用可以刷新后回看。
-4. **补 HTTP API Key**：写操作加 `x-api-key`，避免匿名用户直接触发模型调用。
-5. **补 Run Debug 持久展示**：前端类型和 debug 面板读取 `task_runs` 中的 token 与成本字段。
-6. **再做浏览器自动化**：第一版只做只读渲染、文本抽取和截图，不先开放点击和输入。
-7. **再做代码沙箱**：第一版只跑受限命令，不开放依赖安装和网络。
-8. **最后做多 Agent**：先用“Agent 作为 Skill”的方式接入，不先改掉当前主执行图。
+1. **前端接事件回放**：读取 `GET /api/tasks/:id/events`，刷新后恢复时间线和工具调用历史。
+2. **补真实数据库集成测试**：覆盖迁移后的实体关系、事件落库和 task/run 查询。
+3. **做浏览器只读能力**：第一版只做 `browser_open / browser_extract / browser_screenshot`。
+4. **做代码沙箱**：第一版只跑受限 Node/Python，不开放依赖安装和网络。
+5. **最后做多 Agent**：先用“Agent 作为 Skill”的方式接入，不先改掉当前主执行图。
 
 判断是否可以进入下一阶段，只看三个条件：
 

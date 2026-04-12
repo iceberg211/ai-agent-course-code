@@ -8,21 +8,39 @@ import { ToolRegistry } from '@/tool/tool.registry';
 
 function createRegistries() {
   const skillRegistry = {
-    has: jest.fn((name: string) => name === 'web_research'),
-    get: jest.fn(() => ({
-      name: 'web_research',
-      inputSchema: z.object({ query: z.string().min(1) }),
+    has: jest.fn((name: string) =>
+      ['web_research', 'document_writing'].includes(name),
+    ),
+    get: jest.fn((name: string) => ({
+      name,
+      effect: name === 'document_writing' ? 'side-effect' : 'read-only',
+      inputSchema:
+        name === 'document_writing'
+          ? z.object({ title: z.string().min(1) })
+          : z.object({ query: z.string().min(1) }),
     })),
-    getAll: jest.fn(() => [{ name: 'web_research' }]),
+    getAll: jest.fn(() => [
+      { name: 'web_research', effect: 'read-only' },
+      { name: 'document_writing', effect: 'side-effect' },
+    ]),
   } as unknown as SkillRegistry;
 
   const toolRegistry = {
-    has: jest.fn((name: string) => name === 'web_search'),
-    get: jest.fn(() => ({
-      name: 'web_search',
-      schema: z.object({ query: z.string().min(1) }),
+    has: jest.fn((name: string) =>
+      ['web_search', 'write_file'].includes(name),
+    ),
+    get: jest.fn((name: string) => ({
+      name,
+      type: name === 'write_file' ? 'side-effect' : 'read-only',
+      schema:
+        name === 'write_file'
+          ? z.object({ content: z.string().min(1) })
+          : z.object({ query: z.string().min(1) }),
     })),
-    getAll: jest.fn(() => [{ name: 'web_search' }]),
+    getAll: jest.fn(() => [
+      { name: 'web_search', type: 'read-only' },
+      { name: 'write_file', type: 'side-effect' },
+    ]),
   } as unknown as ToolRegistry;
 
   return { skillRegistry, toolRegistry };
@@ -171,6 +189,107 @@ describe('validatePlanSemantics', () => {
         expect.objectContaining({ field: 'toolInput' }),
       ]),
     );
+  });
+
+  it('限制计划步骤数量', () => {
+    const { skillRegistry, toolRegistry } = createRegistries();
+
+    const errors = validatePlanSemantics(
+      [
+        {
+          stepIndex: 0,
+          description: '步骤一',
+          toolHint: 'web_search',
+          toolInput: { query: 'a' },
+        },
+        {
+          stepIndex: 1,
+          description: '步骤二',
+          toolHint: 'web_search',
+          toolInput: { query: 'b' },
+        },
+      ],
+      skillRegistry,
+      toolRegistry,
+      { maxSteps: 1 },
+    );
+
+    expect(errors).toContainEqual({
+      stepIndex: -1,
+      field: 'steps',
+      message: '计划步骤数不能超过 1',
+    });
+  });
+
+  it('拒绝未在白名单中的 side-effect 工具和 Skill', () => {
+    const { skillRegistry, toolRegistry } = createRegistries();
+
+    const errors = validatePlanSemantics(
+      [
+        {
+          stepIndex: 0,
+          description: '写文件',
+          toolHint: 'write_file',
+          toolInput: { content: 'hello' },
+        },
+        {
+          stepIndex: 1,
+          description: '写文档',
+          skillName: 'document_writing',
+          skillInput: { title: '报告' },
+        },
+      ],
+      skillRegistry,
+      toolRegistry,
+      {
+        allowedSideEffectTools: [],
+        allowedSideEffectSkills: [],
+      },
+    );
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'toolHint',
+          message:
+            'Side-effect Tool "write_file" 未在 PLANNER_ALLOWED_SIDE_EFFECT_TOOLS 中启用',
+        }),
+        expect.objectContaining({
+          field: 'skillName',
+          message:
+            'Side-effect Skill "document_writing" 未在 PLANNER_ALLOWED_SIDE_EFFECT_SKILLS 中启用',
+        }),
+      ]),
+    );
+  });
+
+  it('允许白名单中的 side-effect 工具和 Skill', () => {
+    const { skillRegistry, toolRegistry } = createRegistries();
+
+    const errors = validatePlanSemantics(
+      [
+        {
+          stepIndex: 0,
+          description: '写文件',
+          toolHint: 'write_file',
+          toolInput: { content: 'hello' },
+        },
+        {
+          stepIndex: 1,
+          description: '写文档',
+          skillName: 'document_writing',
+          skillInput: { title: '报告' },
+        },
+      ],
+      skillRegistry,
+      toolRegistry,
+      {
+        allowedSideEffectTools: ['write_file'],
+        allowedSideEffectSkills: ['document_writing'],
+      },
+    );
+
+    expect(errors).toEqual([]);
   });
 });
 

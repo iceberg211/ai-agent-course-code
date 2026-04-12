@@ -9,6 +9,7 @@ import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
 import { EventPublisher } from '@/event/event.publisher';
+import { BrowserSessionService } from '@/browser/browser-session.service';
 import { plannerNode } from '@/agent/nodes/planner.node';
 import { executorNode } from '@/agent/nodes/executor.node';
 import { evaluatorNode } from '@/agent/nodes/evaluator.node';
@@ -16,6 +17,7 @@ import { finalizerNode } from '@/agent/nodes/finalizer.node';
 import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
+import { PlanSemanticValidationOptions } from '@/agent/plan-semantic-validator';
 
 /** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
 const MODEL_PRICING: Record<
@@ -53,6 +55,13 @@ function readBoolean(
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
+function readCsv(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
@@ -63,6 +72,7 @@ export class AgentService {
   private readonly maxSteps: number;
   private readonly stepTimeoutMs: number;
   private readonly exportPdfEnabled: boolean;
+  private readonly planValidationOptions: PlanSemanticValidationOptions;
   /**
    * 结构化输出方式：
    * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
@@ -82,6 +92,7 @@ export class AgentService {
     private readonly skillRegistry: SkillRegistry,
     private readonly workspace: WorkspaceService,
     private readonly eventPublisher: EventPublisher,
+    private readonly browserSessions: BrowserSessionService,
   ) {
     const llmCacheEnabled = readBoolean(
       config.get<string>('LLM_CACHE_ENABLED'),
@@ -98,6 +109,21 @@ export class AgentService {
     this.maxRetries = config.get<number>('MAX_RETRIES', 3);
     this.maxReplans = config.get<number>('MAX_REPLANS', 2);
     this.maxSteps = config.get<number>('MAX_STEPS', 20);
+    this.planValidationOptions = {
+      maxSteps: config.get<number>('PLANNER_MAX_STEPS', this.maxSteps),
+      allowedSideEffectTools: readCsv(
+        config.get<string>(
+          'PLANNER_ALLOWED_SIDE_EFFECT_TOOLS',
+          'write_file,download_file,export_pdf,browser_screenshot',
+        ),
+      ),
+      allowedSideEffectSkills: readCsv(
+        config.get<string>(
+          'PLANNER_ALLOWED_SIDE_EFFECT_SKILLS',
+          'document_writing,report_packaging',
+        ),
+      ),
+    };
     this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 60_000);
     this.exportPdfEnabled = readBoolean(
       config.get<string>('EXPORT_PDF_ENABLED'),
@@ -142,6 +168,7 @@ export class AgentService {
           callbacks,
           eventPublisher,
           soMethod,
+          this.planValidationOptions,
         );
       })
       .addNode('executor', async (state: AgentState) => {
@@ -304,6 +331,13 @@ export class AgentService {
           totalTokens: tokenTracker.totalTokens,
           estimatedCostUsd,
         });
+      }
+      try {
+        await this.browserSessions.closeRun(runId);
+      } catch (err) {
+        this.logger.warn(
+          `Failed to close browser sessions for run ${runId}: ${String(err)}`,
+        );
       }
       await callbacks.finalize(taskId);
     }

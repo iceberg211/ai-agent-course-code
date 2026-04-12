@@ -55,8 +55,9 @@ export class ToolRegistry implements OnModuleInit {
   async executeWithCache(name: string, input: unknown): Promise<ToolResult> {
     const tool = this.get(name);
 
-    if (tool.type === 'side-effect') {
-      return tool.execute(input);
+    if (tool.type === 'side-effect' || tool.cacheable === false) {
+      const result = await tool.execute(input);
+      return { ...result, cached: false };
     }
 
     const key = `${name}:${JSON.stringify(input)}`;

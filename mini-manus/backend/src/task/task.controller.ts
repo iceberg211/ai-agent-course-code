@@ -15,11 +15,15 @@ import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { TaskService } from '@/task/task.service';
 import { CreateTaskDto } from '@/task/dto/create-task.dto';
+import { EventLogService } from '@/event/event-log.service';
 
 @ApiTags('tasks')
 @Controller('tasks')
 export class TaskController {
-  constructor(private readonly taskService: TaskService) {}
+  constructor(
+    private readonly taskService: TaskService,
+    private readonly eventLog: EventLogService,
+  ) {}
 
   // ─── 列表 ─────────────────────────────────────────────────
   @Get()
@@ -70,6 +74,30 @@ export class TaskController {
   @ApiResponse({ status: 404, description: '任务不存在' })
   detail(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.taskService.getTaskDetail(id);
+  }
+
+  // ─── 事件回放 ───────────────────────────────────────────
+  @Get(':id/events')
+  @ApiOperation({
+    summary: '获取任务事件日志',
+    description:
+      '按创建时间正序返回 task_events，可用于刷新后回放执行过程或调试事件链路。',
+  })
+  @ApiParam({ name: 'id', description: '任务 UUID' })
+  @ApiResponse({ status: 200, description: '事件日志数组' })
+  @ApiResponse({ status: 400, description: '请求参数不合法' })
+  listEvents(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) taskId: string,
+    @Query('runId') runId?: string,
+    @Query('take') take?: string,
+    @Query('skip') skip?: string,
+  ) {
+    return this.eventLog.listTaskEvents({
+      taskId,
+      runId,
+      take: take ? Number(take) : undefined,
+      skip: skip ? Number(skip) : undefined,
+    });
   }
 
   // ─── 单次 Run 详情 ────────────────────────────────────────
