@@ -13,13 +13,14 @@ const sessionId = '00000000-0000-4000-8000-000000000003';
 
 describe('browser tools', () => {
   it('browser_open 返回 session 元数据', async () => {
+    const open = jest.fn().mockResolvedValue({
+      sessionId,
+      title: 'Example',
+      url: 'https://example.com/',
+      status: 200,
+    });
     const browserSessions = {
-      open: jest.fn().mockResolvedValue({
-        sessionId,
-        title: 'Example',
-        url: 'https://example.com/',
-        status: 200,
-      }),
+      open,
     } as unknown as BrowserSessionService;
     const tool = new BrowserOpenTool(browserSessions);
 
@@ -35,7 +36,7 @@ describe('browser tools', () => {
       title: 'Example',
       status: 200,
     });
-    expect(browserSessions.open).toHaveBeenCalledWith({
+    expect(open).toHaveBeenCalledWith({
       taskId,
       runId,
       url: 'https://example.com',
@@ -44,14 +45,15 @@ describe('browser tools', () => {
   });
 
   it('browser_extract 输出页面文本', async () => {
+    const extract = jest.fn().mockResolvedValue({
+      sessionId,
+      title: 'Example',
+      url: 'https://example.com/',
+      text: 'hello page',
+      truncated: false,
+    });
     const browserSessions = {
-      extract: jest.fn().mockResolvedValue({
-        sessionId,
-        title: 'Example',
-        url: 'https://example.com/',
-        text: 'hello page',
-        truncated: false,
-      }),
+      extract,
     } as unknown as BrowserSessionService;
     const tool = new BrowserExtractTool(browserSessions);
 
@@ -62,7 +64,7 @@ describe('browser tools', () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toContain('hello page');
-    expect(browserSessions.extract).toHaveBeenCalledWith({
+    expect(extract).toHaveBeenCalledWith({
       sessionId,
       selector: 'main',
       maxLength: undefined,

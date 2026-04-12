@@ -47,6 +47,7 @@
 | `ToolModule` | 原子工具注册与调用 |
 | `SkillModule` | 复合能力封装 |
 | `WorkspaceModule` | 工作目录、文件边界、路径安全、定期清理 |
+| `BrowserModule` | Playwright 会话管理、只读页面打开、抽取、截图 |
 | `EventModule` | 事件发布、事件持久化、事件查询 |
 | `GatewayModule` | WebSocket 推送、task room |
 | `DatabaseModule` | PostgreSQL / TypeORM 接入 |
@@ -79,15 +80,15 @@
 | --- | --- | --- |
 | 核心领域模型 | 已成型 | `task / revision / run / plan / step_run / artifact` 模型完整，已经具备任务历史和产物记录 |
 | Agent 主链路 | 已成型 | `planner -> executor -> evaluator -> finalizer` 已接入 LangGraph，支持 retry、replan、cancel 和 finalizer 产物生成 |
-| 工具与 Skill | 可用并已有第一版治理 | 工具注册、缓存、side-effect 类型、Planner 白名单、文件边界已有基础；浏览器、沙箱、高风险工具预算还没有 |
+| 工具与 Skill | 可用并已有第一版治理 | 工具注册、缓存、side-effect 类型、Planner 白名单、文件边界已有基础；浏览器只读工具已接入，沙箱和高风险工具预算还没有 |
 | 实时体验 | 可用，后端事件已落库 | socket live feed 已完整接入；`task_events` 已写入，前端还未用历史事件恢复 live feed |
 | 可观测性 | Run 级已收口 | Run 级 token、成本、实时事件、刷新后展示已完成；节点级 token 明细还没有 |
-| 安全与资源治理 | 第二阶段基础完成 | 有输入校验、提示词防护、URL 私网正则拦截、限流、WebSocket token、HTTP API Key、Workspace 定期清理；配额、审批和 DNS 级 SSRF 防护未完成 |
+| 安全与资源治理 | 第二阶段基础完成 | 有输入校验、提示词防护、URL 私网与 metadata 地址拦截、限流、WebSocket token、HTTP API Key、Workspace 定期清理；配额、审批和 DNS 级 SSRF 防护未完成 |
 | 测试与构建 | 后端基础已恢复 | 后端构建、单元测试、e2e 通过；前端构建和 lint 通过；真实数据库集成、失败恢复、并发 run、前端自动化测试还没有 |
 
 一句话结论：
 
-**Mini-Manus 已经完成“单 Agent 任务系统骨架、主要业务链路和第二阶段可维护能力基础”。下一步可以进入浏览器只读能力，但不能直接跳到多 Agent 或开放高风险交互。**
+**Mini-Manus 已经完成“单 Agent 任务系统骨架、主要业务链路、第二阶段可维护能力基础和浏览器只读工具”。下一步可以补浏览器部署验证与代码沙箱，但不能直接跳到多 Agent 或开放高风险交互。**
 
 ### 2.5 当前已发现的问题
 
@@ -103,7 +104,8 @@
 
 3. 高风险能力还只有第一版治理。
    - Planner 已有 side-effect 白名单和最大步骤数限制。
-   - 还没有人工审批、工具预算、浏览器/沙箱独立开关和 DNS 级 SSRF 防护。
+   - 浏览器已有独立开关和基础 URL 安全检查。
+   - 还没有人工审批、工具预算、沙箱独立开关和 DNS 级 SSRF 防护。
 
 4. 配额体系还没有。
    - HTTP 写接口已有 `x-api-key`。
@@ -273,6 +275,7 @@
 3. [skill.interface.ts](/Users/hewei/Documents/GitHub/ai-agent-course-code/mini-manus/backend/src/skill/interfaces/skill.interface.ts)
 4. [skill.registry.ts](/Users/hewei/Documents/GitHub/ai-agent-course-code/mini-manus/backend/src/skill/skill.registry.ts)
 5. [workspace.service.ts](/Users/hewei/Documents/GitHub/ai-agent-course-code/mini-manus/backend/src/workspace/workspace.service.ts)
+6. [browser-session.service.ts](/Users/hewei/Documents/GitHub/ai-agent-course-code/mini-manus/backend/src/browser/browser-session.service.ts)
 
 ## 5. 高风险边界清单
 
@@ -286,12 +289,14 @@
 - tool input 是否匹配 schema
 - skill 内部是否绕过缓存或安全边界
 - 错误是否被正确传递给 evaluator
+- 浏览器类 read-only 工具是否错误走缓存
 
 后续改动时必须问自己：
 
 - 这是 read-only 还是 side-effect
 - 它会不会产生不可逆副作用
 - 失败时 evaluator 能否拿到清晰上下文
+- 需要实时状态的工具是否设置了 `cacheable=false`
 
 ### 5.2 Workspace 边界
 
@@ -320,7 +325,27 @@
 
 但后面继续做浏览器自动化、跨 run 记忆时，这个边界会更重要。
 
-### 5.4 并发与状态边界
+### 5.4 浏览器边界
+
+当前浏览器能力只做只读：
+
+- `browser_open`
+- `browser_extract`
+- `browser_screenshot`
+
+安全边界：
+
+- 默认关闭：`BROWSER_AUTOMATION_ENABLED=false`
+- `ToolModule` 只在启用后注册浏览器工具
+- `BrowserSessionService` 对主导航和子请求都执行 URL 安全检查
+- 禁止访问 localhost、内网地址、metadata 地址
+- 每个 Run 限制 session 数量
+- Run 结束后关闭对应 session
+- 闲置 session 到期自动清理
+
+后续不能直接加点击、输入和登录态。要先补动作审计、域名配置和浏览器运行预算。
+
+### 5.5 并发与状态边界
 
 高风险点：
 
@@ -334,7 +359,7 @@
 - 也开始有悲观锁保护
 - 但这依然属于高风险链路
 
-### 5.5 实时态与持久态边界
+### 5.6 实时态与持久态边界
 
 高风险点：
 
@@ -346,7 +371,7 @@
 
 - 不能混淆“最终状态”和“过程事件”
 
-### 5.6 依赖与构建边界
+### 5.7 依赖与构建边界
 
 高风险点：
 
@@ -557,11 +582,11 @@ AI 项目非常容易只扩张不收缩。
 
 ## 12. 推荐的下一步动作
 
-基于目前项目状态，不建议马上直接做浏览器、沙箱、多 Agent。推荐先按下面顺序推进：
+基于目前项目状态，不建议马上直接做多 Agent，也不建议直接开放浏览器交互。推荐先按下面顺序推进：
 
 1. **前端接事件回放**：读取 `GET /api/tasks/:id/events`，刷新后恢复时间线和工具调用历史。
 2. **补真实数据库集成测试**：覆盖迁移后的实体关系、事件落库和 task/run 查询。
-3. **做浏览器只读能力**：第一版只做 `browser_open / browser_extract / browser_screenshot`。
+3. **补浏览器部署验证**：确认目标环境已安装 Chromium，并补一条真实页面冒烟测试。
 4. **做代码沙箱**：第一版只跑受限 Node/Python，不开放依赖安装和网络。
 5. **最后做多 Agent**：先用“Agent 作为 Skill”的方式接入，不先改掉当前主执行图。
 

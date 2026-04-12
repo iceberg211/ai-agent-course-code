@@ -14,7 +14,10 @@ import {
 } from 'playwright';
 import { assertSafeHttpUrl } from '@/tool/utils/url-safety';
 
-function readBoolean(value: string | undefined, defaultValue: boolean): boolean {
+function readBoolean(
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean {
   if (value == null) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
@@ -101,22 +104,34 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
     );
     this.headless = readBoolean(config.get<string>('BROWSER_HEADLESS'), true);
     this.maxSessionsPerRun = clampNumber(
-      readNumber(config.get<string | number>('BROWSER_MAX_SESSIONS_PER_RUN'), 2),
+      readNumber(
+        config.get<string | number>('BROWSER_MAX_SESSIONS_PER_RUN'),
+        2,
+      ),
       1,
       10,
     );
     this.defaultTimeoutMs = clampNumber(
-      readNumber(config.get<string | number>('BROWSER_DEFAULT_TIMEOUT_MS'), 15_000),
+      readNumber(
+        config.get<string | number>('BROWSER_DEFAULT_TIMEOUT_MS'),
+        15_000,
+      ),
       1_000,
       60_000,
     );
     this.actionTimeoutMs = clampNumber(
-      readNumber(config.get<string | number>('BROWSER_ACTION_TIMEOUT_MS'), 10_000),
+      readNumber(
+        config.get<string | number>('BROWSER_ACTION_TIMEOUT_MS'),
+        10_000,
+      ),
       1_000,
       60_000,
     );
     this.sessionTtlMs = clampNumber(
-      readNumber(config.get<string | number>('BROWSER_SESSION_TTL_MS'), 10 * 60_000),
+      readNumber(
+        config.get<string | number>('BROWSER_SESSION_TTL_MS'),
+        10 * 60_000,
+      ),
       60_000,
       60 * 60_000,
     );
@@ -125,9 +140,12 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (!this.enabled) return;
 
-    this.cleanupTimer = setInterval(() => {
-      void this.evictExpiredSessions();
-    }, Math.min(this.sessionTtlMs, 60_000));
+    this.cleanupTimer = setInterval(
+      () => {
+        void this.evictExpiredSessions();
+      },
+      Math.min(this.sessionTtlMs, 60_000),
+    );
     this.cleanupTimer.unref();
   }
 
@@ -252,7 +270,9 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
     const sessionIds = Array.from(this.sessions.values())
       .filter((session) => session.runId === runId)
       .map((session) => session.id);
-    await Promise.all(sessionIds.map((sessionId) => this.closeSession(sessionId)));
+    await Promise.all(
+      sessionIds.map((sessionId) => this.closeSession(sessionId)),
+    );
     return sessionIds.length;
   }
 
@@ -260,7 +280,9 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
     const sessionIds = Array.from(this.sessions.values())
       .filter((session) => session.taskId === taskId)
       .map((session) => session.id);
-    await Promise.all(sessionIds.map((sessionId) => this.closeSession(sessionId)));
+    await Promise.all(
+      sessionIds.map((sessionId) => this.closeSession(sessionId)),
+    );
     return sessionIds.length;
   }
 
@@ -299,7 +321,10 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
   private async getBrowser(): Promise<Browser> {
     if (this.browser?.isConnected()) return this.browser;
 
-    this.browser = await chromium.launch({ headless: this.headless });
+    this.browser = await chromium.launch({
+      headless: this.headless,
+      executablePath: chromium.executablePath(),
+    });
     this.browser.on('disconnected', () => {
       this.sessions.clear();
       this.browser = null;
@@ -357,9 +382,13 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
   private async evictExpiredSessions(): Promise<void> {
     const now = Date.now();
     const expiredIds = Array.from(this.sessions.values())
-      .filter((session) => now - session.lastUsedAt.getTime() > this.sessionTtlMs)
+      .filter(
+        (session) => now - session.lastUsedAt.getTime() > this.sessionTtlMs,
+      )
       .map((session) => session.id);
-    await Promise.all(expiredIds.map((sessionId) => this.closeSession(sessionId)));
+    await Promise.all(
+      expiredIds.map((sessionId) => this.closeSession(sessionId)),
+    );
   }
 
   private normalizeTimeout(timeoutMs: number): number {
@@ -368,7 +397,9 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
 
   private ensureEnabled(): void {
     if (!this.enabled) {
-      throw new Error('浏览器自动化未启用，请设置 BROWSER_AUTOMATION_ENABLED=true');
+      throw new Error(
+        '浏览器自动化未启用，请设置 BROWSER_AUTOMATION_ENABLED=true',
+      );
     }
   }
 }

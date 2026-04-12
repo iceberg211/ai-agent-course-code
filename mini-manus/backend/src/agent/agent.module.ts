@@ -7,7 +7,13 @@ import { EventModule } from '@/event/event.module';
 import { BrowserModule } from '@/browser/browser.module';
 
 @Module({
-  imports: [ToolModule, SkillModule, WorkspaceModule, EventModule, BrowserModule],
+  imports: [
+    ToolModule,
+    SkillModule,
+    WorkspaceModule,
+    EventModule,
+    BrowserModule,
+  ],
   providers: [AgentService],
   exports: [AgentService],
 })

@@ -98,6 +98,7 @@
 | 事件持久化 | `task_events` 表、发布链路和任务事件接口已接入 | 前端还未用历史事件恢复 live feed |
 | Workspace 清理 | 删除任务时会清理目录，可选定期扫描已接入 | 默认关闭，生产部署需显式开启和设置保留天数 |
 | Task 级记忆 | Planner 可读取最近 completed run 的 JSON 摘要 | 只按 task 读取，没有 artifact/source 级记忆，也没有相似任务匹配 |
+| 浏览器只读能力 | `browser_open / browser_extract / browser_screenshot` 已接入，默认关闭 | 尚未开放点击、输入、等待元素和登录态 |
 | 工程健康 | 构建已恢复，后端初始业务测试已补 | 前端仍无自动化测试，前端 Mermaid 相关 chunk 偏大 |
 
 ### 2.3 当前主要缺口
@@ -113,7 +114,7 @@
 
 #### 执行能力缺口
 
-- 无浏览器自动化，只能处理静态抓取场景（动态 JS 渲染页面拿不到）
+- 浏览器只读能力已接入，但还没有交互工具和受控登录态
 - 无代码执行沙箱，代码生成后无法运行验证
 - Skill 内部工具调用仍以串行为主，缺少并行执行
 - 无多 Agent 编排层，所有任务仍由单一执行图推进
@@ -134,15 +135,15 @@
 
 - HTTP 写接口已有 API Key Guard，但还没有每日配额表
 - 无每日配额表（`api_clients` / `api_usage_daily`）
-- 无浏览器会话、代码执行等高价值执行能力
+- 浏览器会话已有第一版进程内管理，代码执行沙箱还没有
 
 ### 2.4 阶段判断
 
 当前项目处在：
 
-**单 Agent 核心系统已成型，构建健康、后端初始测试和第二阶段可维护能力已恢复；下一步应把事件回放接入前端，并进入浏览器只读能力。**
+**单 Agent 核心系统已成型，构建健康、后端初始测试和第二阶段可维护能力已恢复；第 3 阶段的浏览器只读工具已接入。**
 
-因此下一阶段仍不要直接从多 Agent 开始。现在可以进入浏览器只读工具，但边界要保持小：只做打开页面、抽取 DOM 文本、截图，不做登录态、点击和输入。
+因此下一阶段仍不要直接从多 Agent 开始。当前浏览器边界保持为：只打开页面、抽取 DOM 文本、截图，不做登录态、点击和输入。后续优先补浏览器部署验证、前端事件回放和沙箱第一版。
 
 ## 3. 轻量认证、限流与 API 配额保护
 
@@ -410,7 +411,7 @@ planner llm output
 - 对 `side-effect` skill/tool 加一层白名单策略
 - 默认 Planner 优先选择 read-only 能力
 - 对高风险工具继续增加显式开关，例如：
-  - `ENABLE_BROWSER_AUTOMATION`
+  - `BROWSER_AUTOMATION_ENABLED`
   - `ENABLE_CODE_SANDBOX`
 
 ### 5.5 错误处理策略
@@ -513,9 +514,9 @@ await workspace.cleanTaskDir(taskId)
 - 等待 JS 渲染完成
 - 抓取 DOM 文本
 - 截图
-- 点击
-- 输入
-- 提取表格与局部内容
+- 提取局部内容
+
+第一版已限制为只读能力，不开放点击、输入、登录态复用和人工接管。
 
 ### 7.2 推荐技术选型
 
@@ -530,31 +531,36 @@ await workspace.cleanTaskDir(taskId)
 
 ### 7.3 推荐接入方式
 
-不建议一开始就把 Playwright 深度耦合到现有 executor 中，推荐先做成独立模块和工具层。
+当前实现没有把 Playwright 深度耦合到现有 executor 中，而是做成独立模块和工具层。
 
-建议新增模块：
+已新增模块：
 
 ```text
 BrowserModule
   BrowserSessionService
-  BrowserPolicyService
-  BrowserToolFactory / browser tools
+ToolModule
+  BrowserOpenTool
+  BrowserExtractTool
+  BrowserScreenshotTool
 ```
 
-`executor` 仍然只通过 `ToolRegistry` 调用工具，不直接依赖 Playwright。
+`executor` 仍然只通过 `ToolRegistry` 调用工具，不直接依赖 Playwright。它只会在执行工具前补入运行时上下文：
 
-第一阶段只开放只读能力：
+- `task_id`
+- `run_id`
+
+第一阶段已经开放只读能力：
 
 1. `browser_open`
-   - 输入：`url`
-   - 输出：页面标题、最终 URL、会话 ID
+   - 输入：`task_id`, `url`, `timeout_ms?`
+   - 输出：页面标题、最终 URL、HTTP 状态、`session_id`
 
 2. `browser_extract`
-   - 输入：`sessionId`, `selector?`
+   - 输入：`session_id`, `selector?`, `max_length?`
    - 输出：页面文本或指定区域文本
 
 3. `browser_screenshot`
-   - 输入：`sessionId`, `path`
+   - 输入：`task_id`, `session_id`, `path?`, `full_page?`
    - 输出：截图文件路径和 metadata
 
 第二阶段再开放交互能力：
@@ -574,7 +580,16 @@ BrowserModule
 
 ### 7.4 会话模型
 
-新增 `browser_sessions` 表：
+第一版暂不新增数据库表，采用进程内会话管理：
+
+- `BrowserSessionService` 维护 `session_id -> context/page`
+- `browser_open` 创建 session
+- `browser_extract` 和 `browser_screenshot` 使用同一个 session
+- Run 结束时 `AgentService.finally` 调用 `closeRun(runId)`
+- `BROWSER_SESSION_TTL_MS` 控制闲置会话过期
+- `BROWSER_MAX_SESSIONS_PER_RUN` 控制单个 Run 的会话数量
+
+后续开放交互能力时，再新增 `browser_sessions` 表：
 
 - `id`
 - `task_id`
@@ -604,25 +619,30 @@ BrowserModule
 
 ### 7.5 安全边界
 
-浏览器自动化是高风险能力，建议增加这些边界：
+浏览器自动化是高风险能力，第一版已加入这些边界：
 
 - 默认关闭，通过环境变量显式开启
-- 域名 allowlist / denylist
 - 禁止访问内网地址、metadata 地址、localhost
-- URL 安全检查不能只靠字符串正则，后续要补 DNS 解析后的 IP 段检查
-- 禁止下载任意大文件，截图和下载都要限制大小
-- 每个 Run 限制最多浏览器会话数、页面数、动作数和总时长
+- 浏览器子请求也走 URL 安全检查，不允许加载被禁止地址
+- 每个 Run 限制最多浏览器会话数
+- Run 结束后自动关闭会话，闲置会话也会过期
 - 禁止默认自动登录
-- 所有点击、输入、导航都记录事件
+
+仍需补齐：
+
+- DNS 解析后的 IP 段检查
+- 域名 allowlist / denylist
+- 截图大小和总浏览器运行时长预算
+- 交互工具的事件审计
 
 ### 7.6 推荐落地阶段
 
-| 阶段 | 目标 | 验收 |
-| --- | --- | --- |
-| B0 | 同步 Playwright 依赖和构建 | 后端 `pnpm build` 通过 |
-| B1 | 只读浏览器工具 | 可打开 JS 页面、抽取文本、截图成 artifact |
-| B2 | 交互工具 | 可点击、输入、等待元素，所有动作有事件记录 |
-| B3 | 受控登录态 | 只在明确配置的域名启用，不复用个人浏览器登录态 |
+| 阶段 | 目标 | 状态 | 验收 |
+| --- | --- | --- | --- |
+| B0 | 同步 Playwright 依赖和构建 | 已完成 | 后端 `pnpm build` 通过 |
+| B1 | 只读浏览器工具 | 已完成 | 可打开 JS 页面、抽取文本、截图到 workspace |
+| B2 | 交互工具 | 待实现 | 可点击、输入、等待元素，所有动作有事件记录 |
+| B3 | 受控登录态 | 待实现 | 只在明确配置的域名启用，不复用个人浏览器登录态 |
 
 ## 8. 代码执行沙箱
 
@@ -918,16 +938,15 @@ Planner prompt 可新增：
 
 原因很直接：
 
-- 当前构建还没通过
 - 事件不可回放
 - side-effect 工具没有统一审批和审计
-- 核心链路测试不足
-- 浏览器和沙箱还没有接入
+- 真实数据库、失败恢复和并发 run 测试仍不足
+- 浏览器只有只读第一版，沙箱还没有接入
 
 多 Agent 会放大这些问题。现在更稳的做法是：
 
 1. 先把单 Agent 主链路稳定下来
-2. 浏览器和沙箱先作为工具能力接入
+2. 浏览器和沙箱先作为工具能力接入，浏览器已完成只读第一版
 3. 再把“专门 Agent”做成 Skill
 4. 最后抽出真正的多 Agent 编排层
 
@@ -1139,7 +1158,7 @@ interface AgentWorkerOutput {
 | 13 | Artifact 级记忆（第二层） | 待实现 | 读取历史 artifact 做结构化摘要复用 |
 | 14 | 节点级 token 明细 | 待实现 | 新增 llm_call_logs 表，按 node 拆分统计 |
 | 15 | 每日配额表 | 待实现 | api_clients + api_usage_daily |
-| 16 | 浏览器自动化 | 待实现 | Playwright，先只读，再交互 |
+| 16 | 浏览器自动化 | 部分完成 | Playwright 已接入只读工具；交互和登录态未做 |
 | 17 | 代码执行沙箱 | 待实现 | Docker 方案 A，默认无网络 |
 | 18 | 多 Agent 编排 | 待实现 | 先 Agent Skill，再 Supervisor |
 
@@ -1158,6 +1177,7 @@ interface AgentWorkerOutput {
 7. 后端 e2e 改为 `/api/tasks` 冒烟测试，并对齐全局 `/api` 前缀
 8. `.env.example` 补 CORS、WebSocket、LLM、结构化输出和导出相关配置项
 9. 补 HTTP API Key、事件持久化、Workspace 定期清理、Planner side-effect 策略
+10. 接入浏览器只读能力：`browser_open / browser_extract / browser_screenshot`
 
 下一步继续完成：
 
@@ -1183,11 +1203,12 @@ interface AgentWorkerOutput {
 
 建议顺序：
 
-1. 浏览器只读工具：open / extract / screenshot
-2. 浏览器交互工具：click / type / wait_for
+1. 浏览器只读工具：open / extract / screenshot（已完成）
+2. 浏览器部署验证：确认目标环境已安装 Chromium，并补一条真实页面冒烟测试
 3. SandboxRunner 抽象和 mock 测试
 4. Docker 沙箱跑 Node/Python
 5. evaluator 根据沙箱结果做 retry / fail
+6. 浏览器交互工具：click / type / wait_for
 
 ### 13.4 第四个迭代：记忆与多 Agent
 
@@ -1212,6 +1233,7 @@ interface AgentWorkerOutput {
 4. Run 级 token 后端统计和持久化已经有基础
 5. 并发锁、事务后发事件、删除清理、优雅关闭等稳定性措施已经开始补上
 6. 后端和前端生产构建已经通过
+7. 浏览器只读工具已接入，默认关闭，可通过环境变量启用
 
 **当前最大问题：**
 
@@ -1219,8 +1241,9 @@ interface AgentWorkerOutput {
 2. 后端事件已持久化，但前端还不能基于历史事件恢复 live feed
 3. HTTP 写接口已有 API Key，但还没有客户端级配额
 4. 高风险工具只有白名单，还没有人工审批和预算
-5. 前端没有自动化测试
+5. 浏览器只读工具还缺真实 Chromium 环境冒烟测试
+6. 前端没有自动化测试
 
 **下阶段核心目标：**
 
-先补前端事件回放和少量集成测试，然后进入浏览器只读工具。浏览器第一版只做 `browser_open / browser_extract / browser_screenshot`，不做登录态、点击、输入。
+先补浏览器真实页面冒烟测试和前端事件回放，然后进入代码沙箱第一版。沙箱第一版只开放受限 `sandbox_run_node / sandbox_run_python`，默认无网络，限制 CPU、内存、时长和输出长度。

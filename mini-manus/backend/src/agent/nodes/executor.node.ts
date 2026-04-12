@@ -19,14 +19,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function attachRuntimeToolContext(
-  input: unknown,
+  input: Record<string, unknown>,
   state: AgentState,
-): unknown {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return input;
-  }
-
-  const record = input as Record<string, unknown>;
+): Record<string, unknown> {
+  const record = input;
   return {
     ...record,
     task_id: record.task_id ?? state.taskId,
@@ -164,7 +160,9 @@ export async function executorNode(
     } else {
       // ─── Tool 路径 ────────────────────────────────────────────────────────
       const toolName = step.toolHint ?? 'think';
-      const rawToolInput = step.toolInput ?? { thought: step.description };
+      const rawToolInput: Record<string, unknown> = step.toolInput ?? {
+        thought: step.description,
+      };
       const toolInput = attachRuntimeToolContext(rawToolInput, state);
 
       eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {

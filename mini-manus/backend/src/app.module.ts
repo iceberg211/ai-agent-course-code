@@ -17,7 +17,9 @@ import { ApiKeyGuard } from '@/common/auth/api-key.guard';
 
 const envSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z
+      .enum(['development', 'test', 'production'])
+      .default('development'),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL 不能为空'),
     OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY 不能为空'),
     FRONTEND_URL: z.string().default('http://localhost:5173'),
@@ -47,7 +49,12 @@ const envSchema = z
       .default(6 * 60 * 60 * 1000),
     BROWSER_AUTOMATION_ENABLED: z.string().default('false'),
     BROWSER_HEADLESS: z.string().default('true'),
-    BROWSER_MAX_SESSIONS_PER_RUN: z.coerce.number().int().min(1).max(10).default(2),
+    BROWSER_MAX_SESSIONS_PER_RUN: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(2),
     BROWSER_DEFAULT_TIMEOUT_MS: z.coerce
       .number()
       .int()

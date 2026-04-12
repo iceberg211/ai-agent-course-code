@@ -18,7 +18,10 @@ import { BrowserScreenshotTool } from '@/tool/tools/browser/browser-screenshot.t
 import { WorkspaceModule } from '@/workspace/workspace.module';
 import { BrowserModule } from '@/browser/browser.module';
 
-function readBoolean(value: string | undefined, defaultValue: boolean): boolean {
+function readBoolean(
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean {
   if (value == null) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
@@ -78,10 +81,7 @@ export class ToolModule {
     this.registry.register(this.exportPdf);
     this.registry.register(this.githubSearch);
     if (
-      readBoolean(
-        this.config.get<string>('BROWSER_AUTOMATION_ENABLED'),
-        false,
-      )
+      readBoolean(this.config.get<string>('BROWSER_AUTOMATION_ENABLED'), false)
     ) {
       this.registry.register(this.browserOpen);
       this.registry.register(this.browserExtract);

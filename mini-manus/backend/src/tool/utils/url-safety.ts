@@ -45,7 +45,10 @@ function isBlockedIpv6(hostname: string): boolean {
 }
 
 function assertSafeHostname(hostname: string): void {
-  const normalized = hostname.replace(/\.$/, '').toLowerCase();
+  const normalized = hostname
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
 
   if (
     BLOCKED_HOSTNAMES.has(normalized) ||
