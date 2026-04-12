@@ -114,9 +114,11 @@ export class SimliProvider implements DigitalHumanProvider {
         };
       } catch (error) {
         const isLast = attempt >= 2;
-        const message = error instanceof Error ? error.message : String(error);
+        const message = this.describeError(error);
         if (isLast) {
-          this.logger.error(`Simli createSession 失败: ${message}`);
+          this.logger.error(
+            `Simli createSession 失败: url=${url}, faceId=${this.faceId}, attempt=${attempt}, error=${message}`,
+          );
           throw new ServiceUnavailableException(
             `Simli createSession 失败: ${message}`,
           );
@@ -187,5 +189,37 @@ export class SimliProvider implements DigitalHumanProvider {
       .replace(/^https:\/\//i, 'wss://')
       .replace(/^http:\/\//i, 'ws://');
     return `${wsBase}${pathname}`;
+  }
+
+  private describeError(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return String(error);
+    }
+    const cause = error.cause as
+      | {
+          code?: string;
+          errno?: number;
+          syscall?: string;
+          hostname?: string;
+          address?: string;
+          port?: number;
+        }
+      | undefined;
+    if (!cause) {
+      return error.message;
+    }
+
+    const detail = [
+      cause.code ? `code=${cause.code}` : '',
+      cause.errno !== undefined ? `errno=${cause.errno}` : '',
+      cause.syscall ? `syscall=${cause.syscall}` : '',
+      cause.hostname ? `hostname=${cause.hostname}` : '',
+      cause.address ? `address=${cause.address}` : '',
+      cause.port !== undefined ? `port=${cause.port}` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    return detail ? `${error.message} (${detail})` : error.message;
   }
 }

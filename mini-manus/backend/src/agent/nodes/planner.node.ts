@@ -97,7 +97,7 @@ export async function plannerNode(
   };
 
   // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────
-  let planSteps: typeof PlanSchema._type.steps;
+  let planSteps: z.infer<typeof PlanSchema>['steps'];
 
   const result1 = await chain.invoke({
     ...baseInvokeArgs,

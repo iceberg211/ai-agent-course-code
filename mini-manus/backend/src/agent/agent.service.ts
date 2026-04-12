@@ -57,6 +57,7 @@ function readBoolean(
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
   readonly llm: ChatOpenAI;
+  private readonly modelName: string;
   private readonly maxRetries: number;
   private readonly maxReplans: number;
   private readonly maxSteps: number;
@@ -86,8 +87,9 @@ export class AgentService {
       config.get<string>('LLM_CACHE_ENABLED'),
       true,
     );
+    this.modelName = config.get<string>('MODEL_NAME', 'gpt-4o-mini');
     this.llm = new ChatOpenAI({
-      modelName: config.get<string>('MODEL_NAME', 'gpt-4o-mini'),
+      modelName: this.modelName,
       apiKey: config.get<string>('OPENAI_API_KEY', ''),
       configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
       temperature: 0,
@@ -274,7 +276,7 @@ export class AgentService {
       // 持久化 token 统计 + 推送实时事件
       if (tokenTracker.totalTokens > 0) {
         const estimatedCostUsd = estimateCostUsd(
-          this.llm.modelName ?? '',
+          this.modelName,
           tokenTracker.inputTokens,
           tokenTracker.outputTokens,
         );

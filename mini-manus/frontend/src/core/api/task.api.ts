@@ -13,7 +13,20 @@ import type {
   TaskSummary,
 } from '@/domains/task/types/task.types'
 
-interface RunDetailResponse extends RunSummary {
+type NumberLike = number | string | null | undefined
+
+interface RunSummaryResponse
+  extends Omit<
+    RunSummary,
+    'inputTokens' | 'outputTokens' | 'totalTokens' | 'estimatedCostUsd'
+  > {
+  estimatedCostUsd?: NumberLike
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+}
+
+interface RunDetailResponse extends RunSummaryResponse {
   taskId: string
   plans: PlanDetailResponse[]
   stepRuns: StepRunResponse[]
@@ -73,8 +86,14 @@ interface ArtifactResponse {
 interface TaskDetailResponse {
   task: TaskSummary
   revisions: TaskRevision[]
-  runs: RunSummary[]
+  runs: RunSummaryResponse[]
   currentRun: RunDetailResponse | null
+}
+
+function normalizeNumber(value: NumberLike): number | null {
+  if (value == null || value === '') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function mapPlanStep(step: PlanStepResponse): PlanStep {
@@ -104,9 +123,13 @@ function mapArtifact(artifact: ArtifactResponse): ArtifactDetail {
   }
 }
 
-function mapRunSummary(run: RunSummary): RunSummary {
+function mapRunSummary(run: RunSummaryResponse): RunSummary {
   return {
     ...run,
+    inputTokens: run.inputTokens ?? null,
+    outputTokens: run.outputTokens ?? null,
+    totalTokens: run.totalTokens ?? null,
+    estimatedCostUsd: normalizeNumber(run.estimatedCostUsd),
   }
 }
 

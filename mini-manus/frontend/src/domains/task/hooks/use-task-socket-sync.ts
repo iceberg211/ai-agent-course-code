@@ -64,6 +64,7 @@ interface RunTokenUsagePayload extends BasePayload {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+  estimatedCostUsd?: number | null
 }
 
 // ─── Live feed helpers ────────────────────────────────────────────────────────
@@ -488,6 +489,7 @@ export function useTaskSocketSync(
   })
 
   const handleRunTokenUsage = useEffectEvent((payload: RunTokenUsagePayload) => {
+    invalidateDetail(payload)
     setLiveRunFeeds((cur) =>
       patchFeed(cur, payload.taskId, payload.runId, (feed) => ({
         ...feed,
@@ -495,6 +497,7 @@ export function useTaskSocketSync(
           inputTokens: payload.inputTokens ?? 0,
           outputTokens: payload.outputTokens ?? 0,
           totalTokens: payload.totalTokens ?? 0,
+          estimatedCostUsd: payload.estimatedCostUsd ?? null,
         } satisfies TokenUsage,
       })),
     )

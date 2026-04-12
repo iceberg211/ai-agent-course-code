@@ -37,6 +37,10 @@ export interface RunSummary {
   startedAt: string | null
   completedAt: string | null
   errorMessage: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+  estimatedCostUsd: number | null
 }
 
 export interface RunDetail extends RunSummary {
@@ -79,6 +83,7 @@ export interface TokenUsage {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  estimatedCostUsd: number | null
 }
 
 export interface LiveRunFeed {

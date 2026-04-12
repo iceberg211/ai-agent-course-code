@@ -34,6 +34,35 @@ export function validatePlanSemantics(
   toolRegistry: ToolRegistry,
 ): PlanValidationError[] {
   const errors: PlanValidationError[] = [];
+  const seenStepIndexes = new Set<number>();
+
+  if (steps.length === 0) {
+    errors.push({
+      stepIndex: -1,
+      field: 'steps',
+      message: '计划至少需要包含一个步骤',
+    });
+    return errors;
+  }
+
+  for (const [expectedIndex, step] of steps.entries()) {
+    const idx = step.stepIndex;
+    if (seenStepIndexes.has(idx)) {
+      errors.push({
+        stepIndex: idx,
+        field: 'stepIndex',
+        message: `stepIndex ${idx} 重复`,
+      });
+    }
+    seenStepIndexes.add(idx);
+    if (idx !== expectedIndex) {
+      errors.push({
+        stepIndex: idx,
+        field: 'stepIndex',
+        message: 'stepIndex 必须按数组顺序从 0 开始连续递增',
+      });
+    }
+  }
 
   for (const step of steps) {
     const idx = step.stepIndex;

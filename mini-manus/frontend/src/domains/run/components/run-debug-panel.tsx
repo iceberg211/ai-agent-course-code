@@ -14,6 +14,11 @@ function formatMetric(value: number | string | null | undefined) {
   return String(value)
 }
 
+function formatCost(value: number | null) {
+  if (value == null) return '--'
+  return `$${value.toFixed(6)}`
+}
+
 export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
   const metrics = useMemo(() => {
     if (!runDetail) return null
@@ -25,6 +30,15 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
     const toolCalls = Object.values(liveRunFeed?.steps ?? {}).flatMap((step) => step.toolCalls)
     const cacheHits = toolCalls.filter((tool) => tool.cached).length
     const cacheMisses = toolCalls.filter((tool) => !tool.cached && tool.state !== 'pending').length
+    const persistedTokenUsage =
+      runDetail.totalTokens != null
+        ? {
+            inputTokens: runDetail.inputTokens ?? 0,
+            outputTokens: runDetail.outputTokens ?? 0,
+            totalTokens: runDetail.totalTokens,
+            estimatedCostUsd: runDetail.estimatedCostUsd,
+          }
+        : null
 
     return {
       duration: formatDuration(runDetail.startedAt, runDetail.completedAt),
@@ -37,7 +51,7 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
       lastError: runDetail.errorMessage ?? lastFailedStep?.errorMessage ?? null,
       artifactTypes: Array.from(new Set(runDetail.artifacts.map((artifact) => artifact.type))).join(', '),
       startedAt: formatDateTime(runDetail.startedAt ?? runDetail.createdAt),
-      tokenUsage: liveRunFeed?.tokenUsage ?? null,
+      tokenUsage: liveRunFeed?.tokenUsage ?? persistedTokenUsage,
     }
   }, [liveRunFeed?.steps, liveRunFeed?.tokenUsage, runDetail])
 
@@ -70,6 +84,10 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
     {
       label: 'Total Tokens',
       value: metrics.tokenUsage ? String(metrics.tokenUsage.totalTokens) : '--',
+    },
+    {
+      label: 'Estimated Cost',
+      value: metrics.tokenUsage ? formatCost(metrics.tokenUsage.estimatedCostUsd) : '--',
     },
   ]
 

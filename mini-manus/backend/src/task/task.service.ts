@@ -547,6 +547,10 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         'startedAt',
         'completedAt',
         'errorMessage',
+        'inputTokens',
+        'outputTokens',
+        'totalTokens',
+        'estimatedCostUsd',
       ],
     });
 
@@ -569,6 +573,10 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         startedAt: run.startedAt,
         completedAt: run.completedAt,
         errorMessage: run.errorMessage,
+        inputTokens: run.inputTokens,
+        outputTokens: run.outputTokens,
+        totalTokens: run.totalTokens,
+        estimatedCostUsd: run.estimatedCostUsd,
       })),
       currentRun,
     };

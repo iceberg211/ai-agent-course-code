@@ -27,7 +27,7 @@
 
 ## 2. 当前现状评估
 
-> **文档更新说明**（2026-04-11）：本节基于当前代码和本地 `pnpm build` 结果重新校准。此前文档中部分“已完成”表述过于乐观，本次改成“已完成 / 部分完成 / 未完成”的状态。
+> **文档更新说明**（2026-04-12）：工程健康已复核，后端和前端 `pnpm build` 均通过；后端已补初始单元测试和 e2e 冒烟测试，当前 `pnpm test` 为 5 个测试套件、13 条测试，`pnpm test:e2e` 为 1 个测试套件、3 条测试。
 
 ### 2.1 已经具备的能力
 
@@ -51,7 +51,7 @@
 - cancel 分支会补 `step.failed` 事件
 - deleteTask 使用事务删除数据库记录，并在事务提交后清理 workspace
 - 提示词安全：用户输入注入检测（detectInjection）+ 6 个 prompt 安全声明
-- Planner 语义校验：`skillName/toolHint` 注册校验 + `safeParse` 输入校验 + 带错误反馈最多两次重试
+- Planner 语义校验：`skillName/toolHint` 注册校验 + `safeParse` 输入校验 + `stepIndex` 顺序校验 + 带错误反馈最多两次重试
 - 速率限制：`@nestjs/throttler`，全局 60次/分，任务创建 10次/分
 - WebSocket 认证：`WS_AUTH_TOKEN` 环境变量开启 token 鉴权
 - 配置校验：Zod schema 校验必填项，启动时失败快速抛出
@@ -60,6 +60,7 @@
 - Token 统计：Run 级聚合（输入/输出/总计）+ 实时推送前端 RunDebugPanel
 - Token 持久化：`task_runs` 新增 `input_tokens / output_tokens / total_tokens / estimated_cost_usd` 列
 - 成本估算：内置模型价格表（gpt-4o / gpt-4o-mini / qwen-plus / deepseek 等）
+- 前端 Run Debug：优先展示实时 token 数据，刷新后回退读取持久化 token 和成本字段
 - 健康检查：`GET /api/health` 含 DB 连通性探测
 - 请求日志：`LoggingInterceptor` 记录每个 HTTP 请求耗时
 
@@ -71,18 +72,28 @@
 **配置**
 - 配置化运行参数：`MAX_RETRIES / MAX_REPLANS / MAX_STEPS / STEP_TIMEOUT_MS / TOOL_CACHE_TTL_MS / LLM_CACHE_ENABLED / EXPORT_PDF_ENABLED`
 
+**工程健康**
+- 后端 `pnpm build` 通过
+- 前端 `pnpm build` 通过
+- 后端 `pnpm test` 已覆盖 TaskService 主链路、Planner 语义校验、Agent 配置和 token 统计
+- 后端 `pnpm test:e2e` 已覆盖 `/api/tasks` 列表、创建和 DTO 校验
+- 后端 `ChatOpenAI.modelName` 类型问题已通过 `AgentService.modelName` 收口
+- 后端 `PlanSchema._type` 类型问题已改为 `z.infer<typeof PlanSchema>['steps']`
+- 前端 `mermaid` 依赖已可参与构建
+
 ### 2.2 部分完成但需要收口的能力
 
 以下能力已经有代码基础，但还不能按“稳定完成”看待：
 
 | 能力 | 当前状态 | 需要补齐 |
 | --- | --- | --- |
-| Token / 成本观测 | 后端 Run 级字段和事件已实现 | 前端类型和 RunDebugPanel 需要读取持久化字段，刷新后仍可显示 |
-| Planner 语义校验 | 已校验执行器存在和 input schema | 还缺 `stepIndex` 连续性、重复检查、side-effect 白名单策略 |
-| 配置管理 | `ConfigModule` + Zod schema 已接入 | `.env.example` 缺 `WS_ALLOWED_ORIGINS / WS_AUTH_TOKEN`，新增依赖后 lockfile 未同步 |
+| Token / 成本观测 | Run 级统计、持久化、实时事件、前端刷新后展示已完成 | 还缺 `model_name` 追溯和节点级明细 |
+| Planner 语义校验 | 已校验执行器存在、input schema、`stepIndex` 顺序/重复/跳号 | 还缺 side-effect 白名单策略和规划阶段步数限制 |
+| 配置管理 | `ConfigModule` + Zod schema 已接入，`.env.example` 已补 CORS / WebSocket / LLM / 导出相关项 | 下一步应把更多运行时开关纳入 schema 显式校验 |
 | WebSocket 认证 | 配 token 时可鉴权 | 前端需统一配置 `VITE_WS_AUTH_TOKEN`，生产环境部署要有密钥注入说明 |
 | Workspace 清理 | 删除任务时会清理目录 | 缺定期扫描，进程异常或手动删除数据库后仍可能残留目录 |
 | Task 级记忆 | Planner 可读取最近 completed run 的 JSON 摘要 | 只按 task 读取，没有 artifact/source 级记忆，也没有相似任务匹配 |
+| 工程健康 | 构建已恢复，后端初始业务测试已补 | 前端仍无自动化测试，前端 Mermaid 相关 chunk 偏大 |
 
 ### 2.3 当前主要缺口
 
@@ -90,9 +101,10 @@
 
 #### 工程健康缺口
 
-- 当前后端 `pnpm build` 失败：依赖 lockfile 未同步，且存在 `ChatOpenAI.modelName`、`PlanSchema._type` 类型问题
-- 当前前端 `pnpm build` 失败：`mermaid` 依赖未同步，动态导入后的 `svg` 解构没有类型
-- 测试仍是 Nest 默认样例，没有覆盖 Mini-Manus 主链路
+- 后端已有初始业务测试，但还没有覆盖真实数据库集成、Agent 图执行失败恢复和并发 run 场景
+- e2e 已对齐 `/api/tasks` 冒烟场景，但还没有覆盖 `GET /api/health` 和异常过滤器输出格式
+- 前端没有自动化测试
+- 前端生产构建通过，但 Mermaid 相关 chunk 较大，需要后续做产物渲染的按需加载和 chunk 策略
 
 #### 执行能力缺口
 
@@ -123,9 +135,9 @@
 
 当前项目处在：
 
-**单 Agent 核心系统已成型，但工程健康和治理能力还没达到长期维护标准。**
+**单 Agent 核心系统已成型，构建健康和后端初始测试已恢复，但事件回放、写接口保护和前端测试还没达到长期维护标准。**
 
-因此下一阶段不要直接从多 Agent 开始。多 Agent 会放大已有问题：事件不可回放、side-effect 无审批、测试不足、构建不稳定、工具审计不足。正确顺序是先稳定单 Agent，再把浏览器和沙箱作为能力模块接入，最后再做多 Agent 编排。
+因此下一阶段不要直接从多 Agent 开始。多 Agent 会放大已有问题：事件不可回放、side-effect 无审批、工具审计不足。正确顺序是先补事件持久化、HTTP 认证和前端可观测性，再把浏览器和沙箱作为能力模块接入，最后再做多 Agent 编排。
 
 ## 3. 轻量认证、限流与 API 配额保护
 
@@ -210,7 +222,7 @@
 
 ### 4.1 当前实现状态
 
-Token 统计已经做到后端 Run 级可用，但前端展示还没有完全收口。
+Token 统计已经做到 Run 级可用，前端展示也已完成基础收口。
 
 当前已经实现的链路：
 
@@ -222,40 +234,41 @@ Token 统计已经做到后端 Run 级可用，但前端展示还没有完全收
    - `Input Tokens`
    - `Output Tokens`
    - `Total Tokens`
+   - `Estimated Cost`
+6. 刷新页面后，`Run Debug` 会从 `RunDetail` 的持久化字段读取 token 和成本
 
 当前已经具备：
 
 - `Run 级别 token 聚合`
 - `Run 级别 token 持久化`
 - `live 期间实时展示`
+- `刷新后持久展示`
+- `估算成本展示`
 
 ### 4.2 当前缺口
 
 当前实现还差以下关键点：
 
-1. 前端 `RunDetail` 类型还没有声明 `inputTokens / outputTokens / totalTokens / estimatedCostUsd`
-2. `RunDebugPanel` 仍只读 `liveRunFeed.tokenUsage`，刷新后不会展示数据库里的 token 字段
-3. `task_runs` 没有 `model_name` 字段，成本估算无法追溯具体模型
-4. 后端使用 `this.llm.modelName` 读取模型名，当前类型检查不通过
-5. 没有分节点统计：
+1. `task_runs` 没有 `model_name` 字段，成本估算无法追溯具体模型
+2. 没有分节点统计：
    - planner
    - evaluator
    - finalizer
    - skill 内部 LLM
-6. 价格表在代码常量中，暂时没有配置覆盖能力
+3. 价格表在代码常量中，暂时没有配置覆盖能力
 
 ### 4.3 推荐架构
 
 #### 第一阶段：补前端持久展示
 
-先不改表结构，直接利用已经存在的字段：
+已完成。实现方式是不改表结构，直接利用已经存在的字段：
 
 - `input_tokens`
 - `output_tokens`
 - `total_tokens`
 - `estimated_cost_usd`
 
-需要改：
+已完成的改动：
 
 1. `RunSummary / RunDetail` 类型增加 token 和成本字段
 2. `RunDebugPanel` 优先读 `liveRunFeed.tokenUsage`，没有 live 数据时读 `runDetail`
@@ -318,8 +331,8 @@ estimated_cost_usd = input_cost + output_cost
 
 ### 4.4 推荐落地顺序
 
-1. 修复后端 `ChatOpenAI.modelName` 类型问题，建议在 `AgentService` 中保存 `private readonly modelName`
-2. 前端读取并展示持久化 token 字段
+1. 前端读取并展示持久化 token 字段（已完成）
+2. 前端展示 `estimatedCostUsd`（已完成）
 3. `task_runs` 增加 `model_name`
 4. 最后再做节点级明细
 
@@ -337,19 +350,19 @@ estimated_cost_usd = input_cost + output_cost
 - `skillName` 是否注册
 - `toolHint` 是否注册
 - `skillInput / toolInput` 是否通过 schema
+- `stepIndex` 是否按数组顺序从 0 连续递增，是否存在重复或跳号
 - 语义校验失败时，最多带错误反馈重试一次
 
-这部分方向正确，但还没有覆盖所有规则。
+这部分方向正确，基础规则已覆盖，下一步重点是副作用工具治理和规划阶段步数限制。
 
 ### 5.2 当前风险
 
 当前仍可能出现：
 
-1. `stepIndex` 重复、跳号或乱序
-2. 读写副作用工具被 Planner 无约束地使用
-3. 高风险工具没有按任务类型或环境变量做启用控制
-4. Planner 输出的步骤数量虽然受 `MAX_STEPS` 控制执行，但规划阶段没有先限制计划长度
-5. schema 错误信息对 Planner 仍偏底层，复杂对象修正效果不稳定
+1. 读写副作用工具被 Planner 无约束地使用
+2. 高风险工具没有按任务类型或环境变量做启用控制
+3. Planner 输出的步骤数量虽然受 `MAX_STEPS` 控制执行，但规划阶段没有先限制计划长度
+4. schema 错误信息对 Planner 仍偏底层，复杂对象修正效果不稳定
 
 ### 5.3 推荐架构
 
@@ -364,7 +377,7 @@ planner llm output
 
 ### 5.4 语义校验规则
 
-下一步建议把 `PlanSemanticValidator` 补全为下面这些规则：
+`PlanSemanticValidator` 已经覆盖基础规则，下一步建议继续补副作用和高风险工具规则：
 
 #### 基础规则
 
@@ -1105,19 +1118,19 @@ interface AgentWorkerOutput {
 
 ## 13. 推荐实施顺序
 
-> 最后更新：2026-04-11。状态分为：已完成、部分完成、待实现。
+> 最后更新：2026-04-12。状态分为：已完成、部分完成、待实现。
 
 | 优先级 | 项目 | 状态 | 说明 |
 |---|---|---|---|
-| 0 | 构建恢复 | 待实现 | 当前后端、前端 `pnpm build` 都失败，必须先修 |
-| 1 | 依赖和 lockfile 同步 | 待实现 | 后端新增依赖、前端 `mermaid` 依赖未同步到 lockfile |
-| 2 | 关键路径测试 | 待实现 | 当前测试仍是 Nest 默认样例 |
-| 3 | Token 持久展示 | 部分完成 | 后端已持久化，前端刷新后展示未收口 |
-| 4 | Planner 语义校验 | 部分完成 | 注册和 schema 校验已做，stepIndex 连续性和 side-effect 策略未做 |
+| 0 | 构建恢复 | 已完成 | 后端、前端 `pnpm build` 均通过 |
+| 1 | 依赖和 lockfile 同步 | 已完成 | 当前依赖可支持后端、前端构建 |
+| 2 | 关键路径测试 | 部分完成 | 后端已补 TaskService、Planner、Agent 配置、token 统计和任务 API e2e 初始测试 |
+| 3 | Token 持久展示 | 已完成 | 前端类型、API 映射、RunDebugPanel 和实时事件均已接入 `estimatedCostUsd` |
+| 4 | Planner 语义校验 | 部分完成 | 注册、schema、stepIndex 顺序/重复/跳号已做，side-effect 策略未做 |
 | 5 | Workspace 删除清理 | 已完成 | deleteTask 事务后调 cleanTaskDir |
 | 6 | Task 级跨 Run 记忆（第一层） | 已完成 | 最近 3 次 completed run 的 JSON 摘要注入 Planner |
 | 7 | 限流 | 已完成 | @nestjs/throttler，全局 + 任务创建单独限流 |
-| 8 | WebSocket 认证 | 部分完成 | 后端支持 token；前端和 `.env.example` 仍需部署说明 |
+| 8 | WebSocket 认证 | 部分完成 | 后端支持 token，`.env.example` 已补示例；前端和部署说明仍需补齐 |
 | 9 | 健康检查 | 已完成 | GET /api/health，含 DB 连通性 |
 | 10 | HTTP API Key 认证 | 待实现 | x-api-key 全局 Guard |
 | 11 | 事件持久化回放 | 待实现 | 需新增 task_events 表，改事件发布链路 |
@@ -1131,19 +1144,25 @@ interface AgentWorkerOutput {
 
 ### 13.1 第一个迭代：工程健康
 
-目标：让项目重新进入可稳定开发状态。
+目标：把“构建可用”提升为“主链路可验证”。
 
-必须完成：
+已完成：
 
 1. 同步 backend/frontend 的依赖和 lockfile
 2. 修复后端 `ChatOpenAI.modelName` 类型问题
 3. 修复后端 `PlanSchema._type` 类型问题
 4. 修复前端 `mermaid` 依赖和 `svg` 类型问题
 5. 后端、前端 `pnpm build` 通过
-6. 替换默认测试，至少补 3 条服务层测试：
-   - 创建任务会创建 revision 并排队 run
-   - cancel 会设置 `cancelRequested`
-   - deleteTask 会删除数据库记录并调用 workspace 清理
+6. 后端补 TaskService 主链路、Planner 语义校验、Agent 配置和 token 统计测试
+7. 后端 e2e 改为 `/api/tasks` 冒烟测试，并对齐全局 `/api` 前缀
+8. `.env.example` 补 CORS、WebSocket、LLM、结构化输出和导出相关配置项
+
+下一步继续完成：
+
+1. 补 `cancelRun`、`deleteTask`、`finalizeRun` 的服务层测试
+2. 补 retry/replan 超限把 run 标记为 failed 的 Agent 层测试
+3. 补 `GET /api/health` e2e 和异常过滤器输出格式测试
+4. 将更多运行时开关纳入 `app.module.ts` 的 Zod schema 显式校验
 
 ### 13.2 第二个迭代：单 Agent 可维护性
 
@@ -1151,11 +1170,10 @@ interface AgentWorkerOutput {
 
 建议顺序：
 
-1. HTTP API Key 认证
-2. RunDebugPanel 读取持久化 token 和成本字段
+1. Planner 补 side-effect 策略和规划阶段步数限制
+2. HTTP API Key 认证
 3. 事件持久化 `task_events`
 4. Workspace 定期清理
-5. Planner 补 `stepIndex` 连续性和 side-effect 策略
 
 ### 13.3 第三个迭代：高价值执行能力
 
@@ -1191,15 +1209,16 @@ interface AgentWorkerOutput {
 3. 工具、Skill、实时事件、产物预览已经可用
 4. Run 级 token 后端统计和持久化已经有基础
 5. 并发锁、事务后发事件、删除清理、优雅关闭等稳定性措施已经开始补上
+6. 后端和前端生产构建已经通过
 
 **当前最大问题：**
 
-1. 构建当前不通过
-2. 测试没有覆盖主业务
-3. 事件不能回放
-4. HTTP 写接口没有 API Key
-5. 高风险工具还没有统一策略
+1. 测试还没有覆盖真实数据库集成、失败恢复和并发 run 场景
+2. 事件不能回放
+3. HTTP 写接口没有 API Key
+4. 高风险工具还没有统一策略
+5. `.env.example` 与实际 Zod 配置没有完全对齐
 
 **下阶段核心目标：**
 
-先把单 Agent 系统修到“构建通过、关键链路有测试、执行过程可回放、写接口受保护”，再上浏览器自动化、代码沙箱和多 Agent。这样后期维护成本会低很多。
+先把单 Agent 系统修到“关键链路有测试、执行过程可回放、写接口受保护、调试信息刷新后仍可见”，再上浏览器自动化、代码沙箱和多 Agent。这样后期维护成本会低很多。
