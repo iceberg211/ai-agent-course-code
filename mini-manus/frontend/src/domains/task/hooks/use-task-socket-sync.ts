@@ -287,10 +287,23 @@ export function useTaskSocketSync(
         ...feed,
         runStatus: 'running',
         startedAt: feed.startedAt ?? at,
-        latestNarration: '任务开始执行，正在准备步骤…',
+        latestNarration: '任务开始执行…',
       })),
     )
   })
+
+  const handlePlanGenerating = useEffectEvent(
+    (payload: BasePayload & { isReplan?: boolean }) => {
+      setLiveRunFeeds((cur) =>
+        patchFeed(cur, payload.taskId, payload.runId, (feed) => ({
+          ...feed,
+          latestNarration: payload.isReplan
+            ? '正在重新生成执行计划…'
+            : '正在生成执行计划…',
+        })),
+      )
+    },
+  )
 
   const handlePlanCreated = useEffectEvent((payload: PlanCreatedPayload) => {
     invalidateDetail(payload) // 刷新 plan_steps
@@ -592,6 +605,9 @@ export function useTaskSocketSync(
       case TASK_EVENTS.runStarted:
         handleRunStarted(payload)
         break
+      case TASK_EVENTS.planGenerating:
+        handlePlanGenerating(payload)
+        break
       case TASK_EVENTS.planCreated:
         handlePlanCreated(payload)
         break
@@ -657,6 +673,7 @@ export function useTaskSocketSync(
     const onTaskCreated = withEventGuard(handleTaskCreated)
     const onRevisionCreated = withEventGuard(handleRevisionCreated)
     const onRunStarted = withEventGuard(handleRunStarted)
+    const onPlanGenerating = withEventGuard(handlePlanGenerating)
     const onPlanCreated = withEventGuard(handlePlanCreated)
     const onStepStarted = withEventGuard(handleStepStarted)
     const onStepProgress = withEventGuard(handleStepProgress)
@@ -684,6 +701,7 @@ export function useTaskSocketSync(
     socket.on(TASK_EVENTS.revisionCreated, onRevisionCreated)
     socket.on(TASK_EVENTS.taskSnapshot, handleSnapshot)
     socket.on(TASK_EVENTS.runStarted, onRunStarted)
+    socket.on(TASK_EVENTS.planGenerating, onPlanGenerating)
     socket.on(TASK_EVENTS.planCreated, onPlanCreated)
     socket.on(TASK_EVENTS.stepStarted, onStepStarted)
     socket.on(TASK_EVENTS.stepProgress, onStepProgress)
@@ -705,6 +723,7 @@ export function useTaskSocketSync(
       socket.off(TASK_EVENTS.revisionCreated, onRevisionCreated)
       socket.off(TASK_EVENTS.taskSnapshot, handleSnapshot)
       socket.off(TASK_EVENTS.runStarted, onRunStarted)
+      socket.off(TASK_EVENTS.planGenerating, onPlanGenerating)
       socket.off(TASK_EVENTS.planCreated, onPlanCreated)
       socket.off(TASK_EVENTS.stepStarted, onStepStarted)
       socket.off(TASK_EVENTS.stepProgress, onStepProgress)

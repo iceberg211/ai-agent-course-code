@@ -6,6 +6,7 @@ import { CompetitiveAnalysisSkill } from '@/skill/skills/competitive-analysis.sk
 import { BriefingGenerationSkill } from '@/skill/skills/briefing-generation.skill';
 import { ArtifactReviewSkill } from '@/skill/skills/artifact-review.skill';
 import { ReportPackagingSkill } from '@/skill/skills/report-packaging.skill';
+import { CodeProjectGenerationSkill } from '@/skill/skills/code-project-generation.skill';
 import { ToolModule } from '@/tool/tool.module';
 
 @Module({
@@ -23,5 +24,6 @@ export class SkillModule {
     this.registry.register(new BriefingGenerationSkill());
     this.registry.register(new ArtifactReviewSkill());
     this.registry.register(new ReportPackagingSkill());
+    this.registry.register(new CodeProjectGenerationSkill());
   }
 }

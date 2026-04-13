@@ -45,6 +45,13 @@ export async function plannerNode(
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
   validationOptions: PlanSemanticValidationOptions = {},
 ): Promise<Partial<AgentState>> {
+  const isReplan = state.replanCount > 0;
+  eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
+    taskId: state.taskId,
+    runId: state.runId,
+    isReplan,
+  });
+
   const skillSection = skillRegistry.getPlannerPromptSection();
 
   const toolInputExamples = [

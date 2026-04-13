@@ -191,6 +191,13 @@ export class AgentGateway
       .emit(TASK_EVENTS.RUN_CANCELLED, payload);
   }
 
+  @OnEvent(TASK_EVENTS.PLAN_GENERATING)
+  onPlanGenerating(payload: Record<string, unknown>) {
+    this.server
+      .to(this.taskRoom(payload))
+      .emit(TASK_EVENTS.PLAN_GENERATING, payload);
+  }
+
   @OnEvent(TASK_EVENTS.PLAN_CREATED)
   onPlanCreated(payload: Record<string, unknown>) {
     this.server

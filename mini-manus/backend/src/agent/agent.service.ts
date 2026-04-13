@@ -152,7 +152,7 @@ export class AgentService {
       allowedSideEffectSkills: readCsv(
         config.get<string>(
           'PLANNER_ALLOWED_SIDE_EFFECT_SKILLS',
-          'document_writing,report_packaging',
+          'document_writing,report_packaging,code_project_generation',
         ),
       ),
     };

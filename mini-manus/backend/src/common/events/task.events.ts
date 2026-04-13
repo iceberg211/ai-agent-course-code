@@ -6,6 +6,7 @@ export const TASK_EVENTS = {
   RUN_COMPLETED: 'run.completed',
   RUN_FAILED: 'run.failed',
   RUN_CANCELLED: 'run.cancelled',
+  PLAN_GENERATING: 'plan.generating',
   PLAN_CREATED: 'plan.created',
   STEP_STARTED: 'step.started',
   STEP_PROGRESS: 'step.progress',
