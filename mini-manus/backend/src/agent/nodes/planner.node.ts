@@ -59,13 +59,18 @@ export async function plannerNode(
       '- browse_url:      {"url": "https://..."}\n' +
       '- fetch_url_as_markdown: {"url": "https://..."}\n' +
       '- read_file:       {"task_id": "<taskId>", "path": "文件名"}\n' +
-      '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "..."}\n' +
+      // write_file 只用于单文件场景，多文件代码项目应使用 code_project_generation skill
+      '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "完整文件内容（非占位符）"}\n' +
       '- list_directory:  {"task_id": "<taskId>", "path": "."}\n' +
       '- download_file:   {"task_id": "<taskId>", "url": "https://...", "path": "资料.pdf"}\n' +
       '- extract_pdf_text: {"task_id": "<taskId>", "path": "资料.pdf"}\n' +
       '- export_pdf:      {"task_id": "<taskId>", "title": "报告", "content": "...", "path": "report.pdf"}\n' +
       '- github_search:   {"query": "langgraph agent", "max_results": 5}\n' +
-      '- think:           {"thought": "推理内容"}',
+      '- think:           {"thought": "推理内容"}\n\n' +
+      '⚠️ 选择执行器的关键原则：\n' +
+      '  • 任务涉及"生成多个代码文件"或"脚手架项目" → 必须使用 code_project_generation skill，不可拆成多个 write_file step\n' +
+      '  • write_file 只用于写单个配置文件、数据文件或 skill 内部辅助写入\n' +
+      '  • 调研/报告/briefing/对比 → 优先使用对应 skill（web_research / report_packaging / competitive_analysis 等）',
   ];
 
   if (toolRegistry.has('browser_open')) {
@@ -232,7 +237,7 @@ export async function plannerNode(
       steps: stepSummaries,
     };
     await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
-    const decision = interrupt(planReviewInfo) as 'approved' | 'rejected';
+    const decision = interrupt(planReviewInfo);
     await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
     if (decision === 'rejected') {
       return { shouldStop: true, errorMessage: 'plan_rejected' };

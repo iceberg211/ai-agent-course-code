@@ -19,13 +19,17 @@ const inputSchema = z.object({
     .describe('项目文件输出的根目录'),
 });
 
+const MAX_FILES = 10; // 单 step 最多生成文件数，防止串行 LLM 队列过长
+
 const fileListSchema = z.object({
-  files: z.array(
-    z.object({
-      path: z.string().min(1).describe('相对于 output_dir 的文件路径'),
-      description: z.string().describe('文件功能简述'),
-    }),
-  ),
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).describe('相对于 output_dir 的文件路径'),
+        description: z.string().describe('文件功能简述'),
+      }),
+    )
+    .max(MAX_FILES, `单次代码生成最多 ${MAX_FILES} 个文件，请精简项目范围`),
 });
 
 const outputSchema = z.object({
@@ -40,9 +44,9 @@ const fileListPrompt = ChatPromptTemplate.fromMessages([
     `你是一个项目脚手架助手。根据项目需求，规划需要生成的文件清单。
 
 要求：
+- 最多 ${MAX_FILES} 个文件，优先交付最核心的功能文件
 - 只列出真正需要的文件，不要过度设计
-- 包含配置文件（package.json, tsconfig.json 等）
-- 包含入口文件和核心代码
+- 包含配置文件（package.json, tsconfig.json 等）和入口文件
 - 路径使用正斜杠，相对于项目根目录
 - 只返回 JSON`,
   ],

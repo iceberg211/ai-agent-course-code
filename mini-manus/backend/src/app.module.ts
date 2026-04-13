@@ -41,8 +41,10 @@ const envSchema = z
       .default('write_file,download_file,export_pdf,browser_screenshot'),
     PLANNER_ALLOWED_SIDE_EFFECT_SKILLS: z
       .string()
-      .default('document_writing,report_packaging'),
+      .default('document_writing,report_packaging,code_project_generation'),
     STEP_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60_000),
+    SKILL_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300_000),
+    APPROVAL_TIMEOUT_MS: z.coerce.number().int().min(5000).default(600_000),
     TOOL_CACHE_TTL_MS: z.coerce.number().int().min(0).default(300_000),
     WORKSPACE_CLEANUP_ENABLED: z.string().default('false'),
     WORKSPACE_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),

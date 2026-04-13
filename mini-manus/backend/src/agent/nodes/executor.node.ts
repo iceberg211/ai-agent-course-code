@@ -105,17 +105,25 @@ async function resolveToolCallViaLLM(
 
   try {
     const llmWithTool = llm.bindTools([lcToolDef]);
-    const response = await withTimeout(llmWithTool.invoke([
-      new SystemMessage(
-        '你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。' +
-          '必须调用工具，不要只回复文字。',
+    // P2-1: AbortSignal 传给 LangChain invoke，让 SDK 尽量中止底层 HTTP 请求
+    // 注意：部分 provider 不完全支持 signal，withTimeout 是额外的 Promise.race 兜底
+    const response = await withTimeout(
+      llmWithTool.invoke(
+        [
+          new SystemMessage(
+            '你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。' +
+              '必须调用工具，不要只回复文字。',
+          ),
+          new HumanMessage(
+            `任务目标：${state.revisionInput}\n` +
+              `当前步骤：${step.description}\n\n` +
+              `前序步骤结果：\n${stepContext}${retryHint}`,
+          ),
+        ],
+        { signal },
       ),
-      new HumanMessage(
-        `任务目标：${state.revisionInput}\n` +
-          `当前步骤：${step.description}\n\n` +
-          `前序步骤结果：\n${stepContext}${retryHint}`,
-      ),
-    ]), TOOL_CALLING_TIMEOUT_MS);
+      TOOL_CALLING_TIMEOUT_MS,
+    );
 
     const toolCall = response.tool_calls?.[0];
     if (toolCall && toolCall.name === toolName) {
@@ -128,7 +136,10 @@ async function resolveToolCallViaLLM(
       const parsed = tool.schema.safeParse(argsWithRuntime);
       if (parsed.success) {
         logger.log(`Tool Calling 决议 ${toolName} 参数 ✓`);
-        return { name: toolCall.name, args: parsed.data as Record<string, unknown> };
+        return {
+          name: toolCall.name,
+          args: parsed.data as Record<string, unknown>,
+        };
       }
       logger.warn(
         `Tool Calling 参数校验失败: ${parsed.error.issues.map((i) => i.message).join('; ')}，fallback`,
@@ -158,7 +169,9 @@ async function resolveToolCallViaLLM(
     );
   }
 
-  logger.log(`Tool Calling 失败，fallback 到 Planner 原始参数（已校验无占位符）`);
+  logger.log(
+    `Tool Calling 失败，fallback 到 Planner 原始参数（已校验无占位符）`,
+  );
   return { name: toolName, args: fallbackInput };
 }
 
@@ -342,6 +355,13 @@ export async function executorNode(
         toolRegistry,
         signal,
       );
+
+      // P1-3：resolveToolCallViaLLM 可能耗时，resolve 后再次检查取消状态，
+      // 防止 cancel 信号发出后仍然执行 side-effect 工具（write_file、export_pdf 等）
+      if (signal.aborted) {
+        throw new Error('cancelled');
+      }
+
       const toolInput = attachRuntimeToolContext(resolved.args, state);
 
       eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {

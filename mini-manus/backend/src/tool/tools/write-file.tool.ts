@@ -6,10 +6,20 @@ import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
 import { classifyToolError } from '@/tool/utils/tool-error';
 import { WorkspaceService } from '@/workspace/workspace.service';
 
+/** 明显占位符模式 — 不可交付内容，直接拒绝写入 */
+const PLACEHOLDER_RE = /^(\.\.\.|TODO|PLACEHOLDER|<[^>]+>|\s*)$/i;
+
 const schema = z.object({
   task_id: z.string().uuid(),
   path: z.string().min(1).describe('Relative path inside workspace'),
-  content: z.string().describe('File content to write (overwrites existing)'),
+  content: z
+    .string()
+    .min(1, '写入内容不能为空')
+    .refine(
+      (v) => !PLACEHOLDER_RE.test(v.trim()),
+      '写入内容不能为占位符（"..."、"TODO" 等）',
+    )
+    .describe('File content to write (overwrites existing)'),
 });
 
 @Injectable()
