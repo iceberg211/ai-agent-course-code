@@ -1,80 +1,88 @@
-import { useMemo } from 'react'
-import '@/pages/task-center/task-center.scss'
-import { ArtifactSection } from '@/domains/artifact/components/artifact-section'
-import { useArtifactSelectionSync } from '@/domains/artifact/hooks/use-artifact-selection-sync'
-import { useSelectedArtifact } from '@/domains/artifact/hooks/use-selected-artifact'
-import { PlanSection } from '@/domains/plan/components/plan-section'
-import { RunDebugPanel } from '@/domains/run/components/run-debug-panel'
-import { TimelineSection } from '@/domains/run/components/timeline-section'
-import { useRunDetailQuery } from '@/domains/run/hooks/use-run-detail-query'
-import { useSelectedRun } from '@/domains/run/hooks/use-selected-run'
-import { TaskEditModal } from '@/domains/task/components/task-edit-modal'
-import { TaskSidebar } from '@/domains/task/components/task-sidebar'
-import { TaskSummaryPanel } from '@/domains/task/components/task-summary-panel'
-import { useSelectedRevision } from '@/domains/task/hooks/use-selected-revision'
-import { approveRun, rejectRun } from '@/core/api/task.api'
-import { useTaskActions } from '@/domains/task/hooks/use-task-actions'
-import { useTaskCenterPanels } from '@/domains/task/hooks/use-task-center-panels'
-import { useTaskDetailQuery } from '@/domains/task/hooks/use-task-detail-query'
-import { useTaskListQuery } from '@/domains/task/hooks/use-task-list-query'
-import { useTaskSelectionActions } from '@/domains/task/hooks/use-task-selection-actions'
-import { useTaskSelectionSync } from '@/domains/task/hooks/use-task-selection-sync'
-import { useSelectedTask } from '@/domains/task/hooks/use-selected-task'
-import { useTaskSocketSync } from '@/domains/task/hooks/use-task-socket-sync'
-import { Button } from '@/shared/ui/button'
-import { EmptyState } from '@/shared/ui/empty-state'
-import { StatusBadge } from '@/shared/ui/status-badge'
-import { cn } from '@/shared/utils/cn'
+import { useMemo } from "react";
+import "@/pages/task-center/task-center.scss";
+import { ArtifactSection } from "@/domains/artifact/components/artifact-section";
+import { useArtifactSelectionSync } from "@/domains/artifact/hooks/use-artifact-selection-sync";
+import { useSelectedArtifact } from "@/domains/artifact/hooks/use-selected-artifact";
+import { PlanSection } from "@/domains/plan/components/plan-section";
+import { RunDebugPanel } from "@/domains/run/components/run-debug-panel";
+import { TimelineSection } from "@/domains/run/components/timeline-section";
+import { useRunDetailQuery } from "@/domains/run/hooks/use-run-detail-query";
+import { useSelectedRun } from "@/domains/run/hooks/use-selected-run";
+import { TaskEditModal } from "@/domains/task/components/task-edit-modal";
+import { TaskSidebar } from "@/domains/task/components/task-sidebar";
+import { TaskSummaryPanel } from "@/domains/task/components/task-summary-panel";
+import { useSelectedRevision } from "@/domains/task/hooks/use-selected-revision";
+import { approveRun, rejectRun } from "@/core/api/task.api";
+import { useTaskActions } from "@/domains/task/hooks/use-task-actions";
+import { useTaskCenterPanels } from "@/domains/task/hooks/use-task-center-panels";
+import { useTaskDetailQuery } from "@/domains/task/hooks/use-task-detail-query";
+import { useTaskListQuery } from "@/domains/task/hooks/use-task-list-query";
+import { useTaskSelectionActions } from "@/domains/task/hooks/use-task-selection-actions";
+import { useTaskSelectionSync } from "@/domains/task/hooks/use-task-selection-sync";
+import { useSelectedTask } from "@/domains/task/hooks/use-selected-task";
+import { useTaskSocketSync } from "@/domains/task/hooks/use-task-socket-sync";
+import { Button } from "@/shared/ui/button";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { SkeletonLoader } from "@/shared/ui/skeleton-loader";
+import { cn } from "@/shared/utils/cn";
 
 export function TaskCenterPage() {
-  const panels = useTaskCenterPanels()
-  const selectionActions = useTaskSelectionActions()
-  const taskActions = useTaskActions()
-  const { selectedTaskId } = useSelectedTask()
-  const { selectedRevisionId } = useSelectedRevision()
-  const { selectedRunId } = useSelectedRun()
-  const { selectedArtifactId } = useSelectedArtifact()
-  const taskListQuery = useTaskListQuery()
-  const taskDetailQuery = useTaskDetailQuery(selectedTaskId)
+  const panels = useTaskCenterPanels();
+  const selectionActions = useTaskSelectionActions();
+  const taskActions = useTaskActions();
+  const { selectedTaskId } = useSelectedTask();
+  const { selectedRevisionId } = useSelectedRevision();
+  const { selectedRunId } = useSelectedRun();
+  const { selectedArtifactId } = useSelectedArtifact();
+  const taskListQuery = useTaskListQuery();
+  const taskDetailQuery = useTaskDetailQuery(selectedTaskId);
 
-  useTaskSelectionSync(taskListQuery.data, taskDetailQuery.data)
-  const { liveRunFeed, socketConnected } = useTaskSocketSync(selectedTaskId, selectedRunId)
+  useTaskSelectionSync(taskListQuery.data, taskDetailQuery.data);
+  const { liveRunFeed, socketConnected } = useTaskSocketSync(
+    selectedTaskId,
+    selectedRunId,
+  );
 
   const runDetailQuery = useRunDetailQuery(
     selectedTaskId,
     selectedRunId,
     taskDetailQuery.data?.currentRun ?? null,
-  )
+  );
 
-  useArtifactSelectionSync(runDetailQuery.runDetail?.artifacts)
+  useArtifactSelectionSync(runDetailQuery.runDetail?.artifacts);
 
   const selectedRevision = useMemo(
     () =>
-      taskDetailQuery.data?.revisions.find((revision) => revision.id === selectedRevisionId) ??
+      taskDetailQuery.data?.revisions.find(
+        (revision) => revision.id === selectedRevisionId,
+      ) ??
       taskDetailQuery.data?.revisions[0] ??
       null,
     [selectedRevisionId, taskDetailQuery.data?.revisions],
-  )
+  );
 
   const revisionRuns = useMemo(() => {
-    if (!taskDetailQuery.data || !selectedRevision) return []
+    if (!taskDetailQuery.data || !selectedRevision) return [];
 
     return taskDetailQuery.data.runs
       .filter((run) => run.revisionId === selectedRevision.id)
-      .sort((left, right) => right.runNumber - left.runNumber)
-  }, [selectedRevision, taskDetailQuery.data])
+      .sort((left, right) => right.runNumber - left.runNumber);
+  }, [selectedRevision, taskDetailQuery.data]);
 
-  const currentRun = runDetailQuery.runDetail
-  const hasTasks = (taskListQuery.data?.length ?? 0) > 0
+  const currentRun = runDetailQuery.runDetail;
+  const hasTasks = (taskListQuery.data?.length ?? 0) > 0;
   const currentRevisionInput =
     taskDetailQuery.data?.revisions.find(
       (revision) => revision.id === taskDetailQuery.data.task.currentRevisionId,
-    )?.input ?? ''
+    )?.input ?? "";
 
   return (
     <div className="task-center-shell">
       <div
-        className={cn('task-center-shell__scrim', panels.isSidebarOpen && 'task-center-shell__scrim--visible')}
+        className={cn(
+          "task-center-shell__scrim",
+          panels.isSidebarOpen && "task-center-shell__scrim--visible",
+        )}
         onClick={panels.closeSidebar}
       />
 
@@ -108,11 +116,7 @@ export function TaskCenterPage() {
           </section>
         ) : !taskDetailQuery.data ? (
           <section className="task-center-empty">
-            <div className="skeleton-loader">
-              <div className="skeleton-title" style={{ width: '40%', height: '24px', background: 'rgba(0,0,0,0.06)', borderRadius: '4px', marginBottom: '16px' }} />
-              <div className="skeleton-line" style={{ width: '80%', height: '16px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px', marginBottom: '12px' }} />
-              <div className="skeleton-line" style={{ width: '60%', height: '16px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
-            </div>
+            <SkeletonLoader />
           </section>
         ) : (
           <div className="task-center-grid">
@@ -122,15 +126,17 @@ export function TaskCenterPage() {
               isRetrying={taskActions.retryTaskMutation.isPending}
               liveRunFeed={liveRunFeed}
               onCancel={() => {
-                if (selectedTaskId) taskActions.cancelTaskMutation.mutate(selectedTaskId)
+                if (selectedTaskId)
+                  taskActions.cancelTaskMutation.mutate(selectedTaskId);
               }}
               onOpenEdit={panels.openEditModal}
               onRetry={() => {
-                if (selectedTaskId) taskActions.retryTaskMutation.mutate(selectedTaskId)
+                if (selectedTaskId)
+                  taskActions.retryTaskMutation.mutate(selectedTaskId);
               }}
               onSelectRevision={selectionActions.selectRevision}
               onSelectRun={selectionActions.selectRun}
-              revisionInput={selectedRevision?.input ?? ''}
+              revisionInput={selectedRevision?.input ?? ""}
               revisions={taskDetailQuery.data.revisions}
               runs={revisionRuns}
               selectedRevisionId={selectedRevision?.id ?? null}
@@ -149,7 +155,7 @@ export function TaskCenterPage() {
             {/* 执行过程 + 计划：并列 */}
             <section className="task-center-grid__columns">
               <TimelineSection
-                taskId={selectedTaskId ?? ''}
+                taskId={selectedTaskId ?? ""}
                 liveRunFeed={liveRunFeed}
                 plans={currentRun?.plans ?? []}
                 stepRuns={currentRun?.stepRuns ?? []}
@@ -166,7 +172,10 @@ export function TaskCenterPage() {
             {/* 执行指标 — 默认折叠，面向调试场景 */}
             <details className="task-metrics-disclosure">
               <summary>执行指标</summary>
-              <RunDebugPanel liveRunFeed={liveRunFeed} runDetail={currentRun ?? null} />
+              <RunDebugPanel
+                liveRunFeed={liveRunFeed}
+                runDetail={currentRun ?? null}
+              />
             </details>
           </div>
         )}
@@ -179,10 +188,13 @@ export function TaskCenterPage() {
         onClose={panels.closeEditModal}
         onSubmit={(input) =>
           selectedTaskId
-            ? taskActions.editTaskMutation.mutateAsync({ input, taskId: selectedTaskId })
+            ? taskActions.editTaskMutation.mutateAsync({
+                input,
+                taskId: selectedTaskId,
+              })
             : Promise.resolve()
         }
       />
     </div>
-  )
+  );
 }

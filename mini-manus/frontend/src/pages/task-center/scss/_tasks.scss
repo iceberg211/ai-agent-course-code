@@ -1,5 +1,6 @@
 @use 'tokens' as t;
 @use 'mixins' as m;
+@use 'sass:color';
 
 // ─── Task Header ─────────────────────────────────────────────────────────────
 .task-header {
@@ -229,7 +230,7 @@
     &--approve {
       background: t.$success;
       color: #fff;
-      &:hover:not(:disabled) { background: darken(t.$success, 5%); }
+      &:hover:not(:disabled) { background: color.adjust(t.$success, $lightness: -5%); }
     }
 
     &--reject {

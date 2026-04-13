@@ -1,5 +1,6 @@
 @use 'tokens' as t;
 @use 'mixins' as m;
+@use 'sass:color';
 
 // ─── Buttons ──────────────────────────────────────────────────────────────────
 .ui-button {
@@ -18,7 +19,7 @@
     box-shadow: 0 4px 12px rgba(161, 75, 43, 0.2);
 
     &:hover:not(:disabled) {
-      background: lighten(t.$accent, 5%);
+      background: color.adjust(t.$accent, $lightness: 5%);
       box-shadow: 0 6px 16px rgba(161, 75, 43, 0.3);
     }
   }
