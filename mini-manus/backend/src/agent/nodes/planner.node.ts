@@ -7,7 +7,7 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
-import { plannerPrompt } from '@/prompts';
+import { plannerPrompt, INTENT_GUIDANCE } from '@/prompts';
 import {
   PlanSemanticValidationOptions,
   validatePlanSemantics,
@@ -46,11 +46,14 @@ export async function plannerNode(
   validationOptions: PlanSemanticValidationOptions = {},
 ): Promise<Partial<AgentState>> {
   const isReplan = state.replanCount > 0;
-  eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
-    taskId: state.taskId,
-    runId: state.runId,
-    isReplan,
-  });
+  // replan 时 router 被跳过，planner 自己发事件
+  if (isReplan) {
+    eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
+      taskId: state.taskId,
+      runId: state.runId,
+      isReplan: true,
+    });
+  }
 
   const skillSection = skillRegistry.getPlannerPromptSection();
 
@@ -120,6 +123,11 @@ export async function plannerNode(
   );
   const chain = buildGuardedPlannerChain(llmChain);
 
+  const intentGuidance = INTENT_GUIDANCE[state.taskIntent] ?? '';
+  if (intentGuidance) {
+    logger.log(`应用意图特化策略: ${state.taskIntent}`);
+  }
+
   const baseInvokeArgs = {
     revisionInput: state.revisionInput,
     taskId: state.taskId,
@@ -127,6 +135,7 @@ export async function plannerNode(
     skillSection,
     toolSection,
     memoryContext,
+    intentGuidance,
   };
 
   // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────

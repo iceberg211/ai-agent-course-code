@@ -19,74 +19,95 @@ const inputSchema = z.object({
     .describe('项目文件输出的根目录'),
 });
 
-const MAX_FILES = 10; // 单 step 最多生成文件数，防止串行 LLM 队列过长
-
-const fileListSchema = z.object({
-  files: z
-    .array(
-      z.object({
-        path: z.string().min(1).describe('相对于 output_dir 的文件路径'),
-        description: z.string().describe('文件功能简述'),
-      }),
-    )
-    .max(MAX_FILES, `单次代码生成最多 ${MAX_FILES} 个文件，请精简项目范围`),
-});
-
 const outputSchema = z.object({
   files: z.array(z.string()),
   file_count: z.number(),
 });
 
-// 第一步：生成文件清单（structured output，内容短，安全）
-const fileListPrompt = ChatPromptTemplate.fromMessages([
+// ─── 单 Artifact 模式 ─────────────────────────────────────────────────────────
+// 业界最佳实践（bolt.new / Claude Artifacts）：一次 LLM 调用生成所有文件，
+// 用分隔标记拆分，保证文件间上下文一致性，成本降为逐文件方案的 1/N。
+
+const FILE_SEPARATOR = '---FILE:';
+
+const projectPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
-    `你是一个项目脚手架助手。根据项目需求，规划需要生成的文件清单。
+    `你是一个全栈项目生成助手。一次性生成项目所有文件的完整内容。
 
-要求：
-- 最多 ${MAX_FILES} 个文件，优先交付最核心的功能文件
-- 只列出真正需要的文件，不要过度设计
-- 包含配置文件（package.json, tsconfig.json 等）和入口文件
-- 路径使用正斜杠，相对于项目根目录
-- 只返回 JSON`,
-  ],
-  [
-    'human',
-    `项目需求：{projectDescription}
+输出格式要求：
+- 每个文件用 "${FILE_SEPARATOR} 相对路径" 作为开头标记（独占一行）
+- 标记行后紧接文件的完整内容
+- 文件内容不要包裹在代码块中
+- 按依赖顺序排列（配置文件在前，业务代码在后）
+- 最多 10 个核心文件，不要过度设计
 
-请返回文件清单 JSON（files 数组，每项含 path 和 description）：`,
-  ],
-]);
-
-// 第二步：逐个文件生成内容（纯文本输出，避免长代码塞 JSON）
-const fileContentPrompt = ChatPromptTemplate.fromMessages([
-  [
-    'system',
-    `你是一个代码生成助手。根据项目需求和文件描述，生成完整的文件内容。
+示例格式：
+${FILE_SEPARATOR} package.json
+{
+  "name": "my-app",
+  "scripts": { "dev": "vite" }
+}
+${FILE_SEPARATOR} src/main.tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
 
 要求：
 - 生成完整可运行的代码，不要省略
-- 直接输出文件内容，不要包裹在代码块中
-- 不要输出文件名或注释前缀`,
+- 文件间的 import/require 路径必须一致
+- 配置文件（package.json, tsconfig 等）的依赖版本使用当前主流稳定版`,
   ],
   [
     'human',
     `项目需求：{projectDescription}
 
-当前文件：{filePath}
-文件功能：{fileDescription}
-
-已生成的其他文件路径：
-{existingFiles}
-
-请直接输出该文件的完整内容：`,
+请按上述格式一次性输出所有文件：`,
   ],
 ]);
+
+/** 解析 LLM 输出中的 ---FILE: path--- 分隔块 */
+function parseFileBlocks(
+  raw: string,
+): Array<{ path: string; content: string }> {
+  const files: Array<{ path: string; content: string }> = [];
+  // 按 ---FILE: 分割
+  const parts = raw.split(new RegExp(`^${FILE_SEPARATOR}\\s*`, 'm'));
+
+  for (const part of parts) {
+    if (!part.trim()) continue;
+
+    const newlineIdx = part.indexOf('\n');
+    if (newlineIdx === -1) continue;
+
+    const pathLine = part.slice(0, newlineIdx).trim();
+    // 清理路径：去掉可能的 --- 后缀和引号
+    const path = pathLine.replace(/\s*-+\s*$/, '').replace(/['"]/g, '').trim();
+    if (!path) continue;
+
+    let content = part.slice(newlineIdx + 1);
+    // 清理 LLM 可能附带的代码块包裹
+    content = content
+      .replace(
+        /^```(?:typescript|javascript|json|html|css|tsx|jsx|yaml|toml|sh)?\n/i,
+        '',
+      )
+      .replace(/\n```\s*$/i, '')
+      .trimEnd();
+
+    if (content) {
+      files.push({ path, content });
+    }
+  }
+
+  return files;
+}
 
 export class CodeProjectGenerationSkill implements Skill {
   readonly name = 'code_project_generation';
   readonly description =
-    '根据项目需求生成完整的多文件代码项目（如 React/Vue/Node.js 等），一个 Plan step 内部完成所有文件的创建。';
+    '根据项目需求一次性生成完整的多文件代码项目（React/Vue/Node.js 等），单个 Plan step 内完成。';
   readonly inputSchema = inputSchema;
   readonly outputSchema = outputSchema;
   readonly effect = 'side-effect' as const;
@@ -99,82 +120,59 @@ export class CodeProjectGenerationSkill implements Skill {
       inputSchema.parse(input);
     const rootDir = output_dir ?? 'project';
 
-    // ── 第一步：规划文件清单 ──
+    // ── 一次 LLM 调用生成所有文件（单 Artifact 模式）──
     yield {
       type: 'progress',
-      message: `正在规划项目文件结构…`,
+      message: '正在生成项目代码（单次生成所有文件）…',
     };
 
-    const fileListChain = fileListPrompt.pipe(
-      ctx.llm.withStructuredOutput(fileListSchema, { method: ctx.soMethod }),
-    );
-    const { files: fileList } = await fileListChain.invoke({
+    const chain = projectPrompt.pipe(ctx.llm);
+    const response = await chain.invoke({
       projectDescription: project_description,
     });
 
+    const rawContent =
+      typeof response.content === 'string'
+        ? response.content
+        : Array.isArray(response.content)
+          ? response.content
+              .map((c) => (typeof c === 'string' ? c : JSON.stringify(c)))
+              .join('')
+          : JSON.stringify(response.content);
+
     if (ctx.signal.aborted) return;
+
+    // ── 解析文件块 ──
+    const files = parseFileBlocks(rawContent);
+
+    if (files.length === 0) {
+      throw new Error(
+        '代码生成失败：LLM 输出中未找到有效的文件块（需要 ---FILE: path 分隔标记）',
+      );
+    }
 
     yield {
       type: 'progress',
-      message: `已规划 ${fileList.length} 个文件，开始逐个生成…`,
+      message: `已生成 ${files.length} 个文件，正在写入…`,
     };
 
-    // ── 第二步：逐个文件生成内容并写入 ──
+    // ── 批量写入 ──
     const writtenFiles: string[] = [];
 
-    for (let i = 0; i < fileList.length; i++) {
+    for (const file of files) {
       if (ctx.signal.aborted) break;
 
-      const file = fileList[i];
       const filePath = `${rootDir}/${file.path}`;
 
       yield {
-        type: 'progress',
-        message: `正在生成 (${i + 1}/${fileList.length}): ${file.path}`,
-      };
-
-      // 纯文本生成文件内容（不走 structured output，避免长代码 JSON 编码崩溃）
-      const contentChain = fileContentPrompt.pipe(ctx.llm);
-      const response = await contentChain.invoke({
-        projectDescription: project_description,
-        filePath: file.path,
-        fileDescription: file.description,
-        existingFiles:
-          writtenFiles.length > 0
-            ? writtenFiles.join('\n')
-            : '（这是第一个文件）',
-      });
-
-      const content =
-        typeof response.content === 'string'
-          ? response.content
-          : Array.isArray(response.content)
-            ? response.content
-                .map((c) => (typeof c === 'string' ? c : JSON.stringify(c)))
-                .join('')
-            : JSON.stringify(response.content);
-
-      // 清理 LLM 可能附带的代码块包裹
-      const cleaned = content
-        .replace(
-          /^```(?:typescript|javascript|json|html|css|tsx|jsx|yaml|toml)?\n/i,
-          '',
-        )
-        .replace(/\n```\s*$/i, '')
-        .trim();
-
-      if (ctx.signal.aborted) break;
-
-      // 写入文件
-      yield {
         type: 'tool_call',
         tool: 'write_file',
-        input: { task_id, path: filePath, content: cleaned },
+        input: { task_id, path: filePath, content: file.content },
       };
       const writeResult = await ctx.tools.executeWithCache('write_file', {
         task_id,
         path: filePath,
-        content: cleaned,
+        content: file.content,
       });
       yield {
         type: 'tool_result',

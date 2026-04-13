@@ -30,6 +30,8 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
 
 {toolSection}
 
+{intentGuidance}
+
 规划要求：
 1. 如果某一步能被已加载的 skill 覆盖，优先使用 skill（填写 skillName 和 skillInput，留空 toolHint / toolInput）
 2. 如果没有合适的 skill，填写 toolHint（工具名）和 toolInput（完整参数对象），留空 skillName
@@ -43,6 +45,27 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
 当前任务ID（用于文件操作）：{taskId}{completedContext}{memoryContext}{validationErrors}`,
   ],
 ]);
+
+// ─── 意图特化规划指引（由 Router 分类结果决定）────────────────────────────────
+export const INTENT_GUIDANCE: Record<string, string> = {
+  code_generation: `【代码生成任务专用规划策略】
+- 必须使用 code_project_generation skill 生成代码文件，禁止拆成多个 write_file step
+- 推荐流程：web_research（可选，调研技术方案）→ code_project_generation → report_packaging（可选）
+- 如果需求明确，可以直接 code_project_generation，不需要调研`,
+  research_report: `【调研报告任务专用规划策略】
+- 推荐流程：web_research → competitive_analysis 或 document_writing → report_packaging
+- 搜索至少 2-3 个不同维度的关键词
+- 最终必须用 report_packaging 或 document_writing 输出正式报告`,
+  competitive_analysis: `【对比分析任务专用规划策略】
+- 必须使用 competitive_analysis skill 执行对比
+- 推荐流程：competitive_analysis → report_packaging
+- 两个对比对象都需要充分的数据支撑`,
+  content_writing: `【内容撰写任务专用规划策略】
+- 推荐使用 document_writing skill
+- 如果需要素材，先 web_research 收集，再 document_writing 撰写
+- 推荐流程：web_research（可选）→ document_writing → report_packaging（可选）`,
+  general: '',
+};
 
 // ─── Evaluator ────────────────────────────────────────────────────────────────
 // 评估当前步骤的执行结果，输出结构化决策

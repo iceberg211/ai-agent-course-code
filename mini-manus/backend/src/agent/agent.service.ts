@@ -17,6 +17,7 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
 import { EventPublisher } from '@/event/event.publisher';
 import { BrowserSessionService } from '@/browser/browser-session.service';
+import { routerNode } from '@/agent/nodes/router.node';
 import { plannerNode } from '@/agent/nodes/planner.node';
 import { executorNode } from '@/agent/nodes/executor.node';
 import { evaluatorNode } from '@/agent/nodes/evaluator.node';
@@ -205,6 +206,9 @@ export class AgentService {
 
     // Build StateGraph
     const graph = new StateGraph(AgentStateAnnotation)
+      .addNode('router', async (state: AgentState) => {
+        return routerNode(state, llm, eventPublisher, soMethod);
+      })
       .addNode('planner', async (state: AgentState) => {
         return plannerNode(
           state,
@@ -255,7 +259,8 @@ export class AgentService {
           tokenBudgetGuard,
         );
       })
-      .addEdge(START, 'planner')
+      .addEdge(START, 'router')
+      .addEdge('router', 'planner')
       .addEdge('planner', 'executor')
       .addEdge('executor', 'evaluator')
       .addConditionalEdges('evaluator', (state: AgentState) => {

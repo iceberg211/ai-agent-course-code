@@ -17,6 +17,14 @@ export interface EvaluationResult {
   metadata?: Record<string, unknown>;
 }
 
+/** 意图路由结果，决定 Planner 使用哪种规划策略 */
+export type TaskIntent =
+  | 'code_generation'
+  | 'research_report'
+  | 'competitive_analysis'
+  | 'content_writing'
+  | 'general';
+
 export interface PlanStepDef {
   stepIndex: number;
   description: string;
@@ -47,6 +55,11 @@ export const AgentStateAnnotation = Annotation.Root({
   executionOrder: Annotation<number>({ reducer: (_, b) => b }),
   shouldStop: Annotation<boolean>({ reducer: (_, b) => b }),
   errorMessage: Annotation<string | null>({ reducer: (_, b) => b }),
+  // Intent Router 输出，Planner 据此选择规划策略
+  taskIntent: Annotation<TaskIntent>({
+    reducer: (_, b) => b,
+    default: () => 'general',
+  }),
   // HITL: approval mode carried through the run
   approvalMode: Annotation<ApprovalMode>({
     reducer: (_, b) => b,
