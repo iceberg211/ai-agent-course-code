@@ -60,7 +60,15 @@ function readBoolean(
   defaultValue: boolean,
 ): boolean {
   if (value == null) return defaultValue;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function readCleanString(
+  value: string | undefined,
+  defaultValue: string,
+): string {
+  const trimmed = value?.trim();
+  return trimmed?.length ? trimmed : defaultValue;
 }
 
 function readCsv(value: string | undefined): string[] {
@@ -115,11 +123,16 @@ export class AgentService {
       config.get<string>('LLM_CACHE_ENABLED'),
       true,
     );
-    this.modelName = config.get<string>('MODEL_NAME', 'gpt-4o-mini');
+    this.modelName = readCleanString(
+      config.get<string>('MODEL_NAME'),
+      'gpt-4o-mini',
+    );
     this.llm = new ChatOpenAI({
       modelName: this.modelName,
-      apiKey: config.get<string>('OPENAI_API_KEY', ''),
-      configuration: { baseURL: config.get<string>('OPENAI_BASE_URL') },
+      apiKey: readCleanString(config.get<string>('OPENAI_API_KEY'), ''),
+      configuration: {
+        baseURL: config.get<string>('OPENAI_BASE_URL')?.trim(),
+      },
       temperature: 0,
       cache: llmCacheEnabled ? new InMemoryCache() : undefined,
     });
@@ -148,10 +161,9 @@ export class AgentService {
       false,
     );
 
-    const raw = config.get<string>(
-      'STRUCTURED_OUTPUT_METHOD',
-      'functionCalling',
-    );
+    const raw = config
+      .get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling')
+      .trim();
     this.structuredOutputMethod = (
       ['functionCalling', 'json_schema', 'jsonMode'].includes(raw)
         ? raw
@@ -299,7 +311,6 @@ export class AgentService {
       let invokeInput: Partial<AgentState> | Command = initialState;
 
       while (true) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await compiled.invoke(invokeInput as any, {
           ...graphConfig,
           callbacks: [tokenTracker],

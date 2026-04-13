@@ -93,7 +93,10 @@ export function TaskCenterPage() {
         onCreateTask={(input, approvalMode) =>
           taskActions.createTaskMutation.mutateAsync({ input, approvalMode })
         }
-        onSelectTask={selectionActions.selectTask}
+        onSelectTask={(id) => {
+          selectionActions.selectTask(id);
+          panels.closeSidebar();
+        }}
         onDeleteTask={(id) => taskActions.deleteTaskMutation.mutate(id)}
         selectedTaskId={selectedTaskId}
         tasks={taskListQuery.data ?? []}

@@ -18,7 +18,10 @@ import { ApiKeyGuard } from '@/common/auth/api-key.guard';
 const envSchema = z
   .object({
     NODE_ENV: z
-      .enum(['development', 'test', 'production'])
+      .preprocess(
+        (val) => (typeof val === 'string' ? val.trim() : val),
+        z.enum(['development', 'test', 'production']),
+      )
       .default('development'),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL 不能为空'),
     OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY 不能为空'),

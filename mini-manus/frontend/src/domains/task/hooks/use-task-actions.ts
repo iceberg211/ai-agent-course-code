@@ -33,6 +33,7 @@ export function useTaskActions() {
       createTask(input, approvalMode),
     onSuccess: async (task) => {
       selectionActions.selectTask(task.id)
+      panels.closeSidebar()
       await queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
     },
   })

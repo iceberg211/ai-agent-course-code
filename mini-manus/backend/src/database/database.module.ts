@@ -21,7 +21,10 @@ import {
           entities: [__dirname + '/../**/*.entity.{ts,js}'],
           migrations: [__dirname + '/../migrations/*.{ts,js}'],
           synchronize: false,
-          logging: config.get('NODE_ENV') === 'development',
+          logging:
+            config.get('NODE_ENV') === 'development'
+              ? ['error', 'warn', 'migration']
+              : ['error'],
         };
       },
     }),
