@@ -9,6 +9,7 @@ export interface TaskSummary {
   currentRunId: string | null
   createdAt: string
   updatedAt: string
+  latestSummary: string | null
 }
 
 export interface TaskRevision {

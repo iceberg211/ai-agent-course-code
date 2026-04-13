@@ -14,6 +14,7 @@ export const TASK_EVENTS = {
   toolCompleted: 'tool.completed',
   artifactCreated: 'artifact.created',
   runTokenUsage: 'run.token_usage',
+  runAwaitingApproval: 'run.awaiting_approval',
   taskSnapshot: 'task:snapshot',
 } as const
 
@@ -32,4 +33,5 @@ export const TASK_ROOM_EVENTS = [
   TASK_EVENTS.toolCompleted,
   TASK_EVENTS.artifactCreated,
   TASK_EVENTS.runTokenUsage,
+  TASK_EVENTS.runAwaitingApproval,
 ] as const

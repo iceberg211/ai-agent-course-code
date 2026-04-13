@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { PlanDetail } from '@/domains/plan/types/plan.types'
 import type { LiveRunFeed, StepRunDetail } from '@/domains/run/types/run.types'
+import { ApprovalPanel } from '@/domains/run/components/approval-panel'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { StatusBadge } from '@/shared/ui/status-badge'
@@ -8,12 +9,15 @@ import { formatDateTime, formatDuration } from '@/shared/utils/date'
 import { prettyJson } from '@/shared/utils/text'
 
 interface TimelineSectionProps {
+  taskId: string
   liveRunFeed: LiveRunFeed | null
   plans: PlanDetail[]
   stepRuns: StepRunDetail[]
+  onApprove: (taskId: string, runId: string) => Promise<void>
+  onReject: (taskId: string, runId: string) => Promise<void>
 }
 
-export function TimelineSection({ liveRunFeed, plans, stepRuns }: TimelineSectionProps) {
+export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprove, onReject }: TimelineSectionProps) {
   const stepDescriptions = useMemo(() => {
     const map = new Map<string, string>()
 
@@ -54,6 +58,16 @@ export function TimelineSection({ liveRunFeed, plans, stepRuns }: TimelineSectio
                 <span>{formatDateTime(liveRunFeed.lastEventAt ?? liveRunFeed.startedAt)}</span>
               </div>
             </div>
+
+            {liveRunFeed.pendingApproval ? (
+              <ApprovalPanel
+                runId={liveRunFeed.runId}
+                taskId={taskId}
+                pendingApproval={liveRunFeed.pendingApproval}
+                onApprove={onApprove}
+                onReject={onReject}
+              />
+            ) : null}
 
             {activeLiveStep ? (
               <div className="timeline-live__body">

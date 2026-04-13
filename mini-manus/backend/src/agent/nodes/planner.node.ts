@@ -13,8 +13,10 @@ import {
   validatePlanSemantics,
   formatValidationErrors,
 } from '@/agent/plan-semantic-validator';
+import { interrupt } from '@langchain/langgraph';
 import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
 import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
+import { RunStatus } from '@/common/enums';
 
 const logger = new Logger('PlannerNode');
 
@@ -200,6 +202,35 @@ export async function plannerNode(
     planId: plan.id,
     steps: planSteps as unknown as Record<string, unknown>[],
   });
+
+  // ─── plan_first HITL：计划生成后、执行前暂停等待用户审批 ──────────────────────
+  if (state.approvalMode === 'plan_first') {
+    const stepSummaries = planSteps.map((s) => ({
+      stepIndex: s.stepIndex,
+      description: s.description,
+      executor: s.skillName ?? s.toolHint ?? 'think',
+      isSideEffect:
+        (s.skillName && skillRegistry.has(s.skillName)
+          ? skillRegistry.get(s.skillName).effect === 'side-effect'
+          : false) ||
+        (s.toolHint && toolRegistry.has(s.toolHint)
+          ? toolRegistry.get(s.toolHint).type === 'side-effect'
+          : false),
+    }));
+
+    const planReviewInfo = {
+      type: 'plan_review' as const,
+      planId: plan.id,
+      stepCount: planSteps.length,
+      steps: stepSummaries,
+    };
+    await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
+    const decision = interrupt(planReviewInfo) as 'approved' | 'rejected';
+    await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
+    if (decision === 'rejected') {
+      return { shouldStop: true, errorMessage: 'plan_rejected' };
+    }
+  }
 
   return {
     currentPlan: planDef,

@@ -7,7 +7,7 @@ import {
   releaseTaskSocket,
 } from '@/core/socket/socket-client'
 import { TASK_EVENTS } from '@/core/socket/task-events'
-import type { LiveRunFeed, LiveStepFeed, TokenUsage } from '@/domains/run/types/run.types'
+import type { LiveRunFeed, LiveStepFeed, PendingApproval, TokenUsage } from '@/domains/run/types/run.types'
 import type { TaskDetail } from '@/domains/task/types/task.types'
 import type { ExecutorType, RunStatus } from '@/shared/types/status'
 
@@ -114,6 +114,7 @@ function makeRunFeed(
     stepOrder: current?.stepOrder ?? [],
     steps: current?.steps ?? {},
     tokenUsage: current?.tokenUsage ?? null,
+    pendingApproval: current?.pendingApproval ?? null,
   }
 }
 
@@ -130,14 +131,31 @@ function getUnixTime(iso: string | null | undefined) {
   return new Date(iso).getTime()
 }
 
+/** PostgreSQL decimal 字段经 WebSocket snapshot 时以字符串形式到达，需转为 number */
+function toNum(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function normalizeRunNumbers<T extends { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown; estimatedCostUsd?: unknown }>(run: T) {
+  return {
+    ...run,
+    inputTokens: toNum(run.inputTokens),
+    outputTokens: toNum(run.outputTokens),
+    totalTokens: toNum(run.totalTokens),
+    estimatedCostUsd: toNum(run.estimatedCostUsd),
+  }
+}
+
 function normalizeSnapshot(snapshot: TaskDetail): TaskDetail {
   const revisions = [...snapshot.revisions].sort((left, right) => right.version - left.version)
-  const runs = [...snapshot.runs].sort(
-    (left, right) => getUnixTime(right.createdAt) - getUnixTime(left.createdAt),
-  )
+  const runs = [...snapshot.runs]
+    .sort((left, right) => getUnixTime(right.createdAt) - getUnixTime(left.createdAt))
+    .map(normalizeRunNumbers)
   const currentRun = snapshot.currentRun
     ? {
-        ...snapshot.currentRun,
+        ...normalizeRunNumbers(snapshot.currentRun),
         plans: [...snapshot.currentRun.plans]
           .sort((left, right) => right.version - left.version)
           .map((plan) => ({
@@ -503,6 +521,25 @@ export function useTaskSocketSync(
     )
   })
 
+  const handleRunAwaitingApproval = useEffectEvent((payload: BasePayload & Record<string, unknown>) => {
+    setLiveRunFeeds((cur) =>
+      patchFeed(cur, payload.taskId, payload.runId, (feed) => ({
+        ...feed,
+        runStatus: 'awaiting_approval' as RunStatus,
+        latestNarration: payload['type'] === 'plan_review' ? '计划已生成，等待审批后开始执行' : '步骤等待审批',
+        pendingApproval: {
+          type: (payload['type'] as 'plan_review' | 'step_review') ?? 'step_review',
+          planId: payload['planId'] as string | undefined,
+          stepCount: payload['stepCount'] as number | undefined,
+          steps: payload['steps'] as PendingApproval['steps'],
+          description: payload['description'] as string | undefined,
+          toolOrSkill: payload['toolOrSkill'] as string | undefined,
+          isSideEffect: payload['isSideEffect'] as boolean | undefined,
+        },
+      })),
+    )
+  })
+
   // ── Socket 生命周期 ────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -533,6 +570,7 @@ export function useTaskSocketSync(
     socket.on(TASK_EVENTS.runCancelled, onRunCancelled)
     socket.on(TASK_EVENTS.artifactCreated, handleArtifactCreated)
     socket.on(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
+    socket.on(TASK_EVENTS.runAwaitingApproval, handleRunAwaitingApproval)
 
     return () => {
       socket.off('connect', onConnect)
@@ -553,6 +591,7 @@ export function useTaskSocketSync(
       socket.off(TASK_EVENTS.runCancelled, onRunCancelled)
       socket.off(TASK_EVENTS.artifactCreated, handleArtifactCreated)
       socket.off(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
+      socket.off(TASK_EVENTS.runAwaitingApproval, handleRunAwaitingApproval)
       setSocketConnected(false)
       releaseTaskSocket()
     }

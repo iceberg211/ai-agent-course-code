@@ -12,6 +12,7 @@ import { TaskEditModal } from '@/domains/task/components/task-edit-modal'
 import { TaskSidebar } from '@/domains/task/components/task-sidebar'
 import { TaskSummaryPanel } from '@/domains/task/components/task-summary-panel'
 import { useSelectedRevision } from '@/domains/task/hooks/use-selected-revision'
+import { approveRun, rejectRun } from '@/core/api/task.api'
 import { useTaskActions } from '@/domains/task/hooks/use-task-actions'
 import { useTaskCenterPanels } from '@/domains/task/hooks/use-task-center-panels'
 import { useTaskDetailQuery } from '@/domains/task/hooks/use-task-detail-query'
@@ -81,7 +82,9 @@ export function TaskCenterPage() {
         isOpen={panels.isSidebarOpen}
         isCreating={taskActions.createTaskMutation.isPending}
         onClose={panels.closeSidebar}
-        onCreateTask={(input) => taskActions.createTaskMutation.mutateAsync(input)}
+        onCreateTask={(input, approvalMode) =>
+          taskActions.createTaskMutation.mutateAsync({ input, approvalMode })
+        }
         onSelectTask={selectionActions.selectTask}
         onDeleteTask={(id) => taskActions.deleteTaskMutation.mutate(id)}
         selectedTaskId={selectedTaskId}
@@ -144,9 +147,12 @@ export function TaskCenterPage() {
                 stepRuns={currentRun?.stepRuns ?? []}
               />
               <TimelineSection
+                taskId={selectedTaskId ?? ''}
                 liveRunFeed={liveRunFeed}
                 plans={currentRun?.plans ?? []}
                 stepRuns={currentRun?.stepRuns ?? []}
+                onApprove={approveRun}
+                onReject={rejectRun}
               />
             </section>
 

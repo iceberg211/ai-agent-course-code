@@ -29,10 +29,10 @@ export function useTaskActions() {
   )
 
   const createTaskMutation = useMutation({
-    mutationFn: createTask,
+    mutationFn: ({ input, approvalMode }: { input: string; approvalMode?: import('@/core/api/task.api').ApprovalMode }) =>
+      createTask(input, approvalMode),
     onSuccess: async (task) => {
       selectionActions.selectTask(task.id)
-      // 刷新列表，detail 由 selectTask 触发 query
       await queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
     },
   })

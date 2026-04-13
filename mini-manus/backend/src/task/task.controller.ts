@@ -143,6 +143,17 @@ export class TaskController {
     return { message: 'retry started' };
   }
 
+  // ─── 克隆任务 ────────────────────────────────────────────
+  @Post(':id/clone')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '克隆任务，使用相同描述创建新任务并立即执行' })
+  @ApiParam({ name: 'id', description: '任务 UUID' })
+  @ApiResponse({ status: 201, description: '新创建的任务对象' })
+  @ApiResponse({ status: 404, description: '任务不存在' })
+  async clone(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.taskService.cloneTask(id);
+  }
+
   // ─── 删除任务 ────────────────────────────────────────────
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

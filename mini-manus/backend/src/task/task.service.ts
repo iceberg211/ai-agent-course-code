@@ -473,6 +473,15 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     await this.startRun(taskId, revision.id, revision.input);
   }
 
+  // ─── Clone task ──────────────────────────────────────────────────────────
+  async cloneTask(taskId: string): Promise<Task> {
+    const revision = await this.revisionRepo.findOneOrFail({
+      where: { taskId },
+      order: { version: 'DESC' },
+    });
+    return this.createTask(revision.input);
+  }
+
   // ─── Edit task (new revision) ─────────────────────────────────────────
   async editTask(taskId: string, newInput: string): Promise<TaskRevision> {
     const cleaned = sanitizeInput(newInput);
@@ -547,21 +556,48 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ─── Queries ─────────────────────────────────────────────────────────────
-  async listTasks(take = 50, skip = 0): Promise<Task[]> {
-    return this.taskRepo.find({
+  async listTasks(
+    take = 50,
+    skip = 0,
+  ): Promise<Array<Task & { latestSummary: string | null }>> {
+    const tasks = await this.taskRepo.find({
       order: { createdAt: 'DESC' },
       take,
       skip,
-      // 列表只需要摘要字段，不加载大字段
-      select: [
-        'id',
-        'title',
-        'status',
-        'createdAt',
-        'currentRunId',
-        'currentRevisionId',
-      ],
+      select: ['id', 'title', 'status', 'createdAt', 'currentRunId', 'currentRevisionId'],
     });
+
+    if (tasks.length === 0) return tasks.map((t) => ({ ...t, latestSummary: null }));
+
+    // 为每个 task 找其 currentRun 下最新的 JSON artifact 的 summary
+    const runIds = tasks.map((t) => t.currentRunId).filter(Boolean) as string[];
+    const summaryMap = new Map<string, string>();
+
+    if (runIds.length > 0) {
+      const artifacts = await this.artifactRepo
+        .createQueryBuilder('a')
+        .select(['a.runId', 'a.content'])
+        .where('a.run_id IN (:...runIds)', { runIds })
+        .andWhere('a.type = :type', { type: 'json' })
+        .orderBy('a.created_at', 'DESC')
+        .getMany();
+
+      // 每个 runId 只保留最新一条，解析 summary
+      for (const artifact of artifacts) {
+        if (summaryMap.has(artifact.runId)) continue;
+        try {
+          const parsed = JSON.parse(artifact.content) as { summary?: string };
+          if (parsed.summary) summaryMap.set(artifact.runId, parsed.summary);
+        } catch {
+          // 解析失败跳过
+        }
+      }
+    }
+
+    return tasks.map((t) => ({
+      ...t,
+      latestSummary: (t.currentRunId && summaryMap.get(t.currentRunId)) || null,
+    }));
   }
 
   async getTask(taskId: string): Promise<Task> {

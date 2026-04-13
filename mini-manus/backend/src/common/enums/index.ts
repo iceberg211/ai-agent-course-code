@@ -15,7 +15,7 @@ export enum RunStatus {
   CANCELLED = 'cancelled',
 }
 
-export type ApprovalMode = 'none' | 'side_effects' | 'all_steps';
+export type ApprovalMode = 'none' | 'plan_first' | 'side_effects' | 'all_steps';
 
 export enum StepStatus {
   PENDING = 'pending',

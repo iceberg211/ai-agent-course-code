@@ -86,6 +86,24 @@ export interface TokenUsage {
   estimatedCostUsd: number | null
 }
 
+export interface PendingApprovalStep {
+  stepIndex: number
+  description: string
+  executor: string
+  isSideEffect: boolean
+}
+
+export interface PendingApproval {
+  type: 'plan_review' | 'step_review'
+  planId?: string
+  stepCount?: number
+  steps?: PendingApprovalStep[]
+  // step_review 字段
+  description?: string
+  toolOrSkill?: string
+  isSideEffect?: boolean
+}
+
 export interface LiveRunFeed {
   taskId: string
   runId: string
@@ -97,4 +115,5 @@ export interface LiveRunFeed {
   stepOrder: string[]
   steps: Record<string, LiveStepFeed>
   tokenUsage: TokenUsage | null
+  pendingApproval: PendingApproval | null
 }

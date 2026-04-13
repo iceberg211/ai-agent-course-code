@@ -14,9 +14,11 @@ function formatMetric(value: number | string | null | undefined) {
   return String(value)
 }
 
-function formatCost(value: number | null) {
-  if (value == null) return '--'
-  return `$${value.toFixed(6)}`
+function formatCost(value: number | string | null) {
+  if (value == null || value === '') return '--'
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  if (!Number.isFinite(num)) return '--'
+  return `$${num.toFixed(6)}`
 }
 
 export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {

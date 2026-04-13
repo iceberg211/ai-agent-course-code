@@ -169,9 +169,24 @@ export async function fetchTasks() {
   return data
 }
 
-export async function createTask(input: string) {
-  const { data } = await apiClient.post<TaskSummary>('/tasks', { input })
+export type ApprovalMode = 'none' | 'plan_first' | 'side_effects' | 'all_steps'
+
+export async function createTask(input: string, approvalMode: ApprovalMode = 'none') {
+  const { data } = await apiClient.post<TaskSummary>('/tasks', { input, approvalMode })
   return data
+}
+
+export async function cloneTask(taskId: string) {
+  const { data } = await apiClient.post<TaskSummary>(`/tasks/${taskId}/clone`)
+  return data
+}
+
+export async function approveRun(taskId: string, runId: string) {
+  await apiClient.post(`/tasks/${taskId}/runs/${runId}/approve`)
+}
+
+export async function rejectRun(taskId: string, runId: string) {
+  await apiClient.post(`/tasks/${taskId}/runs/${runId}/reject`)
 }
 
 export async function fetchTaskDetail(taskId: string) {

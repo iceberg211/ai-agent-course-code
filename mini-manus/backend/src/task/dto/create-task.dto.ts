@@ -19,6 +19,6 @@ export class CreateTaskDto {
     default: 'none',
   })
   @IsOptional()
-  @IsIn(['none', 'side_effects', 'all_steps'])
+  @IsIn(['none', 'plan_first', 'side_effects', 'all_steps'])
   approvalMode?: ApprovalMode;
 }

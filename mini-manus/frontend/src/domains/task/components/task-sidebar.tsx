@@ -1,3 +1,4 @@
+import type { ApprovalMode } from '@/core/api/task.api'
 import type { TaskSummary } from '@/domains/task/types/task.types'
 import { TaskCreateForm } from '@/domains/task/components/task-create-form'
 import { StatusBadge } from '@/shared/ui/status-badge'
@@ -8,7 +9,7 @@ interface TaskSidebarProps {
   isOpen: boolean
   isCreating: boolean
   onClose: () => void
-  onCreateTask: (input: string) => Promise<unknown>
+  onCreateTask: (input: string, approvalMode: ApprovalMode) => Promise<unknown>
   onSelectTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   selectedTaskId: string | null
@@ -49,7 +50,6 @@ export function TaskSidebar({
                 key={task.id}
                 className={cn('task-sidebar__item', isActive && 'task-sidebar__item--active')}
               >
-                {/* 点击区域：选中任务 */}
                 <button
                   className="task-sidebar__item-body"
                   onClick={() => onSelectTask(task.id)}
@@ -58,13 +58,16 @@ export function TaskSidebar({
                     <span className={cn('task-dot', `task-dot--${task.status}`)} />
                     <span className="task-sidebar__item-title">{task.title}</span>
                   </div>
+                  {/* 侧边栏摘要：展示最近一次 run 的 summary */}
+                  {task.latestSummary && (
+                    <p className="task-sidebar__item-summary">{task.latestSummary}</p>
+                  )}
                   <div className="task-sidebar__item-meta">
                     <span>{formatRelativeTime(task.updatedAt)}</span>
                     <StatusBadge status={task.status} />
                   </div>
                 </button>
 
-                {/* 删除按钮：仅在 hover 时显示 */}
                 <button
                   className="task-sidebar__item-delete"
                   aria-label="删除任务"
