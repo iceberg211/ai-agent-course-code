@@ -65,24 +65,24 @@ export function TaskSummaryPanel({
         </div>
 
         <div className="task-header__actions">
-          <button className="task-header__action task-header__action--ghost" onClick={onOpenEdit}>
+          <Button variant="ghost" onClick={onOpenEdit}>
             编辑
-          </button>
-          <button
-            className="task-header__action task-header__action--secondary"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={onRetry}
             disabled={isRetrying}
           >
             {isRetrying ? '重试中…' : '重试'}
-          </button>
+          </Button>
           {isRunning && (
-            <button
-              className="task-header__action task-header__action--danger"
+            <Button
+              variant="danger"
               onClick={onCancel}
               disabled={isCancelling}
             >
               {isCancelling ? '停止中…' : '停止'}
-            </button>
+            </Button>
           )}
         </div>
       </div>

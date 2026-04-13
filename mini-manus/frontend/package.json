@@ -11,12 +11,14 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.96.2",
+    "@uiw/react-json-view": "^2.0.0-alpha.41",
     "axios": "^1.14.0",
     "jotai": "^2.19.1",
     "mermaid": "^11.14.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
     "socket.io-client": "^4.8.3"
   },
@@ -25,6 +27,7 @@
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",

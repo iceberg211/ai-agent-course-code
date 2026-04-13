@@ -153,6 +153,14 @@
     @include m.clamp(2);
   }
 
+  &__item-summary {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: t.$ink-soft;
+    @include m.clamp(3);
+  }
+
   &__item-meta {
     margin-top: 10px;
     color: t.$ink-soft;

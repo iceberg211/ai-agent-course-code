@@ -5,7 +5,7 @@ import { ApprovalPanel } from '@/domains/run/components/approval-panel'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { formatDateTime, formatDuration } from '@/shared/utils/date'
-import { prettyJson } from '@/shared/utils/text'
+import { CodePreview, JsonPreview } from '@/shared/ui/code-preview'
 
 interface TimelineSectionProps {
   taskId: string
@@ -115,13 +115,17 @@ export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprov
                           {toolCall.input ? (
                             <details className="timeline-item__detail">
                               <summary>输入</summary>
-                              <pre>{prettyJson(toolCall.input)}</pre>
+                              <div style={{ marginTop: '12px' }}>
+                                <JsonPreview content={toolCall.input} />
+                              </div>
                             </details>
                           ) : null}
                           {toolCall.output ? (
                             <details className="timeline-item__detail">
                               <summary>输出</summary>
-                              <pre>{toolCall.output}</pre>
+                              <div style={{ marginTop: '12px' }}>
+                                <CodePreview content={toolCall.output} />
+                              </div>
                             </details>
                           ) : null}
                           {toolCall.error ? (
@@ -173,14 +177,18 @@ export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprov
                 {stepRun.toolInput ? (
                   <details className="timeline-item__detail">
                     <summary>输入</summary>
-                    <pre>{prettyJson(stepRun.toolInput)}</pre>
+                    <div style={{ marginTop: '12px' }}>
+                      <JsonPreview content={stepRun.toolInput} />
+                    </div>
                   </details>
                 ) : null}
 
                 {stepRun.toolOutput ? (
                   <details className="timeline-item__detail">
                     <summary>输出</summary>
-                    <pre>{stepRun.toolOutput}</pre>
+                    <div style={{ marginTop: '12px' }}>
+                      <CodePreview content={stepRun.toolOutput} />
+                    </div>
                   </details>
                 ) : null}
 
@@ -191,8 +199,10 @@ export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprov
                       {stepRun.skillTrace.map((trace, index) => (
                         <div key={`${trace.tool}-${index}`} className="skill-trace__item">
                           <strong>{trace.tool}</strong>
-                          <pre>{prettyJson(trace.input)}</pre>
-                          <pre>{trace.output}</pre>
+                          <div style={{ marginTop: '12px' }}>
+                            <JsonPreview content={trace.input} />
+                            <CodePreview content={trace.output} />
+                          </div>
                         </div>
                       ))}
                     </div>

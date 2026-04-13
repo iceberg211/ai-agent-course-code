@@ -6,23 +6,41 @@ import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { formatDateTime } from '@/shared/utils/date'
-import { prettyJson } from '@/shared/utils/text'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { CodePreview, JsonPreview } from '@/shared/ui/code-preview'
 
 // ─── Sub-renderers ────────────────────────────────────────────────────────────
 
 function MarkdownPreview({ content }: { content: string }) {
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '')
+            return match ? (
+              <SyntaxHighlighter
+                style={vscDarkPlus as any}
+                language={match[1]}
+                PreTag="div"
+                ref={undefined}
+                {...(props as any)}
+              >
+                {String(children).replace(/\n$/, '')}
+              </SyntaxHighlighter>
+            ) : (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            )
+          }
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
-  )
-}
-
-function CodePreview({ content, language }: { content: string; language?: string }) {
-  return (
-    <pre className="artifact-code">
-      <code className={language ? `language-${language}` : undefined}>{content}</code>
-    </pre>
   )
 }
 
@@ -61,21 +79,6 @@ function DiagramPreview({ content }: { content: string }) {
   }, [content])
 
   return <div ref={containerRef} className="artifact-diagram" />
-}
-
-function JsonPreview({ content }: { content: string }) {
-  const formatted = useMemo(() => {
-    try {
-      return prettyJson(JSON.parse(content))
-    } catch {
-      return content
-    }
-  }, [content])
-  return (
-    <pre className="artifact-code language-json">
-      <code>{formatted}</code>
-    </pre>
-  )
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
