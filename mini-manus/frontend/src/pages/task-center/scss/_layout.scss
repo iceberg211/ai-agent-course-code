@@ -1,0 +1,88 @@
+@use 'tokens' as t;
+@use 'mixins' as m;
+
+// ─── Shell ────────────────────────────────────────────────────────────────────
+.task-center-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+
+  &__scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(31, 28, 25, 0.32);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity t.$transition-slow;
+    z-index: 20;
+
+    &--visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+// ─── Main area ────────────────────────────────────────────────────────────────
+.task-center-main {
+  min-width: 0;
+  padding: 20px 24px 40px;
+}
+
+// ─── Topbar ───────────────────────────────────────────────────────────────────
+.task-center-topbar {
+  margin-bottom: 14px;
+
+  .ui-button {
+    font-size: 13px;
+    padding: 6px 14px;
+    color: var(--ink-soft);
+
+    &:hover {
+      color: var(--ink);
+    }
+  }
+}
+
+// ─── Content grid ─────────────────────────────────────────────────────────────
+.task-center-grid {
+  display: grid;
+  gap: 12px;
+  animation: panel-fade 200ms ease;
+
+  &__columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: 12px;
+    align-items: start;
+  }
+}
+
+// ─── Empty / loading center ───────────────────────────────────────────────────
+.task-center-empty {
+  min-height: calc(100vh - 100px);
+  display: grid;
+  place-items: center;
+}
+
+// ─── Animations ───────────────────────────────────────────────────────────────
+@keyframes panel-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes running-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes artifact-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

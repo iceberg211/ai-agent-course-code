@@ -1,0 +1,340 @@
+@use 'tokens' as t;
+@use 'mixins' as m;
+
+// ─── Plan & Steps ─────────────────────────────────────────────────────────────
+.plan-stack,
+.timeline {
+  display: grid;
+  gap: t.$space-md;
+}
+
+.plan-card {
+  border: 1px solid t.$line;
+  border-radius: t.$radius-lg;
+  background: rgba(255, 255, 255, 0.66);
+  overflow: hidden;
+  transition: t.$transition-base;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: t.$shadow-subtle;
+  }
+
+  &__summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    p, span {
+      margin: 0;
+    }
+
+    p { font-weight: 700; }
+    span {
+      color: t.$ink-soft;
+      font-size: 13px;
+    }
+  }
+}
+
+.plan-steps {
+  margin: 0;
+  padding: 0 18px 18px;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.plan-step {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  transition: t.$transition-fast;
+
+  &--active {
+    padding: 12px;
+    margin-inline: -12px;
+    border-radius: t.$radius-lg;
+    background: rgba(161, 75, 43, 0.08);
+  }
+
+  &__index {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: t.$accent-soft;
+    color: t.$accent;
+    font-weight: 700;
+  }
+
+  &__title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+
+    strong { font-size: 15px; }
+  }
+
+  &__meta {
+    margin: 8px 0 0;
+    color: t.$ink-soft;
+    font-size: 13px;
+  }
+
+  &__progress {
+    margin: 10px 0 0;
+    color: t.$accent;
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+// ─── Timeline Items ───────────────────────────────────────────────────────────
+.timeline-item {
+  position: relative;
+  padding: 18px;
+  border-radius: t.$radius-lg;
+  border: 1px solid t.$line;
+  background: rgba(255, 255, 255, 0.7);
+  content-visibility: auto;
+  transition: t.$transition-base;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: t.$shadow-subtle;
+    transform: translateY(-1px);
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    border-radius: t.$radius-pill;
+    background: rgba(31, 28, 25, 0.08); // 默认灰色未激活
+    transition: background t.$transition-base;
+  }
+
+  &--running::before {
+    background: linear-gradient(180deg, rgba(t.$accent, 0.4), t.$accent, rgba(t.$accent, 0.4));
+    animation: running-pulse 1.8s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(t.$accent, 0.3);
+  }
+
+  &--completed::before { background: t.$success; }
+  &--failed::before,
+  &--cancelled::before { background: t.$danger; }
+
+  &--live {
+    border-color: rgba(t.$accent, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 247, 239, 0.98)), rgba(255, 255, 255, 0.88);
+    box-shadow: 0 8px 30px rgba(161, 75, 43, 0.08);
+
+    &::before {
+      background: linear-gradient(180deg, rgba(t.$accent, 0.4), t.$accent, rgba(t.$accent, 0.4));
+      animation: running-pulse 1.4s ease-in-out infinite;
+      box-shadow: 0 0 8px rgba(t.$accent, 0.3);
+    }
+  }
+
+  &__header,
+  &__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  &__header h3 {
+    margin: 6px 0 0;
+    font-size: 20px;
+  }
+
+  &__eyebrow {
+    margin: 0;
+    color: t.$accent;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  &__meta {
+    margin-top: 14px;
+    flex-wrap: wrap;
+    color: t.$ink-soft;
+    font-size: 13px;
+  }
+
+  &__summary,
+  &__error {
+    margin: 14px 0 0;
+  }
+
+  &__error { color: t.$danger; }
+
+  &__detail {
+    margin-top: 12px;
+    border-top: 1px solid t.$line;
+    padding-top: 12px;
+
+    summary {
+      cursor: pointer;
+      color: t.$ink-soft;
+      transition: color t.$transition-fast;
+      
+      &:hover { color: t.$ink; }
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 16px;
+      background: #1e1e1e;
+      color: #e4e4e4;
+      border-radius: t.$radius-md;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: t.$font-mono;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+    }
+  }
+}
+
+// ─── Timeline Live (Active execution panel) ──────────────────────────────────
+.timeline-live {
+  &__header,
+  &__status,
+  &__meta,
+  &__tool-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  &__header h3 {
+    margin: 6px 0 0;
+    font-size: 24px;
+    font-family: t.$font-serif;
+    line-height: 1.18;
+  }
+
+  &__status {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    color: t.$ink-soft;
+    font-size: 13px;
+  }
+
+  &__body {
+    margin-top: 18px;
+    display: grid;
+    gap: 14px;
+  }
+
+  &__step {
+    display: grid;
+    gap: 6px;
+
+    strong { font-size: 18px; }
+  }
+
+  &__label {
+    color: t.$accent;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  &__meta {
+    flex-wrap: wrap;
+    color: t.$ink-soft;
+    font-size: 13px;
+  }
+
+  &__progress {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 8px;
+  }
+
+  &__tools {
+    display: grid;
+    gap: 12px;
+  }
+
+  &__tool {
+    padding: 14px;
+    border-radius: t.$radius-md;
+    border: 1px solid t.$line;
+    background: rgba(255, 255, 255, 0.72);
+    transition: t.$transition-base;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.9);
+      border-color: t.$line-strong;
+    }
+  }
+
+  &__tool-head { align-items: center; }
+
+  &__tool-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__tool-name { font-weight: 700; }
+
+  &__cache {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: t.$radius-pill;
+    background: rgba(56, 135, 96, 0.12);
+    color: t.$success;
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+// ─── Skills Trace ─────────────────────────────────────────────────────────────
+.skill-trace {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+
+  &__item {
+    padding: 14px;
+    border-radius: t.$radius-md;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid t.$line;
+
+    pre {
+      margin: 12px 0 0;
+      padding: 16px;
+      background: #1e1e1e;
+      color: #e4e4e4;
+      border-radius: t.$radius-md;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: t.$font-mono;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+    }
+  }
+}

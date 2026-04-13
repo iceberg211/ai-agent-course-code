@@ -1,0 +1,77 @@
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+// Mirror the CSS custom properties defined in src/index.css so SCSS can compute
+// derived values. At runtime the browser still uses var(--xxx).
+
+$bg:           #f3ede3;
+$bg-elevated:  rgba(255, 252, 246, 0.76);
+$bg-strong:    #fffaf2;
+
+$ink:          #1f1c19;
+$ink-soft:     #5f564c;
+
+$line:         rgba(54, 43, 33, 0.14);
+$line-strong:  rgba(54, 43, 33, 0.24);
+
+$accent:       #a14b2b;
+$accent-soft:  rgba(161, 75, 43, 0.12);
+$accent-strong:rgba(161, 75, 43, 0.2);
+
+$success:      #2f7a50;
+$success-soft: rgba(47, 122, 80, 0.14);
+
+$warning:      #b8801f;
+$warning-soft: rgba(184, 128, 31, 0.14);
+
+$danger:       #a33e35;
+$danger-soft:  rgba(163, 62, 53, 0.14);
+
+// ─── Spacing scale ─────────────────────────────────────────────────────────────
+$space-xs:  4px;
+$space-sm:  8px;
+$space-md:  14px;
+$space-lg:  20px;
+$space-xl:  28px;
+
+// ─── Radius ────────────────────────────────────────────────────────────────────
+$radius-sm:   8px;
+$radius-md:   14px;
+$radius-lg:   20px;
+$radius-xl:   24px;
+$radius-pill: 999px;
+
+// ─── Typography ────────────────────────────────────────────────────────────────
+$font-sans:  'Avenir Next', 'PingFang SC', 'Noto Sans SC', sans-serif;
+$font-serif: 'Iowan Old Style', 'Songti SC', serif;
+$font-mono:  'SFMono-Regular', 'JetBrains Mono', monospace;
+
+// ─── Shadows ───────────────────────────────────────────────────────────────────
+$shadow-card:   0 4px 24px rgba(53, 41, 29, 0.07), 0 1px 4px rgba(53, 41, 29, 0.05);
+$shadow-float:  0 12px 40px rgba(53, 41, 29, 0.12);
+$shadow-subtle: 0 2px 8px rgba(53, 41, 29, 0.06);
+
+// ─── Status color map ─────────────────────────────────────────────────────────
+$status-colors: (
+  pending:           ($warning,      $warning-soft),
+  running:           ($accent,       $accent-soft),
+  completed:         ($success,      $success-soft),
+  failed:            ($danger,       $danger-soft),
+  cancelled:         ($ink-soft,     rgba(95, 86, 76, 0.12)),
+  skipped:           ($ink-soft,     rgba(95, 86, 76, 0.12)),
+  awaiting_approval: ($warning,      $warning-soft),
+);
+
+// ─── Status icons (before pseudo-element content) ────────────────────────────
+$status-icons: (
+  pending:           '○',
+  running:           '●',
+  completed:         '✓',
+  failed:            '✕',
+  cancelled:         '–',
+  skipped:           '↩',
+  awaiting_approval: '⏸',
+);
+
+// ─── Transitions ──────────────────────────────────────────────────────────────
+$transition-fast: 120ms ease;
+$transition-base: 180ms ease;
+$transition-slow: 260ms ease;

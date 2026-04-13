@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import '@/pages/task-center/task-center.css'
+import '@/pages/task-center/task-center.scss'
 import { ArtifactSection } from '@/domains/artifact/components/artifact-section'
 import { useArtifactSelectionSync } from '@/domains/artifact/hooks/use-artifact-selection-sync'
 import { useSelectedArtifact } from '@/domains/artifact/hooks/use-selected-artifact'
@@ -103,12 +103,16 @@ export function TaskCenterPage() {
           <section className="task-center-empty">
             <EmptyState
               title="创建你的第一个任务"
-              description="在左侧描述你的任务，系统会自动规划和执行，最终生成报告或代码。"
+              description="💡 用自然语言描述你想要完成的任务，系统将自动进行规划并执行落地。"
             />
           </section>
         ) : !taskDetailQuery.data ? (
           <section className="task-center-empty">
-            <EmptyState title="加载中…" description="" />
+            <div className="skeleton-loader">
+              <div className="skeleton-title" style={{ width: '40%', height: '24px', background: 'rgba(0,0,0,0.06)', borderRadius: '4px', marginBottom: '16px' }} />
+              <div className="skeleton-line" style={{ width: '80%', height: '16px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px', marginBottom: '12px' }} />
+              <div className="skeleton-line" style={{ width: '60%', height: '16px', background: 'rgba(0,0,0,0.04)', borderRadius: '4px' }} />
+            </div>
           </section>
         ) : (
           <div className="task-center-grid">

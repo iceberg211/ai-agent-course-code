@@ -1,0 +1,161 @@
+@use 'tokens' as t;
+@use 'mixins' as m;
+
+.task-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: t.$space-md;
+  border-right: 1px solid t.$line;
+
+  &__inner {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: t.$space-md;
+    padding: t.$space-lg;
+    background: t.$bg-elevated;
+    backdrop-filter: blur(24px); // Enhanced glassmorphism
+    border: 1px solid rgba(255, 255, 255, 0.56);
+    border-radius: 26px;
+    box-shadow: t.$shadow-float;
+  }
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+
+    h1 {
+      margin: 4px 0 0;
+      font-size: 34px;
+      line-height: 1;
+      font-family: t.$font-serif;
+      letter-spacing: -0.04em;
+    }
+  }
+
+  &__eyebrow {
+    margin: 0;
+    color: t.$accent;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 12px;
+  }
+
+  &__close {
+    display: none;
+    align-self: flex-start;
+    border: none;
+    background: transparent;
+    color: t.$ink-soft;
+  }
+
+  &__list {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: auto;
+    padding-right: 4px;
+    // Hide scrollbar but keep functionality
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background-color: rgba(t.$ink, 0.1);
+      border-radius: 4px;
+    }
+  }
+
+  &__item {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: t.$radius-md + 4px;
+    transition: t.$transition-base;
+    cursor: pointer;
+    margin-bottom: 2px;
+
+    @include m.selection-stripe(t.$accent);
+
+    &:hover {
+      transform: translateX(4px);
+      background: rgba(31, 28, 25, 0.04);
+      
+      .task-sidebar__item-delete {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    &--active {
+      border-color: transparent;
+      background: rgba(255, 255, 255, 0.8);
+      box-shadow: 0 4px 12px rgba(53, 41, 29, 0.04);
+      transform: translateX(4px);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      @include m.selection-stripe-active;
+    }
+  }
+
+  &__item-body {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 16px;
+    text-align: left;
+    background: transparent;
+    border: none;
+  }
+
+  &__item-delete {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    border: none;
+    background: transparent;
+    color: t.$ink-soft;
+    font-size: 18px;
+    border-radius: 0 (t.$radius-md + 4px) (t.$radius-md + 4px) 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: t.$transition-base;
+
+    &:hover {
+      color: t.$danger;
+      background: t.$danger-soft;
+    }
+  }
+
+  &__item-top,
+  &__item-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__item-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    line-height: 1.4;
+    color: t.$ink;
+    @include m.clamp(2);
+  }
+
+  &__item-meta {
+    margin-top: 10px;
+    color: t.$ink-soft;
+    font-size: 13px;
+  }
+}
