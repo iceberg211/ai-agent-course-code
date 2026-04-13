@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { AgentState, EvaluationResult, StepResult } from '@/agent/agent.state';
@@ -8,10 +9,28 @@ import { EventPublisher } from '@/event/event.publisher';
 import { evaluatorPrompt } from '@/prompts';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 
+const logger = new Logger('EvaluatorNode');
+
 const EvalSchema = z.object({
   decision: z.enum(['continue', 'retry', 'replan', 'complete', 'fail']),
   reason: z.string(),
 });
+
+// ─── 结构性错误：重试不会恢复，跳过重试直接 replan/fail ──────────────────────
+const STRUCTURAL_ERROR_PATTERNS = [
+  'winansi cannot encode',
+  'tool_input_invalid',
+  'could not parse output',
+  'outputparserexception',
+  'invalid json',
+  'permission denied',
+  'eacces',
+  'enoent',
+];
+
+function isStructuralError(lower: string): boolean {
+  return STRUCTURAL_ERROR_PATTERNS.some((p) => lower.includes(p));
+}
 
 // ─── 规则前置检查 ─────────────────────────────────────────────────────────────
 // 对明显结果直接返回决策，跳过 LLM 调用，避免浪费 token
@@ -37,22 +56,47 @@ function runPreChecks(
     lower.includes('tool_input_invalid') ||
     lower.includes('artifact_generation_failed');
   const isTimeout = lower.includes('超时') || lower.includes('timeout');
-  const isBadOutput = isEmpty || isError || isTimeout;
 
-  // 空/错误/超时 + 还有重试次数 → 直接 retry
+  const structural = isStructuralError(lower);
+
+  // 结构性错误：重试无意义，直接 replan 或 fail（不要求 isError 门控）
+  if (structural) {
+    const decision = replanCount < maxReplans ? 'replan' : 'fail';
+    logger.warn(`结构性错误 → ${decision} | output: ${trimmed.slice(0, 120)}`);
+    if (decision === 'replan') {
+      return {
+        decision: 'replan',
+        reason: `结构性错误，重试无法恢复，直接重新规划：${trimmed.slice(0, 200)}`,
+      };
+    }
+    return {
+      decision: 'fail',
+      reason: `结构性错误且重规划已耗尽：${trimmed.slice(0, 200)}`,
+    };
+  }
+
+  const isBadOutput = isEmpty || isError || isTimeout || structural;
+
+  // 瞬态错误 + 还有重试次数 → retry
   if (isBadOutput && retryCount < maxRetries) {
+    logger.log(
+      `retry ${retryCount + 1}/${maxRetries} | ${isEmpty ? 'empty' : isTimeout ? 'timeout' : 'error'} | ${trimmed.slice(0, 80)}`,
+    );
     return {
       decision: 'retry',
       reason: `输出为空或出错，自动重试（第 ${retryCount + 1} 次）`,
     };
   }
 
-  // 空/错误 + 重试耗尽 + 还有重规划次数 → 直接 replan
+  // 重试耗尽 + 还有重规划次数 → replan
   if (
     (isEmpty || isError) &&
     retryCount >= maxRetries &&
     replanCount < maxReplans
   ) {
+    logger.warn(
+      `重试 ${maxRetries} 次仍失败 → replan | ${trimmed.slice(0, 80)}`,
+    );
     return { decision: 'replan', reason: '多次重试后仍未成功，自动重新规划' };
   }
 
@@ -66,6 +110,7 @@ async function applyDecision(
   result: EvaluationResult,
   state: AgentState,
   lastStepRunId: string,
+  lastStepOutput: string,
   currentStep: { description: string } | undefined,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
@@ -108,6 +153,8 @@ async function applyDecision(
     stepRunId: lastStepRunId,
     description: currentStep?.description ?? '',
     resultSummary: result.reason,
+    // 保留真实工具输出（截断），供后续步骤 Tool Calling 读取 URL/内容等数据
+    toolOutput: lastStepOutput.slice(0, 1000),
     executionOrder: state.executionOrder - 1,
   };
 
@@ -126,7 +173,13 @@ async function applyDecision(
     };
   }
   if (result.decision === 'retry') {
-    return { ...baseUpdate, retryCount: state.retryCount + 1 };
+    // 保留 lastStepOutput 不清空 —— executor 重试时用它作为上下文，
+    // 让 Tool Calling LLM 看到前次失败原因，选择不同的参数
+    return {
+      evaluation: result,
+      lastStepRunId: '',
+      retryCount: state.retryCount + 1,
+    };
   }
   if (result.decision === 'replan') {
     return {
@@ -188,6 +241,7 @@ export async function evaluatorNode(
       budgetFailure,
       state,
       lastStepRunId,
+      lastStepOutput,
       currentStep,
       callbacks,
       eventPublisher,
@@ -207,6 +261,7 @@ export async function evaluatorNode(
       preCheck,
       state,
       lastStepRunId,
+      lastStepOutput,
       currentStep,
       callbacks,
       eventPublisher,
@@ -231,10 +286,13 @@ export async function evaluatorNode(
     replanCount: String(state.replanCount),
   })) as EvaluationResult;
 
+  logger.log(`LLM 评估 → ${result.decision} | ${result.reason.slice(0, 80)}`);
+
   return applyDecision(
     result,
     state,
     lastStepRunId,
+    lastStepOutput,
     currentStep,
     callbacks,
     eventPublisher,

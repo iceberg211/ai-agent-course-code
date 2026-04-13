@@ -4,7 +4,7 @@ import {
   SkillContext,
   SkillEvent,
 } from '@/skill/interfaces/skill.interface';
-import { reportPackagingPrompt } from '@/prompts';
+import { reportPackagingPrompt, reportMetadataPrompt } from '@/prompts';
 
 const inputSchema = z.object({
   task_id: z.string().uuid(),
@@ -15,8 +15,8 @@ const inputSchema = z.object({
   export_pdf: z.boolean().default(true).optional(),
 });
 
-const packagingSchema = z.object({
-  markdown: z.string().min(1),
+// 元数据 schema（字段少、内容短，structured output 安全）
+const metadataSchema = z.object({
   summary: z.string().min(1),
   key_points: z.array(z.string()).min(1),
   diagram: z.string(),
@@ -50,35 +50,77 @@ export class ReportPackagingSkill implements Skill {
     } = inputSchema.parse(input);
     const basename = output_basename ?? 'task-report';
 
-    yield { type: 'progress', message: `正在打包交付物：${title}` };
-    const chain = reportPackagingPrompt.pipe(
-      ctx.llm.withStructuredOutput(packagingSchema, { method: ctx.soMethod }),
-    );
-    const packaged = await chain.invoke({
+    // ── 第一步：纯文本生成 Markdown（避免长文本塞 JSON 编码崩溃）──
+    yield { type: 'progress', message: `正在撰写报告：${title}` };
+    const markdownChain = reportPackagingPrompt.pipe(ctx.llm);
+    const markdownResponse = await markdownChain.invoke({
       title,
       sourceMaterial: source_material,
+    });
+    const markdown =
+      typeof markdownResponse.content === 'string'
+        ? markdownResponse.content
+        : Array.isArray(markdownResponse.content)
+          ? markdownResponse.content
+              .map((c) => (typeof c === 'string' ? c : JSON.stringify(c)))
+              .join('')
+          : JSON.stringify(markdownResponse.content);
+
+    if (ctx.signal.aborted) return;
+
+    // F7 fix: 先写 markdown 文件，确保即使后续 metadata 提取失败，报告正文已保存
+    const mdPath = `${basename}.md`;
+    yield {
+      type: 'tool_call',
+      tool: 'write_file',
+      input: { task_id, path: mdPath, content: markdown },
+    };
+    const mdResult = await ctx.tools.executeWithCache('write_file', {
+      task_id,
+      path: mdPath,
+      content: markdown,
+    });
+    yield {
+      type: 'tool_result',
+      tool: 'write_file',
+      output: mdResult.output || mdResult.error || '',
+      cached: mdResult.cached ?? false,
+      error: mdResult.error ?? null,
+      errorCode: mdResult.errorCode ?? null,
+    };
+    if (!mdResult.success) {
+      throw new Error(mdResult.error ?? `主报告写入失败: ${mdPath}`);
+    }
+    const files: string[] = [mdPath];
+
+    // ── 第二步：structured output 提取元数据（内容短，JSON 安全）──
+    yield { type: 'progress', message: '正在提取报告摘要...' };
+    const metadataChain = reportMetadataPrompt.pipe(
+      ctx.llm.withStructuredOutput(metadataSchema, { method: ctx.soMethod }),
+    );
+    const metadata = await metadataChain.invoke({
+      title,
+      markdownPreview: markdown.slice(0, 2000),
     });
 
     if (ctx.signal.aborted) return;
 
     const manifest = {
-      summary: packaged.summary,
-      key_points: packaged.key_points,
+      summary: metadata.summary,
+      key_points: metadata.key_points,
       generated_at: new Date().toISOString(),
       artifact_type: 'markdown',
     };
 
-    const files: string[] = [];
-
+    // markdown 已在第一步写入，这里只写 json 和可选 diagram
     const writes: Array<{ path: string; content: string }> = [
-      { path: `${basename}.md`, content: packaged.markdown },
       { path: `${basename}.json`, content: JSON.stringify(manifest, null, 2) },
     ];
 
-    if (include_diagram && packaged.diagram.trim()) {
+    if (include_diagram && metadata.diagram.trim()) {
       writes.push({
         path: `${basename}.mmd`,
-        content: packaged.diagram.trim(),
+        content: metadata.diagram.trim(),
       });
     }
 
@@ -114,14 +156,14 @@ export class ReportPackagingSkill implements Skill {
         input: {
           task_id,
           title,
-          content: packaged.markdown,
+          content: markdown,
           path: `${basename}.pdf`,
         },
       };
       const pdfResult = await ctx.tools.executeWithCache('export_pdf', {
         task_id,
         title,
-        content: packaged.markdown,
+        content: markdown,
         path: `${basename}.pdf`,
       });
       yield {
@@ -137,13 +179,13 @@ export class ReportPackagingSkill implements Skill {
       }
     }
 
-    yield { type: 'reasoning', content: packaged.summary };
+    yield { type: 'reasoning', content: metadata.summary };
     yield {
       type: 'result',
       output: {
         files,
-        summary: packaged.summary,
-        key_points: packaged.key_points,
+        summary: metadata.summary,
+        key_points: metadata.key_points,
       },
     };
   }

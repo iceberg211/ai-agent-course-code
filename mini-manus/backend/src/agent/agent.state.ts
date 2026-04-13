@@ -5,6 +5,8 @@ export interface StepResult {
   stepRunId: string;
   description: string;
   resultSummary: string;
+  /** 工具/Skill 的真实输出（截断），供后续步骤 Tool Calling 读取真实数据 */
+  toolOutput?: string;
   executionOrder: number;
 }
 

@@ -87,6 +87,7 @@ export class AgentService {
   private readonly maxReplans: number;
   private readonly maxSteps: number;
   private readonly stepTimeoutMs: number;
+  private readonly skillTimeoutMs: number;
   private readonly tokenBudget: number;
   private readonly exportPdfEnabled: boolean;
   private readonly planValidationOptions: PlanSemanticValidationOptions;
@@ -155,7 +156,9 @@ export class AgentService {
         ),
       ),
     };
-    this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 60_000);
+    this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 180_000);
+    // Skill 超时独立配置：skill 包含多次网络调用 + LLM 综合，需要更长时间
+    this.skillTimeoutMs = config.get<number>('SKILL_TIMEOUT_MS', 300_000);
     this.exportPdfEnabled = readBoolean(
       config.get<string>('EXPORT_PDF_ENABLED'),
       false,
@@ -225,6 +228,7 @@ export class AgentService {
           eventPublisher,
           signal,
           this.stepTimeoutMs,
+          this.skillTimeoutMs,
           soMethod,
         );
       })
@@ -270,10 +274,13 @@ export class AgentService {
           if (state.replanCount >= this.maxReplans) return END;
           return 'planner';
         }
-        // continue: advance step or finalize
-        const nextIndex = state.currentStepIndex + 1;
+        // continue: evaluator 已经把 currentStepIndex +1 写回 state，
+        // 这里直接判断是否越界，不再二次 +1
         const totalSteps = state.currentPlan?.steps.length ?? 0;
-        if (nextIndex >= totalSteps || state.executionOrder >= this.maxSteps)
+        if (
+          state.currentStepIndex >= totalSteps ||
+          state.executionOrder >= this.maxSteps
+        )
           return 'finalizer';
         return 'executor';
       })

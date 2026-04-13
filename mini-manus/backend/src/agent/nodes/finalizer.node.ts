@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { AgentState } from '@/agent/agent.state';
@@ -8,6 +9,8 @@ import { EventPublisher } from '@/event/event.publisher';
 import { createPdfBufferFromText } from '@/tool/utils/pdf-export';
 import { finalizerJsonPrompt, finalizerPrompt } from '@/prompts';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
+
+const logger = new Logger('FinalizerNode');
 
 /** 从 LLM 输出中解析 "TYPE: xxx" 标记行，返回 [artifactType, 内容主体] */
 function parseArtifactType(raw: string): [ArtifactType, string] {
@@ -121,6 +124,9 @@ export async function finalizerNode(
   // 解析 LLM 输出中的 TYPE 标记，决定产物类型
   const [artifactType, content] = parseArtifactType(rawContent);
   const normalized = normalizeArtifact(artifactType, content);
+  logger.log(
+    `产物类型: ${artifactType} | 内容长度: ${normalized.content.length} chars`,
+  );
   const generatedAt = new Date().toISOString();
   const artifactTitle = `任务产物: ${state.revisionInput.slice(0, 50)}`;
 
@@ -173,28 +179,45 @@ export async function finalizerNode(
       generatedAt,
     },
   );
-  emitArtifactCreated(eventPublisher, state, summaryArtifact, ArtifactType.JSON);
+  emitArtifactCreated(
+    eventPublisher,
+    state,
+    summaryArtifact,
+    ArtifactType.JSON,
+  );
 
   if (exportPdfEnabled) {
-    const pdfBytes = await createPdfBufferFromText(
-      artifactTitle,
-      normalized.content,
-    );
-    const fileArtifact = await callbacks.saveArtifact(
-      state.runId,
-      `PDF 导出: ${state.revisionInput.slice(0, 40)}`,
-      Buffer.from(pdfBytes).toString('base64'),
-      ArtifactType.FILE,
-      {
-        fileName: `${artifactTitle.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.pdf`,
-        mimeType: 'application/pdf',
-        encoding: 'base64',
-        sizeBytes: pdfBytes.byteLength,
-        sourceArtifactId: artifact.id,
-        generatedAt,
-      },
-    );
-    emitArtifactCreated(eventPublisher, state, fileArtifact, ArtifactType.FILE);
+    try {
+      const pdfBytes = await createPdfBufferFromText(
+        artifactTitle,
+        normalized.content,
+      );
+      const fileArtifact = await callbacks.saveArtifact(
+        state.runId,
+        `PDF 导出: ${state.revisionInput.slice(0, 40)}`,
+        Buffer.from(pdfBytes).toString('base64'),
+        ArtifactType.FILE,
+        {
+          fileName: `${artifactTitle.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.pdf`,
+          mimeType: 'application/pdf',
+          encoding: 'base64',
+          sizeBytes: pdfBytes.byteLength,
+          sourceArtifactId: artifact.id,
+          generatedAt,
+        },
+      );
+      emitArtifactCreated(
+        eventPublisher,
+        state,
+        fileArtifact,
+        ArtifactType.FILE,
+      );
+      logger.log(`PDF 导出成功 (${pdfBytes.byteLength} bytes)`);
+    } catch (err) {
+      logger.warn(
+        `PDF 导出失败（不影响主产物）: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   return {};
