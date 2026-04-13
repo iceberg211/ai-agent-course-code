@@ -20,6 +20,7 @@ import {
   RunStatus,
   StepStatus,
   ArtifactType,
+  type ApprovalMode,
 } from '@/common/enums';
 import { AgentService } from '@/agent/agent.service';
 import { EventPublisher } from '@/event/event.publisher';
@@ -55,7 +56,10 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
   // ─── Zombie run recovery ────────────────────────────────────────────────
   async onModuleInit() {
     const zombieRuns = await this.runRepo.find({
-      where: { status: RunStatus.RUNNING },
+      where: [
+        { status: RunStatus.RUNNING },
+        { status: RunStatus.AWAITING_APPROVAL }, // 重启时等待审批的 run 也视为僵尸
+      ],
     });
     if (zombieRuns.length > 0) {
       this.logger.warn(
@@ -96,7 +100,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ─── Create task + revision + run ───────────────────────────────────────
-  async createTask(input: string): Promise<Task> {
+  async createTask(input: string, approvalMode: ApprovalMode = 'none'): Promise<Task> {
     const cleaned = sanitizeInput(input);
     if (detectInjection(cleaned)) {
       throw new BadRequestException('任务描述包含不允许的内容，请修改后重试');
@@ -131,7 +135,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
       version: 1,
       input: cleaned,
     });
-    setImmediate(() => void this.startRun(task.id, revision.id, cleaned));
+    setImmediate(() => void this.startRun(task.id, revision.id, cleaned, approvalMode));
 
     return task;
   }
@@ -141,6 +145,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     taskId: string,
     revisionId: string,
     revisionInput: string,
+    approvalMode: ApprovalMode = 'none',
   ): Promise<void> {
     const run = await this.dataSource.transaction(async (em) => {
       // 悲观锁：同一 task 的并发 startRun 调用序列化，防止 run_number 冲突
@@ -158,6 +163,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         runNumber: count + 1,
         status: RunStatus.PENDING,
         cancelRequested: false,
+        approvalMode,
       });
       await em.save(newRun);
 
@@ -181,7 +187,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (run.status === RunStatus.RUNNING) {
-      void this.executeRun(run.id, taskId, revisionInput);
+      void this.executeRun(run.id, taskId, revisionInput, approvalMode);
     }
   }
 
@@ -189,6 +195,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     runId: string,
     taskId: string,
     revisionInput: string,
+    approvalMode: ApprovalMode = 'none',
   ): Promise<void> {
     const controller = new AbortController();
     this.abortControllers.set(runId, controller);
@@ -323,6 +330,29 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
           .join('\n\n');
       },
 
+      setRunAwaitingApproval: async (rId, stepInfo) => {
+        await this.runRepo.update(rId, {
+          status: RunStatus.AWAITING_APPROVAL,
+        } as any);
+        // pendingApprovalStep 是 jsonb，单独更新避免 TypeORM 类型冲突
+        await this.runRepo
+          .createQueryBuilder()
+          .update()
+          .set({ pendingApprovalStep: () => `:step::jsonb` })
+          .setParameter('step', JSON.stringify(stepInfo))
+          .where('id = :id', { id: rId })
+          .execute();
+        await this.taskRepo
+          .createQueryBuilder()
+          .update(Task)
+          .set({ status: TaskStatus.RUNNING }) // task 仍视为 running
+          .where('id = :taskId AND current_run_id = :runId', {
+            taskId,
+            runId: rId,
+          })
+          .execute();
+      },
+
       saveTokenUsage: async (rId, stats) => {
         await this.runRepo.update(rId, {
           inputTokens: stats.inputTokens,
@@ -344,6 +374,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         revisionInput,
         callbacks,
         controller.signal,
+        approvalMode,
       );
     } finally {
       this.abortControllers.delete(runId);
@@ -397,22 +428,35 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         currentRunId: latest.id,
       });
 
-      return { runId: latest.id, revisionInput: revision.input };
+      return {
+        runId: latest.id,
+        revisionInput: revision.input,
+        approvalMode: (latest.approvalMode ?? 'none') as ApprovalMode,
+      };
     });
 
     // 事务提交后再启动执行，避免执行过程中读到未提交数据
     if (next) {
-      void this.executeRun(next.runId, taskId, next.revisionInput);
+      void this.executeRun(next.runId, taskId, next.revisionInput, next.approvalMode);
     }
   }
 
   // ─── Cancel run ─────────────────────────────────────────────────────────
   async cancelRun(taskId: string): Promise<void> {
     const run = await this.runRepo.findOne({
-      where: { taskId, status: RunStatus.RUNNING },
+      where: [
+        { taskId, status: RunStatus.RUNNING },
+        { taskId, status: RunStatus.AWAITING_APPROVAL },
+      ],
     });
     if (!run) return;
     await this.runRepo.update(run.id, { cancelRequested: true });
+    // 如果 run 正在等待人工审批，reject approval promise 触发取消流程
+    try {
+      this.agentService.resolveApproval(run.id, false);
+    } catch {
+      // run 可能没有等待审批，忽略
+    }
     // Also abort the AbortController if it exists
     this.abortControllers.get(run.id)?.abort();
   }

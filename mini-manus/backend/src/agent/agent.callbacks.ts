@@ -68,6 +68,11 @@ export interface AgentCallbacks {
       estimatedCostUsd: number | null;
     },
   ): Promise<void>;
+  /** HITL: 将 run 状态切为 AWAITING_APPROVAL 并记录待审批步骤信息 */
+  setRunAwaitingApproval(
+    runId: string,
+    stepInfo: Record<string, unknown>,
+  ): Promise<void>;
   finalize(taskId: string): Promise<void>;
 }
 

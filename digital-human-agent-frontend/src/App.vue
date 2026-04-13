@@ -12,6 +12,7 @@
       :voice-clone-uploading="voiceCloneUploading"
       @select="onSelectPersona"
       @delete="onDeletePersona"
+      @create="createModalOpen = true"
       @upload-voice-sample="onUploadVoiceSample"
       @refresh-voice-clone="onRefreshVoiceCloneStatus"
     />
@@ -24,6 +25,7 @@
         :mode="mode"
         @toggle-docs="docsOpen = !docsOpen"
         @change-mode="onChangeMode"
+        @new-conversation="onNewConversation"
       />
 
       <!-- 数字人视频区 -->
@@ -81,6 +83,13 @@
 
     <!-- 全局 Toast -->
     <ToastAlert :message="toastMsg" />
+
+    <!-- 新建角色 Modal -->
+    <PersonaCreateModal
+      v-if="createModalOpen"
+      @created="onPersonaCreated"
+      @cancel="createModalOpen = false"
+    />
   </div>
 </template>
 
@@ -96,6 +105,8 @@ import ChatComposer from './components/chat/ChatComposer.vue'
 import ChatControls from './components/chat/ChatControls.vue'
 import DocsDrawer from './components/knowledge/DocsDrawer.vue'
 import ToastAlert from './components/common/ToastAlert.vue'
+import PersonaCreateModal from './components/persona/PersonaCreateModal.vue'
+import type { Persona } from './types'
 
 // ── Stores（子组件直接消费，无需透传）────────────────────────────────────────
 const personaStore = usePersonaStore()
@@ -113,6 +124,7 @@ const {
   onSelectPersona,
   onDeletePersona,
   onChangeMode,
+  onNewConversation,
   onMicDown,
   onMicUp,
   onSendText,
@@ -141,6 +153,12 @@ const voiceCloneUploading = computed(() => voiceClone.uploading.value)
 const audioEl = ref<HTMLAudioElement | null>(null)
 const digitalVideoEl = ref<HTMLVideoElement | null>(null)
 const docsOpen = ref(false)
+const createModalOpen = ref(false)
+
+function onPersonaCreated(persona: Persona) {
+  createModalOpen.value = false
+  onSelectPersona(persona.id)
+}
 
 watch(audioEl, (el) => audio.initAudioElement(el))
 watch(digitalVideoEl, (el) => digitalHuman.bindVideo(el))

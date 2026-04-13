@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional, IsIn, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { ApprovalMode } from '@/common/enums';
 
 export class CreateTaskDto {
   @ApiProperty({
@@ -11,4 +12,13 @@ export class CreateTaskDto {
   @IsNotEmpty()
   @MaxLength(2000)
   input: string;
+
+  @ApiPropertyOptional({
+    description: 'HITL 审批模式：none=不审批，side_effects=仅副作用步骤，all_steps=每步都审批',
+    enum: ['none', 'side_effects', 'all_steps'],
+    default: 'none',
+  })
+  @IsOptional()
+  @IsIn(['none', 'side_effects', 'all_steps'])
+  approvalMode?: ApprovalMode;
 }

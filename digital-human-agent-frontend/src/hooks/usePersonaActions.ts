@@ -105,10 +105,25 @@ export function usePersonaActions(
     })
   }
 
+  function onNewConversation() {
+    if (!personaStore.selectedId || !sessionStore.connected) return
+
+    textChat.reset()
+    conversation.clearMessages()
+    sessionStore.setHistoryLoading(true)
+
+    send({
+      type: 'session:start',
+      sessionId: '',
+      payload: { personaId: personaStore.selectedId, mode: mode.value, forceNew: true },
+    })
+  }
+
   return {
     mode,
     onSelectPersona,
     onDeletePersona,
     onChangeMode,
+    onNewConversation,
   }
 }

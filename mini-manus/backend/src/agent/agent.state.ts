@@ -1,4 +1,5 @@
 import { Annotation } from '@langchain/langgraph';
+import type { ApprovalMode } from '@/common/enums';
 
 export interface StepResult {
   stepRunId: string;
@@ -42,6 +43,11 @@ export const AgentStateAnnotation = Annotation.Root({
   executionOrder: Annotation<number>({ reducer: (_, b) => b }),
   shouldStop: Annotation<boolean>({ reducer: (_, b) => b }),
   errorMessage: Annotation<string | null>({ reducer: (_, b) => b }),
+  // HITL: approval mode carried through the run
+  approvalMode: Annotation<ApprovalMode>({
+    reducer: (_, b) => b,
+    default: () => 'none',
+  }),
   // Bug 1 fix: pass step_run id and output through state so evaluator can read them
   lastStepRunId: Annotation<string>({
     reducer: (_, b) => b,

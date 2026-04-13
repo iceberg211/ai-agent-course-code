@@ -38,6 +38,17 @@ export class TaskRun {
   @Column({ name: 'cancel_requested', type: 'boolean', default: false })
   cancelRequested: boolean;
 
+  @Column({
+    name: 'approval_mode',
+    type: 'varchar',
+    length: 20,
+    default: 'none',
+  })
+  approvalMode: string;
+
+  @Column({ name: 'pending_approval_step', type: 'jsonb', nullable: true })
+  pendingApprovalStep: Record<string, unknown> | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage: string | null;
 

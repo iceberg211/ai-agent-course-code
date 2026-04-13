@@ -13,6 +13,8 @@ import {
   validatePlanSemantics,
   formatValidationErrors,
 } from '@/agent/plan-semantic-validator';
+import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
+import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
 
 const logger = new Logger('PlannerNode');
 
@@ -97,9 +99,12 @@ export async function plannerNode(
     // 记忆读取失败不应阻断规划，静默忽略
   }
 
-  const chain = plannerPrompt.pipe(
+  // ─── Guardrail 包裹的 Planner chain ────────────────────────────────────────
+  // 执行顺序：plannerLLM → outputGuardrail → semanticValidator
+  const llmChain = plannerPrompt.pipe(
     llm.withStructuredOutput(PlanSchema, { method: soMethod }),
   );
+  const chain = buildGuardedPlannerChain(llmChain);
 
   const baseInvokeArgs = {
     revisionInput: state.revisionInput,
@@ -113,10 +118,22 @@ export async function plannerNode(
   // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────
   let planSteps: z.infer<typeof PlanSchema>['steps'];
 
-  const result1 = await chain.invoke({
-    ...baseInvokeArgs,
-    validationErrors: '',
-  });
+  let result1: z.infer<typeof PlanSchema>;
+  try {
+    result1 = (await chain.invoke({
+      ...baseInvokeArgs,
+      validationErrors: '',
+    })) as z.infer<typeof PlanSchema>;
+  } catch (err) {
+    if (err instanceof GuardrailBlockedError) {
+      logger.warn(`Guardrail blocked (attempt 1): ${err.message}`);
+      return {
+        shouldStop: true,
+        errorMessage: `guardrail_blocked:${err.reason}`,
+      };
+    }
+    throw err;
+  }
   const errors1 = validatePlanSemantics(
     result1.steps,
     skillRegistry,
@@ -131,7 +148,22 @@ export async function plannerNode(
       `Plan semantic validation failed (attempt 1): ${errors1.map((e) => e.message).join(' | ')}`,
     );
     const validationErrors = formatValidationErrors(errors1);
-    const result2 = await chain.invoke({ ...baseInvokeArgs, validationErrors });
+    let result2: z.infer<typeof PlanSchema>;
+    try {
+      result2 = (await chain.invoke({
+        ...baseInvokeArgs,
+        validationErrors,
+      })) as z.infer<typeof PlanSchema>;
+    } catch (err) {
+      if (err instanceof GuardrailBlockedError) {
+        logger.warn(`Guardrail blocked (attempt 2): ${err.message}`);
+        return {
+          shouldStop: true,
+          errorMessage: `guardrail_blocked:${err.reason}`,
+        };
+      }
+      throw err;
+    }
     const errors2 = validatePlanSemantics(
       result2.steps,
       skillRegistry,

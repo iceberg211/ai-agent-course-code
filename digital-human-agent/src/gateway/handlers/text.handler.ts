@@ -42,6 +42,15 @@ export class TextHandler {
     const text = String(msg?.payload?.text ?? '').trim();
     if (!text) return;
 
+    // 若已有进行中的 turn，先 abort 它再开新 turn，防止并发竞态
+    if (
+      session.activeTurnId &&
+      session.abortController &&
+      !session.abortController.signal.aborted
+    ) {
+      session.abortController.abort();
+    }
+
     const turnId = uuidv4();
     this.sessionRegistry.update(session.sessionId, {
       activeTurnId: turnId,

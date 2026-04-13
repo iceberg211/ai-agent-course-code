@@ -9,10 +9,13 @@ export enum TaskStatus {
 export enum RunStatus {
   PENDING = 'pending',
   RUNNING = 'running',
+  AWAITING_APPROVAL = 'awaiting_approval',
   COMPLETED = 'completed',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
 }
+
+export type ApprovalMode = 'none' | 'side_effects' | 'all_steps';
 
 export enum StepStatus {
   PENDING = 'pending',

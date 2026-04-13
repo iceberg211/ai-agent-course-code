@@ -56,6 +56,7 @@ export class SessionHandler {
     }
 
     const mode = this.parseMode(msg.payload?.mode);
+    const forceNew = msg.payload?.forceNew === true;
 
     // 关闭旧会话
     const oldSession = this.sessionRegistry.findByWsClientId(clientId);
@@ -66,12 +67,12 @@ export class SessionHandler {
     // 验证 persona
     const persona = await this.personaService.findOne(personaId);
 
-    // 复用或新建 Conversation
-    const lastConversation =
-      await this.conversationService.getLatestConversationByPersona(personaId);
-    const conversation =
-      lastConversation ??
-      (await this.conversationService.createConversation(personaId));
+    // 复用或新建 Conversation（forceNew=true 时始终新建）
+    const conversation = forceNew
+      ? await this.conversationService.createConversation(personaId)
+      : ((await this.conversationService.getLatestConversationByPersona(
+          personaId,
+        )) ?? (await this.conversationService.createConversation(personaId)));
 
     const history = await this.conversationService.getRecentMessages(
       conversation.id,

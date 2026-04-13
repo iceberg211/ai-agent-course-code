@@ -14,7 +14,9 @@ import {
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { TaskService } from '@/task/task.service';
+import { AgentService } from '@/agent/agent.service';
 import { CreateTaskDto } from '@/task/dto/create-task.dto';
+import { ApprovalDto } from '@/task/dto/approval.dto';
 import { EventLogService } from '@/event/event-log.service';
 
 @ApiTags('tasks')
@@ -22,6 +24,7 @@ import { EventLogService } from '@/event/event-log.service';
 export class TaskController {
   constructor(
     private readonly taskService: TaskService,
+    private readonly agentService: AgentService,
     private readonly eventLog: EventLogService,
   ) {}
 
@@ -46,7 +49,7 @@ export class TaskController {
   @ApiResponse({ status: 400, description: '请求参数不合法' })
   @ApiResponse({ status: 429, description: '请求过于频繁' })
   create(@Body() dto: CreateTaskDto) {
-    return this.taskService.createTask(dto.input);
+    return this.taskService.createTask(dto.input, dto.approvalMode ?? 'none');
   }
 
   // ─── 任务摘要 ─────────────────────────────────────────────
@@ -149,6 +152,40 @@ export class TaskController {
   @ApiResponse({ status: 404, description: '任务不存在' })
   async delete(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     await this.taskService.deleteTask(id);
+  }
+
+  // ─── HITL：审批通过 ──────────────────────────────────────
+  @Post(':id/runs/:runId/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'HITL：审批通过，继续执行当前步骤' })
+  @ApiParam({ name: 'id', description: '任务 UUID' })
+  @ApiParam({ name: 'runId', description: 'Run UUID' })
+  @ApiResponse({ status: 200, description: '{ message }' })
+  @ApiResponse({ status: 404, description: '没有待审批的步骤' })
+  async approveStep(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) _taskId: string,
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+    @Body() _dto: ApprovalDto,
+  ) {
+    this.agentService.resolveApproval(runId, true);
+    return { message: 'approved' };
+  }
+
+  // ─── HITL：拒绝 ──────────────────────────────────────────
+  @Post(':id/runs/:runId/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'HITL：拒绝步骤，终止当前 Run' })
+  @ApiParam({ name: 'id', description: '任务 UUID' })
+  @ApiParam({ name: 'runId', description: 'Run UUID' })
+  @ApiResponse({ status: 200, description: '{ message }' })
+  @ApiResponse({ status: 404, description: '没有待审批的步骤' })
+  async rejectStep(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) _taskId: string,
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+    @Body() _dto: ApprovalDto,
+  ) {
+    this.agentService.resolveApproval(runId, false);
+    return { message: 'rejected' };
   }
 
   // ─── 编辑任务（新 revision）──────────────────────────────

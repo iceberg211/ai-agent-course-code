@@ -15,6 +15,7 @@ export const TASK_EVENTS = {
   TOOL_COMPLETED: 'tool.completed',
   ARTIFACT_CREATED: 'artifact.created',
   RUN_TOKEN_USAGE: 'run.token_usage',
+  RUN_AWAITING_APPROVAL: 'run.awaiting_approval',
 } as const;
 
 export type TaskEventName = (typeof TASK_EVENTS)[keyof typeof TASK_EVENTS];

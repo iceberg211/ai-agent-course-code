@@ -33,10 +33,14 @@ const MAX_INPUT_LENGTH = 2000;
 
 /**
  * 检测用户输入是否包含注入模式。
- * @returns true 表示疑似注入，应拒绝请求
+ * @returns 命中的 pattern 字符串，未命中返回 null
  */
-export function detectInjection(input: string): boolean {
-  return INJECTION_PATTERNS.some((pattern) => pattern.test(input));
+export function detectInjection(input: string): string | null {
+  for (const pattern of INJECTION_PATTERNS) {
+    const match = input.match(pattern);
+    if (match) return match[0].slice(0, 80); // 返回命中片段，用于日志
+  }
+  return null;
 }
 
 /**

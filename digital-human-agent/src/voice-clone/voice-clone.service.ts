@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { ConfigService } from '@nestjs/config';
@@ -125,6 +121,18 @@ export class VoiceCloneService {
       this.tasks.set(personaId, next);
       this.logger.error(
         `语音克隆失败: persona=${personaId}, err=${next.errorMessage}`,
+      );
+    } finally {
+      // 30 分钟后自动从内存清除已完成/失败的任务，防止长期占用内存
+      setTimeout(
+        () => {
+          const task = this.tasks.get(personaId);
+          if (task && (task.status === 'ready' || task.status === 'failed')) {
+            this.tasks.delete(personaId);
+            this.logger.debug(`语音克隆任务已清理: persona=${personaId}`);
+          }
+        },
+        30 * 60 * 1000,
       );
     }
   }

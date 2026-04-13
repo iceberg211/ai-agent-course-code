@@ -35,17 +35,25 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
   let wsConnection: WebSocket | null = null
   let dataChannel: RTCDataChannel | null = null
   let activeSessionId = ''
-  let readyPayload: ReadyPayload | null = null
   let sessionToken = ''
   let wsUrl = 'wss://api.simli.ai/startWebRTCSession'
-  let tokenSent = false
+
+  // 双条件门控：Simli 发 START + data channel 已 open 才开始推音频
+  let simliStarted = false
+  let dcOpen = false
   let canSendAudio = false
   const audioQueue: Uint8Array[] = []
+  const MAX_QUEUE = 120 // 约 120 × 20ms = 2.4s 缓冲
+
+  // ── 公开方法 ───────────────────────────────────────────────────────
 
   function bindVideo(el: HTMLVideoElement | null) {
     videoEl.value = el
   }
 
+  /**
+   * 处理旧版 webrtc:offer 信令（兼容后端遗留协议，非主路径）
+   */
   async function handleOffer(sessionId: string, payload: OfferPayload) {
     activeSessionId = sessionId
     lastError.value = ''
@@ -89,7 +97,6 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
         type: 'webrtc:answer',
         sessionId,
         payload: { sdpAnswer: { type: answer.type, sdp: answer.sdp } },
-
       })
     } catch (error) {
       status.value = 'error'
@@ -107,9 +114,11 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     }
   }
 
+  /**
+   * 处理 digital-human:ready 消息，主路径：Simli pcm-stream 模式
+   */
   function handleReady(sessionId: string, payload: ReadyPayload) {
     activeSessionId = sessionId
-    readyPayload = payload
     enabled.value = true
     lastError.value = ''
 
@@ -130,6 +139,9 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     void startSimliConnection(sessionId)
   }
 
+  /**
+   * 接收来自后端 TTS Pipeline 的 PCM 音频块，转发给 Simli
+   */
   function handlePcmChunk(audioBytes: ArrayBuffer) {
     if (!enabled.value) return
     if (status.value !== 'connecting' && status.value !== 'connected') return
@@ -137,8 +149,9 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     const bytes = new Uint8Array(audioBytes)
     if (bytes.byteLength === 0) return
 
-    if (!canSendAudio || !wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
-      if (audioQueue.length > 50) audioQueue.shift()
+    if (!canSendAudio) {
+      // 未就绪时缓冲，防止丢帧
+      if (audioQueue.length >= MAX_QUEUE) audioQueue.shift()
       audioQueue.push(bytes)
       return
     }
@@ -155,6 +168,24 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     await resetPeerConnection()
   }
 
+  // ── Simli 连接核心逻辑 ─────────────────────────────────────────────
+
+  /**
+   * 建立与 Simli 的 WebRTC 连接。
+   *
+   * 正确流程（Client-offer 模式）：
+   *   1. 创建 RTCPeerConnection + data channel（用于发 PCM 给 Simli）
+   *   2. addTransceiver recvonly（接收 Simli 返回的视频/音频）
+   *   3. createOffer → setLocalDescription → 等待 ICE 收集
+   *   4. 打开 WebSocket 到 Simli
+   *   5. WS onopen：① 先发 sessionToken 认证  ② 再发 SDP offer JSON
+   *   6. WS onmessage：
+   *      - JSON { type: 'answer', sdp: ... } → setRemoteDescription
+   *      - 字符串 'START' → 标记 simliStarted，触发 maybeStartAudio()
+   *      - 字符串 'STOP'  → 关闭连接
+   *   7. data channel onopen → 标记 dcOpen，触发 maybeStartAudio()
+   *   8. maybeStartAudio：双条件满足后设 canSendAudio = true，刷音频队列
+   */
   async function startSimliConnection(sessionId: string) {
     try {
       status.value = 'connecting'
@@ -174,13 +205,24 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
         status.value = 'connected'
       }
 
-      // Simli 会通过 data channel 同步会话状态；即使不直接发音频，也需要创建。
-      dataChannel = localPc.createDataChannel('datachannel', { ordered: true })
-      dataChannel.onopen = () => {
-        maybeSendSessionToken()
+      // Data channel：Simli 通过此通道接收 PCM 音频
+      const dc = localPc.createDataChannel('datachannel', {
+        ordered: true,
+        maxRetransmits: 0, // 实时音频丢包优于重传
+      })
+      dataChannel = dc
+
+      dc.onopen = () => {
+        dcOpen = true
+        maybeStartAudio()
       }
 
-      // 接收远端媒体流
+      dc.onclose = () => {
+        dcOpen = false
+        canSendAudio = false
+      }
+
+      // 只接收 Simli 发来的视频 + 音频，不向对端发送媒体
       localPc.addTransceiver('video', { direction: 'recvonly' })
       localPc.addTransceiver('audio', { direction: 'recvonly' })
 
@@ -192,48 +234,51 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       wsConnection = socket
 
       socket.onopen = () => {
+        // ① 认证：session token 必须是 WebSocket 的第一条消息
+        socket.send(sessionToken)
+
+        // ② SDP offer
         const sdp = localPc.localDescription?.sdp
         const type = localPc.localDescription?.type
-        if (!sdp || !type) return
-        socket.send(JSON.stringify({ sdp, type }))
-        maybeSendSessionToken()
+        if (sdp && type) {
+          socket.send(JSON.stringify({ sdp, type }))
+        }
       }
 
       socket.onmessage = async (evt) => {
         if (sessionId !== activeSessionId) return
 
-        const text =
-          typeof evt.data === 'string'
-            ? evt.data
-            : evt.data instanceof Blob
-              ? await evt.data.text()
-              : ''
-
-        if (!text) return
-        if (text === 'START') {
-          canSendAudio = true
-          flushAudioQueue()
+        let text: string
+        if (typeof evt.data === 'string') {
+          text = evt.data
+        } else if (evt.data instanceof Blob) {
+          text = await evt.data.text()
+        } else {
           return
         }
+
+        if (text === 'START') {
+          simliStarted = true
+          maybeStartAudio()
+          return
+        }
+
         if (text === 'STOP') {
           void close()
           return
         }
 
         try {
-          const message = JSON.parse(text) as {
-            type?: string
-            sdp?: string
-          }
-          if (message.type === 'answer' && message.sdp && localPc.signalingState !== 'closed') {
-            await localPc.setRemoteDescription({
-              type: 'answer',
-              sdp: message.sdp,
-            })
-            maybeSendSessionToken()
+          const msg = JSON.parse(text) as { type?: string; sdp?: string }
+          if (
+            msg.type === 'answer' &&
+            msg.sdp &&
+            localPc.signalingState !== 'closed'
+          ) {
+            await localPc.setRemoteDescription({ type: 'answer', sdp: msg.sdp })
           }
         } catch {
-          // 忽略非 JSON 文本消息（如 ping/pong）
+          // 非 JSON 文本（如心跳）忽略
         }
       }
 
@@ -245,6 +290,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       }
 
       socket.onclose = () => {
+        dcOpen = false
+        canSendAudio = false
         if (enabled.value && status.value === 'connecting') {
           status.value = 'error'
           lastError.value = 'Simli 连接已关闭'
@@ -256,17 +303,18 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     }
   }
 
-  function maybeSendSessionToken() {
-    if (tokenSent) return
-    if (!sessionToken) return
-    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) return
-    if (!dataChannel || dataChannel.readyState !== 'open') return
-    wsConnection.send(sessionToken)
-    tokenSent = true
+  /**
+   * 双条件门控：Simli START 信号 + data channel open，两者都满足才开始发音频
+   */
+  function maybeStartAudio() {
+    if (!simliStarted) return
+    if (!dcOpen) return
+    if (canSendAudio) return // 已经开始了
+    canSendAudio = true
+    flushAudioQueue()
   }
 
   function flushAudioQueue() {
-    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) return
     while (audioQueue.length > 0) {
       const chunk = audioQueue.shift()
       if (!chunk) continue
@@ -274,11 +322,13 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     }
   }
 
+  /**
+   * 通过 data channel 发送 PCM 音频给 Simli（16-bit PCM，16kHz，单声道）
+   */
   function sendBinaryChunk(chunk: Uint8Array) {
-    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) return
-    const payload = new Uint8Array(chunk.byteLength)
-    payload.set(chunk)
-    wsConnection.send(payload.buffer)
+    if (!dataChannel || dataChannel.readyState !== 'open') return
+    // new Uint8Array(chunk) 复制数据并返回 Uint8Array<ArrayBuffer>，满足 RTCDataChannel.send 类型要求
+    dataChannel.send(new Uint8Array(chunk))
   }
 
   async function waitIceGathering(localPc: RTCPeerConnection) {
@@ -287,7 +337,7 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       const timer = setTimeout(() => {
         localPc.removeEventListener('icegatheringstatechange', onStateChange)
         resolve()
-      }, 2000)
+      }, 3000)
 
       const onStateChange = () => {
         if (localPc.iceGatheringState === 'complete') {
@@ -302,8 +352,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
 
   async function resetPeerConnection() {
     canSendAudio = false
-    tokenSent = false
-    readyPayload = null
+    simliStarted = false
+    dcOpen = false
     audioQueue.length = 0
 
     if (wsConnection) {
@@ -321,6 +371,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
 
     if (dataChannel) {
       try {
+        dataChannel.onopen = null
+        dataChannel.onclose = null
         dataChannel.close()
       } catch {
         // ignore
@@ -334,7 +386,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       pc.close()
       pc = null
     }
-    if (videoEl.value && videoEl.value.srcObject) {
+
+    if (videoEl.value?.srcObject) {
       videoEl.value.srcObject = null
     }
   }

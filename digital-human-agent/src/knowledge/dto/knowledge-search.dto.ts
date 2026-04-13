@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -18,6 +19,7 @@ export class KnowledgeSearchDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(500)
   query: string;
 
   @ApiPropertyOptional({

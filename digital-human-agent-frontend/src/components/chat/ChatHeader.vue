@@ -33,6 +33,16 @@
         </button>
       </div>
       <button
+        v-if="persona"
+        class="docs-btn"
+        @click="$emit('new-conversation')"
+        aria-label="新建对话"
+        title="新建对话（清空当前会话）"
+      >
+        <PlusSquareIcon :size="15" aria-hidden="true" />
+        <span>新对话</span>
+      </button>
+      <button
         class="docs-btn"
         :class="{ active: docsOpen }"
         @click="$emit('toggle-docs')"
@@ -47,13 +57,13 @@
 </template>
 
 <script setup lang="ts">
-import { BookOpenIcon } from 'lucide-vue-next'
+import { BookOpenIcon, PlusSquareIcon } from 'lucide-vue-next'
 defineProps({
   persona:  { type: Object,  default: null },
   docsOpen: { type: Boolean, default: false },
   mode: { type: String, default: 'voice' },
 })
-defineEmits(['toggle-docs', 'change-mode'])
+defineEmits(['toggle-docs', 'change-mode', 'new-conversation'])
 </script>
 
 <style scoped>

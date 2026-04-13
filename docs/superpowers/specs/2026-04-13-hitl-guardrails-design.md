@@ -207,31 +207,24 @@ agent/
 
 ### 3.2 核心链
 
+`inputGuardrail` 已移除：用户输入已在 HTTP 层（`task.service.ts`）完成注入检测，LLM 调用链内不重复处理。
+
 ```typescript
 // guardrail.chain.ts
-// plannerLlmChain 的输入是 prompt 变量对象，userInput 是其中一个字段
-
-export const inputGuardrail = RunnableLambda.from(
-  async (input: Record<string, unknown> & { userInput: string }) => {
-    const cleaned = sanitizeInput(input.userInput);
-    const risk = detectInjection(cleaned);
-    if (risk) throw new GuardrailBlockedError('input_injection', risk);
-    return { ...input, userInput: cleaned }; // 传递给 plannerLlmChain
-  }
-).withConfig({ runName: 'InputGuardrail' });
+// 只保留输出 Guardrail，防止 LLM 在 plan 中写出被诱导的注入内容
 
 export const outputGuardrail = RunnableLambda.from(
-  async (plan: z.infer<typeof PlanSchema>) => {
-    for (const step of plan.steps) {
-      const risk = detectInjection(step.description);
-      if (risk) throw new GuardrailBlockedError('plan_injection', step.description);
+  (plan: { steps: Array<{ description?: string }> }) => {
+    for (const step of plan.steps ?? []) {
+      const risk = detectInjection(step.description ?? '');
+      if (risk) throw new GuardrailBlockedError('plan_injection', risk);
     }
     return plan;
   }
 ).withConfig({ runName: 'OutputGuardrail' });
 
 export const buildGuardedPlannerChain = (plannerLlmChain: Runnable) =>
-  RunnableSequence.from([inputGuardrail, plannerLlmChain, outputGuardrail]);
+  RunnableSequence.from([plannerLlmChain, outputGuardrail]);
 ```
 
 ### 3.3 错误类型

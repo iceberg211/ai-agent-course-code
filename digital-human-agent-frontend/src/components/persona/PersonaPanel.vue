@@ -5,7 +5,12 @@
       <span class="logo">数字人 Agent</span>
     </div>
 
-    <div class="section-label">角色</div>
+    <div class="section-row">
+      <div class="section-label">角色</div>
+      <button class="add-btn" type="button" @click="$emit('create')" aria-label="新建角色" title="新建角色">
+        <PlusIcon :size="13" />
+      </button>
+    </div>
 
     <ul class="persona-list" role="listbox" aria-label="选择角色">
       <template v-if="loading">
@@ -81,7 +86,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { BotIcon, UserIcon } from 'lucide-vue-next'
+import { BotIcon, UserIcon, PlusIcon } from 'lucide-vue-next'
 import PersonaItem from './PersonaItem.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
 import type { Persona, VoiceCloneState } from '../../types'
@@ -89,6 +94,7 @@ import type { Persona, VoiceCloneState } from '../../types'
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'delete', id: string): void
+  (e: 'create'): void
   (e: 'upload-voice-sample', file: File): void
   (e: 'refresh-voice-clone'): void
 }>()
@@ -153,13 +159,36 @@ function onVoiceFileChange(event: Event) {
   border-bottom: 1px solid var(--border-muted);
 }
 .logo { font-size: 14px; font-weight: 700; color: var(--text-secondary); letter-spacing: -0.02em; }
+.section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px 6px 16px;
+}
 .section-label {
-  padding: 14px 16px 6px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--text-muted);
   text-transform: uppercase;
+}
+.add-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-muted);
+  background: #fff;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.add-btn:hover {
+  background: var(--primary-bg);
+  color: var(--primary);
+  border-color: var(--primary-muted);
 }
 .persona-list { flex: 1; overflow-y: auto; padding: 4px 8px; list-style: none; }
 .empty-hint { display: flex; align-items: center; gap: 8px; padding: 16px; color: var(--text-muted); font-size: 12px; list-style: none; }

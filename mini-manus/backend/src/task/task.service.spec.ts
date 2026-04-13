@@ -32,7 +32,7 @@ function createRepositoryMock<T extends object>(): RepositoryMock<T> {
   };
 }
 
-function createService(dataSource: Partial<DataSource>) {
+function createService(dataSource: object) {
   const taskRepo = createRepositoryMock<Task>();
   const revisionRepo = createRepositoryMock<TaskRevision>();
   const runRepo = createRepositoryMock<TaskRun>();
@@ -51,7 +51,7 @@ function createService(dataSource: Partial<DataSource>) {
     planStepRepo as unknown as Repository<PlanStep>,
     stepRunRepo as unknown as Repository<StepRun>,
     artifactRepo as unknown as Repository<Artifact>,
-    dataSource as DataSource,
+    dataSource as unknown as DataSource,
     {} as AgentService,
     eventPublisher as unknown as EventPublisher,
     workspace as unknown as WorkspaceService,
@@ -192,11 +192,7 @@ describe('TaskService', () => {
       status: TaskStatus.RUNNING,
       currentRunId: 'run-1',
     });
-    expect(executeRunSpy).toHaveBeenCalledWith(
-      'run-1',
-      'task-1',
-      '用户输入',
-    );
+    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入');
   });
 
   it('getTaskDetail 返回 runs 摘要中的 token 和成本字段', async () => {

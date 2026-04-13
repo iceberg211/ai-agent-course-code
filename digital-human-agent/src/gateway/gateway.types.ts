@@ -37,6 +37,8 @@ export interface WsSessionStartMessage extends WsBaseMessage {
   payload?: {
     personaId?: string;
     mode?: string;
+    /** true 时强制新建对话，不复用最近一次 */
+    forceNew?: boolean;
   };
 }
 

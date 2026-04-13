@@ -333,7 +333,7 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async applyRequestPolicy(context: BrowserContext): Promise<void> {
-    await context.route('**/*', async (route) => {
+    await context.route('**/*', async (route: import('playwright').Route) => {
       const requestUrl = route.request().url();
       if (this.isAllowedBrowserRequestUrl(requestUrl)) {
         await route.continue();

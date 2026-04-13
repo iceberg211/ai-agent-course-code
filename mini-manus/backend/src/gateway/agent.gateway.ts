@@ -75,7 +75,9 @@ export class AgentGateway
 
   handleConnection(client: Socket) {
     if (!this.isAuthenticated(client)) {
-      this.logger.warn(`Unauthorized websocket connection rejected: ${client.id}`);
+      this.logger.warn(
+        `Unauthorized websocket connection rejected: ${client.id}`,
+      );
       client.emit('error', { message: 'Unauthorized' });
       client.disconnect(true);
       return;
@@ -250,5 +252,12 @@ export class AgentGateway
     this.server
       .to(this.taskRoom(payload))
       .emit(TASK_EVENTS.RUN_TOKEN_USAGE, payload);
+  }
+
+  @OnEvent(TASK_EVENTS.RUN_AWAITING_APPROVAL)
+  onRunAwaitingApproval(payload: Record<string, unknown>) {
+    this.server
+      .to(this.taskRoom(payload))
+      .emit(TASK_EVENTS.RUN_AWAITING_APPROVAL, payload);
   }
 }

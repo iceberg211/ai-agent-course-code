@@ -1,8 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import { InMemoryCache } from '@langchain/core/caches';
-import { StateGraph, END, START } from '@langchain/langgraph';
+import {
+  StateGraph,
+  END,
+  START,
+  MemorySaver,
+  Command,
+} from '@langchain/langgraph';
+import type { ApprovalMode } from '@/common/enums';
 import { AgentStateAnnotation, AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { ToolRegistry } from '@/tool/tool.registry';
@@ -73,6 +80,14 @@ export class AgentService {
   private readonly stepTimeoutMs: number;
   private readonly exportPdfEnabled: boolean;
   private readonly planValidationOptions: PlanSemanticValidationOptions;
+  private readonly approvalTimeoutMs: number;
+  // LangGraph checkpointer — 进程内存存储，重启后失效（生产可替换为 PostgreSQL checkpointer）
+  private readonly checkpointer = new MemorySaver();
+  // 待审批的 promise resolvers，key = runId
+  private readonly approvalMap = new Map<
+    string,
+    { resolve: (approved: boolean) => void; reject: (err: Error) => void }
+  >();
   /**
    * 结构化输出方式：
    * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
@@ -140,6 +155,7 @@ export class AgentService {
         : 'functionCalling'
     ) as this['structuredOutputMethod'];
 
+    this.approvalTimeoutMs = config.get<number>('APPROVAL_TIMEOUT_MS', 600_000);
     this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
   }
 
@@ -149,6 +165,7 @@ export class AgentService {
     revisionInput: string,
     callbacks: AgentCallbacks,
     signal: AbortSignal,
+    approvalMode: ApprovalMode = 'none',
   ): Promise<void> {
     const llm = this.llm;
     const toolRegistry = this.toolRegistry;
@@ -182,6 +199,7 @@ export class AgentService {
           eventPublisher,
           signal,
           this.stepTimeoutMs,
+          soMethod,
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
@@ -233,12 +251,17 @@ export class AgentService {
       })
       .addEdge('finalizer', END);
 
-    const compiled = graph.compile();
+    // MemorySaver checkpointer 支持 HITL interrupt/resume
+    const compiled = graph.compile({ checkpointer: this.checkpointer });
+    const graphConfig = {
+      configurable: { thread_id: runId },
+    };
 
     const initialState: Partial<AgentState> = {
       taskId,
       runId,
       revisionInput,
+      approvalMode,
       currentPlan: null,
       currentStepIndex: 0,
       stepResults: [],
@@ -256,39 +279,94 @@ export class AgentService {
     const tokenTracker = new TokenTrackerCallback();
 
     try {
-      const finalState = await compiled.invoke(initialState, {
-        callbacks: [tokenTracker],
-      });
+      // ─── HITL while 循环 ────────────────────────────────────────────────────
+      // 每次 interrupt() 后暂停，等待外部 resume（approved/rejected），
+      // 再以 Command 重新 invoke，直到图执行完成或终止
+      let invokeInput: Partial<AgentState> | Command = initialState;
 
-      // 检测因重试/重规划/fail 耗尽而退出的情况：
-      // evaluator 返回 END 时不设 errorMessage，若不主动识别会被误判为 completed
-      const decision = finalState.evaluation?.decision;
-      const isExhausted =
-        decision === 'fail' ||
-        (decision === 'retry' && finalState.retryCount >= this.maxRetries) ||
-        (decision === 'replan' && finalState.replanCount >= this.maxReplans);
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await compiled.invoke(invokeInput as any, {
+          ...graphConfig,
+          callbacks: [tokenTracker],
+        });
 
-      if (finalState.shouldStop || finalState.errorMessage === 'cancelled') {
-        await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
-        eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
-      } else if (finalState.errorMessage || isExhausted) {
-        const msg =
-          finalState.errorMessage ??
-          finalState.evaluation?.reason ??
-          (decision === 'retry'
-            ? `重试次数已耗尽（上限 ${this.maxRetries}）`
-            : decision === 'replan'
-              ? `重规划次数已耗尽（上限 ${this.maxReplans}）`
-              : '任务执行失败');
-        await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
-        eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+        // 检查是否有 interrupt 待处理
+        const interrupts = (result as Record<string, unknown>)[
+          '__interrupt__'
+        ] as Array<{ value: Record<string, unknown> }> | undefined;
+
+        if (!interrupts?.length) {
+          // 图已正常结束，result 是 finalState
+          const finalState = result;
+
+          // 检测因重试/重规划/fail 耗尽而退出的情况：
+          const decision = finalState.evaluation?.decision;
+          const isExhausted =
+            decision === 'fail' ||
+            (decision === 'retry' &&
+              finalState.retryCount >= this.maxRetries) ||
+            (decision === 'replan' &&
+              finalState.replanCount >= this.maxReplans);
+
+          if (
+            finalState.shouldStop ||
+            finalState.errorMessage === 'cancelled'
+          ) {
+            await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
+            eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
+          } else if (finalState.errorMessage || isExhausted) {
+            const msg =
+              finalState.errorMessage ??
+              finalState.evaluation?.reason ??
+              (decision === 'retry'
+                ? `重试次数已耗尽（上限 ${this.maxRetries}）`
+                : decision === 'replan'
+                  ? `重规划次数已耗尽（上限 ${this.maxReplans}）`
+                  : '任务执行失败');
+            await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
+            eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+              taskId,
+              runId,
+              error: msg,
+            });
+          } else {
+            await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
+            eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, { taskId, runId });
+          }
+          break; // while 循环正常结束
+        }
+
+        // ─── 有 interrupt：等待人工审批 ───────────────────────────────────
+        const interruptValue = interrupts[0].value;
+        await callbacks.setRunAwaitingApproval(runId, interruptValue);
+        eventPublisher.emit(TASK_EVENTS.RUN_AWAITING_APPROVAL, {
           taskId,
           runId,
-          error: msg,
+          ...interruptValue,
         });
-      } else {
-        await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
-        eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, { taskId, runId });
+
+        let approved: boolean;
+        try {
+          approved = await this.waitForApproval(runId);
+        } catch {
+          // 超时或被 cancel 触发 reject
+          await callbacks.setRunStatus(
+            runId,
+            RunStatus.FAILED,
+            'approval_timeout',
+          );
+          eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+            taskId,
+            runId,
+            error: 'approval_timeout',
+          });
+          break;
+        }
+
+        invokeInput = new Command({
+          resume: approved ? 'approved' : 'rejected',
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -341,5 +419,26 @@ export class AgentService {
       }
       await callbacks.finalize(taskId);
     }
+  }
+
+  /**
+   * 审批通过或拒绝。由 TaskController 的 /approve 和 /reject 端点调用。
+   * cancel 时也应调用此方法（approved=false），避免 approvalMap 泄漏。
+   */
+  resolveApproval(runId: string, approved: boolean): void {
+    const entry = this.approvalMap.get(runId);
+    if (!entry) throw new NotFoundException(`运行 ${runId} 没有待审批的步骤`);
+    this.approvalMap.delete(runId);
+    entry.resolve(approved);
+  }
+
+  private waitForApproval(runId: string): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      this.approvalMap.set(runId, { resolve, reject });
+      setTimeout(() => {
+        this.approvalMap.delete(runId); // 防止 entry 泄漏
+        reject(new Error('approval_timeout'));
+      }, this.approvalTimeoutMs);
+    });
   }
 }

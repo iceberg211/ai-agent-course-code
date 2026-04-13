@@ -2,6 +2,14 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Persona } from '../types'
 
+export interface CreatePersonaPayload {
+  name: string
+  description?: string
+  speakingStyle?: string
+  expertise?: string[]
+  systemPromptExtra?: string
+}
+
 export const usePersonaStore = defineStore('persona', () => {
   const personas = ref<Persona[]>([])
   const selectedId = ref('')
@@ -62,5 +70,24 @@ export const usePersonaStore = defineStore('persona', () => {
     selectedId.value = id
   }
 
-  return { personas, selectedId, selectedPersona, loading, loadError, fetchPersonas, deletePersona, select }
+  async function createPersona(payload: CreatePersonaPayload): Promise<{ ok: boolean; persona?: Persona; message?: string }> {
+    const res = await fetch('/api/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null)
+
+    if (!res) return { ok: false, message: '网络错误' }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error(`[Persona] 创建失败: HTTP ${res.status}`, text)
+      return { ok: false, message: `HTTP ${res.status}` }
+    }
+
+    const persona: Persona = await res.json()
+    personas.value = [...personas.value, persona]
+    return { ok: true, persona }
+  }
+
+  return { personas, selectedId, selectedPersona, loading, loadError, fetchPersonas, deletePersona, select, createPersona }
 })

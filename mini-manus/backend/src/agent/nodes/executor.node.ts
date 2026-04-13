@@ -1,10 +1,11 @@
+import { interrupt } from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
-import { ExecutorType, StepStatus } from '@/common/enums';
+import { ExecutorType, StepStatus, RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 
@@ -50,6 +51,38 @@ export async function executorNode(
   const usesSkill = Boolean(
     step.skillName && skillRegistry.has(step.skillName),
   );
+
+  // ─── HITL interrupt 检查 ──────────────────────────────────────────────────
+  // 根据 approvalMode 决定是否在执行前暂停等待人工确认
+  const isSideEffect = usesSkill
+    ? skillRegistry.get(step.skillName!).effect === 'side-effect'
+    : toolRegistry.has(step.toolHint ?? '')
+      ? toolRegistry.get(step.toolHint!).type === 'side-effect'
+      : false;
+
+  const shouldPause =
+    state.approvalMode === 'all_steps' ||
+    (state.approvalMode === 'side_effects' && isSideEffect);
+
+  if (shouldPause) {
+    const stepInfo = {
+      stepIndex: state.currentStepIndex,
+      description: step.description,
+      isSideEffect,
+      toolOrSkill: step.toolHint ?? step.skillName ?? 'unknown',
+    };
+    // 持久化 AWAITING_APPROVAL 状态（在 interrupt 之前，防止状态丢失）
+    await callbacks.setRunAwaitingApproval(state.runId, stepInfo);
+
+    // LangGraph interrupt：暂停图执行，等待外部 resume
+    const decision = interrupt(stepInfo);
+
+    // resume 后恢复执行
+    await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
+    if (decision === 'rejected') {
+      return { shouldStop: true, errorMessage: 'step_rejected' };
+    }
+  }
 
   // 先持久化 step_run，再发事件，避免前端收到数据库里不存在的记录
   const stepRun = await callbacks.createStepRun(

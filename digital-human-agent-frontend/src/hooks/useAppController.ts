@@ -41,7 +41,7 @@ export function useAppController() {
 
   const mic = useMicController(conversation, audio, send, sendBinary, showToast)
 
-  const { mode, onSelectPersona, onDeletePersona, onChangeMode } = usePersonaActions(
+  const { mode, onSelectPersona, onDeletePersona, onChangeMode, onNewConversation } = usePersonaActions(
     conversation, knowledge, voiceClone, digitalHuman, textChat, send, showToast,
   )
 
@@ -98,6 +98,7 @@ export function useAppController() {
     onSelectPersona,
     onDeletePersona,
     onChangeMode,
+    onNewConversation,
     onMicDown: (mode_: string) => mic.onMicDown(mode_),
     onMicUp: mic.onMicUp,
     onSendText: async (text: string) => {

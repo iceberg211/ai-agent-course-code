@@ -10,7 +10,8 @@
     <div class="body">
       <div class="bubble" :class="{ streaming: message.streaming, interrupted: message.status === 'interrupted' }">
         <TypingIndicator v-if="message.streaming && !message.content" />
-        <!-- 用 pre-wrap 渲染时保留换行，未来可替换为 markdown 渲染器 -->
+        <!-- assistant 消息使用 Markdown 渲染，用户消息保持纯文本 -->
+        <div v-else-if="message.role === 'assistant'" class="content md" v-html="renderMarkdown(message.content)" />
         <span v-else class="content">{{ message.content }}</span>
         <!-- 流式光标 -->
         <span v-if="message.streaming && message.content" class="cursor" aria-hidden="true" />
@@ -34,9 +35,13 @@
 </template>
 
 <script setup lang="ts">
+import { marked } from 'marked'
 import { BotIcon, UserIcon, AlertCircleIcon, MinusCircleIcon } from 'lucide-vue-next'
 import TypingIndicator from './TypingIndicator.vue'
 import CitationChips from './CitationChips.vue'
+
+// marked 配置：开启 gfm（GitHub Flavored Markdown），关闭 pedantic
+marked.setOptions({ gfm: true })
 
 defineProps({
   message: { type: Object, required: true },
@@ -46,6 +51,12 @@ function statusLabel(status: string) {
   if (status === 'interrupted') return '回复已中断'
   if (status === 'failed') return '回复失败'
   return ''
+}
+
+// 将 markdown 文本转为 HTML；内容来自受控后端，不需要额外 sanitize
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  return marked.parse(text) as string
 }
 </script>
 
@@ -154,4 +165,57 @@ function statusLabel(status: string) {
 
 /* ── 内容文字 ─────────────────────────────────────────────────────── */
 .content { display: block; }
+
+/* ── Markdown 渲染样式 ───────────────────────────────────────────────── */
+.content.md { display: block; }
+.content.md :deep(p)  { margin: 0 0 8px; }
+.content.md :deep(p:last-child) { margin-bottom: 0; }
+.content.md :deep(ul),
+.content.md :deep(ol) { margin: 4px 0 8px; padding-left: 20px; }
+.content.md :deep(li) { margin: 2px 0; }
+.content.md :deep(code) {
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 12px;
+  background: rgba(0,0,0,0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.content.md :deep(pre) {
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.content.md :deep(pre code) {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: #334155;
+}
+.content.md :deep(strong) { font-weight: 600; }
+.content.md :deep(blockquote) {
+  border-left: 3px solid var(--primary-muted);
+  margin: 4px 0;
+  padding: 2px 10px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.content.md :deep(h1),
+.content.md :deep(h2),
+.content.md :deep(h3) {
+  font-weight: 600;
+  margin: 8px 0 4px;
+  line-height: 1.4;
+}
+.content.md :deep(h1) { font-size: 16px; }
+.content.md :deep(h2) { font-size: 14.5px; }
+.content.md :deep(h3) { font-size: 13.5px; }
+.content.md :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.content.md :deep(a) { color: var(--primary); text-decoration: underline; }
 </style>
