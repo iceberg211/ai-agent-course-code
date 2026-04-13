@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { AgentService } from '@/agent/agent.service';
-import { RunStatus, TaskStatus } from '@/common/enums';
+import { RunStatus, TaskStatus, type ApprovalMode } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { WorkspaceService } from '@/workspace/workspace.service';
@@ -131,6 +131,7 @@ describe('TaskService', () => {
       'task-1',
       'revision-1',
       '生成 Mini-Manus 状态报告',
+      'none',
     );
   });
 
@@ -173,6 +174,7 @@ describe('TaskService', () => {
             runId: string,
             taskId: string,
             revisionInput: string,
+            approvalMode: ApprovalMode,
           ): Promise<void>;
         },
         'executeRun',
@@ -187,12 +189,115 @@ describe('TaskService', () => {
       runNumber: 1,
       status: RunStatus.PENDING,
       cancelRequested: false,
+      approvalMode: 'none',
     });
     expect(task).toMatchObject({
       status: TaskStatus.RUNNING,
       currentRunId: 'run-1',
     });
-    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入');
+    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入', 'none');
+  });
+
+  it('createTask 透传 approvalMode 给 startRun', async () => {
+    const manager = {
+      create: jest.fn(
+        (
+          target: typeof Task | typeof TaskRevision,
+          input: Partial<Task> | Partial<TaskRevision>,
+        ) => {
+          if (target === Task) return { id: 'task-1', ...input };
+          return { id: 'revision-1', ...input };
+        },
+      ),
+      save: jest.fn(async <T>(entity: T) => entity),
+    };
+    const dataSource = {
+      transaction: jest.fn(async <T>(callback: (em: typeof manager) => T) =>
+        callback(manager),
+      ),
+    };
+    const { service } = createService(dataSource);
+    const startRunSpy = jest
+      .spyOn(service, 'startRun')
+      .mockResolvedValue(undefined);
+
+    await service.createTask('调研 LangGraph 最新进展', 'side_effects');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(startRunSpy).toHaveBeenCalledWith(
+      'task-1',
+      'revision-1',
+      '调研 LangGraph 最新进展',
+      'side_effects',
+    );
+  });
+
+  it('startRun 将 approvalMode 写入 TaskRun 并透传给 executeRun', async () => {
+    const task = { id: 'task-1', status: TaskStatus.PENDING, currentRunId: null };
+    const manager = {
+      findOneOrFail: jest.fn(async () => task),
+      count: jest.fn(async () => 0),
+      create: jest.fn((_target: typeof TaskRun, input: Partial<TaskRun>) => ({
+        id: 'run-1',
+        ...input,
+      })),
+      save: jest.fn(async <T>(entity: T) => entity),
+      findOne: jest.fn(async () => null),
+    };
+    const dataSource = {
+      transaction: jest.fn(async <T>(callback: (em: typeof manager) => T) =>
+        callback(manager),
+      ),
+    };
+    const { service } = createService(dataSource);
+    const executeRunSpy = jest
+      .spyOn(
+        service as unknown as {
+          executeRun(
+            runId: string,
+            taskId: string,
+            revisionInput: string,
+            approvalMode: ApprovalMode,
+          ): Promise<void>;
+        },
+        'executeRun',
+      )
+      .mockResolvedValue(undefined);
+
+    await service.startRun('task-1', 'revision-1', '用户输入', 'all_steps');
+
+    // approvalMode 必须写入 TaskRun 实体
+    expect(manager.create).toHaveBeenCalledWith(TaskRun, expect.objectContaining({
+      approvalMode: 'all_steps',
+    }));
+    // approvalMode 必须透传给 executeRun
+    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入', 'all_steps');
+  });
+
+  it('cancelRun 在 run 等待审批时调用 resolveApproval 并设置 cancelRequested', async () => {
+    const pendingRun = {
+      id: 'run-awaiting',
+      taskId: 'task-1',
+      status: RunStatus.AWAITING_APPROVAL,
+      cancelRequested: false,
+    };
+    const { service, repositories } = createService({});
+    repositories.runRepo.findOne!.mockResolvedValue(pendingRun);
+    repositories.runRepo.update!.mockResolvedValue(undefined);
+
+    const agentService = { resolveApproval: jest.fn() };
+    // 直接注入 mock agentService
+    (service as unknown as { agentService: typeof agentService }).agentService =
+      agentService;
+
+    await service.cancelRun('task-1');
+
+    expect(repositories.runRepo.update).toHaveBeenCalledWith(
+      'run-awaiting',
+      { cancelRequested: true },
+    );
+    // resolveApproval(runId, false) 必须被调用以释放 HITL 等待
+    expect(agentService.resolveApproval).toHaveBeenCalledWith('run-awaiting', false);
   });
 
   it('getTaskDetail 返回 runs 摘要中的 token 和成本字段', async () => {
