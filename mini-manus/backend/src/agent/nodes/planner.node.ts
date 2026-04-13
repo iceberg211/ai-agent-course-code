@@ -1,7 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { AgentState, PlanDef } from '@/agent/agent.state';
+import {
+  AgentState,
+  PlanDef,
+  PlanStepDef,
+  TaskIntent,
+} from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
@@ -17,6 +22,53 @@ import { interrupt } from '@langchain/langgraph';
 import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
 import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
 import { RunStatus } from '@/common/enums';
+
+// ─── 确定性 Workflow ─────────────────────────────────────────────────────────
+// 高频意图的固定计划，代码直接返回，不经 LLM Planner。
+// 技能选择和步骤顺序是确定的，只有技能内部的工具调用是动态的。
+//
+// 占位符 __STEP_RESULTS__：executor 在运行时替换为前序步骤的真实输出。
+
+/** 步骤结果占位符，executor 在执行前替换为真实 stepResults 摘要 */
+export const STEP_RESULTS_PLACEHOLDER = '__STEP_RESULTS__';
+
+type WorkflowBuilder = (state: AgentState) => PlanStepDef[];
+
+export const DETERMINISTIC_WORKFLOWS: Partial<Record<TaskIntent, WorkflowBuilder>> = {
+  code_generation: (state) => [
+    {
+      stepIndex: 0,
+      description: `根据需求生成完整代码项目`,
+      skillName: 'code_project_generation',
+      skillInput: {
+        task_id: state.taskId,
+        project_description: state.revisionInput,
+      },
+    },
+  ],
+
+  research_report: (state) => [
+    {
+      stepIndex: 0,
+      description: `围绕主题进行深度网络调研`,
+      skillName: 'web_research',
+      skillInput: {
+        topic: state.revisionInput,
+        depth: 2,
+      },
+    },
+    {
+      stepIndex: 1,
+      description: `基于调研结果生成完整报告并打包交付`,
+      skillName: 'report_packaging',
+      skillInput: {
+        task_id: state.taskId,
+        title: state.revisionInput,
+        source_material: STEP_RESULTS_PLACEHOLDER,
+      },
+    },
+  ],
+};
 
 const logger = new Logger('PlannerNode');
 
@@ -34,6 +86,39 @@ const PlanSchema = z.object({
     }),
   ),
 });
+
+/** 共享 HITL plan_first 审批逻辑（确定性 workflow 和 LLM 路径共用） */
+async function handlePlanApproval(
+  plan: { id: string },
+  planSteps: PlanStepDef[],
+  state: AgentState,
+  skillRegistry: SkillRegistry,
+  toolRegistry: ToolRegistry,
+  callbacks: AgentCallbacks,
+): Promise<'approved' | 'rejected'> {
+  const stepSummaries = planSteps.map((s) => ({
+    stepIndex: s.stepIndex,
+    description: s.description,
+    executor: s.skillName ?? s.toolHint ?? 'think',
+    isSideEffect:
+      (s.skillName && skillRegistry.has(s.skillName)
+        ? skillRegistry.get(s.skillName).effect === 'side-effect'
+        : false) ||
+      (s.toolHint && toolRegistry.has(s.toolHint)
+        ? toolRegistry.get(s.toolHint).type === 'side-effect'
+        : false),
+  }));
+  const planReviewInfo = {
+    type: 'plan_review' as const,
+    planId: plan.id,
+    stepCount: planSteps.length,
+    steps: stepSummaries,
+  };
+  await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
+  const decision = interrupt(planReviewInfo) as 'approved' | 'rejected';
+  await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
+  return decision;
+}
 
 export async function plannerNode(
   state: AgentState,
@@ -55,6 +140,43 @@ export async function plannerNode(
     });
   }
 
+  // ─── 确定性 Workflow：高频意图代码直接返回固定计划，不调 LLM ────────────────
+  // replan 时不走确定性路径，改用 LLM 重新规划（首次策略可能有问题）
+  const workflowBuilder = !isReplan
+    ? DETERMINISTIC_WORKFLOWS[state.taskIntent]
+    : undefined;
+
+  if (workflowBuilder) {
+    logger.log(`确定性 workflow: ${state.taskIntent}（跳过 LLM Planner）`);
+    const planSteps = workflowBuilder(state);
+    const plan = await callbacks.savePlan(state.runId, planSteps);
+    eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
+      taskId: state.taskId,
+      runId: state.runId,
+      planId: plan.id,
+      steps: planSteps as unknown as Record<string, unknown>[],
+    });
+
+    if (state.approvalMode === 'plan_first') {
+      const decision = await handlePlanApproval(
+        plan, planSteps, state, skillRegistry, toolRegistry, callbacks,
+      );
+      if (decision === 'rejected') {
+        return { shouldStop: true, errorMessage: 'plan_rejected' };
+      }
+    }
+
+    return {
+      currentPlan: { planId: plan.id, steps: planSteps } as PlanDef,
+      currentStepIndex: 0,
+      retryCount: 0,
+      evaluation: null,
+      lastStepRunId: '',
+      lastStepOutput: '',
+    };
+  }
+
+  // ─── LLM Planner 路径（general / content_writing / competitive_analysis / replan）───
   const skillSection = skillRegistry.getPlannerPromptSection();
 
   const toolInputExamples = [
@@ -226,28 +348,9 @@ export async function plannerNode(
 
   // ─── plan_first HITL：计划生成后、执行前暂停等待用户审批 ──────────────────────
   if (state.approvalMode === 'plan_first') {
-    const stepSummaries = planSteps.map((s) => ({
-      stepIndex: s.stepIndex,
-      description: s.description,
-      executor: s.skillName ?? s.toolHint ?? 'think',
-      isSideEffect:
-        (s.skillName && skillRegistry.has(s.skillName)
-          ? skillRegistry.get(s.skillName).effect === 'side-effect'
-          : false) ||
-        (s.toolHint && toolRegistry.has(s.toolHint)
-          ? toolRegistry.get(s.toolHint).type === 'side-effect'
-          : false),
-    }));
-
-    const planReviewInfo = {
-      type: 'plan_review' as const,
-      planId: plan.id,
-      stepCount: planSteps.length,
-      steps: stepSummaries,
-    };
-    await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
-    const decision = interrupt(planReviewInfo);
-    await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
+    const decision = await handlePlanApproval(
+      plan, planSteps, state, skillRegistry, toolRegistry, callbacks,
+    );
     if (decision === 'rejected') {
       return { shouldStop: true, errorMessage: 'plan_rejected' };
     }

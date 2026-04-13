@@ -12,6 +12,33 @@ import { ExecutorType, StepStatus, RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { Tool } from '@/tool/interfaces/tool.interface';
+import { STEP_RESULTS_PLACEHOLDER } from '@/agent/nodes/planner.node';
+
+/**
+ * 解析 skillInput 中的 __STEP_RESULTS__ 占位符（仅检查顶层字符串值）。
+ * 确定性 workflow 用此机制实现步骤间数据传递：
+ * planner 设置 { source_material: "__STEP_RESULTS__" }
+ * executor 在运行时替换为前序步骤的真实输出摘要。
+ */
+export function resolveStepResultsPlaceholder(
+  input: Record<string, unknown>,
+  state: AgentState,
+): Record<string, unknown> {
+  const hasPlaceholder = Object.values(input).some(
+    (v) => v === STEP_RESULTS_PLACEHOLDER,
+  );
+  if (!hasPlaceholder) return input;
+
+  const summary = state.stepResults
+    .map((s) => `${s.description}:\n${s.toolOutput ?? s.resultSummary}`)
+    .join('\n\n');
+
+  const resolved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    resolved[key] = value === STEP_RESULTS_PLACEHOLDER ? summary : value;
+  }
+  return resolved;
+}
 
 /** 给任意 Promise 加超时，超时视为可重试错误 */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -64,10 +91,10 @@ const TOOL_CALLING_TIMEOUT_MS = 30_000;
  * Planner 规划时已知正确参数（查询词、下载 URL），允许 fallback。
  */
 const DYNAMIC_PARAM_TOOLS = new Set([
-  'browse_url',            // URL 必须来自前序搜索结果，Planner 无法预知
+  'browse_url', // URL 必须来自前序搜索结果，Planner 无法预知
   'fetch_url_as_markdown', // 同上
-  'write_file',            // content 必须来自前序 LLM 输出
-  'export_pdf',            // content 同上
+  'write_file', // content 必须来自前序 LLM 输出
+  'export_pdf', // content 同上
   // download_file 不在此：URL 通常由 Planner 直接指定（静态参数），可以 fallback
 ]);
 
@@ -285,9 +312,16 @@ export async function executorNode(
       }> = [];
       let finalOutput: unknown = null;
 
+      // 解析确定性 workflow 的 __STEP_RESULTS__ 占位符
+      const rawSkillInput = step.skillInput ?? {};
+      const resolvedSkillInput = resolveStepResultsPlaceholder(
+        rawSkillInput,
+        state,
+      );
+
       await withTimeout(
         (async () => {
-          for await (const event of skill.execute(step.skillInput ?? {}, {
+          for await (const event of skill.execute(resolvedSkillInput, {
             tools: toolRegistry,
             llm,
             workspace,
