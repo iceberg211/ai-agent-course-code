@@ -71,7 +71,11 @@ function JsonPreview({ content }: { content: string }) {
       return content
     }
   }, [content])
-  return <pre>{formatted}</pre>
+  return (
+    <pre className="artifact-code language-json">
+      <code>{formatted}</code>
+    </pre>
+  )
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
