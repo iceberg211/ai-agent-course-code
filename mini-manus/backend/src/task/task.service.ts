@@ -537,11 +537,13 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         });
         const planIds = plans.map((p) => p.id);
 
+        // 删除顺序必须遵循外键依赖方向（被引用的表最后删）：
+        // step_runs.plan_step_id → plan_steps  ← 先删 step_runs，再删 plan_steps
+        await em.delete(Artifact, { runId: In(runIds) });
+        await em.delete(StepRun, { runId: In(runIds) });
         if (planIds.length > 0) {
           await em.delete(PlanStep, { planId: In(planIds) });
         }
-        await em.delete(Artifact, { runId: In(runIds) });
-        await em.delete(StepRun, { runId: In(runIds) });
         await em.delete(TaskPlan, { runId: In(runIds) });
       }
 

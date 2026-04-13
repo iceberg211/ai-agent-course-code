@@ -28,6 +28,9 @@ const outputSchema = z.object({
 // 业界最佳实践（bolt.new / Claude Artifacts）：一次 LLM 调用生成所有文件，
 // 用分隔标记拆分，保证文件间上下文一致性，成本降为逐文件方案的 1/N。
 
+/** 单次生成的文件数量硬上限，防止 LLM 无视 prompt 约束输出过多文件 */
+const MAX_FILES = 10;
+
 const FILE_SEPARATOR = '---FILE:';
 
 const projectPrompt = ChatPromptTemplate.fromMessages([
@@ -44,10 +47,10 @@ const projectPrompt = ChatPromptTemplate.fromMessages([
 
 示例格式：
 ${FILE_SEPARATOR} package.json
-{
+{{
   "name": "my-app",
-  "scripts": { "dev": "vite" }
-}
+  "scripts": {{ "dev": "vite" }}
+}}
 ${FILE_SEPARATOR} src/main.tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
@@ -127,9 +130,14 @@ export class CodeProjectGenerationSkill implements Skill {
     };
 
     const chain = projectPrompt.pipe(ctx.llm);
-    const response = await chain.invoke({
-      projectDescription: project_description,
-    });
+    // P2-3: 传入 AbortSignal，让 LangChain SDK 尽量中止底层 HTTP 请求
+    const response = await chain.invoke(
+      { projectDescription: project_description },
+      { signal: ctx.signal },
+    );
+
+    // invoke 后再次检查取消状态（signal 可能在 invoke 期间触发）
+    if (ctx.signal.aborted) throw new Error('cancelled');
 
     const rawContent =
       typeof response.content === 'string'
@@ -140,8 +148,6 @@ export class CodeProjectGenerationSkill implements Skill {
               .join('')
           : JSON.stringify(response.content);
 
-    if (ctx.signal.aborted) return;
-
     // ── 解析文件块 ──
     const files = parseFileBlocks(rawContent);
 
@@ -151,15 +157,25 @@ export class CodeProjectGenerationSkill implements Skill {
       );
     }
 
+    // P2-4: 解析后硬限制文件数量，防止 LLM 无视 prompt 约束输出过多文件
+    if (files.length > MAX_FILES) {
+      throw new Error(
+        `代码生成失败：LLM 输出了 ${files.length} 个文件，超过单次上限 ${MAX_FILES}。` +
+          `请缩小项目范围后重试。`,
+      );
+    }
+
     yield {
       type: 'progress',
-      message: `已生成 ${files.length} 个文件，正在写入…`,
+      message: `已解析 ${files.length} 个文件，正在写入…`,
     };
 
     // ── 批量写入 ──
     const writtenFiles: string[] = [];
 
     for (const file of files) {
+      // 循环内用 break（语义清晰），不在此 throw：
+      // throw 在 async generator 内会被 executor catch 并误判为 retry
       if (ctx.signal.aborted) break;
 
       const filePath = `${rootDir}/${file.path}`;
@@ -190,6 +206,15 @@ export class CodeProjectGenerationSkill implements Skill {
       writtenFiles.push(file.path);
     }
 
+    // 循环结束后检查：若因取消导致写入不完整，此处抛出（正确的位置）
+    // 不 yield partial result，防止"半个项目"被标记为成功
+    if (writtenFiles.length < files.length) {
+      throw new Error(
+        `代码写入中断（已写入 ${writtenFiles.length}/${files.length} 个文件），任务已取消`,
+      );
+    }
+
+    // 所有文件写完后再 yield result，保证是完整交付
     yield {
       type: 'result',
       output: {

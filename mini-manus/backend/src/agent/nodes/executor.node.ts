@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { interrupt } from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
-import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { tool as lcTool } from '@langchain/core/tools';
+import { toolCallingPrompt } from '@/prompts';
 import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { ToolRegistry } from '@/tool/tool.registry';
@@ -50,12 +50,26 @@ function toLangChainTool(t: Tool) {
   });
 }
 
-/**
- * 用 LLM Tool Calling 生成工具参数。
- * 如果 LLM 调用失败，fallback 到 Planner 原始参数。
- */
 /** Tool Calling 自身的超时，避免决议阶段卡住 */
 const TOOL_CALLING_TIMEOUT_MS = 30_000;
+
+/**
+ * 核心参数（URL、文件内容等）必须由 LLM 根据运行时上下文决定的工具集合。
+ *
+ * 这些工具的关键参数在规划时无法确定（URL 来自搜索结果、content 来自前序步骤）。
+ * Tool Calling 失败时 **不可 fallback**，因为 Planner 的原始参数（example.com、'...' 等）
+ * 即使格式合法也是错误值，执行它等价于幻觉输出。
+ *
+ * 不在此集合中的工具（think、github_search、download_file 等），
+ * Planner 规划时已知正确参数（查询词、下载 URL），允许 fallback。
+ */
+const DYNAMIC_PARAM_TOOLS = new Set([
+  'browse_url',            // URL 必须来自前序搜索结果，Planner 无法预知
+  'fetch_url_as_markdown', // 同上
+  'write_file',            // content 必须来自前序 LLM 输出
+  'export_pdf',            // content 同上
+  // download_file 不在此：URL 通常由 Planner 直接指定（静态参数），可以 fallback
+]);
 
 async function resolveToolCallViaLLM(
   toolName: string,
@@ -107,21 +121,14 @@ async function resolveToolCallViaLLM(
     const llmWithTool = llm.bindTools([lcToolDef]);
     // P2-1: AbortSignal 传给 LangChain invoke，让 SDK 尽量中止底层 HTTP 请求
     // 注意：部分 provider 不完全支持 signal，withTimeout 是额外的 Promise.race 兜底
+    const messages = await toolCallingPrompt.formatMessages({
+      revisionInput: state.revisionInput,
+      stepDescription: step.description,
+      stepContext,
+      retryHint,
+    });
     const response = await withTimeout(
-      llmWithTool.invoke(
-        [
-          new SystemMessage(
-            '你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。' +
-              '必须调用工具，不要只回复文字。',
-          ),
-          new HumanMessage(
-            `任务目标：${state.revisionInput}\n` +
-              `当前步骤：${step.description}\n\n` +
-              `前序步骤结果：\n${stepContext}${retryHint}`,
-          ),
-        ],
-        { signal },
-      ),
+      llmWithTool.invoke(messages, { signal }),
       TOOL_CALLING_TIMEOUT_MS,
     );
 
@@ -153,7 +160,19 @@ async function resolveToolCallViaLLM(
     );
   }
 
-  // C3 fix: fallback 时检查原始参数质量，有占位符则明确报错而非静默执行
+  // Fail-closed：动态参数工具 Tool Calling 失败后直接报错，不 fallback
+  // 原因：这类工具的 URL/content 必须来自运行时上下文，Planner 的原始值必然错误
+  if (DYNAMIC_PARAM_TOOLS.has(toolName)) {
+    logger.error(
+      `Tool Calling 失败且 ${toolName} 属于动态参数工具，不允许 fallback`,
+    );
+    throw new Error(
+      `工具 ${toolName} 需要运行时参数（URL/内容等），Tool Calling 决议失败，无法继续执行。` +
+        `请重试或重新规划任务步骤。`,
+    );
+  }
+
+  // 非动态工具 fallback 时仍检查占位符
   const suspicious = Object.entries(fallbackInput).filter(
     ([, v]) =>
       typeof v === 'string' &&

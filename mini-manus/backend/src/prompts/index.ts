@@ -15,6 +15,7 @@
  *   - briefingGeneration: topic, audience, goal, context
  *   - artifactReview: artifactContent, reviewGoal
  *   - reportPackaging: title, sourceMaterial
+ *   - toolCalling:     revisionInput, stepDescription, stepContext, retryHint
  */
 
 import { ChatPromptTemplate } from '@langchain/core/prompts';
@@ -311,5 +312,30 @@ export const reportMetadataPrompt = ChatPromptTemplate.fromMessages([
 {markdownPreview}
 
 提取：summary(2-3句), key_points(3-6条), diagram(Mermaid 源码或空字符串)`,
+  ],
+]);
+
+// ─── Executor: Tool Calling ───────────────────────────────────────────────────
+// 当 Planner 使用 toolHint 指定工具但未给出完整参数时，Executor 使用此 prompt
+// 让 LLM 根据步骤目标和前序结果生成真实的工具参数（ReAct 原语）。
+//
+// 变量：
+//   revisionInput   — 原始任务描述
+//   stepDescription — 当前步骤描述
+//   stepContext     — 前序步骤执行摘要（多行文本）
+//   retryHint       — 重试时附加的失败原因提示（可为空字符串）
+export const toolCallingPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    `你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。
+必须调用工具，不要只回复文字。`,
+  ],
+  [
+    'human',
+    `任务目标：{revisionInput}
+当前步骤：{stepDescription}
+
+前序步骤结果：
+{stepContext}{retryHint}`,
   ],
 ]);

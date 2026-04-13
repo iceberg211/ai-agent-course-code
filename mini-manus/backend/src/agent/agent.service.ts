@@ -142,8 +142,9 @@ export class AgentService {
     this.maxReplans = config.get<number>('MAX_REPLANS', 2);
     this.maxSteps = config.get<number>('MAX_STEPS', 20);
     this.tokenBudget = config.get<number>('TOKEN_BUDGET', 100_000);
+    const plannerMaxSteps = config.get<number>('PLANNER_MAX_STEPS', 8);
     this.planValidationOptions = {
-      maxSteps: config.get<number>('PLANNER_MAX_STEPS', this.maxSteps),
+      maxSteps: Math.min(plannerMaxSteps, this.maxSteps),
       allowedSideEffectTools: readCsv(
         config.get<string>(
           'PLANNER_ALLOWED_SIDE_EFFECT_TOOLS',

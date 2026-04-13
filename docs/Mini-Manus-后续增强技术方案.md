@@ -27,7 +27,16 @@
 
 ## 2. 当前现状评估
 
-> **文档更新说明**（2026-04-12）：工程健康和第二阶段可维护能力已复核；后端 `pnpm test` 为 8 个测试套件、22 条测试，`pnpm test:e2e` 为 1 个测试套件、4 条测试，后端 `pnpm build` 通过。
+> **文档更新说明**（2026-04-14）：引入能力成熟度 5 级标签，替代二元"已完成/待实现"；吸收外部 review 反馈，修正 Tool Calling、代码生成、事件回放、model_name 等项的状态标注；补充沙箱安全 checklist 和认证边界声明。
+>
+> **能力成熟度标签定义**：
+> | 标签 | 含义 |
+> |------|------|
+> | `未做` | 无代码实现 |
+> | `原型可用` | 有代码但未经测试或只跑通 happy path |
+> | `演示稳定` | 可在课程/演示中使用，边界 case 可能失败 |
+> | `工程可维护` | 有测试、日志、错误处理，可持续迭代 |
+> | `生产级` | 安全、可观测、可扩展，适合公开部署 |
 
 ### 2.1 已经具备的能力
 
@@ -35,16 +44,25 @@
 
 **核心执行链**
 - 任务中心：创建、编辑、重试、取消、历史 Run 回看
-- Agent 执行链路：planner → executor → evaluator → finalizer
-- 实时反馈：步骤开始、progress、tool 调用、tool 完成、artifact 创建
+- Agent 执行链路：**router → planner → executor → evaluator → finalizer**
+- Intent Router：轻量 LLM 分类，路由到领域特化规划策略（code_generation / research_report / competitive_analysis / content_writing / general）
+- Executor Tool Calling：Tool 路径不再机械透传 Planner 参数，改用 `llm.bindTools()` 根据前序步骤真实输出动态决议参数
+- StepResult 携带真实工具输出（`toolOutput` 字段），后续步骤 Tool Calling 可读取实际数据（URL、页面内容等）
+- 实时反馈：步骤开始、progress、tool 调用、tool 完成、artifact 创建、**plan.generating 事件**
 - 多产物：`markdown / json / code / diagram / file`
 
 **工具与 Skill**
-- 工具层：网页搜索、网页抓取（静态）、Markdown 抽取、文件读写、目录读取、文件下载、PDF 文本提取、GitHub 搜索、PDF 导出
-- Skill 层：调研、文档写作、竞品对比、briefing、产物审阅、报告打包
+- 工具层：网页搜索、网页抓取（静态）、Markdown 抽取、文件读写、目录读取、文件下载、PDF 文本提取、GitHub 搜索、PDF 导出（Playwright 原生中文支持）
+- Skill 层：调研、文档写作、竞品对比、briefing、产物审阅、报告打包、**代码项目生成（单 Artifact 模式）**
 - 工具有 `read-only / side-effect` 分类，read-only 工具支持简单缓存
+- report_packaging Skill 拆为两步：纯文本生成 Markdown + structured output 提取元数据，避免长文本 JSON 编码崩溃
 
 **稳定性与安全**
+- Evaluator 结构性错误分类：JSON 解析、编码、权限等不可恢复错误跳过重试直接 replan/fail
+- Evaluator retry 时保留 `lastStepOutput`，Tool Calling 重试可看到前次失败原因并选择不同参数
+- Tool Calling 参数经 Zod schema 校验（注入 task_id 后再校验），fallback 参数含占位符时主动报错
+- Tool Calling 30s 独立超时 + AbortSignal 取消控制
+- 分级超时：Tool 路径用 `STEP_TIMEOUT_MS`，Skill 路径用 `SKILL_TIMEOUT_MS`（默认 5 分钟）
 - retry/replan 超限可标记 FAILED
 - `startRun`、`finalizeRun` 使用 task 行悲观锁降低并发错乱风险
 - `createTask` 事务提交后再发事件和启动执行
@@ -90,12 +108,12 @@
 
 | 能力 | 当前状态 | 需要补齐 |
 | --- | --- | --- |
-| Token / 成本观测 | Run 级统计、持久化、实时事件、前端刷新后展示已完成 | 还缺 `model_name` 追溯和节点级明细 |
+| Token / 成本观测 | Run 级统计、持久化、实时事件、`model_name` 追溯、前端刷新后展示已完成 | 还缺节点级明细、价格配置覆盖和 budget exceeded 特殊提示 |
 | Planner 语义校验 | 已校验执行器存在、input schema、`stepIndex` 顺序/重复/跳号、最大步骤数、side-effect 白名单 | 后续需要接入人工审批和更细的工具预算 |
 | 配置管理 | `ConfigModule` + Zod schema 已接入，`.env.example` 已补 CORS / WebSocket / API Key / Planner / Workspace / LLM / 导出相关项 | 后续可抽独立配置 schema 模块 |
 | WebSocket 认证 | 配 token 时可鉴权 | 前端需统一配置 `VITE_WS_AUTH_TOKEN`，生产环境部署要有密钥注入说明 |
 | HTTP API Key | 写接口 Guard 已接入 | 后续可升级为 api_clients + 配额表 |
-| 事件持久化 | `task_events` 表、发布链路和任务事件接口已接入 | 前端还未用历史事件恢复 live feed |
+| 事件持久化 | `task_events` 表、发布链路、任务事件接口、前端 `replayEvents` 第一版已接入 | 还缺游标增量拉取、断线补漏、保留策略和回放测试 |
 | Workspace 清理 | 删除任务时会清理目录，可选定期扫描已接入 | 默认关闭，生产部署需显式开启和设置保留天数 |
 | Task 级记忆 | Planner 可读取最近 completed run 的 JSON 摘要 | 只按 task 读取，没有 artifact/source 级记忆，也没有相似任务匹配 |
 | 浏览器只读能力 | `browser_open / browser_extract / browser_screenshot` 已接入，默认关闭 | 尚未开放点击、输入、等待元素和登录态 |
@@ -121,7 +139,7 @@
 
 #### 可观测性缺口
 
-- 事件已经写入 `task_events`，但前端尚未用历史事件恢复 live feed
+- 事件已经写入 `task_events`，前端已能用历史事件恢复 live feed 第一版；仍缺游标增量拉取、断线补漏和回放测试
 - 节点级 LLM 调用明细（planner/evaluator/finalizer/skill 各用了多少 token）尚无独立表记录
 - 工具调用只有 live 事件和 stepRun 字段，没有独立审计表
 
@@ -145,9 +163,115 @@
 
 因此下一阶段仍不要直接从多 Agent 开始。当前浏览器边界保持为：只打开页面、抽取 DOM 文本、截图，不做登录态、点击和输入。后续优先补浏览器部署验证、前端事件回放和沙箱第一版。
 
+## 2.5 Agent 编排成熟度评估：业界对比与差距分析
+
+> 更新日期：2026-04-14。基于业界架构实证调研（Claude Code / Codex / Manus / Devin）和本轮改进后的评估。
+
+### 2.5.0 业界主流 Agent 架构实证
+
+基于官方文档、源码分析和技术深度解析，业界 Agent 分为三种架构模式：
+
+| 系统 | 架构模式 | 有独立 Planner？ | 参数决议方式 | 计划粒度 |
+|------|---------|----------------|------------|---------|
+| **Claude Code** | ReAct while-loop（~88 行 Rust） | ❌ 无。TodoWrite 是工具不是架构 | 逐步，基于完整消息历史 | 无固定计划 |
+| **OpenAI Codex** | ReAct while-loop（Rust，几乎同架构） | ❌ 无 | 逐步 | 无固定计划 |
+| **Manus** | Plan-then-Execute + CodeAct | ✅ 有 Planner Agent | 逐步（CodeAct = 可执行 Python） | **高层任务**（todo.md） |
+| **Devin** | Multi-agent compound | ✅ 有 Planner Model → Coder → Critic | Planner→Coder→Critic 流水线 | 高层策略 |
+| **mini-manus（当前）** | Plan-then-Execute + Tool Calling 补丁 | ✅ 有 | Planner 预绑定 + TC 修正 | **工具调用级**（含参数） |
+
+**核心发现**：
+
+1. **Claude Code / Codex 没有 Planner 组件**，是纯 ReAct。适合交互式编码，但不适合任务型产品（无法展示计划/进度/审批）。
+2. **Manus / Devin 有 Planner**，但计划粒度是"高层任务描述"（如"调研 React 方案"），不是"工具调用 + 参数"（如 `fetch_url({ url: "xxx" })`）。动态参数在 step 内部运行时决议。
+3. **mini-manus 的问题**不是"有 Planner"本身，而是 Planner 绑定到了工具调用粒度，把动态参数提前固定了。
+
+**目标架构方向（Manus 模式）**：
+
+```
+外层：高层能力步骤计划（Planner 或确定性 workflow）
+  → 步骤粒度：skill / workflow / objective，不绑定动态参数
+内层：每个 Step 内部 ReAct 式工具调用（Skill 已具备）
+  → 参数基于前序真实结果，逐步决议
+边界：代码控制（schema / guardrail / 权限 / 超时 / 审批）
+```
+
+Planner 的输出应该从：
+
+```json
+❌ { "toolHint": "fetch_url", "toolInput": { "url": "https://猜的.com" } }
+```
+
+升级为：
+
+```json
+✅ { "skillName": "web_research", "objective": "调研 React Compiler 最新进展" }
+```
+
+让 Skill 内部自己做 search → pick URLs → fetch → summarize，Planner 不负责猜 URL。
+
+### 2.5.1 编排层对比
+
+| 能力 | 业界成熟做法 | 当前实现 | 差距 | 改进方向 |
+|------|-----------|---------|------|---------|
+| **意图路由** | 意图分类 → 领域特化 workflow（Manus、Coze） | ✅ Intent Router 已实现，5 种意图分类 + 领域规划指引 | **小** | 后续可扩展意图类型，加规则引擎 |
+| **计划生成** | 高层能力步骤 + 确定性 workflow（Manus：todo.md / Devin：plan→code→test→fix） | Planner 仍生成工具调用级计划（含参数），intent 只注入 prompt 指引 | **中** | ① 高频任务走确定性 workflow ② Planner 输出升级为"能力步骤"（skill + objective），不绑定动态参数 |
+| **参数决议** | ReAct 实时观察（AutoGPT）/ Tool Calling（OpenAI Assistants） | ⚠️ Tool Calling + bindTools 已接入，动态参数工具已有 fail-closed 原型；静态参数工具仍允许受控 fallback | **中→小** | 补 fail-closed 单元测试、结构化 `errorCode`，再做选择性 Tool Calling 降成本 |
+| **错误恢复** | retry + replan + 人工介入 + 结构性错误分类 | ✅ 结构性/瞬态错误分类 + retry 带上下文 + HITL | **小** | 已接近业界水平 |
+| **多 Agent** | Supervisor + 专业化子 Agent（CrewAI、LangGraph） | 未实现，规划为 M1-M3 阶段 | 大 | 先做 Agent as Skill（M1） |
+
+### 2.5.2 工具层对比
+
+| 能力 | 业界成熟做法 | 当前实现 | 差距 | 改进方向 |
+|------|-----------|---------|------|---------|
+| **代码生成** | 模板 + 沙箱验证（bolt.new：模板脚手架 + 定制）/ 单 Artifact（Claude Artifacts） | ⚠️ 单 Artifact 模式 V1 可演示，缺沙箱验证和 fix loop | **中→大** | 需 sandbox_run_node 验证 + generate→run→fix→package 闭环 |
+| **代码执行** | sandboxed runtime + 编译验证（Devin、Code Interpreter） | ❌ 未实现 | **大** | S1 阶段引入 Docker 沙箱 |
+| **文件操作** | 批量 + 原子操作 | ✅ 代码项目走 Skill 内批量写入 | **小** | — |
+| **网页抓取** | headless browser + 静态 fallback + 重定向跟随 | Playwright + axios，但重定向处理待改进 | 小 | fetch_url_as_markdown 需处理 JS 重定向页 |
+| **PDF 生成** | Playwright HTML 渲染 / WeasyPrint | ✅ Playwright 渲染，原生 CJK 支持 | **小** | — |
+
+### 2.5.3 产物层对比
+
+| 能力 | 业界成熟做法 | 当前实现 | 差距 |
+|------|-----------|---------|------|
+| 产物类型 | markdown / code / diagram / 交互式预览 | markdown / code / diagram / PDF / JSON | **小** |
+| 产物预览 | 实时渲染 + 可编辑（Canvas / Artifacts） | 静态展示 | 中 |
+| 产物迭代 | 增量编辑（"修改第二段"） | 重新生成整个产物 | 中 |
+| Observation 链路 | 工具输出直接进入下步上下文 | ✅ StepResult.toolOutput 已实现 | **小** |
+
+### 2.5.4 已解决的关键工程问题
+
+本轮（2026-04-13）解决的问题和业界参考：
+
+| 问题 | 业界叫法 | 本轮方案 |
+|------|---------|---------|
+| Planner 参数在运行时才能确定 | Late Binding / Dynamic Parameter Resolution | Executor Tool Calling（`llm.bindTools`）|
+| 长文本塞 JSON 编码崩溃 | Structured Output Fragility | Skill 层拆分：正文纯文本 + 元数据 structured output |
+| 代码项目拆成 N 个 write_file step | Artifact Granularity Problem | 单 Artifact 模式（`---FILE: path` 分隔，1 次 LLM） |
+| 所有任务走同一个 Planner | One-size-fits-all Planning | Intent Router → 领域特化规划策略 |
+| 错误重试死循环 | Retry Storm / Infinite Retry | 结构性错误分类 + retry 带失败上下文 |
+| PDF 中文乱码 | CJK Font Encoding | pdf-lib → Playwright HTML 渲染 |
+| Skill 超时太短 | Timeout Granularity | 分级超时：`STEP_TIMEOUT_MS` / `SKILL_TIMEOUT_MS` |
+
+### 2.5.5 剩余核心差距（按优先级排序）
+
+1. **Planner 粒度升级**（差距：中，架构关键）—— 当前 Planner 输出"工具调用 + 参数"，应升级为"能力步骤 + objective"（Manus 模式）。这是解决"静态计划绑定动态参数"问题的根本方案，比 Tool Calling 补丁更彻底。
+2. **高频任务确定性 workflow**（差距：中）—— Intent Router 只注入 prompt 指引。高频任务应代码直接返回固定计划（如 `code_generation: [web_research, code_project_generation]`），不经过 LLM Planner。
+3. **代码执行沙箱**（差距：大）—— 生成代码但不能验证，是当前最大能力缺口。对应文档 §8。
+4. **Tool Calling fail-closed**（差距：中）—— 动态参数工具（fetch_url / write_file / export_pdf）TC 失败时应直接报错，不 fallback 到 Planner 幻觉参数。
+5. **产物增量编辑**（差距：中）—— 当前只能整体重新生成，不支持"修改第三段"。需要 artifact diff + patch 机制。
+6. **多 Agent**（差距：大）—— 对应文档 §11，按 M1→M2→M3 推进。
+
+### 2.5.6 阶段判断更新
+
+当前项目处在：
+
+**单 Agent 核心系统已成型，编排链路从 Plan-then-Execute 演进到 Intent Router + Tool Calling 混合模式，多数能力达到"演示稳定"。下一步架构目标是向 Manus 模式演进：Planner 只输出高层能力步骤（skill + objective），动态参数由 Skill 内部 ReAct 式决议。同时补齐确定性 workflow、代码执行沙箱和 fail-closed 参数校验。**
+
 ## 3. 轻量认证、限流与 API 配额保护
 
 ### 3.1 目标
+
+> ⚠️ **认证边界声明**：当前 `x-api-key` 方案适用于个人/课程演示。在 SPA 前端中，API Key 会暴露在浏览器 bundle、DevTools 和网络请求中，**不等同于生产级用户认证**。如需公开部署，应升级为 session/JWT/OAuth，由后端基于用户身份做 run/token 配额。教学阶段可叠加反向代理 Basic Auth 或部署平台访问密码。
 
 这部分对个人项目不是最高优先级，但至少应做到：
 
@@ -253,15 +377,14 @@ Token 统计已经做到 Run 级可用，前端展示也已完成基础收口。
 
 ### 4.2 当前缺口
 
+> **状态更新**（2026-04-14）：`task_runs.model_name` 字段和 migration 已完成，`AgentService.saveTokenUsage` 已写入 modelName。
+
 当前实现还差以下关键点：
 
-1. `task_runs` 没有 `model_name` 字段，成本估算无法追溯具体模型
-2. 没有分节点统计：
-   - planner
-   - evaluator
-   - finalizer
-   - skill 内部 LLM
+1. ~~`task_runs` 没有 `model_name` 字段~~ → **已完成**
+2. 没有分节点统计（planner / evaluator / finalizer / skill 各消耗多少 token）
 3. 价格表在代码常量中，暂时没有配置覆盖能力
+4. 前端 budget exceeded 时缺少特殊提示（只显示通用错误）
 
 ### 4.3 推荐架构
 
@@ -280,13 +403,11 @@ Token 统计已经做到 Run 级可用，前端展示也已完成基础收口。
 2. `RunDebugPanel` 优先读 `liveRunFeed.tokenUsage`，没有 live 数据时读 `runDetail`
 3. `run.token_usage` payload 增加 `estimatedCostUsd`，前端显示 `Estimated Cost`
 
-#### 第二阶段：补 model_name
+#### 第二阶段：确认 model_name 追溯（已完成）
 
-在 `task_runs` 上增加：
+`task_runs.model_name` 字段、migration 和 `AgentService.saveTokenUsage` 写入链路均已完成。
 
-- `model_name`
-
-这样历史 Run 的成本估算才可审计。
+这意味着历史 Run 的成本估算已经可以追溯到具体模型。后续不再把 `model_name` 作为待办，Token 观测的重点转为节点级明细、价格配置覆盖和预算耗尽的产品提示。
 
 #### 第三阶段：补节点级明细
 
@@ -345,8 +466,8 @@ estimated_cost_usd = input_cost + output_cost
 
 1. 前端读取并展示持久化 token 字段（已完成）
 2. 前端展示 `estimatedCostUsd`（已完成）
-3. `task_runs` 增加 `model_name`
-4. 最后再做节点级明细
+3. `task_runs.model_name` 追溯（已完成）
+4. 最后再做节点级明细、价格表配置覆盖和预算耗尽特殊提示
 
 ## 5. Planner 语义校验
 
@@ -562,7 +683,7 @@ Agent 的动作通过传统 DOM 指令驱动，例如 `browser_click({ selector:
 
 1. **Docker 镜像选型**：第一版建议直接使用 `kasmweb/chrome`（已内置 Xvfb + VNC + Chromium，开箱即用）快速验证链路。链路跑通后再自建精简 Dockerfile 控制镜像体积（目标 < 2GB）。
 2. **容器生命周期**：第一版每个 Run 按需拉起独立容器，Run 结束或超时后自动销毁。通过 `dockerode` 库操控 Docker Engine。后续可引入容器池化和预热策略。
-3. **VNC WebSocket 鉴权**：后端为每个容器生成一次性 token，前端连接 WebSocket 时 URL 携带 `?token=xxx`，`websockify` 层校验 token 合法性后才转发流量。token 随容器销毁失效。
+3. **VNC WebSocket 鉴权**：不要让前端直接用 `?token=xxx` 连接 `websockify`。后端为每个容器签发一次性 `browser_session_id`，前端只连接同源后端代理；鉴权通过 HttpOnly Cookie 或 WebSocket 握手 `Authorization` 完成。`websockify` / VNC 服务只监听内网或本机，不直接暴露公网，session 随容器销毁失效。
 4. **截图获取路径**：`computer_action` 工具每次操作后，通过 Playwright CDP 的 `Page.captureScreenshot` 获取高精度截图（而非 VNC 帧缓冲）。VNC 流仅用于前端实时转播，不参与 Agent 决策。
 5. **分辨率与 DPI**：Xvfb 固定 `1280x720`，Chromium 启动参数加 `--force-device-scale-factor=1`。分辨率过高会导致截图文件过大、token 消耗激增。
 6. **共享内存（致命坑）**：Docker 启动参数必须加 `--shm-size=1g`。容器默认 `/dev/shm` 只有 64MB，Chromium 打开复杂页面必崩。同时需预装 `fonts-noto-cjk` 等中文字体包，否则截图中文乱码。
@@ -774,13 +895,30 @@ interface SandboxRunner {
 
 推荐默认策略：
 
-- 无网络
+- 无网络（`--network=none`）
 - 只挂载当前 task workspace
 - 只读基础镜像
 - 禁止挂载宿主机 Docker socket
 - 限制执行时长，例如 30 秒
 - 限制 `stdout / stderr` 输出长度
 - 运行结果不直接当作可信指令，只作为 evaluator 的输入材料
+
+**生产级安全 checklist**（从课程演示升级到生产部署时逐项落实）：
+
+- [ ] 容器内非 root 用户运行（`--user 1000:1000`）
+- [ ] `--cap-drop=ALL`，不授予任何 Linux capability
+- [ ] `--security-opt=no-new-privileges`
+- [ ] `--pids-limit=100`，防止 fork bomb
+- [ ] `--read-only` rootfs + `--tmpfs /tmp:size=100m`
+- [ ] seccomp / AppArmor profile
+- [ ] 镜像 digest pinning，防止 supply chain 攻击
+- [ ] 容器超时后 `docker kill`（不只是 process kill）
+- [ ] workspace 使用临时 copy-on-write 目录，执行成功后再 promote 产物到 task workspace
+- [ ] 依赖安装（npm install / pip install）在独立沙箱中执行，不与代码执行共享文件系统
+- [ ] `--shm-size=1g`（如果容器内运行 Chromium）
+- [ ] 预装 `fonts-noto-cjk` 中文字体（如果容器内截图）
+
+> ⚠️ 课程版本使用简化配置即可（前 7 项），但文档需明确声明安全边界。
 
 ### 8.7 与 evaluator 的联动
 
@@ -822,11 +960,18 @@ evaluator 判断依据可增加：
 
 - `GET /api/tasks/:id/events`
 
-当前还缺：
+当前前端已经接入第一版回放：
 
-- 前端首次进入任务详情时拉取历史事件
-- 将历史事件还原成 `liveRunFeed`
-- 运行中任务的历史事件和 socket 实时事件合并
+- 首次进入任务详情时调用 `fetchTaskEvents`
+- 使用 `applyLoggedEvent` 将历史事件还原成 `liveRunFeed`
+- 运行中任务会把历史事件和 socket 实时事件合并，并通过 `_eventId` 去重
+
+仍需补齐：
+
+- 基于 `after_created_at + after_event_id` 的增量续拉
+- WebSocket 断线重连后的补漏
+- 事件保留策略
+- 回放链路自动化测试
 
 ### 9.2 当前架构
 
@@ -868,10 +1013,10 @@ evaluator 判断依据可增加：
 
 前端从 REST 拉取历史事件和从 Socket 接收实时事件之间存在时间窗口重叠，必须处理去重和空窗问题：
 
-1. 前端拉取历史事件后，记录最后一条事件的 `id`（作为游标）
-2. Socket 推送的新事件，如果 `id` 已存在于本地事件列表中则跳过
-3. 如果 socket 推送的事件 `created_at` 早于已有最后一条事件，也跳过
-4. 建议后端 `GET /events` 接口支持 `after_id` 参数，前端可精确从游标处续拉，避免全量重复加载
+1. 前端拉取历史事件后，记录最后一条事件的 `created_at + id` 复合游标
+2. Socket 推送的新事件，如果 `_eventId` 已存在于本地事件集合中则跳过
+3. 如果 socket 推送的事件 `_eventCreatedAt` 早于已有最后一条事件，也跳过
+4. 后端 `GET /events` 已支持 `after_created_at + after_event_id`，前端断线重连后应从复合游标处增量续拉，避免全量重复加载
 
 ### 9.5 与现有架构的关系
 
@@ -1206,29 +1351,39 @@ interface AgentWorkerOutput {
 
 ## 13. 推荐实施顺序
 
-> 最后更新：2026-04-12。状态分为：已完成、部分完成、待实现。
+> 最后更新：2026-04-14。状态使用 5 级成熟度标签：未做 / 原型可用 / 演示稳定 / 工程可维护 / 生产级。
 
-| 优先级 | 项目 | 状态 | 说明 |
-|---|---|---|---|
-| 0 | 构建恢复 | 已完成 | 后端、前端 `pnpm build` 均通过 |
-| 1 | 依赖和 lockfile 同步 | 已完成 | 当前依赖可支持后端、前端构建 |
-| 2 | 关键路径测试 | 部分完成 | 后端已补 TaskService、Planner、Agent 配置、token 统计、API Key、事件发布、Workspace 清理和任务 API e2e 初始测试 |
-| 3 | Token 持久展示 | 已完成 | 前端类型、API 映射、RunDebugPanel 和实时事件均已接入 `estimatedCostUsd` |
-| 4 | Planner 语义校验 | 已完成 | 注册、schema、stepIndex 顺序/重复/跳号、最大步骤数、side-effect 白名单已做 |
-| 5 | Workspace 删除和定期清理 | 已完成 | deleteTask 事务后调 cleanTaskDir；可选定期扫描超期目录 |
-| 6 | Task 级跨 Run 记忆（第一层） | 已完成 | 最近 3 次 completed run 的 JSON 摘要注入 Planner |
-| 7 | 限流 | 已完成 | @nestjs/throttler，全局 + 任务创建单独限流 |
-| 8 | WebSocket 认证 | 部分完成 | 后端支持 token，`.env.example` 已补示例；前端和部署说明仍需补齐 |
-| 9 | 健康检查 | 已完成 | GET /api/health，含 DB 连通性 |
-| 10 | HTTP API Key 认证 | 已完成 | 写接口走 x-api-key；生产环境必须配置 APP_API_KEYS |
-| 11 | 事件持久化回放 | 部分完成 | task_events 表、事件发布链路、后端查询接口已完成；前端回放未接 |
-| 12 | Workspace 定期清理 | 已完成 | WorkspaceCleanupService 默认关闭，可用环境变量开启 |
-| 13 | Artifact 级记忆（第二层） | 待实现 | 读取历史 artifact 做结构化摘要复用 |
-| 14 | 节点级 token 明细 | 待实现 | 新增 llm_call_logs 表，按 node 拆分统计 |
-| 15 | 每日配额表 | 待实现 | api_clients + api_usage_daily |
-| 16 | 浏览器自动化 | 部分完成 | Playwright 已接入只读工具；交互和登录态未做 |
-| 17 | 代码执行沙箱 | 待实现 | Docker 方案 A，默认无网络 |
-| 18 | 多 Agent 编排 | 待实现 | 先 Agent Skill，再 Supervisor |
+| 优先级 | 项目 | 成熟度 | 说明 | 下一步 |
+|---|---|---|---|---|
+| 0 | 构建恢复 | 工程可维护 | 后端、前端 build 均通过 | — |
+| 1 | 依赖和 lockfile 同步 | 工程可维护 | 当前依赖可支持构建 | — |
+| 2 | 关键路径测试 | 原型可用 | 后端已补初始测试 | 补真实 DB 集成测试、trajectory 回归测试 |
+| 3 | Token / 成本观测 | 演示稳定 | Run 级统计 + 持久化 + model_name 已完成 | 补节点级 `llm_call_logs` |
+| 4 | Planner 语义校验 | 工程可维护 | 注册、schema、stepIndex、side-effect 白名单 | 后续补人工审批和工具预算 |
+| 5 | Workspace 清理 | 工程可维护 | 删除 + 定期扫描 | — |
+| 6 | Task 级记忆（第一层） | 演示稳定 | 最近 3 次 run 的 JSON 摘要注入 Planner | — |
+| 7 | 限流 | 工程可维护 | throttler 全局 + 任务创建单独限流 | — |
+| 8 | Intent Router | 演示稳定 | 5 种意图分类 + 领域特化规划指引 | 高频意图改为固定 workflow 模板 |
+| 9 | Executor Tool Calling | **演示稳定** | bindTools 动态参数决议 + Zod 校验 + 30s timeout + 动态工具 fail-closed 原型 | 补 fail-closed 单元测试、结构化 `errorCode` 和选择性 Tool Calling |
+| 10 | Evaluator 增强 | 演示稳定 | 结构性错误分类 + retry 带上下文 + 分级超时 | — |
+| 11 | 代码项目生成 | **演示稳定** | 单 Artifact 模式（1 次 LLM） | **待沙箱验证 + patch/fix loop 后升级** |
+| 12 | PDF 中文支持 | 演示稳定 | Playwright HTML→PDF 渲染 | — |
+| 13 | report-packaging 拆分 | 演示稳定 | 纯文本 Markdown + structured output 元数据 | — |
+| 14 | 前端 Planner 状态文案 | 演示稳定 | plan.generating 事件 | — |
+| 15 | 事件持久化回放 | **演示稳定** | **前端 replayEvents 第一版已接入** | 补游标增量拉取、保留策略、回放测试 |
+| 16 | HTTP API Key | **演示稳定** | 写接口走 x-api-key | **⚠️ 仅演示保护，SPA 中 key 会暴露。生产需 session/JWT** |
+| 17 | WebSocket 认证 | 原型可用 | 后端支持 token | 前端配置 + 部署说明 |
+| 18 | 健康检查 | 工程可维护 | GET /api/health + DB | — |
+| 19 | 浏览器只读 | 演示稳定 | Playwright open/extract/screenshot | 补真实 Chromium 冒烟测试 |
+| 20 | **Planner 粒度升级** | **未做（架构关键）** | — | **Plan 从"工具调用+参数"升级为"能力步骤+objective"（Manus 模式），根治静态参数绑定问题** |
+| 21 | **确定性 workflow** | **未做** | — | **高频意图（code_generation / research_report）代码直接返回固定计划，不经 LLM** |
+| 22 | **代码执行沙箱** | **未做** | — | **Docker 方案 A，需带安全 checklist。代码生成闭环的前置条件** |
+| 23 | Tool Calling fail-closed | 原型可用 | 动态参数工具已不 fallback 到 Planner 幻觉 | 补单元测试和结构化错误码 |
+| 24 | 节点级 token 明细 | 未做 | — | llm_call_logs 表 |
+| 25 | 每日配额表 | 未做 | — | api_clients + api_usage_daily |
+| 26 | Artifact 级记忆（第二层） | 未做 | — | 结构化摘要复用 |
+| 27 | 浏览器交互 | 未做 | — | click/type，VNC token 需改为 session 代理方式 |
+| 28 | 多 Agent 编排 | 未做 | — | 先 Agent Skill → Supervisor |
 
 ### 13.1 第一个迭代：工程健康
 
@@ -1252,33 +1407,44 @@ interface AgentWorkerOutput {
 1. 补 `cancelRun`、`deleteTask`、`finalizeRun` 的服务层测试
 2. 补 retry/replan 超限把 run 标记为 failed 的 Agent 层测试
 3. 补 `GET /api/health` e2e 和异常过滤器输出格式测试
-4. 前端接入 `task_events`，刷新后恢复执行时间线
+4. 补 `task_events` 断线重连增量续拉和历史回放测试
 
-### 13.2 第二个迭代：单 Agent 可维护性
+### 13.2 第二个迭代：编排层架构升级（向 Manus 模式演进）
+
+目标：解决"静态计划绑定动态参数"的根本架构问题。
+
+建议顺序：
+
+1. **Planner 粒度升级**：PlanSchema 输出从 `toolHint + toolInput` 升级为 `skillName + objective`。Planner 只规划"做什么"，不绑定"用什么 URL / 写什么内容"
+2. **确定性 workflow**：`code_generation`、`research_report`、`competitive_analysis` 三种高频意图代码直接返回固定计划（不调 LLM Planner）
+3. **Tool Calling 降级为兜底**：Planner 粒度升级后，大多数动态参数在 Skill 内部决议，Tool Calling 只处理 `general` 类型的裸 tool 步骤
+4. 补 Planner 回归测试（mock LLM → 断言输出的 plan 结构正确）
+
+### 13.3 第三个迭代：单 Agent 可维护性
 
 目标：把当前单 Agent 主链路变得可回看、可审计、可保护。
 
 建议顺序：
 
-1. 前端接入 `task_events`，刷新后恢复 live feed
-2. 给 `task_events` 增加保留策略或分页游标
+1. 基于 `after_created_at + after_event_id` 做事件增量续拉和断线补漏
+2. 给 `task_events` 增加保留策略和分页游标测试
 3. 增加 `api_clients / api_usage_daily` 配额表
 4. 补真实数据库集成测试
 
-### 13.3 第三个迭代：高价值执行能力
+### 13.4 第四个迭代：高价值执行能力
 
 目标：让系统能处理动态网页和代码验证。
 
 建议顺序：
 
-1. 浏览器只读工具：open / extract / screenshot（已完成）
-2. 浏览器部署验证：确认目标环境已安装 Chromium，并补一条真实页面冒烟测试
-3. SandboxRunner 抽象和 mock 测试
-4. Docker 沙箱跑 Node/Python
+1. 浏览器部署验证：确认目标环境已安装 Chromium，并补一条真实页面冒烟测试
+2. SandboxRunner 抽象和 mock 测试
+3. Docker 沙箱跑 Node/Python
+4. `code_generation` workflow 升级为 `generate → sandbox_run → fix → package` 闭环
 5. evaluator 根据沙箱结果做 retry / fail
 6. 浏览器交互工具：click / type / wait_for
 
-### 13.4 第四个迭代：记忆与多 Agent
+### 13.5 第五个迭代：记忆与多 Agent
 
 目标：在主链路稳定后，再提升复用和任务分工能力。
 
@@ -1304,16 +1470,23 @@ interface AgentWorkerOutput {
 7. 浏览器只读工具已接入，默认关闭，可通过环境变量启用
 8. HITL（Human-in-the-loop）完整链路已实现：`interrupt()` + `MemorySaver` + `Command` resume
 9. Planner Guardrail Chain 安全防护已接入
+10. **Intent Router 意图路由 + 领域特化规划策略已接入**
+11. **Executor Tool Calling 动态参数决议已接入（`llm.bindTools` + Zod 校验 + 30s timeout + AbortSignal）**
+12. **Evaluator 结构性错误分类 + retry 带上下文已接入**
+13. **代码项目生成已改为单 Artifact 模式（1 次 LLM 生成所有文件）**
+14. **PDF 导出已改用 Playwright 渲染，原生支持中文**
+15. **report-packaging 已拆分为纯文本 Markdown 生成 + structured output 元数据提取**
+16. **分级超时：STEP_TIMEOUT_MS（Tool 路径）/ SKILL_TIMEOUT_MS（Skill 路径，默认 5 分钟）**
 
-**当前最大问题：**
+**当前最大问题（按优先级排序）：**
 
-1. 测试还没有覆盖真实数据库集成、失败恢复和并发 run 场景
-2. 后端事件已持久化，但前端还不能基于历史事件恢复 live feed
-3. HTTP 写接口已有 API Key，但还没有客户端级配额
-4. 高风险工具只有白名单，还没有人工审批和预算
-5. 浏览器只读工具还缺真实 Chromium 环境冒烟测试
-6. 前端没有自动化测试
-7. 缺少单 Task 级的 Token 总预算上限（当前只有 `MAX_RETRIES` / `MAX_REPLANS` / `MAX_STEPS` 作为资源边界）
+1. **代码执行沙箱缺失**——生成代码但不能验证，是当前最大能力缺口
+2. **Tool Calling fail-closed 仍缺测试和结构化错误**——动态参数工具已进入 fail-closed 原型，但还需要单元测试、`errorCode` 和前端文案收口
+3. **高频任务缺固定 workflow**——Intent Router 只注入 prompt 指引，`code_generation` 应走 hardcoded generate→run→fix→package 闭环
+4. 测试缺少真实 DB 集成、trajectory 回归（mock LLM → 断言 plan/step/event 顺序）
+5. 产物不支持增量编辑，只能整体重新生成
+6. API Key 在 SPA 中暴露，仅为演示保护
+7. Tool Calling 对所有 tool step 生效，参数完整的 step 仍有不必要的 LLM 调用开销
 
 **Token 总预算建议**：
 
@@ -1323,6 +1496,11 @@ interface AgentWorkerOutput {
 
 - 当前 HITL 使用的 `MemorySaver` 是纯内存 checkpointer，**进程重启后所有 checkpoint 数据丢失**。对于课程项目和单实例部署完全可接受。如果未来需要生产化或多实例部署，应切换为 `PostgresSaver`（LangGraph 官方提供）。
 
-**下阶段核心目标：**
+**下阶段核心目标（按优先级排序）：**
 
-先补浏览器真实页面冒烟测试和前端事件回放，然后进入代码沙箱第一版。沙箱第一版只开放受限 `sandbox_run_node / sandbox_run_python`，默认无网络，限制 CPU、内存、时长和输出长度。
+1. **Planner 粒度升级 + 确定性 workflow**（P0，架构关键）—— 把 Planner 输出从"工具调用 + 参数"升级为"能力步骤 + objective"。高频意图（code_generation / research_report / competitive_analysis）代码直接返回固定计划，不经 LLM。这是从 Plan-then-Execute 向 Manus 模式演进的核心一步。
+2. **代码执行沙箱 S0/S1**（P1）—— 让代码生成从"写了就算"变为"写了能跑能验"。必须带安全 checklist。沙箱接入后 code_generation workflow 升级为 `generate → sandbox_run → fix → package` 闭环。
+3. **Tool Calling fail-closed 补全**（P1）—— 为动态参数工具补单元测试，失败时带 `errorCode`。Planner 粒度升级后，多数动态参数问题在 Skill 内部解决，Tool Calling 退化为兜底。
+4. **事件回放补全**（P2）—— 游标增量拉取、断线补漏、保留策略、回放测试。
+5. **节点级 token 明细**（P2）—— `llm_call_logs`，定位 planner/evaluator/skill 谁烧钱。
+6. **多 Agent**（P3）—— 等沙箱、事件、预算、审批都稳了再做。
