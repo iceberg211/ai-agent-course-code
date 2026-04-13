@@ -16,7 +16,22 @@ interface TimelineSectionProps {
   onReject: (taskId: string, runId: string) => Promise<void>
 }
 
+function toJsonPreviewContent(value: unknown): string | object {
+  if (typeof value === 'object' && value !== null) return value
+  return String(value ?? '')
+}
+
 export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprove, onReject }: TimelineSectionProps) {
+  const budgetMetadata = liveRunFeed?.terminalErrorMetadata
+  const budgetAlert =
+    liveRunFeed?.terminalErrorCode === 'token_budget_exceeded'
+      ? {
+          budget: budgetMetadata?.['budget'],
+          usedTokens: budgetMetadata?.['usedTokens'],
+          estimatedCostUsd: budgetMetadata?.['estimatedCostUsd'],
+        }
+      : null
+
   const stepDescriptions = useMemo(() => {
     const map = new Map<string, string>()
     for (const plan of plans) {
@@ -62,6 +77,18 @@ export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprov
           {/* 实时进度区域 */}
           {liveRunFeed ? (
             <article className="timeline-item timeline-item--live">
+              {budgetAlert ? (
+                <div className="timeline-live__alert">
+                  <strong>预算保护已触发</strong>
+                  <span>
+                    当前 run 因 token 预算耗尽而终止，不是 Agent 推理失败。Budget:{' '}
+                    {String(budgetAlert.budget ?? '--')} · Used:{' '}
+                    {String(budgetAlert.usedTokens ?? '--')} · Cost:{' '}
+                    {String(budgetAlert.estimatedCostUsd ?? '--')}
+                  </span>
+                </div>
+              ) : null}
+
               {/* 审批面板 */}
               {liveRunFeed.pendingApproval ? (
                 <ApprovalPanel
@@ -200,7 +227,7 @@ export function TimelineSection({ taskId, liveRunFeed, plans, stepRuns, onApprov
                         <div key={`${trace.tool}-${index}`} className="skill-trace__item">
                           <strong>{trace.tool}</strong>
                           <div style={{ marginTop: '12px' }}>
-                            <JsonPreview content={trace.input} />
+                            <JsonPreview content={toJsonPreviewContent(trace.input)} />
                             <CodePreview content={trace.output} />
                           </div>
                         </div>

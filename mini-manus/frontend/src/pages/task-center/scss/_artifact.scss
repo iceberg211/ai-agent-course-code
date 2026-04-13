@@ -128,11 +128,27 @@
   }
 
   &__card,
-  &__error {
+  &__error,
+  &__alert {
     padding: 14px 16px;
     border-radius: t.$radius-lg;
     background: rgba(255, 255, 255, 0.7);
     border: 1px solid t.$line;
+  }
+
+  &__alert {
+    display: grid;
+    gap: 6px;
+    border-color: rgba(t.$danger, 0.2);
+    background: linear-gradient(135deg, rgba(t.$danger, 0.1), rgba(255, 255, 255, 0.78));
+
+    strong { color: t.$danger; }
+
+    span {
+      color: t.$ink-soft;
+      font-size: 13px;
+      line-height: 1.5;
+    }
   }
 
   &__label {

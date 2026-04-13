@@ -18,10 +18,11 @@ type NumberLike = number | string | null | undefined
 interface RunSummaryResponse
   extends Omit<
     RunSummary,
-    'inputTokens' | 'outputTokens' | 'totalTokens' | 'estimatedCostUsd'
+    'inputTokens' | 'outputTokens' | 'totalTokens' | 'estimatedCostUsd' | 'modelName'
   > {
   estimatedCostUsd?: NumberLike
   inputTokens?: number | null
+  modelName?: string | null
   outputTokens?: number | null
   totalTokens?: number | null
 }
@@ -90,6 +91,23 @@ interface TaskDetailResponse {
   currentRun: RunDetailResponse | null
 }
 
+export interface TaskEventLog {
+  id: string
+  taskId: string | null
+  runId: string | null
+  eventName: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface FetchTaskEventsParams {
+  runId?: string
+  take?: number
+  skip?: number
+  afterCreatedAt?: string
+  afterEventId?: string
+}
+
 function normalizeNumber(value: NumberLike): number | null {
   if (value == null || value === '') return null
   const parsed = typeof value === 'number' ? value : Number(value)
@@ -127,6 +145,7 @@ function mapRunSummary(run: RunSummaryResponse): RunSummary {
   return {
     ...run,
     inputTokens: run.inputTokens ?? null,
+    modelName: run.modelName ?? null,
     outputTokens: run.outputTokens ?? null,
     totalTokens: run.totalTokens ?? null,
     estimatedCostUsd: normalizeNumber(run.estimatedCostUsd),
@@ -197,6 +216,22 @@ export async function fetchTaskDetail(taskId: string) {
 export async function fetchRunDetail(taskId: string, runId: string) {
   const { data } = await apiClient.get<RunDetailResponse>(`/tasks/${taskId}/runs/${runId}`)
   return mapRunDetail(data)
+}
+
+export async function fetchTaskEvents(
+  taskId: string,
+  params: FetchTaskEventsParams = {},
+) {
+  const { data } = await apiClient.get<TaskEventLog[]>(`/tasks/${taskId}/events`, {
+    params: {
+      runId: params.runId,
+      take: params.take,
+      skip: params.skip,
+      after_created_at: params.afterCreatedAt,
+      after_event_id: params.afterEventId,
+    },
+  })
+  return data
 }
 
 export async function deleteTask(taskId: string) {

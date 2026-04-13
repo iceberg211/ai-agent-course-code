@@ -31,6 +31,7 @@ const envSchema = z
     MAX_RETRIES: z.coerce.number().int().min(0).default(3),
     MAX_REPLANS: z.coerce.number().int().min(0).default(2),
     MAX_STEPS: z.coerce.number().int().min(1).default(20),
+    TOKEN_BUDGET: z.coerce.number().int().min(0).default(100_000),
     PLANNER_MAX_STEPS: z.coerce.number().int().min(1).optional(),
     PLANNER_ALLOWED_SIDE_EFFECT_TOOLS: z
       .string()

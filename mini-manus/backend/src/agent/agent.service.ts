@@ -24,6 +24,7 @@ import { finalizerNode } from '@/agent/nodes/finalizer.node';
 import { RunStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
+import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 import { PlanSemanticValidationOptions } from '@/agent/plan-semantic-validator';
 
 /** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
@@ -78,6 +79,7 @@ export class AgentService {
   private readonly maxReplans: number;
   private readonly maxSteps: number;
   private readonly stepTimeoutMs: number;
+  private readonly tokenBudget: number;
   private readonly exportPdfEnabled: boolean;
   private readonly planValidationOptions: PlanSemanticValidationOptions;
   private readonly approvalTimeoutMs: number;
@@ -124,6 +126,7 @@ export class AgentService {
     this.maxRetries = config.get<number>('MAX_RETRIES', 3);
     this.maxReplans = config.get<number>('MAX_REPLANS', 2);
     this.maxSteps = config.get<number>('MAX_STEPS', 20);
+    this.tokenBudget = config.get<number>('TOKEN_BUDGET', 100_000);
     this.planValidationOptions = {
       maxSteps: config.get<number>('PLANNER_MAX_STEPS', this.maxSteps),
       allowedSideEffectTools: readCsv(
@@ -173,6 +176,17 @@ export class AgentService {
     const workspace = this.workspace;
     const eventPublisher = this.eventPublisher;
     const soMethod = this.structuredOutputMethod;
+    const tokenTracker = new TokenTrackerCallback();
+    const tokenBudgetGuard = new TokenBudgetGuard(
+      tokenTracker,
+      this.tokenBudget,
+      () =>
+        estimateCostUsd(
+          this.modelName,
+          tokenTracker.inputTokens,
+          tokenTracker.outputTokens,
+        ),
+    );
 
     // Build StateGraph
     const graph = new StateGraph(AgentStateAnnotation)
@@ -211,6 +225,7 @@ export class AgentService {
           soMethod,
           this.maxRetries,
           this.maxReplans,
+          tokenBudgetGuard,
         );
       })
       .addNode('finalizer', async (state: AgentState) => {
@@ -221,6 +236,7 @@ export class AgentService {
           eventPublisher,
           this.exportPdfEnabled,
           soMethod,
+          tokenBudgetGuard,
         );
       })
       .addEdge(START, 'planner')
@@ -276,8 +292,6 @@ export class AgentService {
     eventPublisher.emit(TASK_EVENTS.RUN_STARTED, { taskId, runId });
     await callbacks.setRunStatus(runId, RunStatus.RUNNING);
 
-    const tokenTracker = new TokenTrackerCallback();
-
     try {
       // ─── HITL while 循环 ────────────────────────────────────────────────────
       // 每次 interrupt() 后暂停，等待外部 resume（approved/rejected），
@@ -329,6 +343,8 @@ export class AgentService {
               taskId,
               runId,
               error: msg,
+              errorCode: finalState.evaluation?.errorCode ?? null,
+              metadata: finalState.evaluation?.metadata ?? null,
             });
           } else {
             await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
@@ -379,28 +395,15 @@ export class AgentService {
       });
     } finally {
       // 持久化 token 统计 + 推送实时事件
+      const estimatedCostUsd = estimateCostUsd(
+        this.modelName,
+        tokenTracker.inputTokens,
+        tokenTracker.outputTokens,
+      );
       if (tokenTracker.totalTokens > 0) {
-        const estimatedCostUsd = estimateCostUsd(
-          this.modelName,
-          tokenTracker.inputTokens,
-          tokenTracker.outputTokens,
-        );
         this.logger.log(
           `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}${estimatedCostUsd != null ? `, cost: $${estimatedCostUsd.toFixed(6)}` : ''}`,
         );
-        // 持久化到 task_runs（失败不阻塞 finalize）
-        try {
-          await callbacks.saveTokenUsage(runId, {
-            inputTokens: tokenTracker.inputTokens,
-            outputTokens: tokenTracker.outputTokens,
-            totalTokens: tokenTracker.totalTokens,
-            estimatedCostUsd,
-          });
-        } catch (err) {
-          this.logger.warn(
-            `Failed to save token usage for run ${runId}: ${String(err)}`,
-          );
-        }
         eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
           taskId,
           runId,
@@ -408,7 +411,22 @@ export class AgentService {
           outputTokens: tokenTracker.outputTokens,
           totalTokens: tokenTracker.totalTokens,
           estimatedCostUsd,
+          modelName: this.modelName,
         });
+      }
+      // 持久化到 task_runs（失败不阻塞 finalize）。即便 token 为 0，也记录 model_name。
+      try {
+        await callbacks.saveTokenUsage(runId, {
+          inputTokens: tokenTracker.inputTokens,
+          outputTokens: tokenTracker.outputTokens,
+          totalTokens: tokenTracker.totalTokens,
+          estimatedCostUsd,
+          modelName: this.modelName,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to save token usage for run ${runId}: ${String(err)}`,
+        );
       }
       try {
         await this.browserSessions.closeRun(runId);

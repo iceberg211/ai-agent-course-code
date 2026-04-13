@@ -41,6 +41,7 @@ export interface RunSummary {
   outputTokens: number | null
   totalTokens: number | null
   estimatedCostUsd: number | null
+  modelName: string | null
 }
 
 export interface RunDetail extends RunSummary {
@@ -116,4 +117,6 @@ export interface LiveRunFeed {
   steps: Record<string, LiveStepFeed>
   tokenUsage: TokenUsage | null
   pendingApproval: PendingApproval | null
+  terminalErrorCode: string | null
+  terminalErrorMetadata: Record<string, unknown> | null
 }

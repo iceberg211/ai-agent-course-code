@@ -5,6 +5,7 @@ import express, { Express } from 'express';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { TaskStatus } from '@/common/enums';
+import { AgentService } from '@/agent/agent.service';
 import { EventLogService } from '@/event/event-log.service';
 import { TaskController } from '@/task/task.controller';
 import { TaskService } from '@/task/task.service';
@@ -19,6 +20,9 @@ describe('TaskController (e2e)', () => {
   let eventLog: {
     listTaskEvents: jest.Mock;
   };
+  let agentService: {
+    resolveApproval: jest.Mock;
+  };
 
   beforeEach(async () => {
     taskService = {
@@ -28,11 +32,15 @@ describe('TaskController (e2e)', () => {
     eventLog = {
       listTaskEvents: jest.fn(),
     };
+    agentService = {
+      resolveApproval: jest.fn(),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [TaskController],
       providers: [
         { provide: TaskService, useValue: taskService },
+        { provide: AgentService, useValue: agentService },
         { provide: EventLogService, useValue: eventLog },
       ],
     }).compile();
@@ -90,7 +98,7 @@ describe('TaskController (e2e)', () => {
         status: TaskStatus.PENDING,
       });
 
-    expect(taskService.createTask).toHaveBeenCalledWith('生成状态报告');
+    expect(taskService.createTask).toHaveBeenCalledWith('生成状态报告', 'none');
   });
 
   it('POST /api/tasks 拒绝空输入', async () => {
@@ -134,10 +142,12 @@ describe('TaskController (e2e)', () => {
       runId: undefined,
       take: 20,
       skip: 0,
+      afterCreatedAt: undefined,
+      afterEventId: undefined,
     });
   });
 
   afterEach(async () => {
-    await app.close();
+    await app?.close();
   });
 });

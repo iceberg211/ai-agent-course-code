@@ -243,6 +243,23 @@
     gap: 14px;
   }
 
+  &__alert {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(t.$danger, 0.2);
+    border-radius: t.$radius-md;
+    background: linear-gradient(135deg, rgba(t.$danger, 0.1), rgba(255, 255, 255, 0.78));
+    color: t.$danger;
+
+    span {
+      color: t.$ink-soft;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+  }
+
   &__step {
     display: grid;
     gap: 6px;

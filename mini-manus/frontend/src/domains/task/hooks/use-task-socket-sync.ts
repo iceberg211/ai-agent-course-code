@@ -1,5 +1,9 @@
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import {
+  fetchTaskEvents,
+  type TaskEventLog,
+} from '@/core/api/task.api'
 import { queryKeys } from '@/core/api/query-keys'
 import {
   acquireTaskSocket,
@@ -16,9 +20,17 @@ import type { ExecutorType, RunStatus } from '@/shared/types/status'
 interface BasePayload {
   taskId?: string
   runId?: string
+  _eventId?: string
+  _eventName?: string
+  _eventCreatedAt?: string
+  errorCode?: string | null
+  metadata?: Record<string, unknown> | null
 }
 interface RunFailedPayload extends BasePayload {
   error?: string
+  budget?: number
+  usedTokens?: number
+  estimatedCostUsd?: number | null
 }
 interface StepStartedPayload extends BasePayload {
   stepRunId?: string
@@ -115,6 +127,8 @@ function makeRunFeed(
     steps: current?.steps ?? {},
     tokenUsage: current?.tokenUsage ?? null,
     pendingApproval: current?.pendingApproval ?? null,
+    terminalErrorCode: current?.terminalErrorCode ?? null,
+    terminalErrorMetadata: current?.terminalErrorMetadata ?? null,
   }
 }
 
@@ -206,8 +220,17 @@ export function useTaskSocketSync(
 ) {
   const queryClient = useQueryClient()
   const [liveRunFeeds, setLiveRunFeeds] = useState<LiveRunFeedMap>({})
+  const seenEventIdsRef = useRef<Set<string>>(new Set())
   // 用 lazy initializer 读取初始连接状态，避免在 effect 内同步 setState
   const [socketConnected, setSocketConnected] = useState(() => getTaskSocket().connected)
+
+  const markEventSeen = useEffectEvent((payload: BasePayload | null | undefined) => {
+    const eventId = payload?._eventId
+    if (!eventId) return false
+    if (seenEventIdsRef.current.has(eventId)) return true
+    seenEventIdsRef.current.add(eventId)
+    return false
+  })
 
   // ── Query invalidation helpers ──────────────────────────────────────────────
   // 只在有意义的状态变更时刷新，而不是每个细粒度事件都刷新
@@ -491,6 +514,8 @@ export function useTaskSocketSync(
           runStatus,
           activeStepRunId: null,
           latestNarration: message,
+          terminalErrorCode: payload.errorCode ?? null,
+          terminalErrorMetadata: payload.metadata ?? null,
         })),
       )
     },
@@ -540,6 +565,81 @@ export function useTaskSocketSync(
     )
   })
 
+  const applyLoggedEvent = useEffectEvent((event: TaskEventLog) => {
+    const payload = {
+      ...event.payload,
+      _eventId:
+        typeof event.payload._eventId === 'string' ? event.payload._eventId : event.id,
+      _eventName:
+        typeof event.payload._eventName === 'string'
+          ? event.payload._eventName
+          : event.eventName,
+      _eventCreatedAt:
+        typeof event.payload._eventCreatedAt === 'string'
+          ? event.payload._eventCreatedAt
+          : event.createdAt,
+    } as BasePayload & Record<string, unknown>
+
+    if (markEventSeen(payload)) return
+
+    switch (event.eventName) {
+      case TASK_EVENTS.taskCreated:
+        handleTaskCreated()
+        break
+      case TASK_EVENTS.revisionCreated:
+        handleRevisionCreated(payload)
+        break
+      case TASK_EVENTS.runStarted:
+        handleRunStarted(payload)
+        break
+      case TASK_EVENTS.planCreated:
+        handlePlanCreated(payload)
+        break
+      case TASK_EVENTS.stepStarted:
+        handleStepStarted(payload)
+        break
+      case TASK_EVENTS.stepProgress:
+        handleStepProgress(payload)
+        break
+      case TASK_EVENTS.toolCalled:
+        handleToolCalled(payload)
+        break
+      case TASK_EVENTS.toolCompleted:
+        handleToolCompleted(payload)
+        break
+      case TASK_EVENTS.stepCompleted:
+        handleStepCompleted(payload)
+        break
+      case TASK_EVENTS.stepFailed:
+        handleStepFailed(payload)
+        break
+      case TASK_EVENTS.runCompleted:
+        handleRunTerminal(payload, 'completed', '本轮任务已完成')
+        break
+      case TASK_EVENTS.runFailed:
+        handleRunTerminal(
+          payload,
+          'failed',
+          typeof payload.error === 'string' ? payload.error : '本轮任务执行失败',
+        )
+        break
+      case TASK_EVENTS.runCancelled:
+        handleRunTerminal(payload, 'cancelled', '本轮任务已取消')
+        break
+      case TASK_EVENTS.artifactCreated:
+        handleArtifactCreated(payload)
+        break
+      case TASK_EVENTS.runTokenUsage:
+        handleRunTokenUsage(payload)
+        break
+      case TASK_EVENTS.runAwaitingApproval:
+        handleRunAwaitingApproval(payload)
+        break
+      default:
+        break
+    }
+  })
+
   // ── Socket 生命周期 ────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -547,55 +647,114 @@ export function useTaskSocketSync(
 
     const onConnect = () => setSocketConnected(true)
     const onDisconnect = () => setSocketConnected(false)
-    const onRunCompleted = (p: BasePayload) => handleRunTerminal(p, 'completed', '本轮任务已完成')
+    const withEventGuard =
+      <T extends BasePayload>(handler: (payload: T) => void) =>
+      (payload: T) => {
+        if (markEventSeen(payload)) return
+        handler(payload)
+      }
+
+    const onTaskCreated = withEventGuard(handleTaskCreated)
+    const onRevisionCreated = withEventGuard(handleRevisionCreated)
+    const onRunStarted = withEventGuard(handleRunStarted)
+    const onPlanCreated = withEventGuard(handlePlanCreated)
+    const onStepStarted = withEventGuard(handleStepStarted)
+    const onStepProgress = withEventGuard(handleStepProgress)
+    const onToolCalled = withEventGuard(handleToolCalled)
+    const onToolCompleted = withEventGuard(handleToolCompleted)
+    const onStepCompleted = withEventGuard(handleStepCompleted)
+    const onStepFailed = withEventGuard(handleStepFailed)
+    const onArtifactCreated = withEventGuard(handleArtifactCreated)
+    const onRunTokenUsage = withEventGuard(handleRunTokenUsage)
+    const onRunAwaitingApproval = withEventGuard(handleRunAwaitingApproval)
+    const onRunCompleted = withEventGuard((p: BasePayload) =>
+      handleRunTerminal(p, 'completed', '本轮任务已完成'),
+    )
     const onRunFailed = (p: RunFailedPayload) =>
-      handleRunTerminal(p, 'failed', p.error ?? '本轮任务执行失败')
-    const onRunCancelled = (p: BasePayload) => handleRunTerminal(p, 'cancelled', '本轮任务已取消')
+      withEventGuard((payload: RunFailedPayload) =>
+        handleRunTerminal(payload, 'failed', payload.error ?? '本轮任务执行失败'),
+      )(p)
+    const onRunCancelled = withEventGuard((p: BasePayload) =>
+      handleRunTerminal(p, 'cancelled', '本轮任务已取消'),
+    )
 
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
-    socket.on(TASK_EVENTS.taskCreated, handleTaskCreated)
-    socket.on(TASK_EVENTS.revisionCreated, handleRevisionCreated)
+    socket.on(TASK_EVENTS.taskCreated, onTaskCreated)
+    socket.on(TASK_EVENTS.revisionCreated, onRevisionCreated)
     socket.on(TASK_EVENTS.taskSnapshot, handleSnapshot)
-    socket.on(TASK_EVENTS.runStarted, handleRunStarted)
-    socket.on(TASK_EVENTS.planCreated, handlePlanCreated)
-    socket.on(TASK_EVENTS.stepStarted, handleStepStarted)
-    socket.on(TASK_EVENTS.stepProgress, handleStepProgress)
-    socket.on(TASK_EVENTS.toolCalled, handleToolCalled)
-    socket.on(TASK_EVENTS.toolCompleted, handleToolCompleted)
-    socket.on(TASK_EVENTS.stepCompleted, handleStepCompleted)
-    socket.on(TASK_EVENTS.stepFailed, handleStepFailed)
+    socket.on(TASK_EVENTS.runStarted, onRunStarted)
+    socket.on(TASK_EVENTS.planCreated, onPlanCreated)
+    socket.on(TASK_EVENTS.stepStarted, onStepStarted)
+    socket.on(TASK_EVENTS.stepProgress, onStepProgress)
+    socket.on(TASK_EVENTS.toolCalled, onToolCalled)
+    socket.on(TASK_EVENTS.toolCompleted, onToolCompleted)
+    socket.on(TASK_EVENTS.stepCompleted, onStepCompleted)
+    socket.on(TASK_EVENTS.stepFailed, onStepFailed)
     socket.on(TASK_EVENTS.runCompleted, onRunCompleted)
     socket.on(TASK_EVENTS.runFailed, onRunFailed)
     socket.on(TASK_EVENTS.runCancelled, onRunCancelled)
-    socket.on(TASK_EVENTS.artifactCreated, handleArtifactCreated)
-    socket.on(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
-    socket.on(TASK_EVENTS.runAwaitingApproval, handleRunAwaitingApproval)
+    socket.on(TASK_EVENTS.artifactCreated, onArtifactCreated)
+    socket.on(TASK_EVENTS.runTokenUsage, onRunTokenUsage)
+    socket.on(TASK_EVENTS.runAwaitingApproval, onRunAwaitingApproval)
 
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
-      socket.off(TASK_EVENTS.taskCreated, handleTaskCreated)
-      socket.off(TASK_EVENTS.revisionCreated, handleRevisionCreated)
+      socket.off(TASK_EVENTS.taskCreated, onTaskCreated)
+      socket.off(TASK_EVENTS.revisionCreated, onRevisionCreated)
       socket.off(TASK_EVENTS.taskSnapshot, handleSnapshot)
-      socket.off(TASK_EVENTS.runStarted, handleRunStarted)
-      socket.off(TASK_EVENTS.planCreated, handlePlanCreated)
-      socket.off(TASK_EVENTS.stepStarted, handleStepStarted)
-      socket.off(TASK_EVENTS.stepProgress, handleStepProgress)
-      socket.off(TASK_EVENTS.toolCalled, handleToolCalled)
-      socket.off(TASK_EVENTS.toolCompleted, handleToolCompleted)
-      socket.off(TASK_EVENTS.stepCompleted, handleStepCompleted)
-      socket.off(TASK_EVENTS.stepFailed, handleStepFailed)
+      socket.off(TASK_EVENTS.runStarted, onRunStarted)
+      socket.off(TASK_EVENTS.planCreated, onPlanCreated)
+      socket.off(TASK_EVENTS.stepStarted, onStepStarted)
+      socket.off(TASK_EVENTS.stepProgress, onStepProgress)
+      socket.off(TASK_EVENTS.toolCalled, onToolCalled)
+      socket.off(TASK_EVENTS.toolCompleted, onToolCompleted)
+      socket.off(TASK_EVENTS.stepCompleted, onStepCompleted)
+      socket.off(TASK_EVENTS.stepFailed, onStepFailed)
       socket.off(TASK_EVENTS.runCompleted, onRunCompleted)
       socket.off(TASK_EVENTS.runFailed, onRunFailed)
       socket.off(TASK_EVENTS.runCancelled, onRunCancelled)
-      socket.off(TASK_EVENTS.artifactCreated, handleArtifactCreated)
-      socket.off(TASK_EVENTS.runTokenUsage, handleRunTokenUsage)
-      socket.off(TASK_EVENTS.runAwaitingApproval, handleRunAwaitingApproval)
+      socket.off(TASK_EVENTS.artifactCreated, onArtifactCreated)
+      socket.off(TASK_EVENTS.runTokenUsage, onRunTokenUsage)
+      socket.off(TASK_EVENTS.runAwaitingApproval, onRunAwaitingApproval)
       setSocketConnected(false)
       releaseTaskSocket()
     }
   }, [])
+
+  // ── 历史事件回放：刷新页面后补齐 live feed，并用 _eventId 与 Socket 去重 ─────
+
+  useEffect(() => {
+    seenEventIdsRef.current.clear()
+    setLiveRunFeeds({})
+  }, [selectedTaskId])
+
+  useEffect(() => {
+    if (!selectedTaskId) return
+    let cancelled = false
+
+    async function replayEvents() {
+      try {
+        const events = await fetchTaskEvents(selectedTaskId!, {
+          runId: selectedRunId ?? undefined,
+          take: 500,
+        })
+        if (cancelled) return
+        for (const event of events) {
+          applyLoggedEvent(event)
+        }
+      } catch (err) {
+        console.warn('Failed to replay task events', err)
+      }
+    }
+
+    void replayEvents()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTaskId, selectedRunId])
 
   // ── Task room 管理 ─────────────────────────────────────────────────────────
 

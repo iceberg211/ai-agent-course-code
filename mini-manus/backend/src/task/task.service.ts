@@ -359,6 +359,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
           outputTokens: stats.outputTokens,
           totalTokens: stats.totalTokens,
           estimatedCostUsd: stats.estimatedCostUsd,
+          modelName: stats.modelName,
         });
       },
 
@@ -631,6 +632,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         'outputTokens',
         'totalTokens',
         'estimatedCostUsd',
+        'modelName',
       ],
     });
 
@@ -657,6 +659,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         outputTokens: run.outputTokens,
         totalTokens: run.totalTokens,
         estimatedCostUsd: run.estimatedCostUsd,
+        modelName: run.modelName,
       })),
       currentRun,
     };

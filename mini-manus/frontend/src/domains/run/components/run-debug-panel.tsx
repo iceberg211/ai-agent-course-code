@@ -21,6 +21,12 @@ function formatCost(value: number | string | null) {
   return `$${num.toFixed(6)}`
 }
 
+function formatUnknownNumber(value: unknown) {
+  if (value == null || value === '') return '--'
+  const num = Number(value)
+  return Number.isFinite(num) ? String(num) : '--'
+}
+
 export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
   const metrics = useMemo(() => {
     if (!runDetail) return null
@@ -53,9 +59,20 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
       lastError: runDetail.errorMessage ?? lastFailedStep?.errorMessage ?? null,
       artifactTypes: Array.from(new Set(runDetail.artifacts.map((artifact) => artifact.type))).join(', '),
       startedAt: formatDateTime(runDetail.startedAt ?? runDetail.createdAt),
+      modelName: runDetail.modelName,
       tokenUsage: liveRunFeed?.tokenUsage ?? persistedTokenUsage,
+      budgetExceeded:
+        liveRunFeed?.terminalErrorCode === 'token_budget_exceeded' ||
+        runDetail.errorMessage === 'token_budget_exceeded',
+      budgetMetadata: liveRunFeed?.terminalErrorMetadata ?? null,
     }
-  }, [liveRunFeed?.steps, liveRunFeed?.tokenUsage, runDetail])
+  }, [
+    liveRunFeed?.steps,
+    liveRunFeed?.terminalErrorCode,
+    liveRunFeed?.terminalErrorMetadata,
+    liveRunFeed?.tokenUsage,
+    runDetail,
+  ])
 
   if (!metrics) {
     return (
@@ -75,6 +92,7 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
     { label: 'Cache Hit', value: formatMetric(metrics.cacheHits) },
     { label: 'Cache Miss', value: formatMetric(metrics.cacheMisses) },
     { label: '产物类型', value: metrics.artifactTypes || '--' },
+    { label: 'Model', value: metrics.modelName ?? '--' },
     {
       label: 'Input Tokens',
       value: metrics.tokenUsage ? String(metrics.tokenUsage.inputTokens) : '--',
@@ -96,6 +114,18 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
   return (
     <PanelSection title="Run Debug" subtitle="帮助我们快速观察本轮执行质量与交付情况">
       <div className="run-debug">
+        {metrics.budgetExceeded ? (
+          <div className="run-debug__alert">
+            <p className="run-debug__label">Token Budget Alert</p>
+            <strong>任务因预算保护被强制终止</strong>
+            <span>
+              Budget: {formatUnknownNumber(metrics.budgetMetadata?.['budget'])} tokens · Used:{' '}
+              {formatUnknownNumber(metrics.budgetMetadata?.['usedTokens'])} tokens · Cost:{' '}
+              {formatCost(metrics.budgetMetadata?.['estimatedCostUsd'] as number | string | null)}
+            </span>
+          </div>
+        ) : null}
+
         <div className="run-debug__grid">
           {items.map((item) => (
             <article key={item.label} className="run-debug__card">

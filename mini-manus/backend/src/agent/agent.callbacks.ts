@@ -66,6 +66,7 @@ export interface AgentCallbacks {
       outputTokens: number;
       totalTokens: number;
       estimatedCostUsd: number | null;
+      modelName: string;
     },
   ): Promise<void>;
   /** HITL: 将 run 状态切为 AWAITING_APPROVAL 并记录待审批步骤信息 */

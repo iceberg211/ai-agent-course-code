@@ -13,7 +13,15 @@ describe('EventPublisher', () => {
 
     publisher.emit('task.created', payload);
 
-    expect(eventLog.record).toHaveBeenCalledWith('task.created', payload);
-    expect(emitter.emit).toHaveBeenCalledWith('task.created', payload);
+    const persistedPayload = (eventLog.record as jest.Mock).mock.calls[0][1];
+    expect(persistedPayload).toEqual(
+      expect.objectContaining({
+        ...payload,
+        _eventId: expect.any(String),
+        _eventName: 'task.created',
+        _eventCreatedAt: expect.any(String),
+      }),
+    );
+    expect(emitter.emit).toHaveBeenCalledWith('task.created', persistedPayload);
   });
 });

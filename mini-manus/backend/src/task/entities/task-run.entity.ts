@@ -71,6 +71,9 @@ export class TaskRun {
   })
   estimatedCostUsd: number | null;
 
+  @Column({ name: 'model_name', type: 'varchar', length: 120, nullable: true })
+  modelName: string | null;
+
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt: Date | null;
 

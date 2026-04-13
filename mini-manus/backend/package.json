@@ -18,6 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:integration": "jest --config ./test/jest-integration.json --runInBand",
+    "smoke:browser": "ts-node scripts/browser-smoke.ts",
     "migration:generate": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli migration:generate -d src/database/data-source.ts",
     "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli migration:run -d src/database/data-source.ts",
     "migration:revert": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli migration:revert -d src/database/data-source.ts"

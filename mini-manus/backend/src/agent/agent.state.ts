@@ -11,6 +11,8 @@ export interface StepResult {
 export interface EvaluationResult {
   decision: 'continue' | 'retry' | 'replan' | 'complete' | 'fail';
   reason: string;
+  errorCode?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PlanStepDef {

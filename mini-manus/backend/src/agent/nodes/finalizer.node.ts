@@ -7,6 +7,7 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { createPdfBufferFromText } from '@/tool/utils/pdf-export';
 import { finalizerJsonPrompt, finalizerPrompt } from '@/prompts';
+import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 
 /** 从 LLM 输出中解析 "TYPE: xxx" 标记行，返回 [artifactType, 内容主体] */
 function parseArtifactType(raw: string): [ArtifactType, string] {
@@ -81,7 +82,16 @@ export async function finalizerNode(
   eventPublisher: EventPublisher,
   exportPdfEnabled: boolean,
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
+  tokenBudgetGuard?: TokenBudgetGuard,
 ): Promise<Partial<AgentState>> {
+  const initialBudgetFailure = tokenBudgetGuard?.check();
+  if (initialBudgetFailure) {
+    return {
+      evaluation: initialBudgetFailure,
+      errorMessage: initialBudgetFailure.reason,
+    };
+  }
+
   const executionContext = state.stepResults
     .map(
       (s) =>
@@ -100,6 +110,14 @@ export async function finalizerNode(
       ? response.content
       : JSON.stringify(response.content);
 
+  const artifactBudgetFailure = tokenBudgetGuard?.check();
+  if (artifactBudgetFailure) {
+    return {
+      evaluation: artifactBudgetFailure,
+      errorMessage: artifactBudgetFailure.reason,
+    };
+  }
+
   // 解析 LLM 输出中的 TYPE 标记，决定产物类型
   const [artifactType, content] = parseArtifactType(rawContent);
   const normalized = normalizeArtifact(artifactType, content);
@@ -117,6 +135,14 @@ export async function finalizerNode(
     },
   );
   emitArtifactCreated(eventPublisher, state, artifact, artifactType);
+
+  const jsonBudgetFailure = tokenBudgetGuard?.check();
+  if (jsonBudgetFailure) {
+    return {
+      evaluation: jsonBudgetFailure,
+      errorMessage: jsonBudgetFailure.reason,
+    };
+  }
 
   const jsonChain = finalizerJsonPrompt.pipe(
     llm.withStructuredOutput(FinalizerJsonSchema, { method: soMethod }),

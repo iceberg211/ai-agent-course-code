@@ -94,12 +94,16 @@ export class TaskController {
     @Query('runId') runId?: string,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
+    @Query('after_created_at') afterCreatedAt?: string,
+    @Query('after_event_id') afterEventId?: string,
   ) {
     return this.eventLog.listTaskEvents({
       taskId,
       runId,
       take: take ? Number(take) : undefined,
       skip: skip ? Number(skip) : undefined,
+      afterCreatedAt,
+      afterEventId,
     });
   }
 

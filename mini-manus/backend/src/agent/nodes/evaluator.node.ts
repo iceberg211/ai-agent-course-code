@@ -6,6 +6,7 @@ import { StepStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { evaluatorPrompt } from '@/prompts';
+import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 
 const EvalSchema = z.object({
   decision: z.enum(['continue', 'retry', 'replan', 'complete', 'fail']),
@@ -82,6 +83,8 @@ async function applyDecision(
         runId: state.runId,
         stepRunId: lastStepRunId,
         error: result.reason,
+        errorCode: result.errorCode ?? null,
+        metadata: result.metadata ?? null,
       });
     }
   } else {
@@ -149,6 +152,7 @@ export async function evaluatorNode(
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
   maxRetries = 3,
   maxReplans = 2,
+  tokenBudgetGuard?: TokenBudgetGuard,
 ): Promise<Partial<AgentState>> {
   const lastStepRunId = state.lastStepRunId;
   const lastStepOutput = state.lastStepOutput;
@@ -177,6 +181,18 @@ export async function evaluatorNode(
   }
 
   const currentStep = state.currentPlan.steps[state.currentStepIndex];
+
+  const budgetFailure = tokenBudgetGuard?.check();
+  if (budgetFailure) {
+    return applyDecision(
+      budgetFailure,
+      state,
+      lastStepRunId,
+      currentStep,
+      callbacks,
+      eventPublisher,
+    );
+  }
 
   // 2. 规则前置检查 — 明显结果直接决策，不调用 LLM
   const preCheck = runPreChecks(

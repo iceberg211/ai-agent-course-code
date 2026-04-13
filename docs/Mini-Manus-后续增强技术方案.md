@@ -10,9 +10,9 @@
 4. Planner 语义校验
 5. Workspace 生命周期清理
 6. 事件持久化回放
-7. 浏览器自动化
+7. 浏览器自动化（向下演进真实 Computer Use）
 8. 代码执行沙箱
-9. 跨 Run 记忆
+9. 跨 Run 记忆（优先级：低）
 10. 多 Agent 编排
 
 本方案默认遵循以下原则：
@@ -125,10 +125,10 @@
 - 节点级 LLM 调用明细（planner/evaluator/finalizer/skill 各用了多少 token）尚无独立表记录
 - 工具调用只有 live 事件和 stepRun 字段，没有独立审计表
 
-#### 记忆与生命周期缺口
+#### 记忆与生命周期缺口（低优先级）
 
 - Workspace 定期清理已接入，但默认关闭，部署时需要显式配置
-- Artifact 级记忆复用（第二层）和来源级记忆（第三层）尚未实现
+- Artifact 级记忆复用（第二层）和来源级记忆（第三层）尚未实现（由于 ROI 偏低，当前阶段作为最低优先级）
 - 输出截断仍偏粗暴，长内容没有先摘要再截断
 
 #### 认证与配额缺口
@@ -311,6 +311,12 @@ Token 统计已经做到 Run 级可用，前端展示也已完成基础收口。
 - `finalizer`
 - `skill:<skill_name>`
 
+**节点级拆分的技术路径**：
+
+当前 `TokenTrackerCallback` 是在 `compiled.invoke()` 时全局挂载的，只能拿到聚合数据，无法区分调用来自哪个节点。
+
+推荐方案：每个节点函数（planner/evaluator/finalizer/skill）内部各自创建独立的 `TokenTrackerCallback` 实例，节点结束后通过 `eventPublisher.emit(TASK_EVENTS.LLM_CALL_COMPLETED, { nodeName, ... })` 发射一条明细事件，`EventLogService` 负责将其写入 `llm_call_logs`。全局的 `TokenTrackerCallback` 继续保留用于 Run 级聚合，两者互不干扰。
+
 #### 第四阶段：价格配置
 
 不要把复杂价格表直接塞进 `.env`，推荐两种方式：
@@ -379,10 +385,15 @@ estimated_cost_usd = input_cost + output_cost
 
 ```text
 planner llm output
+    -> GuardrailChain 安全防护（已实现）
     -> PlanSchema 结构校验
     -> PlanSemanticValidator 语义校验
     -> savePlan
 ```
+
+**已实现的 Guardrail 机制**：
+
+当前 `planner.node.ts` 中已通过 `buildGuardedPlannerChain()` 在 LLM 输出和语义校验之间包裹了一层 Guardrail Chain。若 Guardrail 检测到输出违反安全策略，会抛出 `GuardrailBlockedError`，Planner 节点会立即终止本 Run 并标记 `errorMessage: guardrail_blocked:<reason>`。该机制在两次校验尝试中均生效。
 
 ### 5.4 语义校验规则
 
@@ -529,7 +540,32 @@ await workspace.cleanTaskDir(taskId)
 - 适合网页自动化与截图
 - 后续如果要做登录态、复杂页面操作，也更容易扩展
 
-### 7.3 推荐接入方式
+### 7.3 推荐接入方式与技术演进路线（核心变轨）
+
+当前的浏览器方案仅局限于无头进程中的传统网页抓取。这在下一步面对复杂交互和动态站点时面临严重的局限。
+接下来，我们将采取**两条相互结合的路线**推进：
+
+#### 路线 A：基于 CDP 的传统结构化交互（DOM驱动）
+这部分作为现有 `BrowserModule` 的延伸：
+使用 Playwright 通过 Chrome DevTools Protocol (CDP) 连容器里的 Chromium。
+Agent 的动作通过传统 DOM 指令驱动，例如 `browser_click({ selector: '#submit' })`。
+- **优点**：成熟，对于标准网页抓取速度快且精准。
+- **缺点**：不兼容 Canvas 控制、验证码、强安全防控站点、复杂弹窗图层。
+
+#### 路线 B：基于 Docker Xvfb 的视觉坐标沙箱（Computer Use 驱动）🌟
+这是后续使 Agent 从“爬虫”走向“OS级代操作AI”的终极形态：
+1. **基础架构**：用代码拉起提供真实图形界面的 Docker 容器（容器内置 Xvfb 虚拟屏幕 + Chromium）。
+2. **转播与人工接管**：通过 `x11vnc` 结合 `websockify`，提供一条标准的 VNC 级 WebSocket 流给前端展示（类似 "AI 正在浏览" 浮窗）。人工可以随时在前端界面点击鼠标接管。
+3. **坐标交互原语**：提供全新大工具包 `computer_action`，告别 `selector`，让大模型只看截图输出屏幕物理坐标（`{"action": "click", "x": 100, "y": 200}`）。后端通过 Playwright 原生 `.mouse.click()` 或 `xdotool` 下达系统级像素坐标点击。
+
+**路线 B 关键执行细节（6 项）**：
+
+1. **Docker 镜像选型**：第一版建议直接使用 `kasmweb/chrome`（已内置 Xvfb + VNC + Chromium，开箱即用）快速验证链路。链路跑通后再自建精简 Dockerfile 控制镜像体积（目标 < 2GB）。
+2. **容器生命周期**：第一版每个 Run 按需拉起独立容器，Run 结束或超时后自动销毁。通过 `dockerode` 库操控 Docker Engine。后续可引入容器池化和预热策略。
+3. **VNC WebSocket 鉴权**：后端为每个容器生成一次性 token，前端连接 WebSocket 时 URL 携带 `?token=xxx`，`websockify` 层校验 token 合法性后才转发流量。token 随容器销毁失效。
+4. **截图获取路径**：`computer_action` 工具每次操作后，通过 Playwright CDP 的 `Page.captureScreenshot` 获取高精度截图（而非 VNC 帧缓冲）。VNC 流仅用于前端实时转播，不参与 Agent 决策。
+5. **分辨率与 DPI**：Xvfb 固定 `1280x720`，Chromium 启动参数加 `--force-device-scale-factor=1`。分辨率过高会导致截图文件过大、token 消耗激增。
+6. **共享内存（致命坑）**：Docker 启动参数必须加 `--shm-size=1g`。容器默认 `/dev/shm` 只有 64MB，Chromium 打开复杂页面必崩。同时需预装 `fonts-noto-cjk` 等中文字体包，否则截图中文乱码。
 
 当前实现没有把 Playwright 深度耦合到现有 executor 中，而是做成独立模块和工具层。
 
@@ -544,39 +580,15 @@ ToolModule
   BrowserScreenshotTool
 ```
 
-`executor` 仍然只通过 `ToolRegistry` 调用工具，不直接依赖 Playwright。它只会在执行工具前补入运行时上下文：
+第一阶段已经开放只读能力（基于路线 A）：
 
-- `task_id`
-- `run_id`
+1. `browser_open` / `browser_extract` / `browser_screenshot`
 
-第一阶段已经开放只读能力：
+第二阶段将正式融合“路线 B”级别的视觉交互能力：
 
-1. `browser_open`
-   - 输入：`task_id`, `url`, `timeout_ms?`
-   - 输出：页面标题、最终 URL、HTTP 状态、`session_id`
+4. `browser_click` / `browser_type`（从 Selector 驱动兼容或变轨为视觉坐标驱动）
 
-2. `browser_extract`
-   - 输入：`session_id`, `selector?`, `max_length?`
-   - 输出：页面文本或指定区域文本
-
-3. `browser_screenshot`
-   - 输入：`task_id`, `session_id`, `path?`, `full_page?`
-   - 输出：截图文件路径和 metadata
-
-第二阶段再开放交互能力：
-
-4. `browser_click`
-   - 输入：`sessionId`, `selector`
-
-5. `browser_type`
-   - 输入：`sessionId`, `selector`, `text`
-
-6. `browser_wait_for`
-   - 输入：`sessionId`, `selector`, `timeoutMs`
-
-第三阶段才考虑登录态和人工接管。
-
-不要第一版就做登录态复用，因为它会带来账号安全、Cookie 存储、权限隔离和审计问题。
+第三阶段将基于 VNC 转播提供**人工协助（HITL）扫码授权**与持久化 Session 登陆态。
 
 ### 7.4 会话模型
 
@@ -689,7 +701,47 @@ ToolModule
 
 对当前项目，推荐先做 **方案 A**。
 
-### 8.3 推荐工具设计
+### 8.3 与“浏览器沙箱”的边界与终极结合
+
+明确与第 7 章“浏览器自动化”的功能区别：
+- **浏览器自动化**：解决“联网获取屏幕/文本”的信息输入问题。在初期阶段，它运行在宿主机的 Node 环境中作为只读爬虫。
+- **代码执行沙箱**：解决“运行模型生成的不可信防代码”的副作用隔离问题。由于有宕机和注入风险，它必须从第一天起就隔离在跑着非特权用户的 Docker 环境中。
+
+**大一统终极形态（The "Computer" Paradigm）**：
+随着路线图推进，这两个孤立的隔离方案将在高阶 Agent 架构中发生**合体**。
+未来，我们将只启动一个**包含了 Ubuntu + Node + Python + Chromium + Xvfb 虚拟屏幕的大一统 Docker 镜像**作为 Agent 独享的“云电脑”。大模型既可以通过网络协议在由于此 Docker 内浏览网页（浏览器自动化），也可以在此容器内执行分析脚本做图（代码执行）。这种集中化的 SandboxRunner 才是高级 Agent 的最终形态（参考 Anthropic Computer Use）。
+
+### 8.4 `SandboxRunner` 接口设计
+
+`SandboxRunner` 是沙箱能力的核心抽象。S0 阶段先定义接口，使用 MockRunner 跑通单元测试；S1 阶段再接入 `DockerRunner` 真实实现。
+
+推荐使用 `dockerode`（npm 周下载量 500 万+）通过 Unix Socket `/var/run/docker.sock` 与 Docker Engine 通信。注意：宿主机的 Docker Socket 只暴露给 `SandboxService`，**绝不能挂载进沙箱容器自身**，否则容器可反控宿主机。
+
+```ts
+interface SandboxRunner {
+  run(options: {
+    taskId: string;
+    runtime: 'node' | 'python';
+    entryFile: string;
+    timeoutMs: number;
+    memoryLimitMb?: number;   // 默认 256
+    networkDisabled?: boolean; // 默认 true
+  }): Promise<{
+    stdout: string;    // 截断至 maxOutputLength
+    stderr: string;    // 截断至 maxOutputLength
+    exitCode: number;
+    durationMs: number;
+    truncated: boolean; // stdout/stderr 是否被截断
+  }>;
+}
+```
+
+**Workspace 挂载的读写边界**：
+- 沙箱内的 task workspace 以 `rw` 模式挂载（Agent 需要写代码文件进去）
+- 基础镜像层以 `ro` 模式挂载
+- 输出文件在沙箱内生成后，回写到宿主机 workspace，evaluator 才能读取
+
+### 8.5 推荐工具设计
 
 第一批工具建议保守设计，只开放固定运行时，不先开放任意命令和依赖安装：
 
@@ -710,7 +762,7 @@ ToolModule
    - 输入：`task_id`, `command`, `args`, `timeoutMs`
    - 仅允许命中白名单的命令
 
-### 8.4 安全约束
+### 8.6 安全约束
 
 必须限制：
 
@@ -730,7 +782,7 @@ ToolModule
 - 限制 `stdout / stderr` 输出长度
 - 运行结果不直接当作可信指令，只作为 evaluator 的输入材料
 
-### 8.5 与 evaluator 的联动
+### 8.7 与 evaluator 的联动
 
 代码执行结果不应该只是产物，而应进入评估链路。
 
@@ -740,14 +792,21 @@ evaluator 判断依据可增加：
 - `stderr` 是否为空
 - 输出是否包含预期关键词
 
-### 8.6 推荐落地阶段
+### 8.7 推荐落地阶段
 
 | 阶段 | 目标 | 验收 |
 | --- | --- | --- |
 | S0 | 抽象 `SandboxRunner` 接口 | 不依赖 Docker 也能用 mock runner 做单元测试 |
-| S1 | Docker runner 跑 Node/Python 文件 | 超时、输出截断、退出码都能写入 StepRun |
-| S2 | evaluator 读取运行结果 | 代码生成任务能自动根据执行结果 retry 或 fail |
-| S3 | 依赖安装白名单 | 只允许指定包管理器和包名，默认关闭网络 |
+| S1 | 纯净 Docker runner 跑 Node/Python | 超时、输出截断、退出码都能写入 StepRun |
+| S2 | 与代码生成结合并入 evaluator | 代码生成任务能自动根据执行结果 retry 或 fail |
+| S3 | 容器合体演进 | 【架构跃迁】将浏览器依赖并入 Sandbox，实现统一的"云电脑环境" |
+
+**S3 启动前置条件**：
+
+- [ ] S1 的纯净 Docker runner 已稳定运行 2 周以上
+- [ ] B2 的浏览器交互工具已通过 CDP 路线验证
+- [ ] 前端 noVNC 组件已完成基础集成
+- [ ] 大一统 Docker 镜像体积已控制在 2GB 以内（否则冷启动太慢）
 
 ## 9. 事件持久化回放
 
@@ -805,6 +864,15 @@ evaluator 判断依据可增加：
 - 若 Run 已结束，则直接渲染历史回放
 - 若 Run 正在执行，则历史事件 + socket 实时事件合并
 
+**历史事件与实时事件的合并去重策略**：
+
+前端从 REST 拉取历史事件和从 Socket 接收实时事件之间存在时间窗口重叠，必须处理去重和空窗问题：
+
+1. 前端拉取历史事件后，记录最后一条事件的 `id`（作为游标）
+2. Socket 推送的新事件，如果 `id` 已存在于本地事件列表中则跳过
+3. 如果 socket 推送的事件 `created_at` 早于已有最后一条事件，也跳过
+4. 建议后端 `GET /events` 接口支持 `after_id` 参数，前端可精确从游标处续拉，避免全量重复加载
+
 ### 9.5 与现有架构的关系
 
 `step_runs` 继续作为最终状态事实来源  
@@ -815,7 +883,7 @@ evaluator 判断依据可增加：
 - `step_runs`：最终结果、查询、统计
 - `task_events`：回放、调试、审计
 
-## 10. 跨 Run 记忆
+## 10. 跨 Run 记忆（当前优先级：低）
 
 ### 10.1 当前状态
 
@@ -1234,6 +1302,8 @@ interface AgentWorkerOutput {
 5. 并发锁、事务后发事件、删除清理、优雅关闭等稳定性措施已经开始补上
 6. 后端和前端生产构建已经通过
 7. 浏览器只读工具已接入，默认关闭，可通过环境变量启用
+8. HITL（Human-in-the-loop）完整链路已实现：`interrupt()` + `MemorySaver` + `Command` resume
+9. Planner Guardrail Chain 安全防护已接入
 
 **当前最大问题：**
 
@@ -1243,6 +1313,15 @@ interface AgentWorkerOutput {
 4. 高风险工具只有白名单，还没有人工审批和预算
 5. 浏览器只读工具还缺真实 Chromium 环境冒烟测试
 6. 前端没有自动化测试
+7. 缺少单 Task 级的 Token 总预算上限（当前只有 `MAX_RETRIES` / `MAX_REPLANS` / `MAX_STEPS` 作为资源边界）
+
+**Token 总预算建议**：
+
+在 `AgentState` 中增加 `totalTokenBudget` 字段（默认 100,000），evaluator 在每次决策前检查已消耗 token 是否超过预算。超预算时直接终止 Run 并标记失败原因为 `token_budget_exceeded`，避免死循环 replan 烧毁大量费用。
+
+**已知的架构局限性（需显式声明）**：
+
+- 当前 HITL 使用的 `MemorySaver` 是纯内存 checkpointer，**进程重启后所有 checkpoint 数据丢失**。对于课程项目和单实例部署完全可接受。如果未来需要生产化或多实例部署，应切换为 `PostgresSaver`（LangGraph 官方提供）。
 
 **下阶段核心目标：**
 
