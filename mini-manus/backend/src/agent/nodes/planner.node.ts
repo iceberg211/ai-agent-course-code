@@ -32,22 +32,50 @@ import { RunStatus } from '@/common/enums';
 /** 步骤结果占位符，executor 在执行前替换为真实 stepResults 摘要 */
 export const STEP_RESULTS_PLACEHOLDER = '__STEP_RESULTS__';
 
-type WorkflowBuilder = (state: AgentState) => PlanStepDef[];
+type WorkflowContext = {
+  toolRegistry: ToolRegistry;
+  skillRegistry: SkillRegistry;
+};
 
-export const DETERMINISTIC_WORKFLOWS: Partial<Record<TaskIntent, WorkflowBuilder>> = {
-  code_generation: (state) => [
-    {
-      stepIndex: 0,
-      description: `根据需求生成完整代码项目`,
-      skillName: 'code_project_generation',
-      skillInput: {
-        task_id: state.taskId,
-        project_description: state.revisionInput,
+type WorkflowBuilder = (
+  state: AgentState,
+  ctx: WorkflowContext,
+) => PlanStepDef[];
+
+export const DETERMINISTIC_WORKFLOWS: Partial<
+  Record<TaskIntent, WorkflowBuilder>
+> = {
+  code_generation: (state, ctx) => {
+    const steps: PlanStepDef[] = [
+      {
+        stepIndex: 0,
+        description: '根据需求生成完整代码项目',
+        skillName: 'code_project_generation',
+        skillInput: {
+          task_id: state.taskId,
+          project_description: state.revisionInput,
+        },
       },
-    },
-  ],
+    ];
 
-  research_report: (state) => [
+    // 沙箱可用时加入执行验证步骤（S2 闭环：generate → sandbox_run → fix → package）
+    // Tool Calling 会根据上下文（step 0 输出的文件列表）决议实际入口文件
+    if (ctx.toolRegistry.has('sandbox_run_node')) {
+      steps.push({
+        stepIndex: 1,
+        description: '在沙箱中运行生成的代码，验证可执行性并获取输出',
+        toolHint: 'sandbox_run_node',
+        toolInput: {
+          task_id: state.taskId,
+          entry: 'project/index.js', // 约定默认值，Tool Calling 会根据实际文件列表覆盖
+        },
+      });
+    }
+
+    return steps;
+  },
+
+  research_report: (state, _ctx) => [
     {
       stepIndex: 0,
       description: `围绕主题进行深度网络调研`,
@@ -115,7 +143,7 @@ async function handlePlanApproval(
     steps: stepSummaries,
   };
   await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
-  const decision = interrupt(planReviewInfo) as 'approved' | 'rejected';
+  const decision = interrupt(planReviewInfo);
   await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
   return decision;
 }
@@ -148,7 +176,7 @@ export async function plannerNode(
 
   if (workflowBuilder) {
     logger.log(`确定性 workflow: ${state.taskIntent}（跳过 LLM Planner）`);
-    const planSteps = workflowBuilder(state);
+    const planSteps = workflowBuilder(state, { toolRegistry, skillRegistry });
     const plan = await callbacks.savePlan(state.runId, planSteps);
     eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
       taskId: state.taskId,
@@ -159,7 +187,12 @@ export async function plannerNode(
 
     if (state.approvalMode === 'plan_first') {
       const decision = await handlePlanApproval(
-        plan, planSteps, state, skillRegistry, toolRegistry, callbacks,
+        plan,
+        planSteps,
+        state,
+        skillRegistry,
+        toolRegistry,
+        callbacks,
       );
       if (decision === 'rejected') {
         return { shouldStop: true, errorMessage: 'plan_rejected' };
@@ -349,7 +382,12 @@ export async function plannerNode(
   // ─── plan_first HITL：计划生成后、执行前暂停等待用户审批 ──────────────────────
   if (state.approvalMode === 'plan_first') {
     const decision = await handlePlanApproval(
-      plan, planSteps, state, skillRegistry, toolRegistry, callbacks,
+      plan,
+      planSteps,
+      state,
+      skillRegistry,
+      toolRegistry,
+      callbacks,
     );
     if (decision === 'rejected') {
       return { shouldStop: true, errorMessage: 'plan_rejected' };

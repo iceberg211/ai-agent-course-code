@@ -38,7 +38,9 @@ const envSchema = z
     PLANNER_MAX_STEPS: z.coerce.number().int().min(1).default(8),
     PLANNER_ALLOWED_SIDE_EFFECT_TOOLS: z
       .string()
-      .default('write_file,download_file,export_pdf,browser_screenshot'),
+      .default(
+        'write_file,download_file,export_pdf,browser_screenshot,sandbox_run_node,sandbox_run_python',
+      ),
     PLANNER_ALLOWED_SIDE_EFFECT_SKILLS: z
       .string()
       .default('document_writing,report_packaging,code_project_generation'),

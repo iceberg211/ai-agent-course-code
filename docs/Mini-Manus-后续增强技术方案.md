@@ -1408,6 +1408,8 @@ interface AgentWorkerOutput {
 2. 补 retry/replan 超限把 run 标记为 failed 的 Agent 层测试
 3. 补 `GET /api/health` e2e 和异常过滤器输出格式测试
 4. 补 `task_events` 断线重连增量续拉和历史回放测试
+5. 补 trajectory / golden run 回归：固定输入 + mock LLM / mock tool，断言 plan、step、event、artifact 的顺序和关键字段
+6. 补真实 PostgreSQL 集成测试：空库 migration、task/run 生命周期、事件落库、并发 run / cancel / delete 的事务边界
 
 ### 13.2 第二个迭代：编排层架构升级（向 Manus 模式演进）
 
@@ -1429,7 +1431,8 @@ interface AgentWorkerOutput {
 1. 基于 `after_created_at + after_event_id` 做事件增量续拉和断线补漏
 2. 给 `task_events` 增加保留策略和分页游标测试
 3. 增加 `api_clients / api_usage_daily` 配额表
-4. 补真实数据库集成测试
+4. 补真实 PostgreSQL + migration 集成测试，覆盖 task/run/revision/event/artifact 关系和并发事务
+5. 补 trajectory / golden run 测试，固定 mock LLM 输出并锁定执行轨迹，防止 prompt 或 planner 改动悄悄改变主链路
 
 ### 13.4 第四个迭代：高价值执行能力
 

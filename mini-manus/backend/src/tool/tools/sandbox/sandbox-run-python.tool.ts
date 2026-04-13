@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as path from 'path';
 import { z } from 'zod';
 import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
 import { classifyToolError } from '@/tool/utils/tool-error';
@@ -9,7 +10,32 @@ const schema = z.object({
   entry: z
     .string()
     .min(1)
-    .describe('相对于 task workspace 的 Python 入口文件路径，如 project/main.py'),
+    .refine((value) => {
+      const raw = value.trim();
+      if (!raw || /[\0-\x1f]/.test(raw)) return false;
+      if (path.posix.isAbsolute(raw) || path.win32.isAbsolute(raw)) {
+        return false;
+      }
+      const normalizedSlashes = raw.replace(/\\/g, '/');
+      const segments = normalizedSlashes.split('/');
+      if (
+        segments.some(
+          (segment) => segment === '' || segment === '.' || segment === '..',
+        )
+      ) {
+        return false;
+      }
+      const normalized = path.posix.normalize(normalizedSlashes);
+      return (
+        normalized !== '.' &&
+        normalized !== '..' &&
+        !normalized.startsWith('../') &&
+        !normalized.endsWith('/')
+      );
+    }, 'entry 必须是 task workspace 内的相对文件路径，不能包含 .. 或绝对路径')
+    .describe(
+      '相对于 task workspace 的 Python 入口文件路径，如 project/main.py',
+    ),
   timeout_ms: z
     .number()
     .int()
@@ -52,8 +78,9 @@ export class SandboxRunPythonTool implements Tool {
       return {
         success: result.exitCode === 0,
         output: lines.join('\n'),
-        error: result.exitCode !== 0 ? `exitCode=${result.exitCode}` : undefined,
-        errorCode: result.exitCode !== 0 ? 'tool_execution_failed' : undefined,
+        error:
+          result.exitCode !== 0 ? `exitCode=${result.exitCode}` : undefined,
+        errorCode: result.exitCode !== 0 ? 'code_execution_failed' : undefined,
         metadata: {
           exitCode: result.exitCode,
           durationMs: result.durationMs,

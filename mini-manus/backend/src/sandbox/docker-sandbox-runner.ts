@@ -11,12 +11,13 @@ import {
  * 课程版使用官方精简镜像，生产版可替换为预装了项目依赖的定制镜像。
  */
 const RUNTIME_IMAGES: Record<string, string> = {
-  node:   'node:20-alpine',
+  node: 'node:20-alpine',
   python: 'python:3.12-alpine',
 };
 
 const DEFAULT_MEMORY_LIMIT_MB = 256;
 const DEFAULT_MAX_OUTPUT_LENGTH = 10_000;
+const DEFAULT_IMAGE_PULL_TIMEOUT_MS = 60_000;
 
 /**
  * DockerSandboxRunner — S1 阶段的真实 Docker 实现。
@@ -56,12 +57,14 @@ export class DockerSandboxRunner implements SandboxRunner {
       throw new Error(`sandbox_unsupported_runtime: ${options.runtime}`);
     }
 
-    const taskWorkspacePath = path.join(this.workspaceBasePath, options.taskId);
-    const memoryLimitBytes = (options.memoryLimitMb ?? DEFAULT_MEMORY_LIMIT_MB) * 1024 * 1024;
+    const taskWorkspacePath = this.resolveTaskWorkspacePath(options.taskId);
+    const memoryLimitBytes =
+      (options.memoryLimitMb ?? DEFAULT_MEMORY_LIMIT_MB) * 1024 * 1024;
     const maxOutput = options.maxOutputLength ?? DEFAULT_MAX_OUTPUT_LENGTH;
+    const entryFile = this.normalizeEntryFile(options.entryFile);
 
     // 入口文件路径：容器内挂载到 /workspace
-    const entryInContainer = `/workspace/${options.entryFile}`;
+    const entryInContainer = path.posix.join('/workspace', entryFile);
 
     const cmd =
       options.runtime === 'node'
@@ -73,7 +76,10 @@ export class DockerSandboxRunner implements SandboxRunner {
 
     try {
       // 1. 拉取镜像（如果本地不存在）
-      await this.pullImageIfNeeded(image);
+      await this.pullImageIfNeeded(
+        image,
+        Math.min(options.timeoutMs, DEFAULT_IMAGE_PULL_TIMEOUT_MS),
+      );
 
       // 2. 创建容器
       container = await this.docker.createContainer({
@@ -85,7 +91,7 @@ export class DockerSandboxRunner implements SandboxRunner {
           Memory: memoryLimitBytes,
           MemorySwap: memoryLimitBytes, // 禁止 swap
           PidsLimit: 100,
-          ReadonlyRootfs: true,         // 只读根文件系统
+          ReadonlyRootfs: true, // 只读根文件系统
           Tmpfs: { '/tmp': 'size=50m' },
           Binds: [`${taskWorkspacePath}:/workspace:ro`], // workspace 只读挂载
           CapDrop: ['ALL'],
@@ -98,10 +104,10 @@ export class DockerSandboxRunner implements SandboxRunner {
       await container.start();
 
       // 4. 等待完成或超时
-      const waitResult = await Promise.race([
-        container.wait(),
-        this.timeoutPromise(options.timeoutMs, container),
-      ]);
+      const waitResult = await this.waitForContainer(
+        container,
+        options.timeoutMs,
+      );
 
       const durationMs = Date.now() - startMs;
 
@@ -112,7 +118,7 @@ export class DockerSandboxRunner implements SandboxRunner {
         follow: false,
       });
 
-      const { stdout, stderr } = this.parseLogs(logs as Buffer, maxOutput);
+      const { stdout, stderr } = this.parseLogs(logs, maxOutput);
 
       return {
         stdout,
@@ -128,33 +134,127 @@ export class DockerSandboxRunner implements SandboxRunner {
     }
   }
 
-  private async pullImageIfNeeded(image: string): Promise<void> {
+  private resolveTaskWorkspacePath(taskId: string): string {
+    if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
+      throw new Error('sandbox_invalid_task_id');
+    }
+
+    const basePath = path.resolve(this.workspaceBasePath);
+    const taskWorkspacePath = path.resolve(basePath, taskId);
+    if (
+      taskWorkspacePath !== basePath &&
+      taskWorkspacePath.startsWith(`${basePath}${path.sep}`)
+    ) {
+      return taskWorkspacePath;
+    }
+
+    throw new Error('sandbox_invalid_task_id');
+  }
+
+  private normalizeEntryFile(entryFile: string): string {
+    const raw = entryFile.trim();
+    if (!raw) {
+      throw new Error('sandbox_invalid_entry: entry 不能为空');
+    }
+    if (/[\0-\x1f]/.test(raw)) {
+      throw new Error('sandbox_invalid_entry: entry 包含非法控制字符');
+    }
+    if (path.posix.isAbsolute(raw) || path.win32.isAbsolute(raw)) {
+      throw new Error('sandbox_invalid_entry: entry 必须是相对路径');
+    }
+
+    const normalizedSlashes = raw.replace(/\\/g, '/');
+    const segments = normalizedSlashes.split('/');
+    if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+      throw new Error('sandbox_invalid_entry: entry 包含非法路径片段');
+    }
+
+    const normalized = path.posix.normalize(normalizedSlashes);
+    if (
+      normalized === '.' ||
+      normalized === '..' ||
+      normalized.startsWith('../') ||
+      normalized.endsWith('/')
+    ) {
+      throw new Error('sandbox_invalid_entry: entry 必须指向 workspace 内文件');
+    }
+
+    return normalized;
+  }
+
+  private async pullImageIfNeeded(
+    image: string,
+    timeoutMs: number,
+  ): Promise<void> {
     try {
       await this.docker.getImage(image).inspect();
     } catch {
-      // 本地没有，拉取
-      await new Promise<void>((resolve, reject) => {
-        this.docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
-          if (err) return reject(err);
-          this.docker.modem.followProgress(stream, (err2: Error | null) => {
-            if (err2) reject(err2);
-            else resolve();
-          });
-        });
-      });
+      // 本地没有，拉取；首次拉镜像必须有上限，避免 Agent step 长时间卡住。
+      try {
+        await this.withTimeout(
+          new Promise<void>((resolve, reject) => {
+            this.docker.pull(
+              image,
+              (err: Error | null, stream: NodeJS.ReadableStream) => {
+                if (err) return reject(err);
+                this.docker.modem.followProgress(
+                  stream,
+                  (err2: Error | null) => {
+                    if (err2) reject(err2);
+                    else resolve();
+                  },
+                );
+              },
+            );
+          }),
+          timeoutMs,
+          `sandbox_image_unavailable: 拉取镜像 ${image} 超时`,
+        );
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`sandbox_image_unavailable: ${detail}`);
+      }
     }
   }
 
-  private timeoutPromise(
-    ms: number,
+  private async waitForContainer(
     container: Dockerode.Container,
-  ): Promise<never> {
-    return new Promise((_, reject) =>
-      setTimeout(async () => {
-        await container.kill().catch(() => undefined);
-        reject(new Error('sandbox_timeout'));
-      }, ms),
-    );
+    timeoutMs: number,
+  ): Promise<unknown> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        container.wait(),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(async () => {
+            await container.kill().catch(() => undefined);
+            reject(new Error('sandbox_timeout'));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<T> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            reject(new Error(timeoutMessage));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   /**

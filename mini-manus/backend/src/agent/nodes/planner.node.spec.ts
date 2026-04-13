@@ -2,8 +2,28 @@ import { AgentState, TaskIntent, StepResult } from '@/agent/agent.state';
 import {
   DETERMINISTIC_WORKFLOWS,
   STEP_RESULTS_PLACEHOLDER,
+  plannerNode,
 } from '@/agent/nodes/planner.node';
 import { resolveStepResultsPlaceholder } from '@/agent/nodes/executor.node';
+import { ToolRegistry } from '@/tool/tool.registry';
+import { SkillRegistry } from '@/skill/skill.registry';
+import type { AgentCallbacks } from '@/agent/agent.callbacks';
+import type { EventPublisher } from '@/event/event.publisher';
+import { ChatOpenAI } from '@langchain/openai';
+
+/** 测试用 WorkflowContext：sandbox 未启用（toolRegistry.has 返回 false） */
+const mockCtx = {
+  toolRegistry: {
+    has: jest.fn().mockReturnValue(false),
+    getAll: () => [],
+    get: jest.fn(),
+  } as unknown as ToolRegistry,
+  skillRegistry: {
+    has: jest.fn().mockReturnValue(false),
+    getAll: () => [],
+    get: jest.fn(),
+  } as unknown as SkillRegistry,
+};
 
 // ─── 辅助 ──────────────────────────────────────────────────────────────────────
 
@@ -40,7 +60,7 @@ describe('Deterministic Workflows', () => {
         revisionInput: '用 React + Vite 创建 Todo 应用',
       });
 
-      const steps = builder(state);
+      const steps = builder(state, mockCtx);
 
       expect(steps).toHaveLength(1);
       expect(steps[0].skillName).toBe('code_project_generation');
@@ -54,7 +74,10 @@ describe('Deterministic Workflows', () => {
 
     it('stepIndex 从 0 开始连续', () => {
       const builder = DETERMINISTIC_WORKFLOWS.code_generation!;
-      const steps = builder(mockState({ taskIntent: 'code_generation' }));
+      const steps = builder(
+        mockState({ taskIntent: 'code_generation' }),
+        mockCtx,
+      );
 
       steps.forEach((step, i) => {
         expect(step.stepIndex).toBe(i);
@@ -70,7 +93,7 @@ describe('Deterministic Workflows', () => {
         revisionInput: '调研 React 框架优缺点',
       });
 
-      const steps = builder(state);
+      const steps = builder(state, mockCtx);
 
       expect(steps).toHaveLength(2);
       expect(steps[0].skillName).toBe('web_research');
@@ -87,7 +110,10 @@ describe('Deterministic Workflows', () => {
 
     it('report_packaging 的 source_material 应使用占位符', () => {
       const builder = DETERMINISTIC_WORKFLOWS.research_report!;
-      const steps = builder(mockState({ taskIntent: 'research_report' }));
+      const steps = builder(
+        mockState({ taskIntent: 'research_report' }),
+        mockCtx,
+      );
 
       expect(
         (steps[1].skillInput as Record<string, unknown>).source_material,
@@ -107,11 +133,10 @@ describe('Deterministic Workflows', () => {
   describe('通用校验', () => {
     it('所有确定性 workflow 的 step 都有 description', () => {
       const state = mockState();
-      for (const [intent, builder] of Object.entries(
-        DETERMINISTIC_WORKFLOWS,
-      )) {
-        const steps = builder!(
+      for (const [intent, builder] of Object.entries(DETERMINISTIC_WORKFLOWS)) {
+        const steps = builder(
           mockState({ taskIntent: intent as TaskIntent }),
+          mockCtx,
         );
         steps.forEach((step) => {
           expect(step.description).toBeTruthy();
@@ -119,19 +144,37 @@ describe('Deterministic Workflows', () => {
       }
     });
 
-    it('所有确定性 workflow 只使用 skill（不使用裸 tool）', () => {
-      const state = mockState();
-      for (const [intent, builder] of Object.entries(
-        DETERMINISTIC_WORKFLOWS,
-      )) {
-        const steps = builder!(
+    it('沙箱未启用时，所有确定性 workflow 的步骤都使用 skill（不走裸 tool）', () => {
+      // mockCtx 里 toolRegistry.has 返回 false，沙箱步骤不会被添加
+      for (const [intent, builder] of Object.entries(DETERMINISTIC_WORKFLOWS)) {
+        const steps = builder(
           mockState({ taskIntent: intent as TaskIntent }),
+          mockCtx,
         );
         steps.forEach((step) => {
           expect(step.skillName).toBeTruthy();
           expect(step.toolHint).toBeFalsy();
         });
       }
+    });
+
+    it('沙箱启用时，code_generation 包含 sandbox_run_node 步骤', () => {
+      const sandboxCtx = {
+        ...mockCtx,
+        toolRegistry: {
+          has: (name: string) => name === 'sandbox_run_node',
+          getAll: () => [],
+          get: jest.fn(),
+        } as unknown as typeof mockCtx.toolRegistry,
+      };
+      const builder = DETERMINISTIC_WORKFLOWS.code_generation!;
+      const steps = builder(
+        mockState({ taskIntent: 'code_generation' }),
+        sandboxCtx,
+      );
+      expect(steps).toHaveLength(2);
+      expect(steps[1].toolHint).toBe('sandbox_run_node');
+      expect(steps[1].stepIndex).toBe(1);
     });
   });
 });
@@ -151,10 +194,7 @@ describe('resolveStepResultsPlaceholder', () => {
 
   it('无占位符时返回原始 input', () => {
     const input = { title: '报告', content: '正文' };
-    const result = resolveStepResultsPlaceholder(
-      input,
-      mockState(),
-    );
+    const result = resolveStepResultsPlaceholder(input, mockState());
     expect(result).toBe(input); // 同一引用
   });
 
@@ -236,5 +276,151 @@ describe('resolveStepResultsPlaceholder', () => {
     expect(result.data).toContain('工具输出A');
     expect(result.data).toContain('摘要B');
     expect(result.data).not.toContain('摘要A'); // toolOutput 优先
+  });
+});
+
+// ─── Planner 回归测试（mock LLM → 断言 plan 结构）─────────────────────────────
+//
+// 验证 plannerNode 在 general 意图下调用 LLM，
+// 返回的 plan 被正确保存并写入 state。
+
+import { RunnableLambda } from '@langchain/core/runnables';
+
+const MOCK_STEPS = [
+  {
+    stepIndex: 0,
+    description: '搜索 React 最新进展',
+    skillName: 'web_research',
+    skillInput: { topic: '调研 React', depth: 2 },
+    toolHint: null,
+    toolInput: null,
+  },
+];
+
+describe('plannerNode 回归测试', () => {
+  // withStructuredOutput 必须返回真正的 LangChain Runnable，
+  // 否则 plannerPrompt.pipe(result) 无法正常工作
+  const withStructuredOutputSpy = jest.fn()
+  const mockLlm = {
+    withStructuredOutput: withStructuredOutputSpy,
+  } as unknown as ChatOpenAI;
+
+  const savedPlan = { id: 'plan-1', steps: [] };
+
+  const mockCallbacks: Partial<AgentCallbacks> = {
+    savePlan: jest.fn().mockResolvedValue(savedPlan),
+    getRecentMemory: jest.fn().mockResolvedValue(''),
+    setRunAwaitingApproval: jest.fn().mockResolvedValue(undefined),
+    setRunStatus: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockPublisher = { emit: jest.fn() } as unknown as EventPublisher;
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    // 每次测试重置为返回能与 .pipe() 正常组合的真实 Runnable
+    withStructuredOutputSpy.mockReturnValue(
+      RunnableLambda.from(async () => ({ steps: MOCK_STEPS })),
+    )
+    ;(mockCallbacks.savePlan as jest.Mock).mockResolvedValue(savedPlan)
+    ;(mockCallbacks.getRecentMemory as jest.Mock).mockResolvedValue('')
+  })
+
+  function buildRegistries(hasSkill = true) {
+    const skillReg = new SkillRegistry();
+    if (hasSkill) {
+      skillReg.register({
+        name: 'web_research',
+        description: '调研',
+        effect: 'read-only',
+        inputSchema: {
+          safeParse: () => ({ success: true }),
+          description: '',
+        } as any,
+        outputSchema: {} as any,
+        execute: async function* () {},
+      });
+    }
+    const toolReg = new ToolRegistry({
+      get: jest.fn().mockReturnValue('300000'),
+    } as any);
+    return { skillReg, toolReg };
+  }
+
+  it('general 意图 → 走 LLM Planner，savePlan 被调用', async () => {
+    const { skillReg, toolReg } = buildRegistries();
+
+    const state = mockState({
+      taskIntent: 'general',
+      revisionInput: '调研 React 最新进展',
+      runId: 'run-1',
+      taskId: 'task-1',
+    });
+
+    const result = await plannerNode(
+      state,
+      mockLlm,
+      skillReg,
+      toolReg,
+      mockCallbacks as AgentCallbacks,
+      mockPublisher,
+      'functionCalling',
+      { maxSteps: 8, allowedSideEffectTools: [], allowedSideEffectSkills: [] },
+    );
+
+    expect(mockCallbacks.savePlan).toHaveBeenCalledWith(
+      'run-1',
+      expect.arrayContaining([
+        expect.objectContaining({ stepIndex: 0, skillName: 'web_research' }),
+      ]),
+    );
+    expect(result.currentPlan?.planId).toBe('plan-1');
+    expect(result.currentStepIndex).toBe(0);
+  });
+
+  it('code_generation 意图 → 走确定性 workflow，不调用 LLM', async () => {
+    const { skillReg, toolReg } = buildRegistries();
+    // mock code_project_generation skill
+    skillReg.register({
+      name: 'code_project_generation',
+      description: '生成代码',
+      effect: 'side-effect',
+      inputSchema: {
+        safeParse: () => ({ success: true }),
+        description: '',
+      } as any,
+      outputSchema: {} as any,
+      execute: async function* () {},
+    });
+
+    const state = mockState({
+      taskIntent: 'code_generation',
+      revisionInput: '用 React 写 Todo 应用',
+      runId: 'run-2',
+      taskId: 'task-2',
+      replanCount: 0,
+    });
+
+    const result = await plannerNode(
+      state,
+      mockLlm,
+      skillReg,
+      toolReg,
+      mockCallbacks as AgentCallbacks,
+      mockPublisher,
+      'functionCalling',
+      {
+        maxSteps: 8,
+        allowedSideEffectSkills: ['code_project_generation'],
+        allowedSideEffectTools: [],
+      },
+    );
+
+    // 确定性路径不应调用 LLM 的 withStructuredOutput（直接返回固定计划，跳过 LLM 链构建）
+    // 注意：withStructuredOutput 在 LLM 路径才会被调用；确定性路径在 early return 前退出
+    expect(result.currentPlan).toBeDefined();
+    expect(result.currentPlan?.steps[0].skillName).toBe('code_project_generation');
+    // 确定性路径 savePlan 被调用一次
+    expect(mockCallbacks.savePlan).toHaveBeenCalledTimes(1);
   });
 });

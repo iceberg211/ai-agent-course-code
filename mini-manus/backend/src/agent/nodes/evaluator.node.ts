@@ -28,6 +28,13 @@ const STRUCTURAL_ERROR_PATTERNS = [
   'enoent',
 ];
 
+/**
+ * code_execution_failed：沙箱执行代码返回非零退出码。
+ * 重试（retry）没有意义——同一份有 bug 的代码会继续失败。
+ * 应该直接 replan，让 Planner 重新规划、修复代码。
+ */
+const CODE_EXECUTION_FAILED = 'code_execution_failed';
+
 function isStructuralError(lower: string): boolean {
   return STRUCTURAL_ERROR_PATTERNS.some((p) => lower.includes(p));
 }
@@ -58,6 +65,20 @@ function runPreChecks(
   const isTimeout = lower.includes('超时') || lower.includes('timeout');
 
   const structural = isStructuralError(lower);
+
+  // 代码执行失败（沙箱 exitCode≠0）：retry 无意义，直接 replan 让 Planner 修复代码
+  if (lower.includes(CODE_EXECUTION_FAILED)) {
+    if (replanCount < maxReplans) {
+      return {
+        decision: 'replan',
+        reason: `代码执行失败（exitCode 非零），需要重新规划以修复代码：${trimmed.slice(0, 300)}`,
+      };
+    }
+    return {
+      decision: 'fail',
+      reason: `代码多次执行失败，无法自动修复：${trimmed.slice(0, 200)}`,
+    };
+  }
 
   // 结构性错误：重试无意义，直接 replan 或 fail（不要求 isError 门控）
   if (structural) {

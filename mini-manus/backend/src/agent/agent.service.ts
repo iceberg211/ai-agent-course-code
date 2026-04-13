@@ -148,7 +148,7 @@ export class AgentService {
       allowedSideEffectTools: readCsv(
         config.get<string>(
           'PLANNER_ALLOWED_SIDE_EFFECT_TOOLS',
-          'write_file,download_file,export_pdf,browser_screenshot',
+          'write_file,download_file,export_pdf,browser_screenshot,sandbox_run_node,sandbox_run_python',
         ),
       ),
       allowedSideEffectSkills: readCsv(

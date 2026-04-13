@@ -6,6 +6,7 @@ export type ToolErrorCode =
   | 'tool_input_invalid'
   | 'tool_execution_failed'
   | 'artifact_generation_failed'
+  | 'code_execution_failed' // 沙箱运行代码 exitCode≠0，evaluator 看到后直接 replan
   | 'cancelled'
   | 'unknown';
 

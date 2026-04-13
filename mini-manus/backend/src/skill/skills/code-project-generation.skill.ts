@@ -22,7 +22,42 @@ const inputSchema = z.object({
 const outputSchema = z.object({
   files: z.array(z.string()),
   file_count: z.number(),
+  entry_file: z.string(), // 推断出的主入口文件，供 sandbox_run_* 工具使用
 });
+
+/**
+ * 从生成的文件列表中推断主入口文件。
+ * 优先级按实际项目惯例排序：先找 src/ 下的入口，再找根目录入口，最后 fallback 第一个文件。
+ */
+function detectEntryFile(files: string[]): string {
+  const CANDIDATES = [
+    // TypeScript / JavaScript 项目
+    'src/main.tsx',
+    'src/main.ts',
+    'src/index.tsx',
+    'src/index.ts',
+    'index.ts',
+    'index.js',
+    'main.ts',
+    'main.js',
+    // Python 项目
+    'main.py',
+    'app.py',
+    'src/main.py',
+    // Node.js 服务
+    'server.ts',
+    'server.js',
+    'src/server.ts',
+    'src/server.js',
+  ];
+  for (const candidate of CANDIDATES) {
+    const match = files.find(
+      (f) => f.endsWith(`/${candidate}`) || f === candidate,
+    );
+    if (match) return match;
+  }
+  return files[0] ?? 'index.js';
+}
 
 // ─── 单 Artifact 模式 ─────────────────────────────────────────────────────────
 // 业界最佳实践（bolt.new / Claude Artifacts）：一次 LLM 调用生成所有文件，
@@ -86,7 +121,10 @@ function parseFileBlocks(
 
     const pathLine = part.slice(0, newlineIdx).trim();
     // 清理路径：去掉可能的 --- 后缀和引号
-    const path = pathLine.replace(/\s*-+\s*$/, '').replace(/['"]/g, '').trim();
+    const path = pathLine
+      .replace(/\s*-+\s*$/, '')
+      .replace(/['"]/g, '')
+      .trim();
     if (!path) continue;
 
     let content = part.slice(newlineIdx + 1);
@@ -214,12 +252,15 @@ export class CodeProjectGenerationSkill implements Skill {
       );
     }
 
+    const entryFile = detectEntryFile(writtenFiles);
+
     // 所有文件写完后再 yield result，保证是完整交付
     yield {
       type: 'result',
       output: {
         files: writtenFiles,
         file_count: writtenFiles.length,
+        entry_file: entryFile, // Tool Calling 用此字段决议 sandbox_run_* 的 entry 参数
       },
     };
   }

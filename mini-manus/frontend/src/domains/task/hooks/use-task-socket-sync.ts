@@ -221,14 +221,24 @@ export function useTaskSocketSync(
   const queryClient = useQueryClient()
   const [liveRunFeeds, setLiveRunFeeds] = useState<LiveRunFeedMap>({})
   const seenEventIdsRef = useRef<Set<string>>(new Set())
+  /**
+   * 最后一条已处理事件的游标（createdAt + eventId）。
+   * 断线重连后用此游标做增量续拉，避免全量重新加载或漏掉中间事件。
+   */
+  const lastEventCursorRef = useRef<{ createdAt: string; eventId: string } | null>(null)
   // 用 lazy initializer 读取初始连接状态，避免在 effect 内同步 setState
   const [socketConnected, setSocketConnected] = useState(() => getTaskSocket().connected)
 
   const markEventSeen = useEffectEvent((payload: BasePayload | null | undefined) => {
     const eventId = payload?._eventId
+    const createdAt = payload?._eventCreatedAt
     if (!eventId) return false
     if (seenEventIdsRef.current.has(eventId)) return true
     seenEventIdsRef.current.add(eventId)
+    // 更新游标：只向前推进（不允许倒退）
+    if (createdAt && (!lastEventCursorRef.current || createdAt >= lastEventCursorRef.current.createdAt)) {
+      lastEventCursorRef.current = { createdAt, eventId }
+    }
     return false
   })
 
@@ -749,31 +759,46 @@ export function useTaskSocketSync(
     setLiveRunFeeds({})
   }, [selectedTaskId])
 
+  /**
+   * 拉取并回放历史事件。
+   * @param incremental true = 使用游标做增量续拉（断线重连时），false = 全量拉取（首次进入任务）
+   */
+  const replayHistoryEvents = useEffectEvent(async (incremental: boolean) => {
+    if (!selectedTaskId) return
+    try {
+      const cursor = incremental ? lastEventCursorRef.current : null
+      const events = await fetchTaskEvents(selectedTaskId, {
+        runId: selectedRunId ?? undefined,
+        take: 300,
+        afterCreatedAt: cursor?.createdAt,
+        afterEventId: cursor?.eventId,
+      })
+      for (const event of events) {
+        applyLoggedEvent(event)
+      }
+    } catch (err) {
+      console.warn('[EventReplay] Failed to fetch task events:', err)
+    }
+  })
+
+  // 首次进入任务 → 全量拉取历史
   useEffect(() => {
     if (!selectedTaskId) return
     let cancelled = false
-
-    async function replayEvents() {
-      try {
-        const events = await fetchTaskEvents(selectedTaskId!, {
-          runId: selectedRunId ?? undefined,
-          take: 500,
-        })
-        if (cancelled) return
-        for (const event of events) {
-          applyLoggedEvent(event)
-        }
-      } catch (err) {
-        console.warn('Failed to replay task events', err)
-      }
-    }
-
-    void replayEvents()
-
-    return () => {
-      cancelled = true
-    }
+    void (async () => {
+      if (cancelled) return
+      await replayHistoryEvents(false)
+    })()
+    return () => { cancelled = true }
   }, [selectedTaskId, selectedRunId])
+
+  // 断线重连 → 游标增量续拉，补齐断线窗口内遗漏的事件
+  useEffect(() => {
+    if (!socketConnected || !selectedTaskId) return
+    // socketConnected 从 false → true 时触发，补漏断线期间未收到的事件
+    void replayHistoryEvents(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socketConnected])
 
   // ── Task room 管理 ─────────────────────────────────────────────────────────
 

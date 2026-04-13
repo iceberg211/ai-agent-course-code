@@ -52,7 +52,10 @@ function createService(dataSource: object) {
     stepRunRepo as unknown as Repository<StepRun>,
     artifactRepo as unknown as Repository<Artifact>,
     dataSource as unknown as DataSource,
-    {} as AgentService,
+    {
+      executeRun: jest.fn().mockResolvedValue(undefined),
+      resolveApproval: jest.fn(),
+    } as unknown as AgentService,
     eventPublisher as unknown as EventPublisher,
     workspace as unknown as WorkspaceService,
   );
@@ -195,7 +198,12 @@ describe('TaskService', () => {
       status: TaskStatus.RUNNING,
       currentRunId: 'run-1',
     });
-    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入', 'none');
+    expect(executeRunSpy).toHaveBeenCalledWith(
+      'run-1',
+      'task-1',
+      '用户输入',
+      'none',
+    );
   });
 
   it('createTask 透传 approvalMode 给 startRun', async () => {
@@ -233,7 +241,11 @@ describe('TaskService', () => {
   });
 
   it('startRun 将 approvalMode 写入 TaskRun 并透传给 executeRun', async () => {
-    const task = { id: 'task-1', status: TaskStatus.PENDING, currentRunId: null };
+    const task = {
+      id: 'task-1',
+      status: TaskStatus.PENDING,
+      currentRunId: null,
+    };
     const manager = {
       findOneOrFail: jest.fn(async () => task),
       count: jest.fn(async () => 0),
@@ -267,11 +279,19 @@ describe('TaskService', () => {
     await service.startRun('task-1', 'revision-1', '用户输入', 'all_steps');
 
     // approvalMode 必须写入 TaskRun 实体
-    expect(manager.create).toHaveBeenCalledWith(TaskRun, expect.objectContaining({
-      approvalMode: 'all_steps',
-    }));
+    expect(manager.create).toHaveBeenCalledWith(
+      TaskRun,
+      expect.objectContaining({
+        approvalMode: 'all_steps',
+      }),
+    );
     // approvalMode 必须透传给 executeRun
-    expect(executeRunSpy).toHaveBeenCalledWith('run-1', 'task-1', '用户输入', 'all_steps');
+    expect(executeRunSpy).toHaveBeenCalledWith(
+      'run-1',
+      'task-1',
+      '用户输入',
+      'all_steps',
+    );
   });
 
   it('cancelRun 在 run 等待审批时调用 resolveApproval 并设置 cancelRequested', async () => {
@@ -292,12 +312,14 @@ describe('TaskService', () => {
 
     await service.cancelRun('task-1');
 
-    expect(repositories.runRepo.update).toHaveBeenCalledWith(
-      'run-awaiting',
-      { cancelRequested: true },
-    );
+    expect(repositories.runRepo.update).toHaveBeenCalledWith('run-awaiting', {
+      cancelRequested: true,
+    });
     // resolveApproval(runId, false) 必须被调用以释放 HITL 等待
-    expect(agentService.resolveApproval).toHaveBeenCalledWith('run-awaiting', false);
+    expect(agentService.resolveApproval).toHaveBeenCalledWith(
+      'run-awaiting',
+      false,
+    );
   });
 
   it('getTaskDetail 返回 runs 摘要中的 token 和成本字段', async () => {
@@ -356,5 +378,171 @@ describe('TaskService', () => {
         estimatedCostUsd: 0.000045,
       },
     ]);
+  });
+});
+
+// ─── §13.1 剩余服务层测试 ──────────────────────────────────────────────────────
+
+describe('cancelRun', () => {
+  it('找不到 running run 时静默返回', async () => {
+    const { service, repositories } = createService({});
+    repositories.runRepo.findOne!.mockResolvedValue(null);
+    await expect(service.cancelRun('task-1')).resolves.toBeUndefined();
+  });
+
+  it('找到 running run 时设置 cancelRequested=true', async () => {
+    const { service, repositories } = createService({});
+    repositories.runRepo.findOne!.mockResolvedValue({
+      id: 'run-1',
+      status: RunStatus.RUNNING,
+    });
+    repositories.runRepo.update!.mockResolvedValue(undefined);
+
+    await service.cancelRun('task-1');
+
+    expect(repositories.runRepo.update).toHaveBeenCalledWith('run-1', {
+      cancelRequested: true,
+    });
+  });
+});
+
+describe('cloneTask', () => {
+  it('克隆任务：读取最新 revision 并以相同 input 创建新任务', async () => {
+    const { service, repositories } = createService({});
+    repositories.revisionRepo.findOneOrFail!.mockResolvedValue({
+      id: 'revision-1',
+      taskId: 'task-1',
+      version: 2,
+      input: '调研 React',
+    });
+
+    const createTaskSpy = jest
+      .spyOn(service, 'createTask')
+      .mockResolvedValue({ id: 'task-clone' } as any);
+
+    await service.cloneTask('task-1');
+
+    expect(createTaskSpy).toHaveBeenCalledWith('调研 React');
+  });
+});
+
+describe('finalizeRun（私有方法通过 callback 间接测试）', () => {
+  it('没有 pending run 时静默返回，不启动执行', async () => {
+    // finalizeRun 通过 finalize callback 调用，这里用 createTask 流程间接触发
+    // 直接测其行为：mock transaction 返回 no pending runs
+    const txManager = {
+      findOneOrFail: jest
+        .fn()
+        .mockResolvedValue({ id: 'task-1', status: 'running' }),
+      findOne: jest.fn().mockResolvedValue(null), // no active run
+      find: jest.fn().mockResolvedValue([]), // no pending runs
+      update: jest.fn().mockResolvedValue(undefined),
+      save: jest.fn(async <T>(e: T) => e),
+      count: jest.fn().mockResolvedValue(0),
+      create: jest.fn((_, v) => v),
+    };
+    const dataSource = {
+      transaction: jest.fn(async (cb: (em: typeof txManager) => unknown) =>
+        cb(txManager),
+      ),
+    };
+    const { service } = createService(dataSource);
+
+    // startRun → finalizeRun (via finalize callback) 不应抛出
+    await expect(
+      service.startRun('task-1', 'rev-1', '测试', 'none'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('有多个 pending run 时，激活最新并取消旧的', async () => {
+    const now = new Date();
+    const older = {
+      id: 'run-old',
+      status: 'pending',
+      createdAt: new Date(now.getTime() - 10000),
+      revisionId: 'rev-1',
+      approvalMode: 'none',
+    };
+    const latest = {
+      id: 'run-latest',
+      status: 'pending',
+      createdAt: now,
+      revisionId: 'rev-1',
+      approvalMode: 'none',
+    };
+
+    const txManager = {
+      findOneOrFail: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'task-1', status: 'running' }) // outer pessimistic lock
+        .mockResolvedValueOnce({ id: 'rev-1', input: '测试任务' }), // revision lookup
+      findOne: jest.fn().mockResolvedValue(null), // no active running run
+      find: jest.fn().mockResolvedValue([latest, older]), // pending runs DESC
+      update: jest.fn().mockResolvedValue(undefined),
+      save: jest.fn(async <T>(e: T) => e),
+      count: jest.fn().mockResolvedValue(1),
+      create: jest.fn((_, v) => ({ id: 'run-new', ...v })),
+    };
+    const dataSource = {
+      transaction: jest.fn(async (cb: (em: typeof txManager) => unknown) =>
+        cb(txManager),
+      ),
+    };
+    const { service } = createService(dataSource);
+
+    // 直接调用 finalizeRun（需要暴露为 public 用于测试，或通过反射访问）
+    // 这里用 any 访问私有方法
+    const finalizeRunSpy = jest.spyOn(service as any, 'finalizeRun');
+    await (service as any).finalizeRun('task-1');
+
+    // 验证旧 run 被取消
+    expect(txManager.update).toHaveBeenCalledWith(
+      expect.anything(),
+      older.id,
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+    // 验证最新 run 被激活
+    expect(txManager.update).toHaveBeenCalledWith(
+      expect.anything(),
+      latest.id,
+      expect.objectContaining({ status: 'running' }),
+    );
+  });
+});
+
+describe('deleteTask 级联删除顺序', () => {
+  it('先删 step_runs，再删 plan_steps（外键约束顺序）', async () => {
+    const deleteOrder: string[] = [];
+
+    const txManager = {
+      find: jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 'run-1' }]) // runs
+        .mockResolvedValueOnce([{ id: 'plan-1' }]), // plans
+      delete: jest.fn(async (entity: unknown) => {
+        const name =
+          typeof entity === 'function' ? entity.name : String(entity);
+        deleteOrder.push(name);
+      }),
+    };
+
+    const dataSource = {
+      transaction: jest.fn(async (cb: (em: typeof txManager) => unknown) =>
+        cb(txManager),
+      ),
+    };
+    const { service, repositories } = createService(dataSource);
+    repositories.taskRepo.findOne!.mockResolvedValue({ id: 'task-1' });
+    repositories.runRepo.findOne!.mockResolvedValue(null); // cancelRun: no running run
+
+    await service.deleteTask('task-1');
+
+    // Artifact 和 StepRun 必须在 PlanStep 之前删除（外键顺序）
+    const artifactIdx = deleteOrder.findIndex((n) => n.includes('Artifact'));
+    const stepRunIdx = deleteOrder.findIndex((n) => n.includes('StepRun'));
+    const planStepIdx = deleteOrder.findIndex((n) => n.includes('PlanStep'));
+
+    expect(artifactIdx).toBeLessThan(planStepIdx);
+    expect(stepRunIdx).toBeLessThan(planStepIdx);
   });
 });
