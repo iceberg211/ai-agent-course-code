@@ -92,42 +92,37 @@ export function TaskCenterPage() {
       />
 
       <main className="task-center-main">
+        {/* 顶部导航条：仅左侧按钮 */}
         <header className="task-center-topbar">
-          <div className="task-center-topbar__actions">
-            <Button variant="ghost" onClick={panels.toggleSidebar}>
-              任务列表
-            </Button>
-            {taskDetailQuery.data?.task ? <StatusBadge status={taskDetailQuery.data.task.status} /> : null}
-          </div>
-          <p className="task-center-topbar__meta">
-            {hasTasks ? `共 ${taskListQuery.data?.length ?? 0} 个任务` : '从左侧创建第一个任务'}
-          </p>
+          <Button variant="ghost" onClick={panels.toggleSidebar}>
+            ← 任务列表
+          </Button>
         </header>
 
         {!hasTasks ? (
           <section className="task-center-empty">
-            <EmptyState title="还没有任务" description="先在左侧输入任务描述，系统会自动开始规划和执行。" />
+            <EmptyState
+              title="创建你的第一个任务"
+              description="在左侧描述你的任务，系统会自动规划和执行，最终生成报告或代码。"
+            />
           </section>
         ) : !taskDetailQuery.data ? (
           <section className="task-center-empty">
-            <EmptyState title="正在加载任务" description="任务详情会在几秒内同步出来。" />
+            <EmptyState title="加载中…" description="" />
           </section>
         ) : (
           <div className="task-center-grid">
+            {/* 任务头部 */}
             <TaskSummaryPanel
               isCancelling={taskActions.cancelTaskMutation.isPending}
               isRetrying={taskActions.retryTaskMutation.isPending}
               liveRunFeed={liveRunFeed}
               onCancel={() => {
-                if (selectedTaskId) {
-                  taskActions.cancelTaskMutation.mutate(selectedTaskId)
-                }
+                if (selectedTaskId) taskActions.cancelTaskMutation.mutate(selectedTaskId)
               }}
               onOpenEdit={panels.openEditModal}
               onRetry={() => {
-                if (selectedTaskId) {
-                  taskActions.retryTaskMutation.mutate(selectedTaskId)
-                }
+                if (selectedTaskId) taskActions.retryTaskMutation.mutate(selectedTaskId)
               }}
               onSelectRevision={selectionActions.selectRevision}
               onSelectRun={selectionActions.selectRun}
@@ -140,12 +135,15 @@ export function TaskCenterPage() {
               task={taskDetailQuery.data.task}
             />
 
+            {/* 产物区 — 有产物时优先展示 */}
+            <ArtifactSection
+              artifacts={currentRun?.artifacts ?? []}
+              onSelectArtifact={selectionActions.selectArtifact}
+              selectedArtifactId={selectedArtifactId}
+            />
+
+            {/* 执行过程 + 计划：并列 */}
             <section className="task-center-grid__columns">
-              <PlanSection
-                liveRunFeed={liveRunFeed}
-                plans={currentRun?.plans ?? []}
-                stepRuns={currentRun?.stepRuns ?? []}
-              />
               <TimelineSection
                 taskId={selectedTaskId ?? ''}
                 liveRunFeed={liveRunFeed}
@@ -154,15 +152,18 @@ export function TaskCenterPage() {
                 onApprove={approveRun}
                 onReject={rejectRun}
               />
+              <PlanSection
+                liveRunFeed={liveRunFeed}
+                plans={currentRun?.plans ?? []}
+                stepRuns={currentRun?.stepRuns ?? []}
+              />
             </section>
 
-            <RunDebugPanel liveRunFeed={liveRunFeed} runDetail={currentRun ?? null} />
-
-            <ArtifactSection
-              artifacts={currentRun?.artifacts ?? []}
-              onSelectArtifact={selectionActions.selectArtifact}
-              selectedArtifactId={selectedArtifactId}
-            />
+            {/* 执行指标 — 默认折叠，面向调试场景 */}
+            <details className="task-metrics-disclosure">
+              <summary>执行指标</summary>
+              <RunDebugPanel liveRunFeed={liveRunFeed} runDetail={currentRun ?? null} />
+            </details>
           </div>
         )}
       </main>
