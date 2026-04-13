@@ -15,8 +15,11 @@ import { GitHubSearchTool } from '@/tool/tools/github-search.tool';
 import { BrowserOpenTool } from '@/tool/tools/browser/browser-open.tool';
 import { BrowserExtractTool } from '@/tool/tools/browser/browser-extract.tool';
 import { BrowserScreenshotTool } from '@/tool/tools/browser/browser-screenshot.tool';
+import { SandboxRunNodeTool } from '@/tool/tools/sandbox/sandbox-run-node.tool';
+import { SandboxRunPythonTool } from '@/tool/tools/sandbox/sandbox-run-python.tool';
 import { WorkspaceModule } from '@/workspace/workspace.module';
 import { BrowserModule } from '@/browser/browser.module';
+import { SandboxModule } from '@/sandbox/sandbox.module';
 
 function readBoolean(
   value: string | undefined,
@@ -27,7 +30,7 @@ function readBoolean(
 }
 
 @Module({
-  imports: [WorkspaceModule, BrowserModule],
+  imports: [WorkspaceModule, BrowserModule, SandboxModule],
   providers: [
     ToolRegistry,
     WebSearchTool,
@@ -43,6 +46,8 @@ function readBoolean(
     BrowserOpenTool,
     BrowserExtractTool,
     BrowserScreenshotTool,
+    SandboxRunNodeTool,
+    SandboxRunPythonTool,
     {
       provide: 'THINK_TOOL',
       useClass: ThinkTool,
@@ -67,6 +72,8 @@ export class ToolModule {
     private readonly browserOpen: BrowserOpenTool,
     private readonly browserExtract: BrowserExtractTool,
     private readonly browserScreenshot: BrowserScreenshotTool,
+    private readonly sandboxRunNode: SandboxRunNodeTool,
+    private readonly sandboxRunPython: SandboxRunPythonTool,
   ) {}
 
   onModuleInit() {
@@ -86,6 +93,11 @@ export class ToolModule {
       this.registry.register(this.browserOpen);
       this.registry.register(this.browserExtract);
       this.registry.register(this.browserScreenshot);
+    }
+    // 沙箱工具：仅在 SANDBOX_ENABLED=true 时注册（避免 Planner 在未配置时选用）
+    if (readBoolean(this.config.get<string>('SANDBOX_ENABLED'), false)) {
+      this.registry.register(this.sandboxRunNode);
+      this.registry.register(this.sandboxRunPython);
     }
     this.registry.register(new ThinkTool());
   }

@@ -54,6 +54,9 @@ const envSchema = z
       .min(60_000)
       .default(6 * 60 * 60 * 1000),
     BROWSER_AUTOMATION_ENABLED: z.string().default('false'),
+    // 代码执行沙箱（需要 Docker Engine）
+    SANDBOX_ENABLED: z.string().default('false'),
+    DOCKER_SOCKET_PATH: z.string().default('/var/run/docker.sock'),
     BROWSER_HEADLESS: z.string().default('true'),
     BROWSER_MAX_SESSIONS_PER_RUN: z.coerce
       .number()
