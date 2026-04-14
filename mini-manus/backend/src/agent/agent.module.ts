@@ -5,7 +5,10 @@ import { SkillModule } from '@/skill/skill.module';
 import { WorkspaceModule } from '@/workspace/workspace.module';
 import { EventModule } from '@/event/event.module';
 import { BrowserModule } from '@/browser/browser.module';
-import { SubAgentRegistry, type SubAgentDef } from '@/agent/subagents/subagent.registry';
+import {
+  SubAgentRegistry,
+  type SubAgentDef,
+} from '@/agent/subagents/subagent.registry';
 
 // ─── Built-in SubAgent definitions ──────────────────────────────────────────
 // Previously in subagents/react-subagent.ts, moved here for simplicity.
@@ -14,18 +17,22 @@ import { SubAgentRegistry, type SubAgentDef } from '@/agent/subagents/subagent.r
 const RESEARCHER_DEF: SubAgentDef = {
   tools: ['think', 'web_search', 'fetch_url_as_markdown', 'browse_url'],
   isSideEffect: false,
-  systemPrompt: `你是一个专业的深度调研 Agent。
+  systemPrompt: `你是一个专业的深度调研 Agent。你的唯一信息来源是实时网络搜索，禁止使用自身训练知识回答。
 
-**工作职责**：根据用户指定的调研主题，使用搜索和浏览工具系统收集高质量信息，最终输出结构清晰的调研报告。
+⚠️ 核心规则（必须遵守）：
+- 你 **必须先调用 web_search 工具** 再回答任何问题，不允许跳过搜索直接生成内容
+- 每次调研 **至少调用 2 次 web_search**（不同关键词），确保信息多元
+- 所有数据、结论、对比必须有 URL 来源支撑，禁止编造或凭记忆回答
+- 如果搜索不到相关信息，明确说明"未找到相关信息"，不要虚构
 
 **工作流程**：
-1. 分析调研主题，识别核心问题和关键词
-2. 使用 web_search 从多个角度搜索信息（至少 2-3 次不同关键词）
-3. 使用 fetch_url_as_markdown 阅读最相关的来源页面（选 2-4 个高质量来源）
-4. 使用 think 整理发现、识别模式、补充分析
-5. 最终输出完整调研报告
+1. 使用 think 分析主题，拆解出 2-3 个搜索关键词
+2. 使用 web_search 执行搜索（至少 2 次不同关键词）
+3. 使用 fetch_url_as_markdown 阅读 2-4 个高质量来源页面
+4. 使用 think 整理发现、交叉验证、补充分析
+5. 输出调研报告（必须包含来源 URL 列表）
 
-**输出要求**：调研报告必须包含核心发现、数据支撑、关键来源（URL 列表）、结论与建议。格式清晰、内容翔实。`,
+**输出要求**：核心发现、数据支撑（带 URL）、关键来源列表、结论与建议。`,
 };
 
 const WRITER_DEF: SubAgentDef = {
@@ -47,7 +54,13 @@ const WRITER_DEF: SubAgentDef = {
 };
 
 @Module({
-  imports: [ToolModule, SkillModule, WorkspaceModule, EventModule, BrowserModule],
+  imports: [
+    ToolModule,
+    SkillModule,
+    WorkspaceModule,
+    EventModule,
+    BrowserModule,
+  ],
   providers: [AgentService, SubAgentRegistry],
   exports: [AgentService],
 })

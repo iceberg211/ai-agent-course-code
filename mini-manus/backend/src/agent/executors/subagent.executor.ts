@@ -17,10 +17,12 @@ import {
 
 const logger = new Logger('SubAgentExecutor');
 
-/** Bridges SubAgent internal tool calls to main EventPublisher */
+/** Bridges SubAgent internal tool calls to main EventPublisher + counts calls */
 class SubAgentEventBridge extends BaseCallbackHandler {
   name = 'SubAgentEventBridge';
   private readonly toolNames = new Map<string, string>();
+  /** Number of tool calls made by the SubAgent */
+  toolCallCount = 0;
 
   constructor(
     private readonly publisher: EventPublisher,
@@ -42,6 +44,7 @@ class SubAgentEventBridge extends BaseCallbackHandler {
   ) {
     const toolName = runName ?? 'unknown_tool';
     this.toolNames.set(toolRunId, toolName);
+    this.toolCallCount++;
     let toolInput: Record<string, unknown>;
     try {
       toolInput = JSON.parse(input) as Record<string, unknown>;
@@ -126,6 +129,22 @@ export async function executeSubAgentStep(
   );
 
   if (ctx.signal.aborted) throw new Error('cancelled');
+
+  // Validate: researcher SubAgent must have called tools (not just hallucinated)
+  if (!def.isSideEffect && eventBridge.toolCallCount === 0) {
+    logger.warn(`SubAgent [${step.subAgent}] completed without calling any tools — likely hallucinated`);
+    const errorOutput = `error (subagent_no_tool_calls): SubAgent [${step.subAgent}] 未调用任何搜索工具，直接凭记忆生成了内容。请重试，确保使用 web_search 获取实时信息。`;
+
+    await ctx.callbacks.updateStepRun(stepRunId, {
+      executorType: ExecutorType.SKILL,
+      skillName: `subagent:${step.subAgent}`,
+      resultSummary: errorOutput,
+      errorMessage: errorOutput,
+      completedAt: new Date(),
+    });
+
+    return { output: errorOutput };
+  }
 
   const messages = result.messages;
   const lastMsg = messages[messages.length - 1];
