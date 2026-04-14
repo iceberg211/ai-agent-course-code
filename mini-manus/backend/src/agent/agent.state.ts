@@ -74,6 +74,15 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, b) => b,
     default: () => '',
   }),
+  // 预算感知规划：planner 据此控制步骤数量
+  usedTokens: Annotation<number>({
+    reducer: (_, b) => b,
+    default: () => 0,
+  }),
+  tokenBudget: Annotation<number>({
+    reducer: (_, b) => b,
+    default: () => 100_000,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

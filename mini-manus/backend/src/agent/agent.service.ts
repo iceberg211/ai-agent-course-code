@@ -8,7 +8,9 @@ import {
   START,
   MemorySaver,
   Command,
+  InMemoryStore,
 } from '@langchain/langgraph';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import type { ApprovalMode } from '@/common/enums';
 import { AgentStateAnnotation, AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
@@ -95,6 +97,8 @@ export class AgentService {
   private readonly approvalTimeoutMs: number;
   // LangGraph checkpointer — 进程内存存储，重启后失效（生产可替换为 PostgreSQL checkpointer）
   private readonly checkpointer = new MemorySaver();
+  // LangGraph Store — 跨 Run 持久化 key-value 存储（生产可替换为 PostgresStore）
+  private readonly store = new InMemoryStore();
   // 待审批的 promise resolvers，key = runId
   private readonly approvalMap = new Map<
     string,
@@ -177,6 +181,23 @@ export class AgentService {
 
     this.approvalTimeoutMs = config.get<number>('APPROVAL_TIMEOUT_MS', 600_000);
     this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
+
+    // 设置工具可用性检查器，让 Planner 只看到实际可用的工具
+    const tavilyKey = config.get<string>('TAVILY_API_KEY', '');
+    const sandboxEnabled = readBoolean(
+      config.get<string>('SANDBOX_ENABLED'),
+      false,
+    );
+    const browserEnabled = readBoolean(
+      config.get<string>('BROWSER_AUTOMATION_ENABLED'),
+      false,
+    );
+    toolRegistry.setAvailabilityChecker((req) => {
+      if (req === 'tavily_api') return !!tavilyKey;
+      if (req === 'docker') return sandboxEnabled;
+      if (req === 'playwright') return browserEnabled;
+      return true;
+    });
   }
 
   async executeRun(
@@ -221,15 +242,22 @@ export class AgentService {
     };
 
     const graph = new StateGraph(AgentStateAnnotation)
-      .addNode('router', async (state: AgentState) => {
+      .addNode('router', async (state: AgentState, config: RunnableConfig) => {
         return trackNode('router', () =>
           routerNode(state, llm, eventPublisher, soMethod),
         );
       })
-      .addNode('planner', async (state: AgentState) => {
+      .addNode('planner', async (state: AgentState, config: RunnableConfig) => {
+        // 注入最新的 token 用量，让 planner 感知剩余预算
+        const stateWithBudget = {
+          ...state,
+          usedTokens: tokenTracker.totalTokens,
+          tokenBudget: this.tokenBudget,
+        };
         return trackNode('planner', () =>
           plannerNode(
-            state,
+            stateWithBudget,
+            config,
             llm,
             skillRegistry,
             toolRegistry,
@@ -240,7 +268,7 @@ export class AgentService {
           ),
         );
       })
-      .addNode('executor', async (state: AgentState) => {
+      .addNode('executor', async (state: AgentState, config: RunnableConfig) => {
         // executor 内部 Tool Calling 用 'executor:tool_calling' 标签
         return trackNode('executor:tool_calling', () =>
           executorNode(
@@ -258,7 +286,7 @@ export class AgentService {
           ),
         );
       })
-      .addNode('evaluator', async (state: AgentState) => {
+      .addNode('evaluator', async (state: AgentState, config: RunnableConfig) => {
         return trackNode('evaluator', () =>
           evaluatorNode(
             state,
@@ -272,10 +300,11 @@ export class AgentService {
           ),
         );
       })
-      .addNode('finalizer', async (state: AgentState) => {
+      .addNode('finalizer', async (state: AgentState, config: RunnableConfig) => {
         return trackNode('finalizer', () =>
           finalizerNode(
             state,
+            config,
             llm,
             callbacks,
             eventPublisher,
@@ -318,7 +347,11 @@ export class AgentService {
       .addEdge('finalizer', END);
 
     // MemorySaver checkpointer 支持 HITL interrupt/resume
-    const compiled = graph.compile({ checkpointer: this.checkpointer });
+    // InMemoryStore 支持跨 Run 记忆持久化（生产可替换为 PostgresStore）
+    const compiled = graph.compile({
+      checkpointer: this.checkpointer,
+      store: this.store,
+    });
     const graphConfig = {
       configurable: { thread_id: runId },
     };

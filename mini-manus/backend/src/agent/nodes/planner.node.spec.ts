@@ -45,6 +45,8 @@ function mockState(overrides: Partial<AgentState> = {}): AgentState {
     approvalMode: 'none',
     lastStepRunId: '',
     lastStepOutput: '',
+    usedTokens: 0,
+    tokenBudget: 100_000,
     ...overrides,
   };
 }
@@ -359,6 +361,7 @@ describe('plannerNode 回归测试', () => {
 
     const result = await plannerNode(
       state,
+      undefined,
       mockLlm,
       skillReg,
       toolReg,
@@ -403,6 +406,7 @@ describe('plannerNode 回归测试', () => {
 
     const result = await plannerNode(
       state,
+      undefined,
       mockLlm,
       skillReg,
       toolReg,

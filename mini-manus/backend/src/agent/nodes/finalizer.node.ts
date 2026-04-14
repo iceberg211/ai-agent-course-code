@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
+import { getStore } from '@langchain/langgraph';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { ArtifactType } from '@/common/enums';
@@ -80,6 +82,7 @@ function emitArtifactCreated(
 
 export async function finalizerNode(
   state: AgentState,
+  config: RunnableConfig | undefined,
   llm: ChatOpenAI,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
@@ -217,6 +220,27 @@ export async function finalizerNode(
       logger.warn(
         `PDF 导出失败（不影响主产物）: ${err instanceof Error ? err.message : err}`,
       );
+    }
+  }
+
+  // ─── 写入跨 Run 记忆到 LangGraph Store ──────────────────────────────────────
+  const store = config ? getStore(config) : undefined;
+  if (store) {
+    try {
+      const stepSummary = state.stepResults
+        .map((s) => s.description)
+        .join('；');
+      await store.put(
+        ['task_memory', state.taskId],
+        state.runId,
+        {
+          summary: `${state.revisionInput.slice(0, 100)} → ${state.stepResults.length} 步完成（${stepSummary.slice(0, 200)}）`,
+          completedAt: new Date().toISOString(),
+          stepCount: state.stepResults.length,
+        },
+      );
+    } catch {
+      // 写入失败不阻断 finalizer
     }
   }
 

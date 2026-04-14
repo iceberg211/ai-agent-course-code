@@ -48,6 +48,8 @@ function mockState(overrides: Partial<AgentState> = {}): AgentState {
     approvalMode: 'none',
     lastStepRunId: 'step-run-1',
     lastStepOutput: '',
+    usedTokens: 0,
+    tokenBudget: 100_000,
     ...overrides,
   };
 }

@@ -20,7 +20,7 @@ function createConfig(values: Record<string, ConfigValue>) {
 function createService(values: Record<string, ConfigValue>) {
   return new AgentService(
     createConfig(values),
-    {} as ToolRegistry,
+    { setAvailabilityChecker: jest.fn() } as unknown as ToolRegistry,
     {} as SkillRegistry,
     {} as WorkspaceService,
     { emit: jest.fn() } as unknown as EventPublisher,

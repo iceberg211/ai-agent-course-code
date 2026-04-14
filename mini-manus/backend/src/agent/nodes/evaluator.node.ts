@@ -135,7 +135,25 @@ async function applyDecision(
   currentStep: { description: string } | undefined,
   callbacks: AgentCallbacks,
   eventPublisher: EventPublisher,
+  viaPreCheck = false,
 ): Promise<Partial<AgentState>> {
+  // 0. 决策追踪事件 — 记录完整决策上下文供调试
+  eventPublisher.emit(TASK_EVENTS.EVALUATOR_DECIDED, {
+    taskId: state.taskId,
+    runId: state.runId,
+    stepRunId: lastStepRunId,
+    input: {
+      lastStepOutputPreview: lastStepOutput.slice(0, 300),
+      retryCount: state.retryCount,
+      replanCount: state.replanCount,
+      currentStepIndex: state.currentStepIndex,
+    },
+    viaPreCheck,
+    decision: result.decision,
+    reason: result.reason.slice(0, 200),
+    errorCode: result.errorCode ?? null,
+  });
+
   // 1. 更新 step_run 终态并发事件
   if (result.decision === 'retry' || result.decision === 'fail') {
     if (lastStepRunId) {
@@ -266,6 +284,7 @@ export async function evaluatorNode(
       currentStep,
       callbacks,
       eventPublisher,
+      true,
     );
   }
 
@@ -286,6 +305,7 @@ export async function evaluatorNode(
       currentStep,
       callbacks,
       eventPublisher,
+      true,
     );
   }
 

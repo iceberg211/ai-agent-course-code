@@ -8,7 +8,11 @@ import { artifactReviewPrompt } from '@/prompts';
 
 const inputSchema = z
   .object({
-    review_goal: z.string().min(1).default('检查完整性、风险和缺失项').optional(),
+    review_goal: z
+      .string()
+      .min(1)
+      .default('检查完整性、风险和缺失项')
+      .optional(),
     content: z.string().optional(),
     task_id: z.string().uuid().optional(),
     path: z.string().optional(),
@@ -23,8 +27,7 @@ const outputSchema = z.object({
 
 export class ArtifactReviewSkill implements Skill {
   readonly name = 'artifact_review';
-  readonly description =
-    '审阅已有产物或文件，给出缺失项、风险点和修改建议。';
+  readonly description = '审阅已有产物或文件，给出缺失项、风险点和修改建议。';
   readonly inputSchema = inputSchema;
   readonly outputSchema = outputSchema;
   readonly effect = 'read-only' as const;

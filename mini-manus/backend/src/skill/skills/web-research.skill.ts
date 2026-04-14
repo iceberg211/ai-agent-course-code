@@ -56,9 +56,16 @@ export class WebResearchSkill implements Skill {
 
     if (ctx.signal.aborted) return;
 
-    // Parse URLs from search results
-    const urlMatches = searchResult.output.matchAll(/URL: (https?:\/\/\S+)/g);
-    const urls = Array.from(urlMatches, (m) => m[1]).slice(0, maxPages);
+    // Parse URLs from search results — 优先用 structuredData，降级时用正则
+    const structured = searchResult.structuredData as
+      | Array<{ url: string }>
+      | undefined;
+    const urls = structured
+      ? structured.map((r) => r.url).slice(0, maxPages)
+      : Array.from(
+          searchResult.output.matchAll(/URL: (https?:\/\/\S+)/g),
+          (m) => m[1],
+        ).slice(0, maxPages);
     const pageContents: string[] = [];
     const sources: string[] = [];
 
@@ -85,7 +92,8 @@ export class WebResearchSkill implements Skill {
       yield {
         type: 'tool_result',
         tool: 'fetch_url_as_markdown',
-        output: (pageResult.output || pageResult.error || '').slice(0, 200) + '...',
+        output:
+          (pageResult.output || pageResult.error || '').slice(0, 200) + '...',
         cached: pageResult.cached ?? false,
         error: pageResult.error ?? null,
         errorCode: pageResult.errorCode ?? null,

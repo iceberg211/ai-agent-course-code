@@ -43,7 +43,7 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
   [
     'human',
     `任务：{revisionInput}
-当前任务ID（用于文件操作）：{taskId}{completedContext}{memoryContext}{validationErrors}`,
+当前任务ID（用于文件操作）：{taskId}{completedContext}{memoryContext}{validationErrors}{budgetHint}`,
   ],
 ]);
 
@@ -328,7 +328,9 @@ export const toolCallingPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
     `你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。
-必须调用工具，不要只回复文字。`,
+必须调用工具，不要只回复文字。
+
+提示：前序步骤的完整输出保存在 .steps/ 目录下（文件名格式：.steps/step_{序号}_{工具名}.json），可通过 read_file 按需读取。下方摘要已包含关键信息，通常无需额外读取。`,
   ],
   [
     'human',

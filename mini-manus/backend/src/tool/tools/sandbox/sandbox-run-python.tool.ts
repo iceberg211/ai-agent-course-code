@@ -54,6 +54,7 @@ export class SandboxRunPythonTool implements Tool {
     '捕获 stdout / stderr / exitCode，适合验证数据处理脚本或分析代码。';
   readonly schema = schema;
   readonly type = 'side-effect' as const;
+  readonly requires = ['docker'] as const;
 
   constructor(private readonly sandbox: SandboxService) {}
 

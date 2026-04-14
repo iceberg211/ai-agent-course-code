@@ -54,6 +54,7 @@ export class SandboxRunNodeTool implements Tool {
     '捕获 stdout / stderr / exitCode，适合验证代码生成结果。';
   readonly schema = schema;
   readonly type = 'side-effect' as const;
+  readonly requires = ['docker'] as const;
 
   constructor(private readonly sandbox: SandboxService) {}
 

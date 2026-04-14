@@ -21,6 +21,7 @@ export class WebSearchTool implements Tool {
     'Search the web for information. Returns titles, URLs, and snippets.';
   readonly schema = schema;
   readonly type = 'read-only' as const;
+  readonly requires = ['tavily_api'] as const;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -50,7 +51,16 @@ export class WebSearchTool implements Tool {
         .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`)
         .join('\n\n');
 
-      return { success: true, output: truncateOutput(output || '无结果') };
+      return {
+        success: true,
+        output: truncateOutput(output || '无结果'),
+        // 结构化数据：Skill 直接用此字段提取 URL，不必正则解析 output
+        structuredData: results.map((r) => ({
+          title: r.title,
+          url: r.url,
+          snippet: r.content,
+        })),
+      };
     } catch (err: unknown) {
       return classifyToolError(err, 'Search failed');
     }

@@ -12,12 +12,22 @@ export type ToolErrorCode =
 
 export interface ToolResult {
   success: boolean;
+  /** 给 LLM / 人看的自然语言文本 */
   output: string;
+  /** 给程序用的结构化数据（JSON），Skill 优先读此字段，不必正则解析 output */
+  structuredData?: unknown;
   error?: string;
   errorCode?: ToolErrorCode;
   cached?: boolean;
   metadata?: Record<string, unknown>;
 }
+
+/** 工具运行时依赖声明，用于 Planner 过滤不可用工具 */
+export type ToolRequirement =
+  | 'tavily_api' // 需要 TAVILY_API_KEY
+  | 'github_token' // 需要 GITHUB_TOKEN（可选，无 token 时有速率限制）
+  | 'docker' // 需要 Docker Engine
+  | 'playwright'; // 需要 Playwright 浏览器
 
 export interface Tool {
   readonly name: string;
@@ -25,6 +35,8 @@ export interface Tool {
   readonly schema: z.ZodTypeAny;
   readonly type: 'read-only' | 'side-effect';
   readonly cacheable?: boolean;
+  /** 声明运行时依赖，ToolRegistry 据此过滤 Planner 可见的工具列表 */
+  readonly requires?: readonly ToolRequirement[];
   execute(input: unknown): Promise<ToolResult>;
 }
 

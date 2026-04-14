@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { interrupt } from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 import { tool as lcTool } from '@langchain/core/tools';
@@ -51,6 +53,45 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 const logger = new Logger('ExecutorNode');
+
+/**
+ * 把步骤的完整输出写到 workspace/.steps/ 目录（宽带数据通道）。
+ * state 里只保留摘要（窄带），后续步骤的 Tool Calling 可通过 read_file 读取完整数据。
+ * 写入失败不阻断主流程。
+ */
+async function persistStepOutput(
+  workspace: WorkspaceService,
+  taskId: string,
+  executionOrder: number,
+  executorName: string,
+  description: string,
+  output: string,
+  structuredData?: unknown,
+): Promise<void> {
+  try {
+    const safeName = executorName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `.steps/step_${executionOrder}_${safeName}.json`;
+    const safePath = workspace.resolveSafePath(taskId, fileName);
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.writeFile(
+      safePath,
+      JSON.stringify(
+        {
+          description,
+          output,
+          structuredData: structuredData ?? null,
+          executionOrder,
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+  } catch {
+    // 写入失败不阻断主流程
+  }
+}
 
 function attachRuntimeToolContext(
   input: Record<string, unknown>,
@@ -386,6 +427,15 @@ export async function executorNode(
         completedAt: new Date(),
       });
 
+      await persistStepOutput(
+        workspace,
+        state.taskId,
+        state.executionOrder,
+        step.skillName!,
+        step.description,
+        resultSummary,
+      );
+
       return {
         executionOrder: state.executionOrder + 1,
         evaluation: null,
@@ -468,6 +518,18 @@ export async function executorNode(
         errorMessage: toolResult.success ? null : (toolResult.error ?? null),
         completedAt: new Date(),
       });
+
+      if (toolResult.success) {
+        await persistStepOutput(
+          workspace,
+          state.taskId,
+          state.executionOrder,
+          toolName,
+          step.description,
+          toolResult.output,
+          toolResult.structuredData,
+        );
+      }
 
       return {
         executionOrder: state.executionOrder + 1,

@@ -18,7 +18,8 @@ import {
   validatePlanSemantics,
   formatValidationErrors,
 } from '@/agent/plan-semantic-validator';
-import { interrupt } from '@langchain/langgraph';
+import { interrupt, getStore } from '@langchain/langgraph';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
 import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
 import { RunStatus } from '@/common/enums';
@@ -150,6 +151,7 @@ async function handlePlanApproval(
 
 export async function plannerNode(
   state: AgentState,
+  config: RunnableConfig | undefined,
   llm: ChatOpenAI,
   skillRegistry: SkillRegistry,
   toolRegistry: ToolRegistry,
@@ -242,7 +244,7 @@ export async function plannerNode(
   const toolSection =
     '可直接使用的工具（无对应 skill 时使用，需填写 toolHint 和 toolInput）：\n' +
     toolRegistry
-      .getAll()
+      .getAvailableForPlanner()
       .map((t) => `- ${t.name} [${t.type}]: ${t.description}`)
       .join('\n') +
     '\n工具参数示例（toolInput 字段）：\n' +
@@ -256,19 +258,37 @@ export async function plannerNode(
           .join('\n')
       : '';
 
-  // ─── 历史记忆注入（Task 级第一层）────────────────────────────────────────────
-  // 从最近已完成的 run 读取摘要，供 Planner 参考，避免重复搜索相同内容
+  // ─── 历史记忆注入（LangGraph Store 优先，降级到 callbacks）──────────────────
+  // Store 是跨 Run 的持久化 key-value 存储，粒度更细、可检索
   // 注意：记忆内容来自外部工具输出，视为半可信来源，仅供参考
   let memoryContext = '';
-  try {
-    const memory = await callbacks.getRecentMemory(state.taskId);
-    if (memory) {
-      memoryContext =
-        '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
-        memory;
+  const store = config ? getStore(config) : undefined;
+  if (store) {
+    try {
+      const memories = await store.search(
+        ['task_memory', state.taskId],
+        { limit: 5 },
+      );
+      if (memories.length > 0) {
+        memoryContext =
+          '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
+          memories.map((m) => (m.value as { summary: string }).summary).join('\n');
+      }
+    } catch {
+      // Store 读取失败不阻断规划
     }
-  } catch {
-    // 记忆读取失败不应阻断规划，静默忽略
+  } else {
+    // 降级：使用原有的 callbacks.getRecentMemory
+    try {
+      const memory = await callbacks.getRecentMemory(state.taskId);
+      if (memory) {
+        memoryContext =
+          '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
+          memory;
+      }
+    } catch {
+      // 记忆读取失败不应阻断规划，静默忽略
+    }
   }
 
   // ─── Guardrail 包裹的 Planner chain ────────────────────────────────────────
@@ -283,6 +303,13 @@ export async function plannerNode(
     logger.log(`应用意图特化策略: ${state.taskIntent}`);
   }
 
+  // ─── 预算感知：Token 紧张时提示 Planner 缩减步骤 ──────────────────────────
+  const remaining = state.tokenBudget - state.usedTokens;
+  const budgetHint =
+    state.usedTokens > 0 && remaining < state.tokenBudget * 0.4
+      ? `\n⚠️ Token 预算紧张（已用 ${Math.round(state.usedTokens / 1000)}K，剩余约 ${Math.round(remaining / 1000)}K），请将步骤控制在 3 步以内。`
+      : '';
+
   const baseInvokeArgs = {
     revisionInput: state.revisionInput,
     taskId: state.taskId,
@@ -291,6 +318,7 @@ export async function plannerNode(
     toolSection,
     memoryContext,
     intentGuidance,
+    budgetHint,
   };
 
   // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────

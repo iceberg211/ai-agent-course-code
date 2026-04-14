@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Tool, ToolResult } from '@/tool/interfaces/tool.interface';
+import {
+  Tool,
+  ToolResult,
+  ToolRequirement,
+} from '@/tool/interfaces/tool.interface';
 
 interface CacheEntry {
   result: ToolResult;
@@ -13,6 +17,7 @@ export class ToolRegistry implements OnModuleInit {
   private readonly tools = new Map<string, Tool>();
   private readonly toolCache = new Map<string, CacheEntry>();
   private readonly cacheTtlMs: number;
+  private availabilityChecker?: (req: ToolRequirement) => boolean;
 
   constructor(private readonly config: ConfigService) {
     this.cacheTtlMs = config.get<number>('TOOL_CACHE_TTL_MS', 5 * 60 * 1000);
@@ -46,6 +51,25 @@ export class ToolRegistry implements OnModuleInit {
     return this.getAll()
       .map((t) => `- ${t.name}: ${t.description}`)
       .join('\n');
+  }
+
+  /**
+   * 设置运行时可用性检查器。
+   * Planner 获取工具列表时，会过滤掉 requires 依赖不满足的工具。
+   */
+  setAvailabilityChecker(checker: (req: ToolRequirement) => boolean): void {
+    this.availabilityChecker = checker;
+  }
+
+  /**
+   * 返回 Planner 可见的工具列表——过滤掉运行时依赖不满足的工具。
+   * 如果未设置 availabilityChecker，返回全部已注册工具。
+   */
+  getAvailableForPlanner(): Tool[] {
+    if (!this.availabilityChecker) return this.getAll();
+    return this.getAll().filter(
+      (t) => !t.requires?.some((req) => !this.availabilityChecker!(req)),
+    );
   }
 
   /**
