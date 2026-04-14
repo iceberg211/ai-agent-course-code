@@ -323,40 +323,6 @@ export const reportMetadataPrompt = ChatPromptTemplate.fromMessages([
   ],
 ]);
 
-// ─── Router ───────────────────────────────────────────────────────────────────
-// 意图分类：根据用户任务描述判断 intent 和 subType
-export const routerPrompt = ChatPromptTemplate.fromMessages([
-  [
-    'system',
-    `你是一个任务意图分类器。根据用户任务描述，判断 intent 和 subType，并给出 reason。
-
-intent 选项：
-- code_generation: 生成代码项目、脚手架、写程序、创建应用
-- research_report: 调研报告、技术方案、深度分析、信息收集
-- competitive_analysis: 对比分析、竞品调研、方案比较
-- content_writing: 撰写文档、文章、邮件、演讲稿、总结
-- general: 以上都不匹配
-
-subType 规则（根据 intent 填写）：
-- code_generation → web_app / cli_tool / data_script / api_server / other
-- research_report → technical_analysis / market_research / tutorial / other
-- competitive_analysis / content_writing / general → other
-
-只返回 JSON。`,
-  ],
-  ['human', `任务：{revisionInput}`],
-]);
-
-// ─── Planner: WorkflowTemplate 参数提取 ──────────────────────────────────────
-// 从任务描述中提取模板所需的动态参数（比完整规划便宜 ~60%）
-export const templateParamExtractionPrompt = ChatPromptTemplate.fromMessages([
-  [
-    'system',
-    '根据任务描述，提取模板所需的参数值。只返回 JSON，不要其他内容。',
-  ],
-  ['human', '任务：{revisionInput}\n任务 ID：{taskId}'],
-]);
-
 // ─── Skill: Code Fix ──────────────────────────────────────────────────────────
 // 根据沙箱运行错误修复代码文件（replan 后使用，不重新生成整个项目）
 export const codeFixPrompt = ChatPromptTemplate.fromMessages([
