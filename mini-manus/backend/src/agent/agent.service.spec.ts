@@ -5,7 +5,6 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
 import { BrowserSessionService } from '@/browser/browser-session.service';
-import { WorkflowRegistry } from '@/agent/workflow.registry';
 import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 
 type ConfigValue = string | number | boolean | undefined;
@@ -27,7 +26,6 @@ function createService(values: Record<string, ConfigValue>) {
     {} as WorkspaceService,
     { emit: jest.fn() } as unknown as EventPublisher,
     { closeRun: jest.fn() } as unknown as BrowserSessionService,
-    { register: jest.fn(), get: jest.fn(), has: jest.fn(), getIntents: jest.fn().mockReturnValue([]) } as unknown as WorkflowRegistry,
     { register: jest.fn(), get: jest.fn(), has: jest.fn(), getNames: jest.fn().mockReturnValue([]) } as unknown as SubAgentRegistry,
   );
 }

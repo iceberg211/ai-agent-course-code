@@ -2,45 +2,26 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import { InMemoryCache } from '@langchain/core/caches';
-import {
-  StateGraph,
-  END,
-  START,
-  MemorySaver,
-  Command,
-  InMemoryStore,
-} from '@langchain/langgraph';
-import type { RunnableConfig } from '@langchain/core/runnables';
+import { Command } from '@langchain/langgraph';
 import type { ApprovalMode } from '@/common/enums';
-import { AgentStateAnnotation, AgentState } from '@/agent/agent.state';
-import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { RunStatus } from '@/common/enums';
+import type { AgentState } from '@/agent/agent.state';
+import type { AgentCallbacks } from '@/agent/agent.callbacks';
+import type { NodeContext } from '@/agent/agent.context';
+import { compileAgentGraph, type CompiledAgentGraph } from '@/agent/agent.graph';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
 import { EventPublisher } from '@/event/event.publisher';
 import { BrowserSessionService } from '@/browser/browser-session.service';
-import { routerNode } from '@/agent/nodes/router.node';
-import { plannerNode } from '@/agent/nodes/planner.node';
-import { executorNode } from '@/agent/nodes/executor.node';
-import { evaluatorNode } from '@/agent/nodes/evaluator.node';
-import { finalizerNode } from '@/agent/nodes/finalizer.node';
-import {
-  buildResearchSubgraph,
-  type ResearchSubgraphOutput,
-} from '@/agent/nodes/research-subgraph';
-import { RunStatus, StepStatus, ExecutorType } from '@/common/enums';
-import { TASK_EVENTS } from '@/common/events/task.events';
+import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
-import { PlanSemanticValidationOptions } from '@/agent/plan-semantic-validator';
-import { WorkflowRegistry } from '@/agent/workflow.registry';
-import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
+import { TASK_EVENTS } from '@/common/events/task.events';
+import type { PlanSemanticValidationOptions } from '@/agent/agent.context';
 
 /** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
-const MODEL_PRICING: Record<
-  string,
-  { inputPerMillion: number; outputPerMillion: number }
-> = {
+const MODEL_PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number }> = {
   'gpt-4o': { inputPerMillion: 5.0, outputPerMillion: 15.0 },
   'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'gpt-4-turbo': { inputPerMillion: 10.0, outputPerMillion: 30.0 },
@@ -64,27 +45,18 @@ function estimateCostUsd(
   );
 }
 
-function readBoolean(
-  value: string | undefined,
-  defaultValue: boolean,
-): boolean {
+function readBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value == null) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
-function readCleanString(
-  value: string | undefined,
-  defaultValue: string,
-): string {
+function readCleanString(value: string | undefined, defaultValue: string): string {
   const trimmed = value?.trim();
   return trimmed?.length ? trimmed : defaultValue;
 }
 
 function readCsv(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 @Injectable()
@@ -92,24 +64,15 @@ export class AgentService {
   private readonly logger = new Logger(AgentService.name);
   readonly llm: ChatOpenAI;
   private readonly modelName: string;
-  private readonly maxRetries: number;
-  private readonly maxReplans: number;
-  private readonly maxSteps: number;
-  private readonly stepTimeoutMs: number;
-  private readonly skillTimeoutMs: number;
-  private readonly tokenBudget: number;
-  private readonly exportPdfEnabled: boolean;
-  private readonly planValidationOptions: PlanSemanticValidationOptions;
-  private readonly approvalTimeoutMs: number;
-  // LangGraph checkpointer — 进程内存存储，重启后失效（生产可替换为 PostgreSQL checkpointer）
-  private readonly checkpointer = new MemorySaver();
-  // LangGraph Store — 跨 Run 持久化 key-value 存储（生产可替换为 PostgresStore）
-  private readonly store = new InMemoryStore();
-  // 待审批的 promise resolvers，key = runId
+  private readonly compiled: CompiledAgentGraph;
   private readonly approvalMap = new Map<
     string,
     { resolve: (approved: boolean) => void; reject: (err: Error) => void }
   >();
+  private readonly approvalTimeoutMs: number;
+  private readonly tokenBudget: number;
+  private readonly sharedConfig: Omit<NodeContext, 'signal' | 'tokenTracker' | 'tokenBudgetGuard' | 'callbacks'>;
+
   /**
    * 结构化输出方式：
    * - 'functionCalling'  通用，兼容 Qwen / Ollama / Azure 等
@@ -118,10 +81,7 @@ export class AgentService {
    *
    * 通过 STRUCTURED_OUTPUT_METHOD 环境变量覆盖，默认 functionCalling。
    */
-  readonly structuredOutputMethod:
-    | 'functionCalling'
-    | 'json_schema'
-    | 'jsonMode';
+  readonly structuredOutputMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
 
   constructor(
     private readonly config: ConfigService,
@@ -130,33 +90,29 @@ export class AgentService {
     private readonly workspace: WorkspaceService,
     private readonly eventPublisher: EventPublisher,
     private readonly browserSessions: BrowserSessionService,
-    private readonly workflowRegistry: WorkflowRegistry,
     private readonly subAgentRegistry: SubAgentRegistry,
   ) {
-    const llmCacheEnabled = readBoolean(
-      config.get<string>('LLM_CACHE_ENABLED'),
-      true,
-    );
-    this.modelName = readCleanString(
-      config.get<string>('MODEL_NAME'),
-      'gpt-4o-mini',
-    );
+    this.modelName = readCleanString(config.get<string>('MODEL_NAME'), 'gpt-4o-mini');
     this.llm = new ChatOpenAI({
       modelName: this.modelName,
       apiKey: readCleanString(config.get<string>('OPENAI_API_KEY'), ''),
-      configuration: {
-        baseURL: config.get<string>('OPENAI_BASE_URL')?.trim(),
-      },
+      configuration: { baseURL: config.get<string>('OPENAI_BASE_URL')?.trim() },
       temperature: 0,
-      cache: llmCacheEnabled ? new InMemoryCache() : undefined,
+      cache: readBoolean(config.get<string>('LLM_CACHE_ENABLED'), true)
+        ? new InMemoryCache()
+        : undefined,
     });
-    this.maxRetries = config.get<number>('MAX_RETRIES', 3);
-    this.maxReplans = config.get<number>('MAX_REPLANS', 2);
-    this.maxSteps = config.get<number>('MAX_STEPS', 20);
-    this.tokenBudget = config.get<number>('TOKEN_BUDGET', 100_000);
-    const plannerMaxSteps = config.get<number>('PLANNER_MAX_STEPS', 8);
-    this.planValidationOptions = {
-      maxSteps: Math.min(plannerMaxSteps, this.maxSteps),
+
+    const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling').trim();
+    this.structuredOutputMethod = (
+      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw) ? raw : 'functionCalling'
+    ) as typeof this.structuredOutputMethod;
+
+    const planValidationOptions: PlanSemanticValidationOptions = {
+      maxSteps: Math.min(
+        config.get<number>('PLANNER_MAX_STEPS', 8),
+        config.get<number>('MAX_STEPS', 20),
+      ),
       allowedSideEffectTools: readCsv(
         config.get<string>(
           'PLANNER_ALLOWED_SIDE_EFFECT_TOOLS',
@@ -170,42 +126,41 @@ export class AgentService {
         ),
       ),
     };
-    this.stepTimeoutMs = config.get<number>('STEP_TIMEOUT_MS', 180_000);
-    // Skill 超时独立配置：skill 包含多次网络调用 + LLM 综合，需要更长时间
-    this.skillTimeoutMs = config.get<number>('SKILL_TIMEOUT_MS', 300_000);
-    this.exportPdfEnabled = readBoolean(
-      config.get<string>('EXPORT_PDF_ENABLED'),
-      false,
-    );
 
-    const raw = config
-      .get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling')
-      .trim();
-    this.structuredOutputMethod = (
-      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw)
-        ? raw
-        : 'functionCalling'
-    ) as this['structuredOutputMethod'];
-
+    this.tokenBudget = config.get<number>('TOKEN_BUDGET', 100_000);
     this.approvalTimeoutMs = config.get<number>('APPROVAL_TIMEOUT_MS', 600_000);
-    this.logger.log(`Structured output method: ${this.structuredOutputMethod}`);
+
+    this.sharedConfig = {
+      llm: this.llm,
+      toolRegistry,
+      skillRegistry,
+      workspace,
+      eventPublisher,
+      subAgentRegistry,
+      soMethod: this.structuredOutputMethod,
+      maxRetries: config.get<number>('MAX_RETRIES', 3),
+      maxReplans: config.get<number>('MAX_REPLANS', 2),
+      maxSteps: config.get<number>('MAX_STEPS', 20),
+      stepTimeoutMs: config.get<number>('STEP_TIMEOUT_MS', 180_000),
+      skillTimeoutMs: config.get<number>('SKILL_TIMEOUT_MS', 300_000),
+      exportPdfEnabled: readBoolean(config.get<string>('EXPORT_PDF_ENABLED'), false),
+      planValidationOptions,
+    };
 
     // 设置工具可用性检查器，让 Planner 只看到实际可用的工具
     const tavilyKey = config.get<string>('TAVILY_API_KEY', '');
-    const sandboxEnabled = readBoolean(
-      config.get<string>('SANDBOX_ENABLED'),
-      false,
-    );
-    const browserEnabled = readBoolean(
-      config.get<string>('BROWSER_AUTOMATION_ENABLED'),
-      false,
-    );
+    const sandboxEnabled = readBoolean(config.get<string>('SANDBOX_ENABLED'), false);
+    const browserEnabled = readBoolean(config.get<string>('BROWSER_AUTOMATION_ENABLED'), false);
     toolRegistry.setAvailabilityChecker((req) => {
       if (req === 'tavily_api') return !!tavilyKey;
       if (req === 'docker') return sandboxEnabled;
       if (req === 'playwright') return browserEnabled;
       return true;
     });
+
+    // Compile graph once
+    this.compiled = compileAgentGraph();
+    this.logger.log(`Agent graph compiled. Model: ${this.modelName}, SO: ${this.structuredOutputMethod}`);
   }
 
   async executeRun(
@@ -216,244 +171,33 @@ export class AgentService {
     signal: AbortSignal,
     approvalMode: ApprovalMode = 'none',
   ): Promise<void> {
-    const llm = this.llm;
-    const toolRegistry = this.toolRegistry;
-    const skillRegistry = this.skillRegistry;
-    const workspace = this.workspace;
-    const eventPublisher = this.eventPublisher;
-    const soMethod = this.structuredOutputMethod;
     const tokenTracker = new TokenTrackerCallback();
     const tokenBudgetGuard = new TokenBudgetGuard(
       tokenTracker,
       this.tokenBudget,
-      () =>
-        estimateCostUsd(
-          this.modelName,
-          tokenTracker.inputTokens,
-          tokenTracker.outputTokens,
-        ),
+      () => estimateCostUsd(this.modelName, tokenTracker.inputTokens, tokenTracker.outputTokens),
     );
 
-    // Build StateGraph
-    // P24：每个节点调用前/后通过 tokenTracker 标记节点名，
-    // handleLLMEnd 会把 token 用量记入对应节点的 nodeUsages。
-    const trackNode = async <T>(
-      nodeName: string,
-      runNode: () => Promise<T>,
-    ): Promise<T> => {
-      tokenTracker.setCurrentNode(nodeName);
-      try {
-        return await runNode();
-      } finally {
-        tokenTracker.clearCurrentNode();
-      }
-    };
-
-    const graph = new StateGraph(AgentStateAnnotation)
-      .addNode('router', async (state: AgentState, config: RunnableConfig) => {
-        return trackNode('router', () =>
-          routerNode(state, llm, eventPublisher, soMethod),
-        );
-      })
-      .addNode('planner', async (state: AgentState, config: RunnableConfig) => {
-        // 注入最新的 token 用量，让 planner 感知剩余预算
-        const stateWithBudget = {
-          ...state,
-          usedTokens: tokenTracker.totalTokens,
-          tokenBudget: this.tokenBudget,
-        };
-        return trackNode('planner', () =>
-          plannerNode(
-            stateWithBudget,
-            config,
-            llm,
-            skillRegistry,
-            toolRegistry,
-            callbacks,
-            eventPublisher,
-            soMethod,
-            this.planValidationOptions,
-            this.workflowRegistry,
-            this.subAgentRegistry,
-          ),
-        );
-      })
-      .addNode(
-        'executor',
-        async (state: AgentState, config: RunnableConfig) => {
-          const currentStep = state.currentPlan?.steps[state.currentStepIndex];
-
-          // ─── web_research 步骤：委托给独立子图，避免中间事件污染主图 state ──────
-          if (currentStep?.skillName === 'web_research') {
-            return trackNode('executor:research_subgraph', async () => {
-              const researchSubgraph = buildResearchSubgraph(
-                llm,
-                toolRegistry,
-                signal,
-              );
-              const stepRun = await callbacks.createStepRun(
-                state.runId,
-                `${state.currentPlan!.planId}:${currentStep.stepIndex}`,
-                state.executionOrder,
-              );
-              await callbacks.updateStepRun(stepRun.id, {
-                startedAt: new Date(),
-                status: StepStatus.RUNNING,
-                skillName: 'web_research',
-                executorType: ExecutorType.SKILL,
-              });
-              eventPublisher.emit(TASK_EVENTS.STEP_STARTED, {
-                taskId: state.taskId,
-                runId: state.runId,
-                stepRunId: stepRun.id,
-                planStepId: stepRun.planStepId,
-                description: currentStep.description,
-                executorType: ExecutorType.SKILL,
-                skillName: 'web_research',
-                toolName: null,
-              });
-
-              try {
-                const skillInput = currentStep.skillInput ?? {};
-                const topic =
-                  (skillInput.topic as string) || state.revisionInput;
-                const depth = (skillInput.depth as number) || 3;
-
-                const result = (await researchSubgraph.invoke({
-                  topic,
-                  depth,
-                })) as ResearchSubgraphOutput;
-
-                const findings = result.findings || '未找到相关信息';
-                return {
-                  executionOrder: state.executionOrder + 1,
-                  lastStepRunId: stepRun.id,
-                  lastStepOutput: findings,
-                };
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                return {
-                  executionOrder: state.executionOrder + 1,
-                  lastStepRunId: stepRun.id,
-                  lastStepOutput: `error (tool_execution_failed): ${msg}`,
-                };
-              }
-            });
-          }
-
-          // ─── 其他步骤：走标准 executor ─────────────────────────────────────────
-          // executor 内部 Tool Calling 用 'executor:tool_calling' 标签
-          return trackNode('executor:tool_calling', () =>
-            executorNode(
-              state,
-              llm,
-              toolRegistry,
-              skillRegistry,
-              workspace,
-              callbacks,
-              eventPublisher,
-              signal,
-              this.stepTimeoutMs,
-              this.skillTimeoutMs,
-              soMethod,
-              this.subAgentRegistry,
-            ),
-          );
-        },
-      )
-      .addNode(
-        'evaluator',
-        async (state: AgentState, config: RunnableConfig) => {
-          return trackNode('evaluator', () =>
-            evaluatorNode(
-              state,
-              llm,
-              callbacks,
-              eventPublisher,
-              soMethod,
-              this.maxRetries,
-              this.maxReplans,
-              tokenBudgetGuard,
-            ),
-          );
-        },
-      )
-      .addNode(
-        'finalizer',
-        async (state: AgentState, config: RunnableConfig) => {
-          return trackNode('finalizer', () =>
-            finalizerNode(
-              state,
-              config,
-              llm,
-              callbacks,
-              eventPublisher,
-              this.exportPdfEnabled,
-              soMethod,
-              tokenBudgetGuard,
-            ),
-          );
-        },
-      )
-      .addEdge(START, 'router')
-      .addEdge('router', 'planner')
-      .addEdge('planner', 'executor')
-      .addEdge('executor', 'evaluator')
-      .addConditionalEdges('evaluator', (state: AgentState) => {
-        if (state.shouldStop) return END;
-        const eval_ = state.evaluation;
-        if (!eval_) return 'executor';
-
-        if (eval_.decision === 'complete') return 'finalizer';
-        if (eval_.decision === 'fail') return END;
-
-        if (eval_.decision === 'retry') {
-          if (state.retryCount >= this.maxRetries) return END;
-          return 'executor';
-        }
-        if (eval_.decision === 'replan') {
-          if (state.replanCount >= this.maxReplans) return END;
-          return 'planner';
-        }
-        // continue: evaluator 已经把 currentStepIndex +1 写回 state，
-        // 这里直接判断是否越界，不再二次 +1
-        const totalSteps = state.currentPlan?.steps.length ?? 0;
-        if (
-          state.currentStepIndex >= totalSteps ||
-          state.executionOrder >= this.maxSteps
-        )
-          return 'finalizer';
-        return 'executor';
-      })
-      .addEdge('finalizer', END);
-
-    // MemorySaver checkpointer 支持 HITL interrupt/resume
-    // InMemoryStore 支持跨 Run 记忆持久化（生产可替换为 PostgresStore）
-    const compiled = graph.compile({
-      checkpointer: this.checkpointer,
-      store: this.store,
-    });
-    const graphConfig = {
-      configurable: { thread_id: runId },
-    };
+    const ctx: NodeContext = { ...this.sharedConfig, signal, tokenTracker, tokenBudgetGuard, callbacks };
 
     const initialState: Partial<AgentState> = {
       taskId,
       runId,
-      revisionInput,
+      userInput: revisionInput,
       approvalMode,
-      currentPlan: null,
-      currentStepIndex: 0,
+      plan: null,
+      stepIndex: 0,
+      intent: 'general',
       stepResults: [],
-      replanCount: 0,
+      lastStepRunId: '',
+      lastOutput: '',
       retryCount: 0,
-      evaluation: null,
+      replanCount: 0,
       executionOrder: 0,
-      shouldStop: false,
-      errorMessage: null,
+      error: null,
     };
 
-    eventPublisher.emit(TASK_EVENTS.RUN_STARTED, { taskId, runId });
+    this.eventPublisher.emit(TASK_EVENTS.RUN_STARTED, { taskId, runId });
     await callbacks.setRunStatus(runId, RunStatus.RUNNING);
 
     try {
@@ -461,72 +205,42 @@ export class AgentService {
       // 每次 interrupt() 后暂停，等待外部 resume（approved/rejected），
       // 再以 Command 重新 invoke，直到图执行完成或终止
       let invokeInput: Partial<AgentState> | Command = initialState;
+      const graphConfig = { configurable: { thread_id: runId, ctx }, callbacks: [tokenTracker] };
 
       while (true) {
-        const result = await compiled.invoke(invokeInput as any, {
-          ...graphConfig,
-          callbacks: [tokenTracker],
-        });
+        const result = await this.compiled.invoke(invokeInput as any, graphConfig);
 
         // 检查是否有 interrupt 待处理
-        const interrupts = (result as Record<string, unknown>)[
-          '__interrupt__'
-        ] as Array<{ value: Record<string, unknown> }> | undefined;
+        const interrupts = (result as Record<string, unknown>).__interrupt__ as
+          Array<{ value: Record<string, unknown> }> | undefined;
 
         if (!interrupts?.length) {
           // 图已正常结束，result 是 finalState
-          const finalState = result;
-
-          // 检测因重试/重规划/fail 耗尽而退出的情况：
-          const decision = finalState.evaluation?.decision;
-          const isExhausted =
-            decision === 'fail' ||
-            (decision === 'retry' &&
-              finalState.retryCount >= this.maxRetries) ||
-            (decision === 'replan' &&
-              finalState.replanCount >= this.maxReplans);
-
-          if (
-            finalState.shouldStop ||
-            finalState.errorMessage === 'cancelled'
-          ) {
+          const finalState = result as AgentState;
+          if (finalState.error === 'cancelled') {
             await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
-            eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
-          } else if (finalState.errorMessage || isExhausted) {
-            const msg =
-              finalState.errorMessage ??
-              finalState.evaluation?.reason ??
-              (decision === 'retry'
-                ? `重试次数已耗尽（上限 ${this.maxRetries}）`
-                : decision === 'replan'
-                  ? `重规划次数已耗尽（上限 ${this.maxReplans}）`
-                  : '任务执行失败');
-            await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
-            eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
-              taskId,
-              runId,
-              error: msg,
-              errorCode: finalState.evaluation?.errorCode ?? null,
-              metadata: finalState.evaluation?.metadata ?? null,
-            });
+            this.eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
+          } else if (finalState.error) {
+            await callbacks.setRunStatus(runId, RunStatus.FAILED, finalState.error);
+            this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: finalState.error });
           } else {
             await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
-            eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, { taskId, runId });
+            this.eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, { taskId, runId });
           }
-          break; // while 循环正常结束
+          break;
         }
 
         // ─── 有 interrupt：等待人工审批 ───────────────────────────────────
         const interruptValue = interrupts[0].value;
 
-        // ⚠️ 必须先注册 approvalMap，再写 DB / emit 事件。
+        // 必须先注册 approvalMap，再写 DB / emit 事件。
         // 原因：setRunAwaitingApproval 将 DB 状态改为 awaiting_approval 后，
         // 前端可能通过轮询立即看到该状态并发起 approve 请求；
         // 若此时 Map 尚未注册就会返回 404。
         const approvalPromise = this.waitForApproval(runId);
 
         await callbacks.setRunAwaitingApproval(runId, interruptValue);
-        eventPublisher.emit(TASK_EVENTS.RUN_AWAITING_APPROVAL, {
+        this.eventPublisher.emit(TASK_EVENTS.RUN_AWAITING_APPROVAL, {
           taskId,
           runId,
           ...interruptValue,
@@ -537,32 +251,18 @@ export class AgentService {
           approved = await approvalPromise;
         } catch {
           // 超时或被 cancel 触发 reject
-          await callbacks.setRunStatus(
-            runId,
-            RunStatus.FAILED,
-            'approval_timeout',
-          );
-          eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
-            taskId,
-            runId,
-            error: 'approval_timeout',
-          });
+          await callbacks.setRunStatus(runId, RunStatus.FAILED, 'approval_timeout');
+          this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: 'approval_timeout' });
           break;
         }
 
-        invokeInput = new Command({
-          resume: approved ? 'approved' : 'rejected',
-        });
+        invokeInput = new Command({ resume: approved ? 'approved' : 'rejected' });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Run ${runId} failed with error: ${msg}`);
       await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
-      eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
-        taskId,
-        runId,
-        error: msg,
-      });
+      this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: msg });
     } finally {
       // 持久化 token 统计 + 推送实时事件
       const estimatedCostUsd = estimateCostUsd(
@@ -574,7 +274,7 @@ export class AgentService {
         this.logger.log(
           `Run ${runId} token usage — in: ${tokenTracker.inputTokens}, out: ${tokenTracker.outputTokens}, total: ${tokenTracker.totalTokens}${estimatedCostUsd != null ? `, cost: $${estimatedCostUsd.toFixed(6)}` : ''}`,
         );
-        eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
+        this.eventPublisher.emit(TASK_EVENTS.RUN_TOKEN_USAGE, {
           taskId,
           runId,
           inputTokens: tokenTracker.inputTokens,
@@ -594,11 +294,9 @@ export class AgentService {
           modelName: this.modelName,
         });
       } catch (err) {
-        this.logger.warn(
-          `Failed to save token usage for run ${runId}: ${String(err)}`,
-        );
+        this.logger.warn(`Failed to save token usage for run ${runId}: ${String(err)}`);
       }
-      // P24：保存节点级 LLM 明细
+      // 保存节点级 LLM 明细
       if (tokenTracker.nodeUsages.length > 0) {
         try {
           await callbacks.saveLlmCallLogs(
@@ -606,26 +304,16 @@ export class AgentService {
             this.modelName,
             tokenTracker.nodeUsages.map((u) => ({
               ...u,
-              estimatedCostUsd: estimateCostUsd(
-                this.modelName,
-                u.inputTokens,
-                u.outputTokens,
-              ),
+              estimatedCostUsd: estimateCostUsd(this.modelName, u.inputTokens, u.outputTokens),
             })),
           );
         } catch (err) {
-          this.logger.warn(
-            `Failed to save llm_call_logs for run ${runId}: ${String(err)}`,
-          );
+          this.logger.warn(`Failed to save llm_call_logs for run ${runId}: ${String(err)}`);
         }
       }
       try {
         await this.browserSessions.closeRun(runId);
-      } catch (err) {
-        this.logger.warn(
-          `Failed to close browser sessions for run ${runId}: ${String(err)}`,
-        );
-      }
+      } catch {}
       await callbacks.finalize(taskId);
     }
   }
@@ -645,7 +333,7 @@ export class AgentService {
     return new Promise<boolean>((resolve, reject) => {
       this.approvalMap.set(runId, { resolve, reject });
       setTimeout(() => {
-        this.approvalMap.delete(runId); // 防止 entry 泄漏
+        this.approvalMap.delete(runId);
         reject(new Error('approval_timeout'));
       }, this.approvalTimeoutMs);
     });
