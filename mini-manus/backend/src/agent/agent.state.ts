@@ -42,7 +42,10 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => 'none' as ApprovalMode,
   }),
 
-  plan: Annotation<PlanDef | null>({ reducer: (_, b) => b, default: () => null }),
+  plan: Annotation<PlanDef | null>({
+    reducer: (_, b) => b,
+    default: () => null,
+  }),
   stepIndex: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
   intent: Annotation<TaskIntent>({
     reducer: (_, b) => b,
@@ -54,14 +57,23 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => [],
   }),
 
-  lastStepRunId: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  lastStepRunId: Annotation<string>({
+    reducer: (_, b) => b,
+    default: () => '',
+  }),
   lastOutput: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
 
   retryCount: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
   replanCount: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
-  executionOrder: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+  executionOrder: Annotation<number>({
+    reducer: (_, b) => b,
+    default: () => 0,
+  }),
 
-  error: Annotation<string | null>({ reducer: (_, b) => b, default: () => null }),
+  error: Annotation<string | null>({
+    reducer: (_, b) => b,
+    default: () => null,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;
