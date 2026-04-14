@@ -1,7 +1,13 @@
-import { EvaluationResult } from '@/agent/agent.state';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 
 export const TOKEN_BUDGET_EXCEEDED = 'token_budget_exceeded';
+
+export interface BudgetCheckResult {
+  decision: 'fail';
+  reason: string;
+  errorCode: string;
+  metadata: Record<string, unknown>;
+}
 
 export class TokenBudgetGuard {
   constructor(
@@ -10,7 +16,7 @@ export class TokenBudgetGuard {
     private readonly estimateCostUsd: () => number | null,
   ) {}
 
-  check(): EvaluationResult | null {
+  check(): BudgetCheckResult | null {
     if (!Number.isFinite(this.budget) || this.budget <= 0) return null;
     if (this.tracker.totalTokens <= this.budget) return null;
 
