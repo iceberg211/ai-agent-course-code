@@ -10,6 +10,11 @@
  * 标记隔离，不在此处扫描。
  */
 
+import {
+  USER_INPUT_MAX,
+  INJECTION_LOG_PREVIEW_MAX,
+} from '@/common/constants/system-limits';
+
 const INJECTION_PATTERNS: RegExp[] = [
   // English patterns
   /ignore\s+(all\s+)?previous\s+instructions/i,
@@ -28,17 +33,14 @@ const INJECTION_PATTERNS: RegExp[] = [
   /忘记.{0,10}(你的|之前|以上|所有)/,
 ];
 
-/** 用户输入最大长度（超出部分截断） */
-const MAX_INPUT_LENGTH = 2000;
-
 /**
  * 检测用户输入是否包含注入模式。
- * @returns 命中的 pattern 字符串，未命中返回 null
+ * @returns 命中的 pattern 字符串（截断为日志预览长度），未命中返回 null
  */
 export function detectInjection(input: string): string | null {
   for (const pattern of INJECTION_PATTERNS) {
     const match = input.match(pattern);
-    if (match) return match[0].slice(0, 80); // 返回命中片段，用于日志
+    if (match) return match[0].slice(0, INJECTION_LOG_PREVIEW_MAX);
   }
   return null;
 }
@@ -47,5 +49,5 @@ export function detectInjection(input: string): string | null {
  * 清理用户输入：截断超长内容，去除首尾空白。
  */
 export function sanitizeInput(input: string): string {
-  return input.slice(0, MAX_INPUT_LENGTH).trim();
+  return input.slice(0, USER_INPUT_MAX).trim();
 }

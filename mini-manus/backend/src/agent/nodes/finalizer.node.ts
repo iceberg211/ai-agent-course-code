@@ -101,20 +101,39 @@ export async function finalizerNode(
   const executionContext = state.stepResults
     .map(
       (s) =>
-        `步骤 ${s.executionOrder + 1}: ${s.description}\n结果: ${s.resultSummary}`,
+        `步骤 ${s.executionOrder + 1}: ${s.description}\n结果: ${s.toolOutput ?? s.resultSummary}`,
     )
     .join('\n\n');
 
-  const chain = finalizerPrompt.pipe(llm);
-  const response = await chain.invoke({
-    revisionInput: state.revisionInput,
-    executionContext,
-  });
+  // research_report / competitive_analysis：最后一步是 writer SubAgent，
+  // 直接使用其输出作为 artifact 主体，跳过重新生成，避免信息损失。
+  // 其他意图（general / content_writing / code_generation）仍走 LLM 生成路径。
+  const WRITER_LAST_INTENTS = new Set([
+    'research_report',
+    'competitive_analysis',
+  ]);
+  const lastStepResult = state.stepResults[state.stepResults.length - 1];
+  const writerOutput =
+    WRITER_LAST_INTENTS.has(state.taskIntent) && lastStepResult
+      ? (lastStepResult.toolOutput ?? lastStepResult.resultSummary ?? '')
+      : '';
+  const useWriterOutput = writerOutput.length > 200;
 
-  const rawContent =
-    typeof response.content === 'string'
-      ? response.content
-      : JSON.stringify(response.content);
+  let rawContent: string;
+  if (useWriterOutput) {
+    logger.log(`使用 writer SubAgent 输出作为 artifact 主体（${writerOutput.length} chars）`);
+    rawContent = writerOutput;
+  } else {
+    const chain = finalizerPrompt.pipe(llm);
+    const response = await chain.invoke({
+      revisionInput: state.revisionInput,
+      executionContext,
+    });
+    rawContent =
+      typeof response.content === 'string'
+        ? response.content
+        : JSON.stringify(response.content);
+  }
 
   const artifactBudgetFailure = tokenBudgetGuard?.check();
   if (artifactBudgetFailure) {

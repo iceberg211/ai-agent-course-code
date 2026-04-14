@@ -8,11 +8,14 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { evaluatorPrompt } from '@/prompts';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
+import {
+  DB_RESULT_SUMMARY_MAX,
+  PROMPT_HISTORY_STEP_MAX,
+  EVENT_STEP_PREVIEW_MAX,
+  EVENT_REASON_MAX,
+} from '@/common/constants/system-limits';
 
 const logger = new Logger('EvaluatorNode');
-
-/** 工具输出写入 StepResult.toolOutput 的最大字符数 */
-const TOOL_OUTPUT_SUMMARY_MAX = 2000;
 
 /**
  * 按信息价值动态构建近期步骤摘要，替代硬编码 .slice(-3)。
@@ -34,7 +37,7 @@ function buildRecentSummaries(
   let remaining = maxChars - result.length;
   for (let i = stepResults.length - 2; i >= 0 && remaining > 200; i--) {
     const s = stepResults[i];
-    const content = (s.toolOutput ?? s.resultSummary ?? '').slice(0, 300);
+    const content = (s.toolOutput ?? s.resultSummary ?? '').slice(0, PROMPT_HISTORY_STEP_MAX);
     const line = `[步骤${s.executionOrder + 1}] ${s.description}: ${content}`;
     if (line.length > remaining) break;
     result = line + '\n' + result;
@@ -201,14 +204,14 @@ async function applyDecision(
     runId: state.runId,
     stepRunId: lastStepRunId,
     input: {
-      lastStepOutputPreview: lastStepOutput.slice(0, 300),
+      lastStepOutputPreview: lastStepOutput.slice(0, EVENT_STEP_PREVIEW_MAX),
       retryCount: state.retryCount,
       replanCount: state.replanCount,
       currentStepIndex: state.currentStepIndex,
     },
     viaPreCheck,
     decision: result.decision,
-    reason: result.reason.slice(0, 200),
+    reason: result.reason.slice(0, EVENT_REASON_MAX),
     errorCode: result.errorCode ?? null,
   });
 
@@ -249,9 +252,9 @@ async function applyDecision(
   const newStepResult: StepResult = {
     stepRunId: lastStepRunId,
     description: currentStep?.description ?? '',
-    resultSummary: result.reason,
-    // 保留真实工具输出（截断），供后续步骤 Tool Calling 读取 URL/内容等数据
-    toolOutput: lastStepOutput.slice(0, TOOL_OUTPUT_SUMMARY_MAX),
+    // 存真实步骤输出（URL、数据等），evaluator 的决策理由单独在 evaluation.reason 里
+    resultSummary: lastStepOutput.slice(0, DB_RESULT_SUMMARY_MAX),
+    toolOutput: lastStepOutput.slice(0, DB_RESULT_SUMMARY_MAX),
     executionOrder: state.executionOrder - 1,
   };
 
@@ -367,7 +370,36 @@ export async function evaluatorNode(
     );
   }
 
-  // 3. LLM 评估 — 处理无法规则判断的情况
+  // 3. 确定性 workflow 快通道 — 步骤路径固定，无需 LLM 决策
+  // 仅在 preCheck 通过（无错误）后才走快通道，保留错误检测能力
+  const DETERMINISTIC_INTENTS = new Set([
+    'code_generation',
+    'research_report',
+    'competitive_analysis',
+  ]);
+  if (DETERMINISTIC_INTENTS.has(state.taskIntent)) {
+    const totalSteps = state.currentPlan.steps.length;
+    const isLastStep = state.currentStepIndex >= totalSteps - 1;
+    const fastDecision: EvaluationResult = {
+      decision: isLastStep ? 'complete' : 'continue',
+      reason: `确定性 workflow 步骤 ${state.currentStepIndex + 1}/${totalSteps} 完成`,
+    };
+    logger.log(
+      `确定性快通道 → ${fastDecision.decision}（步骤 ${state.currentStepIndex + 1}/${totalSteps}）`,
+    );
+    return applyDecision(
+      fastDecision,
+      state,
+      lastStepRunId,
+      lastStepOutput,
+      currentStep,
+      callbacks,
+      eventPublisher,
+      true,
+    );
+  }
+
+  // 4. LLM 评估 — general / content_writing / replan 等动态路径
   const recentSummaries = buildRecentSummaries(state.stepResults);
 
   const chain = evaluatorPrompt.pipe(
@@ -375,7 +407,7 @@ export async function evaluatorNode(
   );
   const result = (await chain.invoke({
     stepDescription: currentStep?.description ?? '未知',
-    lastStepOutput: lastStepOutput.slice(0, TOOL_OUTPUT_SUMMARY_MAX),
+    lastStepOutput: lastStepOutput.slice(0, DB_RESULT_SUMMARY_MAX),
     recentSummaries,
     retryCount: String(state.retryCount),
     replanCount: String(state.replanCount),

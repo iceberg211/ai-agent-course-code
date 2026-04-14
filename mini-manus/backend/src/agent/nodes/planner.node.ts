@@ -222,7 +222,8 @@ async function handlePlanApproval(
     stepCount: planSteps.length,
     steps: stepSummaries,
   };
-  await callbacks.setRunAwaitingApproval(state.runId, planReviewInfo);
+  // DB 状态由外层 while loop 在检测到 __interrupt__ 后统一写入，
+  // 不在此处调用 setRunAwaitingApproval —— 避免 resume 时节点重跑导致状态闪回。
   const decision = interrupt(planReviewInfo);
   await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
   return decision;

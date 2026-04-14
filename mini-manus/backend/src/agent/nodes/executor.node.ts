@@ -17,6 +17,10 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
 import { Tool } from '@/tool/interfaces/tool.interface';
 import { STEP_RESULTS_PLACEHOLDER } from '@/agent/nodes/planner.node';
+import {
+  DB_RESULT_SUMMARY_MAX,
+  PROMPT_RETRY_HINT_MAX,
+} from '@/common/constants/system-limits';
 
 /**
  * 解析 skillInput 中的 __STEP_RESULTS__ 占位符（仅检查顶层字符串值）。
@@ -182,7 +186,7 @@ async function resolveToolCallViaLLM(
   // 重试时带上前次失败原因，让 LLM 选择不同参数（如换一个 URL）
   const retryHint =
     state.retryCount > 0 && state.lastStepOutput
-      ? `\n\n⚠️ 这是第 ${state.retryCount + 1} 次尝试，上次失败原因：${state.lastStepOutput.slice(0, 500)}\n请使用不同的参数重试。`
+      ? `\n\n⚠️ 这是第 ${state.retryCount + 1} 次尝试，上次失败原因：${state.lastStepOutput.slice(0, PROMPT_RETRY_HINT_MAX)}\n请使用不同的参数重试。`
       : '';
 
   if (signal.aborted) return { name: toolName, args: fallbackInput };
@@ -284,13 +288,15 @@ export async function executorNode(
   if (!step) throw new Error(`No step at index ${state.currentStepIndex}`);
 
   const usesSubAgent = Boolean(step.subAgent);
-  const usesSkill = !usesSubAgent && Boolean(
-    step.skillName && skillRegistry.has(step.skillName),
-  );
+  const usesSkill =
+    !usesSubAgent &&
+    Boolean(step.skillName && skillRegistry.has(step.skillName));
   // evaluator 降级时 fallbackTool 优先（resource_unavailable 场景）
   const effectiveToolName =
     (state.evaluation?.metadata as Record<string, string> | undefined)
-      ?.fallbackTool ?? step.toolHint ?? 'think';
+      ?.fallbackTool ??
+    step.toolHint ??
+    'think';
 
   logger.log(
     `step[${state.currentStepIndex}] ${
@@ -305,7 +311,8 @@ export async function executorNode(
   // ─── HITL interrupt 检查 ──────────────────────────────────────────────────
   // 根据 approvalMode 决定是否在执行前暂停等待人工确认
   const isSideEffect = usesSubAgent
-    ? (subAgentRegistry?.get(step.subAgent!)?.isSideEffect ?? step.subAgent === 'writer')
+    ? (subAgentRegistry?.get(step.subAgent!)?.isSideEffect ??
+      step.subAgent === 'writer')
     : usesSkill
       ? skillRegistry.get(step.skillName!).effect === 'side-effect'
       : toolRegistry.has(step.toolHint ?? '')
@@ -323,10 +330,8 @@ export async function executorNode(
       isSideEffect,
       toolOrSkill: step.toolHint ?? step.skillName ?? 'unknown',
     };
-    // 持久化 AWAITING_APPROVAL 状态（在 interrupt 之前，防止状态丢失）
-    await callbacks.setRunAwaitingApproval(state.runId, stepInfo);
-
-    // LangGraph interrupt：暂停图执行，等待外部 resume
+    // DB 状态由外层 while loop 在检测到 __interrupt__ 后统一写入，
+    // 不在此处调用 setRunAwaitingApproval —— 避免 resume 时节点重跑导致状态闪回。
     const decision = interrupt(stepInfo);
 
     // resume 后恢复执行
@@ -524,7 +529,7 @@ export async function executorNode(
 
       if (signal.aborted) throw new Error('cancelled');
 
-      const subAgentSummary = subAgentOutput.slice(0, 500);
+      const subAgentSummary = subAgentOutput.slice(0, DB_RESULT_SUMMARY_MAX);
 
       await callbacks.updateStepRun(stepRun.id, {
         executorType: ExecutorType.SKILL,
@@ -612,7 +617,7 @@ export async function executorNode(
         logger.warn(`${toolName} ✗ ${failureContext!.slice(0, 120)}`);
       }
       const resultSummary = toolResult.success
-        ? toolResult.output.slice(0, 500)
+        ? toolResult.output.slice(0, DB_RESULT_SUMMARY_MAX)
         : failureContext;
 
       await callbacks.updateStepRun(stepRun.id, {

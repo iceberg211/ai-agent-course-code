@@ -51,8 +51,6 @@ function mockState(overrides: Partial<AgentState> = {}): AgentState {
     lastStepOutput: '',
     usedTokens: 0,
     tokenBudget: 100_000,
-    parallelStepOutputs: [],
-    parallelTopicIdx: -1,
     ...overrides,
   };
 }

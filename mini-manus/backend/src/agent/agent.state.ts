@@ -92,19 +92,6 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, b) => b,
     default: () => 100_000,
   }),
-  // 并行 fan-out 结果收集（Send API 专用）
-  // reducer 用 append，允许多个并行分支安全合并而不互相覆盖
-  parallelStepOutputs: Annotation<
-    Array<{ stepIndex: number; output: string; sources?: string[] }>
-  >({
-    reducer: (a, b) => [...a, ...b],
-    default: () => [],
-  }),
-  // 并行分支索引：Send API fan-out 时标记当前分支是第几个（-1 = 非并行路径）
-  parallelTopicIdx: Annotation<number>({
-    reducer: (_, b) => b,
-    default: () => -1,
-  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;
