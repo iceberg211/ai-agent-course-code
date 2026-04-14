@@ -34,6 +34,8 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 import { PlanSemanticValidationOptions } from '@/agent/plan-semantic-validator';
+import { WorkflowRegistry } from '@/agent/workflow.registry';
+import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 
 /** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
 const MODEL_PRICING: Record<
@@ -129,6 +131,8 @@ export class AgentService {
     private readonly workspace: WorkspaceService,
     private readonly eventPublisher: EventPublisher,
     private readonly browserSessions: BrowserSessionService,
+    private readonly workflowRegistry: WorkflowRegistry,
+    private readonly subAgentRegistry: SubAgentRegistry,
   ) {
     const llmCacheEnabled = readBoolean(
       config.get<string>('LLM_CACHE_ENABLED'),
@@ -270,6 +274,8 @@ export class AgentService {
             eventPublisher,
             soMethod,
             this.planValidationOptions,
+            this.workflowRegistry,
+            this.subAgentRegistry,
           ),
         );
       })
@@ -352,6 +358,7 @@ export class AgentService {
             this.stepTimeoutMs,
             this.skillTimeoutMs,
             soMethod,
+            this.subAgentRegistry,
           ),
         );
       })

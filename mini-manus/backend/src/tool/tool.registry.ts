@@ -86,15 +86,24 @@ export class ToolRegistry implements OnModuleInit {
     const t = this.get(name);
     const registry = this;
 
-    // 从暴露给 LLM 的 schema 中移除注入字段，避免 LLM 填写实现细节
+    // 从暴露给 LLM 的 schema 中移除注入字段，避免 LLM 填写实现细节。
+    // 注意：只 omit 实际存在于 schema 中的 key；omit 不存在的 key 会导致 Zod 切换到 strict 模式。
+    // 显式调用 .strip() 保证 strip 模式（允许多余字段），防止 executeWithCache 注入字段时报错。
     let schema: z.ZodTypeAny = t.schema;
     if (injectArgs && Object.keys(injectArgs).length > 0) {
       try {
         const obj = t.schema as z.ZodObject<z.ZodRawShape>;
-        const omitShape = Object.fromEntries(
-          Object.keys(injectArgs).map((k) => [k, true as const]),
-        ) as { [K in string]: true };
-        schema = obj.omit(omitShape);
+        // 只 omit 在 schema.shape 中实际存在的 key
+        const existingKeys = Object.keys(injectArgs).filter(
+          (k) => k in obj.shape,
+        );
+        if (existingKeys.length > 0) {
+          const omitShape = Object.fromEntries(
+            existingKeys.map((k) => [k, true as const]),
+          ) as { [K in string]: true };
+          schema = obj.omit(omitShape).strip();
+        }
+        // 若无可 omit 的 key，保留原始 schema（已是 strip 模式）
       } catch {
         // schema 不是 ZodObject（极少数情况），保持原样
       }

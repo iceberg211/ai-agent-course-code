@@ -129,7 +129,9 @@ describe('evaluatorNode — runPreChecks', () => {
         2, // maxReplans=2, replanCount=2 → 超限
       );
 
-      expect((result.evaluation as EvaluationResult | null)?.decision).toBe('fail');
+      expect((result.evaluation as EvaluationResult | null)?.decision).toBe(
+        'fail',
+      );
     });
   });
 
@@ -151,7 +153,9 @@ describe('evaluatorNode — runPreChecks', () => {
         2,
       );
 
-      expect((result.evaluation as EvaluationResult | null)?.decision).toBe('retry');
+      expect((result.evaluation as EvaluationResult | null)?.decision).toBe(
+        'retry',
+      );
     });
 
     it('普通错误 retryCount >= maxRetries → replan', async () => {
@@ -171,7 +175,9 @@ describe('evaluatorNode — runPreChecks', () => {
         2,
       );
 
-      expect((result.evaluation as EvaluationResult | null)?.decision).toBe('replan');
+      expect((result.evaluation as EvaluationResult | null)?.decision).toBe(
+        'replan',
+      );
     });
   });
 

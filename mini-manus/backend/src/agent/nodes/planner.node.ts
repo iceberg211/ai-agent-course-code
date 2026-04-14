@@ -12,7 +12,11 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
-import { plannerPrompt, INTENT_GUIDANCE, templateParamExtractionPrompt } from '@/prompts';
+import {
+  plannerPrompt,
+  INTENT_GUIDANCE,
+  templateParamExtractionPrompt,
+} from '@/prompts';
 import {
   PlanSemanticValidationOptions,
   validatePlanSemantics,
@@ -23,25 +27,19 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
 import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
 import { RunStatus } from '@/common/enums';
+import { WorkflowRegistry, WorkflowBuilder } from '@/agent/workflow.registry';
+import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 
 // ─── 确定性 Workflow ─────────────────────────────────────────────────────────
 // 高频意图的固定计划，代码直接返回，不经 LLM Planner。
 // 技能选择和步骤顺序是确定的，只有技能内部的工具调用是动态的。
 //
 // 占位符 __STEP_RESULTS__：executor 在运行时替换为前序步骤的真实输出。
+// DETERMINISTIC_WORKFLOWS 保留导出供测试直接使用；
+// 运行时由 AgentModule.onModuleInit 注册到 WorkflowRegistry。
 
 /** 步骤结果占位符，executor 在执行前替换为真实 stepResults 摘要 */
 export const STEP_RESULTS_PLACEHOLDER = '__STEP_RESULTS__';
-
-type WorkflowContext = {
-  toolRegistry: ToolRegistry;
-  skillRegistry: SkillRegistry;
-};
-
-type WorkflowBuilder = (
-  state: AgentState,
-  ctx: WorkflowContext,
-) => PlanStepDef[];
 
 export const DETERMINISTIC_WORKFLOWS: Partial<
   Record<TaskIntent, WorkflowBuilder>
@@ -88,6 +86,21 @@ export const DETERMINISTIC_WORKFLOWS: Partial<
       description: `基于调研结果撰写并输出完整报告文件`,
       subAgent: 'writer' as const,
       objective: `报告主题：${state.revisionInput}。\n\n前序调研摘要：\n${STEP_RESULTS_PLACEHOLDER}\n\n请基于以上材料撰写完整的调研报告，保存为 task-report.md，同时导出 task-report.pdf。`,
+    },
+  ],
+
+  competitive_analysis: (state, _ctx) => [
+    {
+      stepIndex: 0,
+      description: `对两个对比对象进行系统性调研`,
+      subAgent: 'researcher' as const,
+      objective: `对比调研：${state.revisionInput}。\n\n请系统搜索两个对比对象的官方文档、技术博客和第三方评测，重点收集架构设计、性能表现、集成能力、开发体验和成本模型等维度的数据。每个对象都要有充分的资料支撑，最终输出全面的调研摘要。`,
+    },
+    {
+      stepIndex: 1,
+      description: `基于调研结果撰写并输出完整对比报告文件`,
+      subAgent: 'writer' as const,
+      objective: `对比报告主题：${state.revisionInput}。\n\n前序调研摘要：\n${STEP_RESULTS_PLACEHOLDER}\n\n请基于以上材料撰写结构完整的对比报告（至少包含：架构差异、性能、集成能力、定价、适用场景），保存为 comparison-report.md，同时导出 comparison-report.pdf。`,
     },
   ],
 };
@@ -185,6 +198,7 @@ async function handlePlanApproval(
   skillRegistry: SkillRegistry,
   toolRegistry: ToolRegistry,
   callbacks: AgentCallbacks,
+  subAgentRegistry?: SubAgentRegistry,
 ): Promise<'approved' | 'rejected'> {
   const stepSummaries = planSteps.map((s) => ({
     stepIndex: s.stepIndex,
@@ -193,7 +207,8 @@ async function handlePlanApproval(
       ? `subagent:${s.subAgent}`
       : (s.skillName ?? s.toolHint ?? 'think'),
     isSideEffect: s.subAgent
-      ? s.subAgent === 'writer'
+      ? (subAgentRegistry?.get(s.subAgent)?.isSideEffect ??
+        s.subAgent === 'writer')
       : (s.skillName && skillRegistry.has(s.skillName)
           ? skillRegistry.get(s.skillName).effect === 'side-effect'
           : false) ||
@@ -223,6 +238,8 @@ export async function plannerNode(
   eventPublisher: EventPublisher,
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
   validationOptions: PlanSemanticValidationOptions = {},
+  workflowRegistry?: WorkflowRegistry,
+  subAgentRegistry?: SubAgentRegistry,
 ): Promise<Partial<AgentState>> {
   const isReplan = state.replanCount > 0;
   // replan 时 router 被跳过，planner 自己发事件
@@ -235,9 +252,11 @@ export async function plannerNode(
   }
 
   // ─── 确定性 Workflow：高频意图代码直接返回固定计划，不调 LLM ────────────────
+  // registry 优先（可注入自定义 workflow）；fallback 到模块级 DETERMINISTIC_WORKFLOWS。
   // replan 时不走确定性路径，改用 LLM 重新规划（首次策略可能有问题）
   const workflowBuilder = !isReplan
-    ? DETERMINISTIC_WORKFLOWS[state.taskIntent]
+    ? (workflowRegistry?.get(state.taskIntent) ??
+      DETERMINISTIC_WORKFLOWS[state.taskIntent])
     : undefined;
 
   if (workflowBuilder) {
@@ -259,6 +278,7 @@ export async function plannerNode(
         skillRegistry,
         toolRegistry,
         callbacks,
+        subAgentRegistry,
       );
       if (decision === 'rejected') {
         return { shouldStop: true, errorMessage: 'plan_rejected' };
@@ -306,6 +326,7 @@ export async function plannerNode(
         skillRegistry,
         toolRegistry,
         callbacks,
+        subAgentRegistry,
       );
       if (decision === 'rejected') {
         return { shouldStop: true, errorMessage: 'plan_rejected' };
@@ -529,6 +550,7 @@ export async function plannerNode(
       skillRegistry,
       toolRegistry,
       callbacks,
+      subAgentRegistry,
     );
     if (decision === 'rejected') {
       return { shouldStop: true, errorMessage: 'plan_rejected' };

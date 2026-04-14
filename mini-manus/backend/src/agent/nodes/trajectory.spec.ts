@@ -15,6 +15,8 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
 import { EventPublisher } from '@/event/event.publisher';
 import { BrowserSessionService } from '@/browser/browser-session.service';
+import { WorkflowRegistry } from '@/agent/workflow.registry';
+import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 import type { AgentCallbacks } from '@/agent/agent.callbacks';
 import { RunStatus, StepStatus } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
@@ -167,6 +169,8 @@ describe('Trajectory: general intent → think step → complete', () => {
       { getTaskDir: jest.fn().mockReturnValue('/tmp') } as unknown as WorkspaceService,
       eventPublisher as unknown as EventPublisher,
       { closeRun: jest.fn() } as unknown as BrowserSessionService,
+      { register: jest.fn(), get: jest.fn(), has: jest.fn(), getIntents: jest.fn().mockReturnValue([]) } as unknown as WorkflowRegistry,
+      { register: jest.fn(), get: jest.fn(), has: jest.fn(), getNames: jest.fn().mockReturnValue([]) } as unknown as SubAgentRegistry,
     );
 
     // 替换 LLM 的 withStructuredOutput（处理 structured output 调用）
@@ -270,6 +274,8 @@ describe('Trajectory: cancel mid-run', () => {
       { getTaskDir: jest.fn().mockReturnValue('/tmp') } as unknown as WorkspaceService,
       eventPublisher as unknown as EventPublisher,
       { closeRun: jest.fn() } as unknown as BrowserSessionService,
+      { register: jest.fn(), get: jest.fn(), has: jest.fn(), getIntents: jest.fn().mockReturnValue([]) } as unknown as WorkflowRegistry,
+      { register: jest.fn(), get: jest.fn(), has: jest.fn(), getNames: jest.fn().mockReturnValue([]) } as unknown as SubAgentRegistry,
     );
 
     // Router → general, Planner → plan, Evaluator 时 cancel flag 已为 true

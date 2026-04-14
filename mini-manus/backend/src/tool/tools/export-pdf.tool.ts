@@ -11,7 +11,10 @@ import { WorkspaceService } from '@/workspace/workspace.service';
 const schema = z.object({
   task_id: z.string().uuid(),
   title: z.string().min(1).describe('PDF 标题'),
-  content: z.string().min(1).describe('需要写入 PDF 的纯文本/Markdown/代码内容'),
+  content: z
+    .string()
+    .min(1)
+    .describe('需要写入 PDF 的纯文本/Markdown/代码内容'),
   path: z
     .string()
     .min(1)
@@ -33,11 +36,7 @@ export class ExportPdfTool implements Tool {
     try {
       const { task_id, title, content, path: outputPath } = schema.parse(input);
       const normalizedPath = outputPath
-        ? outputPath
-            .split('/')
-            .filter(Boolean)
-            .map(sanitizeFilename)
-            .join('/')
+        ? outputPath.split('/').filter(Boolean).map(sanitizeFilename).join('/')
         : 'task-report.pdf';
       const safePath = this.workspace.resolveSafePath(task_id, normalizedPath);
       const pdfBytes = await createPdfBufferFromText(title, content);

@@ -131,13 +131,31 @@ describe('Deterministic Workflows', () => {
     });
   });
 
-  describe('不应有确定性 workflow 的意图', () => {
-    it.each(['competitive_analysis', 'content_writing', 'general'] as const)(
+  describe('没有确定性 workflow 的意图', () => {
+    it.each(['content_writing', 'general'] as const)(
       '%s 走 LLM Planner',
       (intent) => {
         expect(DETERMINISTIC_WORKFLOWS[intent]).toBeUndefined();
       },
     );
+  });
+
+  describe('competitive_analysis', () => {
+    it('应返回固定计划：researcher SubAgent → writer SubAgent', () => {
+      const builder = DETERMINISTIC_WORKFLOWS.competitive_analysis!;
+      const state = mockState({
+        taskIntent: 'competitive_analysis',
+        revisionInput: 'Supabase 与 Firebase 对比',
+      });
+
+      const steps = builder(state, mockCtx);
+
+      expect(steps).toHaveLength(2);
+      expect(steps[0].subAgent).toBe('researcher');
+      expect(steps[0].objective).toContain(state.revisionInput);
+      expect(steps[1].subAgent).toBe('writer');
+      expect(steps[1].objective).toContain(STEP_RESULTS_PLACEHOLDER);
+    });
   });
 
   describe('通用校验', () => {

@@ -8,6 +8,7 @@ import { toolCallingPrompt } from '@/prompts';
 import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
 import { runSubAgent } from '@/agent/subagents/react-subagent';
+import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
@@ -275,6 +276,7 @@ export async function executorNode(
   stepTimeoutMs: number,
   skillTimeoutMs: number,
   soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
+  subAgentRegistry?: SubAgentRegistry,
 ): Promise<Partial<AgentState>> {
   if (!state.currentPlan) throw new Error('No plan available');
 
@@ -303,7 +305,7 @@ export async function executorNode(
   // ─── HITL interrupt 检查 ──────────────────────────────────────────────────
   // 根据 approvalMode 决定是否在执行前暂停等待人工确认
   const isSideEffect = usesSubAgent
-    ? step.subAgent === 'writer' // writer SubAgent 有写操作（side-effect）
+    ? (subAgentRegistry?.get(step.subAgent!)?.isSideEffect ?? step.subAgent === 'writer')
     : usesSkill
       ? skillRegistry.get(step.skillName!).effect === 'side-effect'
       : toolRegistry.has(step.toolHint ?? '')
@@ -499,13 +501,22 @@ export async function executorNode(
         message: `SubAgent [${subAgentName}] 启动中…`,
       });
 
+      if (!subAgentRegistry) {
+        throw new Error(
+          `SubAgent step "${subAgentName}" 需要 SubAgentRegistry，但未注入。请检查 AgentModule 配置。`,
+        );
+      }
       const subAgentOutput = await withTimeout(
         runSubAgent(
           subAgentName,
           resolvedObjective,
           state.taskId,
+          state.runId,
+          stepRun.id,
           llm,
           toolRegistry,
+          subAgentRegistry,
+          eventPublisher,
           signal,
         ),
         skillTimeoutMs,
