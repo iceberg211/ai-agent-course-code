@@ -5,19 +5,11 @@ export interface StepResult {
   stepRunId: string;
   description: string;
   resultSummary: string;
-  /** 工具/Skill 的真实输出（截断），供后续步骤 Tool Calling 读取真实数据 */
+  /** Real tool/skill output (truncated), for subsequent steps to read */
   toolOutput?: string;
   executionOrder: number;
 }
 
-export interface EvaluationResult {
-  decision: 'continue' | 'retry' | 'replan' | 'complete' | 'fail';
-  reason: string;
-  errorCode?: string;
-  metadata?: Record<string, unknown>;
-}
-
-/** 意图路由结果，决定 Planner 使用哪种规划策略 */
 export type TaskIntent =
   | 'code_generation'
   | 'research_report'
@@ -31,11 +23,9 @@ export interface PlanStepDef {
   skillName?: string | null;
   skillInput?: Record<string, unknown> | null;
   toolHint?: string | null;
-  toolInput?: Record<string, unknown> | null; // Bug 2 fix: planner specifies exact tool input
-  // SubAgent：ReAct 子 Agent（createReactAgent 模式），替代"workflow disguised as Skill"反模式
-  // 当前支持: 'researcher'（搜索调研）| 'writer'（撰写文件）
+  toolInput?: Record<string, unknown> | null;
   subAgent?: string | null;
-  objective?: string | null; // SubAgent 执行目标（支持 __STEP_RESULTS__ 占位符）
+  objective?: string | null;
 }
 
 export interface PlanDef {
@@ -44,54 +34,34 @@ export interface PlanDef {
 }
 
 export const AgentStateAnnotation = Annotation.Root({
-  taskId: Annotation<string>({ reducer: (_, b) => b }),
-  runId: Annotation<string>({ reducer: (_, b) => b }),
-  revisionInput: Annotation<string>({ reducer: (_, b) => b }),
-  currentPlan: Annotation<PlanDef | null>({ reducer: (_, b) => b }),
-  currentStepIndex: Annotation<number>({ reducer: (_, b) => b }),
+  taskId: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  runId: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  userInput: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  approvalMode: Annotation<ApprovalMode>({
+    reducer: (_, b) => b,
+    default: () => 'none' as ApprovalMode,
+  }),
+
+  plan: Annotation<PlanDef | null>({ reducer: (_, b) => b, default: () => null }),
+  stepIndex: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+  intent: Annotation<TaskIntent>({
+    reducer: (_, b) => b,
+    default: () => 'general' as TaskIntent,
+  }),
+
   stepResults: Annotation<StepResult[]>({
     reducer: (a, b) => [...a, ...b],
     default: () => [],
   }),
-  replanCount: Annotation<number>({ reducer: (_, b) => b }),
-  retryCount: Annotation<number>({ reducer: (_, b) => b }),
-  evaluation: Annotation<EvaluationResult | null>({ reducer: (_, b) => b }),
-  executionOrder: Annotation<number>({ reducer: (_, b) => b }),
-  shouldStop: Annotation<boolean>({ reducer: (_, b) => b }),
-  errorMessage: Annotation<string | null>({ reducer: (_, b) => b }),
-  // Intent Router 输出，Planner 据此选择规划策略
-  taskIntent: Annotation<TaskIntent>({
-    reducer: (_, b) => b,
-    default: () => 'general',
-  }),
-  // Router 输出的二级子类型（code_generation 下有 web_app/cli_tool 等）
-  taskIntentSubType: Annotation<string>({
-    reducer: (_, b) => b,
-    default: () => '',
-  }),
-  // HITL: approval mode carried through the run
-  approvalMode: Annotation<ApprovalMode>({
-    reducer: (_, b) => b,
-    default: () => 'none',
-  }),
-  // Bug 1 fix: pass step_run id and output through state so evaluator can read them
-  lastStepRunId: Annotation<string>({
-    reducer: (_, b) => b,
-    default: () => '',
-  }),
-  lastStepOutput: Annotation<string>({
-    reducer: (_, b) => b,
-    default: () => '',
-  }),
-  // 预算感知规划：planner 据此控制步骤数量
-  usedTokens: Annotation<number>({
-    reducer: (_, b) => b,
-    default: () => 0,
-  }),
-  tokenBudget: Annotation<number>({
-    reducer: (_, b) => b,
-    default: () => 100_000,
-  }),
+
+  lastStepRunId: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+  lastOutput: Annotation<string>({ reducer: (_, b) => b, default: () => '' }),
+
+  retryCount: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+  replanCount: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+  executionOrder: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+
+  error: Annotation<string | null>({ reducer: (_, b) => b, default: () => null }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;
