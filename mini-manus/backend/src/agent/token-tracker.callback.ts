@@ -1,40 +1,61 @@
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import type { LLMResult } from '@langchain/core/outputs';
 
+export interface NodeTokenUsage {
+  nodeName: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number | null;
+}
+
 /**
  * 统计单次 Run 内所有 LLM 调用的 token 用量。
+ *
+ * 功能：
+ *  1. Run 级聚合（inputTokens / outputTokens / totalTokens）
+ *  2. 节点级明细（通过 withTag(nodeName) 标记当前调用节点）
+ *
+ * 用法：
+ *   const tracker = new TokenTrackerCallback();
+ *   // 在 planner 调用前：
+ *   tracker.setCurrentNode('planner');
+ *   await chain.invoke(..., { callbacks: [tracker] });
+ *   tracker.clearCurrentNode();
  *
  * 兼容多种 provider 的 usage 字段路径：
  *  - OpenAI / Azure：llmOutput.tokenUsage.{ promptTokens, completionTokens }
  *  - Qwen / DashScope：llmOutput.usage.{ input_tokens, output_tokens }
- *  - 宽松兜底：逐个字段名尝试，找到第一个非 0 值
- *
- * 用法：
- *   const tracker = new TokenTrackerCallback();
- *   await compiled.invoke(state, { callbacks: [tracker] });
- *   console.log(tracker.inputTokens, tracker.outputTokens);
  */
 export class TokenTrackerCallback extends BaseCallbackHandler {
   name = 'TokenTrackerCallback';
 
   private _inputTokens = 0;
   private _outputTokens = 0;
+  private _currentNode: string | null = null;
+  private _nodeUsages: NodeTokenUsage[] = [];
+  private _nodeStartMs: number | null = null;
 
-  get inputTokens() {
-    return this._inputTokens;
+  get inputTokens() { return this._inputTokens; }
+  get outputTokens() { return this._outputTokens; }
+  get totalTokens() { return this._inputTokens + this._outputTokens; }
+  get nodeUsages(): readonly NodeTokenUsage[] { return this._nodeUsages; }
+
+  /** 标记接下来的 LLM 调用属于哪个节点 */
+  setCurrentNode(nodeName: string): void {
+    this._currentNode = nodeName;
+    this._nodeStartMs = Date.now();
   }
-  get outputTokens() {
-    return this._outputTokens;
-  }
-  get totalTokens() {
-    return this._inputTokens + this._outputTokens;
+
+  clearCurrentNode(): void {
+    this._currentNode = null;
+    this._nodeStartMs = null;
   }
 
   async handleLLMEnd(output: LLMResult): Promise<void> {
     const llmOut = output.llmOutput as Record<string, unknown> | undefined;
     if (!llmOut) return;
 
-    // 尝试多条路径，取第一个有效值
     const usage =
       (llmOut['tokenUsage'] as Record<string, unknown> | undefined) ??
       (llmOut['usage'] as Record<string, unknown> | undefined) ??
@@ -56,5 +77,19 @@ export class TokenTrackerCallback extends BaseCallbackHandler {
 
     this._inputTokens += inp;
     this._outputTokens += out;
+
+    // 记录节点级明细
+    if (this._currentNode) {
+      const durationMs = this._nodeStartMs != null
+        ? Date.now() - this._nodeStartMs
+        : null;
+      this._nodeUsages.push({
+        nodeName: this._currentNode,
+        inputTokens: inp,
+        outputTokens: out,
+        totalTokens: inp + out,
+        durationMs,
+      });
+    }
   }
 }

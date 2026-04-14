@@ -58,6 +58,7 @@ function createService(dataSource: object) {
     } as unknown as AgentService,
     eventPublisher as unknown as EventPublisher,
     workspace as unknown as WorkspaceService,
+    { create: jest.fn((v: unknown) => v), save: jest.fn() } as any, // llmCallLogRepo
   );
 
   return {
@@ -537,11 +538,16 @@ describe('deleteTask 级联删除顺序', () => {
 
     await service.deleteTask('task-1');
 
-    // Artifact 和 StepRun 必须在 PlanStep 之前删除（外键顺序）
+    // LlmCallLog/Artifact/StepRun 必须在它们依赖的父记录之前删除（外键顺序）
+    const llmCallLogIdx = deleteOrder.findIndex((n) =>
+      n.includes('LlmCallLog'),
+    );
     const artifactIdx = deleteOrder.findIndex((n) => n.includes('Artifact'));
     const stepRunIdx = deleteOrder.findIndex((n) => n.includes('StepRun'));
     const planStepIdx = deleteOrder.findIndex((n) => n.includes('PlanStep'));
+    const taskRunIdx = deleteOrder.findIndex((n) => n.includes('TaskRun'));
 
+    expect(llmCallLogIdx).toBeLessThan(taskRunIdx);
     expect(artifactIdx).toBeLessThan(planStepIdx);
     expect(stepRunIdx).toBeLessThan(planStepIdx);
   });

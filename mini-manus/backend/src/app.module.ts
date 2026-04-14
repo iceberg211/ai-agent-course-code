@@ -39,7 +39,7 @@ const envSchema = z
     PLANNER_ALLOWED_SIDE_EFFECT_TOOLS: z
       .string()
       .default(
-        'write_file,download_file,export_pdf,browser_screenshot,sandbox_run_node,sandbox_run_python',
+        'write_file,download_file,export_pdf,browser_screenshot,browser_click,browser_type,sandbox_run_node,sandbox_run_python',
       ),
     PLANNER_ALLOWED_SIDE_EFFECT_SKILLS: z
       .string()

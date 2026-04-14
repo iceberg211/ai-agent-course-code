@@ -234,6 +234,25 @@ export async function fetchTaskEvents(
   return data
 }
 
+export interface LlmCallLogEntry {
+  id: string
+  nodeName: string
+  modelName: string | null
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimatedCostUsd: number | string | null
+  durationMs: number | null
+  createdAt: string
+}
+
+export async function fetchLlmCallLogs(taskId: string, runId: string) {
+  const { data } = await apiClient.get<LlmCallLogEntry[]>(
+    `/tasks/${taskId}/runs/${runId}/llm-calls`,
+  )
+  return data
+}
+
 export async function deleteTask(taskId: string) {
   await apiClient.delete(`/tasks/${taskId}`)
 }

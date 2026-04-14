@@ -1375,14 +1375,14 @@ interface AgentWorkerOutput {
 | 17 | WebSocket 认证 | 原型可用 | 后端支持 token | 前端配置 + 部署说明 |
 | 18 | 健康检查 | 工程可维护 | GET /api/health + DB | — |
 | 19 | 浏览器只读 | 演示稳定 | Playwright open/extract/screenshot | 补真实 Chromium 冒烟测试 |
-| 20 | **Planner 粒度升级** | **未做（架构关键）** | — | **Plan 从"工具调用+参数"升级为"能力步骤+objective"（Manus 模式），根治静态参数绑定问题** |
-| 21 | **确定性 workflow** | **未做** | — | **高频意图（code_generation / research_report）代码直接返回固定计划，不经 LLM** |
-| 22 | **代码执行沙箱** | **未做** | — | **Docker 方案 A，需带安全 checklist。代码生成闭环的前置条件** |
-| 23 | Tool Calling fail-closed | 原型可用 | 动态参数工具已不 fallback 到 Planner 幻觉 | 补单元测试和结构化错误码 |
-| 24 | 节点级 token 明细 | 未做 | — | llm_call_logs 表 |
+| 20 | Planner 粒度升级 | **工程可维护** | — | **Plan 从"工具调用+参数"升级为"能力步骤+objective"（Manus 模式），根治静态参数绑定问题** |
+| 21 | 确定性 workflow | **工程可维护** | — | **高频意图（code_generation / research_report）代码直接返回固定计划，不经 LLM** |
+| 22 | 代码执行沙箱 | **演示稳定** | — | **Docker 方案 A，需带安全 checklist。代码生成闭环的前置条件** |
+| 23 | Tool Calling fail-closed | **工程可维护** | DYNAMIC_PARAM_TOOLS + code_execution_failed + evaluator 直接 replan | — |
+| 24 | 节点级 token 明细 | **演示稳定** | llm_call_logs 表 + TokenTrackerCallback 节点标记 | 补 API 查询和前端展示 |
 | 25 | 每日配额表 | 未做 | — | api_clients + api_usage_daily |
 | 26 | Artifact 级记忆（第二层） | 未做 | — | 结构化摘要复用 |
-| 27 | 浏览器交互 | 未做 | — | click/type，VNC token 需改为 session 代理方式 |
+| 27 | 浏览器交互 | **演示稳定** | browser_click / browser_type / browser_wait_for_selector 已实现 | 补 audit 日志、域名 allowlist |
 | 28 | 多 Agent 编排 | 未做 | — | 先 Agent Skill → Supervisor |
 
 ### 13.1 第一个迭代：工程健康

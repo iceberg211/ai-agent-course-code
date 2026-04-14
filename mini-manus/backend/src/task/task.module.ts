@@ -9,6 +9,7 @@ import { TaskPlan } from '@/task/entities/task-plan.entity';
 import { PlanStep } from '@/task/entities/plan-step.entity';
 import { StepRun } from '@/task/entities/step-run.entity';
 import { Artifact } from '@/task/entities/artifact.entity';
+import { LlmCallLog } from '@/task/entities/llm-call-log.entity';
 import { AgentModule } from '@/agent/agent.module';
 import { EventModule } from '@/event/event.module';
 import { WorkspaceModule } from '@/workspace/workspace.module';
@@ -23,6 +24,7 @@ import { WorkspaceModule } from '@/workspace/workspace.module';
       PlanStep,
       StepRun,
       Artifact,
+      LlmCallLog,
     ]),
     AgentModule,
     EventModule,

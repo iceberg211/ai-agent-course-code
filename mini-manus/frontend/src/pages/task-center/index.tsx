@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import "@/pages/task-center/task-center.scss";
+import "@/pages/task-center/task-center.css";
 import { ArtifactSection } from "@/domains/artifact/components/artifact-section";
 import { useArtifactSelectionSync } from "@/domains/artifact/hooks/use-artifact-selection-sync";
 import { useSelectedArtifact } from "@/domains/artifact/hooks/use-selected-artifact";
@@ -176,6 +177,7 @@ export function TaskCenterPage() {
             <details className="task-metrics-disclosure">
               <summary>执行指标</summary>
               <RunDebugPanel
+                taskId={selectedTaskId}
                 liveRunFeed={liveRunFeed}
                 runDetail={currentRun ?? null}
               />

@@ -55,6 +55,51 @@ export interface BrowserOpenResult {
   status: number | null;
 }
 
+// ─── B2：交互工具接口 ──────────────────────────────────────────────────────────
+
+export interface BrowserClickOptions {
+  sessionId: string;
+  selector: string;
+  timeoutMs?: number;
+}
+
+export interface BrowserClickResult {
+  sessionId: string;
+  title: string;
+  url: string;
+  clicked: boolean;
+}
+
+export interface BrowserTypeOptions {
+  sessionId: string;
+  selector: string;
+  text: string;
+  clearFirst?: boolean;  // 先清空再输入，默认 false
+  timeoutMs?: number;
+}
+
+export interface BrowserTypeResult {
+  sessionId: string;
+  title: string;
+  url: string;
+}
+
+export interface BrowserWaitForSelectorOptions {
+  sessionId: string;
+  selector: string;
+  state?: 'attached' | 'detached' | 'visible' | 'hidden';
+  timeoutMs?: number;
+}
+
+export interface BrowserWaitForSelectorResult {
+  sessionId: string;
+  title: string;
+  url: string;
+  found: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface BrowserExtractOptions {
   sessionId: string;
   selector?: string;
@@ -264,6 +309,72 @@ export class BrowserSessionService implements OnModuleInit, OnModuleDestroy {
       buffer,
       sizeBytes: buffer.byteLength,
     };
+  }
+
+  // ─── B2：交互方法 ──────────────────────────────────────────────────────────
+
+  async click(options: BrowserClickOptions): Promise<BrowserClickResult> {
+    this.ensureEnabled();
+    const session = await this.getSession(options.sessionId);
+    const timeout = this.normalizeTimeout(options.timeoutMs ?? this.actionTimeoutMs);
+
+    await session.page.locator(options.selector).first().click({ timeout });
+    session.lastUsedAt = new Date();
+
+    return {
+      sessionId: session.id,
+      title: await session.page.title(),
+      url: session.page.url(),
+      clicked: true,
+    };
+  }
+
+  async type(options: BrowserTypeOptions): Promise<BrowserTypeResult> {
+    this.ensureEnabled();
+    const session = await this.getSession(options.sessionId);
+    const timeout = this.normalizeTimeout(options.timeoutMs ?? this.actionTimeoutMs);
+    const locator = session.page.locator(options.selector).first();
+
+    if (options.clearFirst) {
+      await locator.clear({ timeout });
+    }
+    await locator.type(options.text, { timeout });
+    session.lastUsedAt = new Date();
+
+    return {
+      sessionId: session.id,
+      title: await session.page.title(),
+      url: session.page.url(),
+    };
+  }
+
+  async waitForSelector(
+    options: BrowserWaitForSelectorOptions,
+  ): Promise<BrowserWaitForSelectorResult> {
+    this.ensureEnabled();
+    const session = await this.getSession(options.sessionId);
+    const timeout = this.normalizeTimeout(options.timeoutMs ?? this.actionTimeoutMs);
+
+    try {
+      await session.page.waitForSelector(options.selector, {
+        state: options.state ?? 'visible',
+        timeout,
+      });
+      session.lastUsedAt = new Date();
+      return {
+        sessionId: session.id,
+        title: await session.page.title(),
+        url: session.page.url(),
+        found: true,
+      };
+    } catch {
+      return {
+        sessionId: session.id,
+        title: await session.page.title(),
+        url: session.page.url(),
+        found: false,
+      };
+    }
   }
 
   async closeRun(runId: string): Promise<number> {

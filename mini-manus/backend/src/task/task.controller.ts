@@ -123,6 +123,19 @@ export class TaskController {
     return this.taskService.getRunDetail(taskId, runId);
   }
 
+  // ─── 节点级 LLM 调用明细（P24）────────────────────────────
+  @Get(':id/runs/:runId/llm-calls')
+  @ApiOperation({ summary: '获取 Run 的节点级 LLM 调用 token 明细' })
+  @ApiParam({ name: 'id', description: '任务 UUID' })
+  @ApiParam({ name: 'runId', description: 'Run UUID' })
+  @ApiResponse({ status: 200, description: 'LLM 调用日志数组（按节点顺序）' })
+  getLlmCallLogs(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) taskId: string,
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+  ) {
+    return this.taskService.listLlmCallLogs(taskId, runId);
+  }
+
   // ─── 取消当前 Run ─────────────────────────────────────────
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)

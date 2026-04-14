@@ -148,7 +148,7 @@ export class AgentService {
       allowedSideEffectTools: readCsv(
         config.get<string>(
           'PLANNER_ALLOWED_SIDE_EFFECT_TOOLS',
-          'write_file,download_file,export_pdf,browser_screenshot,sandbox_run_node,sandbox_run_python',
+          'write_file,download_file,export_pdf,browser_screenshot,browser_click,browser_type,sandbox_run_node,sandbox_run_python',
         ),
       ),
       allowedSideEffectSkills: readCsv(
@@ -206,58 +206,83 @@ export class AgentService {
     );
 
     // Build StateGraph
+    // P24：每个节点调用前/后通过 tokenTracker 标记节点名，
+    // handleLLMEnd 会把 token 用量记入对应节点的 nodeUsages。
+    const trackNode = async <T>(
+      nodeName: string,
+      runNode: () => Promise<T>,
+    ): Promise<T> => {
+      tokenTracker.setCurrentNode(nodeName);
+      try {
+        return await runNode();
+      } finally {
+        tokenTracker.clearCurrentNode();
+      }
+    };
+
     const graph = new StateGraph(AgentStateAnnotation)
       .addNode('router', async (state: AgentState) => {
-        return routerNode(state, llm, eventPublisher, soMethod);
+        return trackNode('router', () =>
+          routerNode(state, llm, eventPublisher, soMethod),
+        );
       })
       .addNode('planner', async (state: AgentState) => {
-        return plannerNode(
-          state,
-          llm,
-          skillRegistry,
-          toolRegistry,
-          callbacks,
-          eventPublisher,
-          soMethod,
-          this.planValidationOptions,
+        return trackNode('planner', () =>
+          plannerNode(
+            state,
+            llm,
+            skillRegistry,
+            toolRegistry,
+            callbacks,
+            eventPublisher,
+            soMethod,
+            this.planValidationOptions,
+          ),
         );
       })
       .addNode('executor', async (state: AgentState) => {
-        return executorNode(
-          state,
-          llm,
-          toolRegistry,
-          skillRegistry,
-          workspace,
-          callbacks,
-          eventPublisher,
-          signal,
-          this.stepTimeoutMs,
-          this.skillTimeoutMs,
-          soMethod,
+        // executor 内部 Tool Calling 用 'executor:tool_calling' 标签
+        return trackNode('executor:tool_calling', () =>
+          executorNode(
+            state,
+            llm,
+            toolRegistry,
+            skillRegistry,
+            workspace,
+            callbacks,
+            eventPublisher,
+            signal,
+            this.stepTimeoutMs,
+            this.skillTimeoutMs,
+            soMethod,
+          ),
         );
       })
       .addNode('evaluator', async (state: AgentState) => {
-        return evaluatorNode(
-          state,
-          llm,
-          callbacks,
-          eventPublisher,
-          soMethod,
-          this.maxRetries,
-          this.maxReplans,
-          tokenBudgetGuard,
+        return trackNode('evaluator', () =>
+          evaluatorNode(
+            state,
+            llm,
+            callbacks,
+            eventPublisher,
+            soMethod,
+            this.maxRetries,
+            this.maxReplans,
+            tokenBudgetGuard,
+          ),
         );
       })
       .addNode('finalizer', async (state: AgentState) => {
-        return finalizerNode(
-          state,
-          llm,
-          callbacks,
-          eventPublisher,
-          this.exportPdfEnabled,
-          soMethod,
-          tokenBudgetGuard,
+        return trackNode('finalizer', () =>
+          finalizerNode(
+            state,
+            llm,
+            callbacks,
+            eventPublisher,
+            this.exportPdfEnabled,
+            soMethod,
+            tokenBudgetGuard,
+          ),
         );
       })
       .addEdge(START, 'router')
@@ -451,6 +476,21 @@ export class AgentService {
         this.logger.warn(
           `Failed to save token usage for run ${runId}: ${String(err)}`,
         );
+      }
+      // P24：保存节点级 LLM 明细
+      if (tokenTracker.nodeUsages.length > 0) {
+        try {
+          await callbacks.saveLlmCallLogs(
+            runId,
+            this.modelName,
+            tokenTracker.nodeUsages.map((u) => ({
+              ...u,
+              estimatedCostUsd: estimateCostUsd(this.modelName, u.inputTokens, u.outputTokens),
+            })),
+          );
+        } catch (err) {
+          this.logger.warn(`Failed to save llm_call_logs for run ${runId}: ${String(err)}`);
+        }
       }
       try {
         await this.browserSessions.closeRun(runId);

@@ -15,6 +15,7 @@ import { TaskPlan } from '@/task/entities/task-plan.entity';
 import { PlanStep } from '@/task/entities/plan-step.entity';
 import { StepRun } from '@/task/entities/step-run.entity';
 import { Artifact } from '@/task/entities/artifact.entity';
+import { LlmCallLog } from '@/task/entities/llm-call-log.entity';
 import {
   TaskStatus,
   RunStatus,
@@ -51,6 +52,8 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     private readonly agentService: AgentService,
     private readonly eventPublisher: EventPublisher,
     private readonly workspace: WorkspaceService,
+    @InjectRepository(LlmCallLog)
+    private readonly llmCallLogRepo: Repository<LlmCallLog>,
   ) {}
 
   // ─── Zombie run recovery ────────────────────────────────────────────────
@@ -363,6 +366,23 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
         });
       },
 
+      saveLlmCallLogs: async (rId, modelName, logs) => {
+        if (logs.length === 0) return;
+        const entities = logs.map((log) =>
+          this.llmCallLogRepo.create({
+            runId: rId,
+            nodeName: log.nodeName,
+            modelName,
+            inputTokens: log.inputTokens,
+            outputTokens: log.outputTokens,
+            totalTokens: log.totalTokens,
+            estimatedCostUsd: log.estimatedCostUsd,
+            durationMs: log.durationMs,
+          }),
+        );
+        await this.llmCallLogRepo.save(entities);
+      },
+
       finalize: async (tId) => {
         await this.finalizeRun(tId);
       },
@@ -539,6 +559,7 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
 
         // 删除顺序必须遵循外键依赖方向（被引用的表最后删）：
         // step_runs.plan_step_id → plan_steps  ← 先删 step_runs，再删 plan_steps
+        await em.delete(LlmCallLog, { runId: In(runIds) });
         await em.delete(Artifact, { runId: In(runIds) });
         await em.delete(StepRun, { runId: In(runIds) });
         if (planIds.length > 0) {
@@ -672,6 +693,18 @@ export class TaskService implements OnModuleInit, OnModuleDestroy {
     return this.runRepo.findOneOrFail({
       where: { id: runId, taskId },
       relations: ['plans', 'plans.steps', 'stepRuns', 'artifacts'],
+    });
+  }
+
+  /** P24：查询指定 run 的节点级 LLM 调用明细 */
+  async listLlmCallLogs(taskId: string, runId: string) {
+    // 先校验 run 归属
+    await this.runRepo.findOneOrFail({ where: { id: runId, taskId } });
+    return this.llmCallLogRepo.find({
+      where: { runId },
+      order: { createdAt: 'ASC' },
+      select: ['id', 'nodeName', 'modelName', 'inputTokens', 'outputTokens',
+               'totalTokens', 'estimatedCostUsd', 'durationMs', 'createdAt'],
     });
   }
 }

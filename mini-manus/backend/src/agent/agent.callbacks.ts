@@ -69,6 +69,21 @@ export interface AgentCallbacks {
       modelName: string;
     },
   ): Promise<void>;
+  /**
+   * P24：保存节点级 LLM 调用明细到 llm_call_logs。
+   */
+  saveLlmCallLogs(
+    runId: string,
+    modelName: string,
+    logs: Array<{
+      nodeName: string;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      estimatedCostUsd: number | null;
+      durationMs: number | null;
+    }>,
+  ): Promise<void>;
   /** HITL: 将 run 状态切为 AWAITING_APPROVAL 并记录待审批步骤信息 */
   setRunAwaitingApproval(
     runId: string,

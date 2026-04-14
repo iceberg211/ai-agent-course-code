@@ -1,10 +1,13 @@
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { LiveRunFeed, RunDetail } from '@/domains/run/types/run.types'
+import { fetchLlmCallLogs } from '@/core/api/task.api'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
 import { formatDateTime, formatDuration } from '@/shared/utils/date'
 
 interface RunDebugPanelProps {
+  taskId: string | null
   liveRunFeed: LiveRunFeed | null
   runDetail: RunDetail | null
 }
@@ -27,7 +30,15 @@ function formatUnknownNumber(value: unknown) {
   return Number.isFinite(num) ? String(num) : '--'
 }
 
-export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
+export function RunDebugPanel({ taskId, liveRunFeed, runDetail }: RunDebugPanelProps) {
+  // P24：节点级 token 明细
+  const llmCallsQuery = useQuery({
+    queryKey: ['llm-calls', taskId, runDetail?.id],
+    queryFn: () => fetchLlmCallLogs(taskId!, runDetail!.id),
+    enabled: !!taskId && !!runDetail?.id,
+    staleTime: 30_000,
+  })
+
   const metrics = useMemo(() => {
     if (!runDetail) return null
 
@@ -111,6 +122,8 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
     },
   ]
 
+  const llmCalls = llmCallsQuery.data ?? []
+
   return (
     <PanelSection title="Run Debug" subtitle="帮助我们快速观察本轮执行质量与交付情况">
       <div className="run-debug">
@@ -134,6 +147,35 @@ export function RunDebugPanel({ liveRunFeed, runDetail }: RunDebugPanelProps) {
             </article>
           ))}
         </div>
+
+        {/* P24：节点级 LLM 调用明细 */}
+        {llmCalls.length > 0 ? (
+          <div className="run-debug__llm-calls">
+            <p className="run-debug__label">节点 Token 明细</p>
+            <table className="run-debug__llm-table">
+              <thead>
+                <tr>
+                  <th>节点</th>
+                  <th>输入</th>
+                  <th>输出</th>
+                  <th>成本</th>
+                  <th>耗时</th>
+                </tr>
+              </thead>
+              <tbody>
+                {llmCalls.map((call) => (
+                  <tr key={call.id}>
+                    <td className="run-debug__llm-node">{call.nodeName}</td>
+                    <td>{call.inputTokens}</td>
+                    <td>{call.outputTokens}</td>
+                    <td>{formatCost(call.estimatedCostUsd)}</td>
+                    <td>{call.durationMs != null ? `${call.durationMs}ms` : '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
 
         {metrics.lastError ? (
           <div className="run-debug__error">

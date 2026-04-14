@@ -15,6 +15,9 @@ import { GitHubSearchTool } from '@/tool/tools/github-search.tool';
 import { BrowserOpenTool } from '@/tool/tools/browser/browser-open.tool';
 import { BrowserExtractTool } from '@/tool/tools/browser/browser-extract.tool';
 import { BrowserScreenshotTool } from '@/tool/tools/browser/browser-screenshot.tool';
+import { BrowserClickTool } from '@/tool/tools/browser/browser-click.tool';
+import { BrowserTypeTool } from '@/tool/tools/browser/browser-type.tool';
+import { BrowserWaitForSelectorTool } from '@/tool/tools/browser/browser-wait-for-selector.tool';
 import { SandboxRunNodeTool } from '@/tool/tools/sandbox/sandbox-run-node.tool';
 import { SandboxRunPythonTool } from '@/tool/tools/sandbox/sandbox-run-python.tool';
 import { WorkspaceModule } from '@/workspace/workspace.module';
@@ -46,6 +49,9 @@ function readBoolean(
     BrowserOpenTool,
     BrowserExtractTool,
     BrowserScreenshotTool,
+    BrowserClickTool,
+    BrowserTypeTool,
+    BrowserWaitForSelectorTool,
     SandboxRunNodeTool,
     SandboxRunPythonTool,
     {
@@ -72,6 +78,9 @@ export class ToolModule {
     private readonly browserOpen: BrowserOpenTool,
     private readonly browserExtract: BrowserExtractTool,
     private readonly browserScreenshot: BrowserScreenshotTool,
+    private readonly browserClick: BrowserClickTool,
+    private readonly browserType: BrowserTypeTool,
+    private readonly browserWaitForSelector: BrowserWaitForSelectorTool,
     private readonly sandboxRunNode: SandboxRunNodeTool,
     private readonly sandboxRunPython: SandboxRunPythonTool,
   ) {}
@@ -93,6 +102,10 @@ export class ToolModule {
       this.registry.register(this.browserOpen);
       this.registry.register(this.browserExtract);
       this.registry.register(this.browserScreenshot);
+      // B2：交互工具（BROWSER_AUTOMATION_ENABLED=true 时才注册）
+      this.registry.register(this.browserClick);
+      this.registry.register(this.browserType);
+      this.registry.register(this.browserWaitForSelector);
     }
     // 沙箱工具：仅在 SANDBOX_ENABLED=true 时注册（避免 Planner 在未配置时选用）
     if (readBoolean(this.config.get<string>('SANDBOX_ENABLED'), false)) {
