@@ -1,33 +1,43 @@
 import { Logger } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { getStore } from '@langchain/langgraph';
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { AgentState } from '@/agent/agent.state';
-import { AgentCallbacks } from '@/agent/agent.callbacks';
+import type { AgentState } from '@/agent/agent.state';
+import { getCtx } from '@/agent/agent.context';
+import { getIntentConfig } from '@/agent/intent.config';
 import { ArtifactType } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
-import { EventPublisher } from '@/event/event.publisher';
 import { createPdfBufferFromText } from '@/tool/utils/pdf-export';
 import { finalizerJsonPrompt, finalizerPrompt } from '@/prompts';
-import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 
 const logger = new Logger('FinalizerNode');
 
-/** 从 LLM 输出中解析 "TYPE: xxx" 标记行，返回 [artifactType, 内容主体] */
 function parseArtifactType(raw: string): [ArtifactType, string] {
   const match = raw.match(/^TYPE:\s*(markdown|code|diagram)\s*\n/i);
   if (!match) return [ArtifactType.MARKDOWN, raw];
-
-  const typeStr = match[1].toLowerCase();
   const typeMap: Record<string, ArtifactType> = {
     code: ArtifactType.CODE,
     diagram: ArtifactType.DIAGRAM,
     markdown: ArtifactType.MARKDOWN,
   };
-  const artifactType = typeMap[typeStr] ?? ArtifactType.MARKDOWN;
-  const content = raw.slice(match[0].length).trimStart();
-  return [artifactType, content];
+  return [typeMap[match[1].toLowerCase()] ?? ArtifactType.MARKDOWN, raw.slice(match[0].length).trimStart()];
+}
+
+function normalizeArtifact(
+  type: ArtifactType,
+  content: string,
+): { content: string; metadata: Record<string, unknown> | null } {
+  if (type === ArtifactType.CODE) {
+    const m = content.match(/```([\w-]+)?\n([\s\S]*?)```/);
+    return m
+      ? { content: m[2].trim(), metadata: { language: m[1]?.trim() || 'text' } }
+      : { content: content.trim(), metadata: { language: 'text' } };
+  }
+  if (type === ArtifactType.DIAGRAM) {
+    const m = content.match(/```mermaid\s*([\s\S]*?)```/i);
+    return { content: (m?.[1] ?? content).trim(), metadata: { renderer: 'mermaid' } };
+  }
+  return { content: content.trim(), metadata: null };
 }
 
 const FinalizerJsonSchema = z.object({
@@ -37,186 +47,99 @@ const FinalizerJsonSchema = z.object({
   artifact_type: z.enum(['markdown', 'code', 'diagram']),
 });
 
-function normalizeArtifact(
-  artifactType: ArtifactType,
-  content: string,
-): { content: string; metadata: Record<string, unknown> | null } {
-  if (artifactType === ArtifactType.CODE) {
-    const fencedMatch = content.match(/```([\w-]+)?\n([\s\S]*?)```/);
-    if (fencedMatch) {
-      return {
-        content: fencedMatch[2].trim(),
-        metadata: {
-          language: fencedMatch[1]?.trim() || 'text',
-        },
-      };
-    }
-    return { content: content.trim(), metadata: { language: 'text' } };
-  }
-
-  if (artifactType === ArtifactType.DIAGRAM) {
-    const mermaidMatch = content.match(/```mermaid\s*([\s\S]*?)```/i);
-    return {
-      content: (mermaidMatch?.[1] ?? content).trim(),
-      metadata: { renderer: 'mermaid' },
-    };
-  }
-
-  return { content: content.trim(), metadata: null };
-}
-
-function emitArtifactCreated(
-  eventPublisher: EventPublisher,
-  state: AgentState,
-  artifact: { id: string; title: string },
-  type: ArtifactType,
-) {
-  eventPublisher.emit(TASK_EVENTS.ARTIFACT_CREATED, {
-    taskId: state.taskId,
-    runId: state.runId,
-    artifactId: artifact.id,
-    type,
-    title: artifact.title,
-  });
-}
-
 export async function finalizerNode(
   state: AgentState,
-  config: RunnableConfig | undefined,
-  llm: ChatOpenAI,
-  callbacks: AgentCallbacks,
-  eventPublisher: EventPublisher,
-  exportPdfEnabled: boolean,
-  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
-  tokenBudgetGuard?: TokenBudgetGuard,
+  config: RunnableConfig,
 ): Promise<Partial<AgentState>> {
-  const initialBudgetFailure = tokenBudgetGuard?.check();
-  if (initialBudgetFailure) {
-    return {
-      evaluation: initialBudgetFailure,
-      errorMessage: initialBudgetFailure.reason,
-    };
-  }
+  const ctx = getCtx(config);
+
+  // 1. Token budget check
+  const budgetFailure = ctx.tokenBudgetGuard.check();
+  if (budgetFailure) return { error: budgetFailure.reason };
 
   const executionContext = state.stepResults
-    .map(
-      (s) =>
-        `步骤 ${s.executionOrder + 1}: ${s.description}\n结果: ${s.toolOutput ?? s.resultSummary}`,
-    )
+    .map(s => `步骤 ${s.executionOrder + 1}: ${s.description}\n结果: ${s.toolOutput ?? s.resultSummary}`)
     .join('\n\n');
 
-  // research_report / competitive_analysis：最后一步是 writer SubAgent，
-  // 直接使用其输出作为 artifact 主体，跳过重新生成，避免信息损失。
-  // 其他意图（general / content_writing / code_generation）仍走 LLM 生成路径。
-  const WRITER_LAST_INTENTS = new Set([
-    'research_report',
-    'competitive_analysis',
-  ]);
+  // 2. Determine artifact source — intent config drives whether to skip LLM generation
+  const intentConfig = getIntentConfig(state.intent);
   const lastStepResult = state.stepResults[state.stepResults.length - 1];
   const writerOutput =
-    WRITER_LAST_INTENTS.has(state.taskIntent) && lastStepResult
+    intentConfig.useLastStepAsArtifact && lastStepResult
       ? (lastStepResult.toolOutput ?? lastStepResult.resultSummary ?? '')
       : '';
   const useWriterOutput = writerOutput.length > 200;
 
   let rawContent: string;
   if (useWriterOutput) {
-    logger.log(`使用 writer SubAgent 输出作为 artifact 主体（${writerOutput.length} chars）`);
+    logger.log(`使用 writer 输出作为 artifact 主体（${writerOutput.length} chars）`);
     rawContent = writerOutput;
   } else {
-    const chain = finalizerPrompt.pipe(llm);
-    const response = await chain.invoke({
-      revisionInput: state.revisionInput,
-      executionContext,
-    });
-    rawContent =
-      typeof response.content === 'string'
-        ? response.content
-        : JSON.stringify(response.content);
+    const chain = finalizerPrompt.pipe(ctx.llm);
+    const response = await chain.invoke({ revisionInput: state.userInput, executionContext });
+    rawContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
   }
 
-  const artifactBudgetFailure = tokenBudgetGuard?.check();
-  if (artifactBudgetFailure) {
-    return {
-      evaluation: artifactBudgetFailure,
-      errorMessage: artifactBudgetFailure.reason,
-    };
-  }
+  // 3. Budget re-check after LLM call
+  const budgetFailure2 = ctx.tokenBudgetGuard.check();
+  if (budgetFailure2) return { error: budgetFailure2.reason };
 
-  // 解析 LLM 输出中的 TYPE 标记，决定产物类型
+  // 4. Parse TYPE marker and normalize content
   const [artifactType, content] = parseArtifactType(rawContent);
   const normalized = normalizeArtifact(artifactType, content);
-  logger.log(
-    `产物类型: ${artifactType} | 内容长度: ${normalized.content.length} chars`,
-  );
+  logger.log(`产物类型: ${artifactType} | 内容长度: ${normalized.content.length} chars`);
   const generatedAt = new Date().toISOString();
-  const artifactTitle = `任务产物: ${state.revisionInput.slice(0, 50)}`;
+  const artifactTitle = `任务产物: ${state.userInput.slice(0, 50)}`;
 
-  const artifact = await callbacks.saveArtifact(
-    state.runId,
-    artifactTitle,
-    normalized.content,
-    artifactType,
-    {
-      ...(normalized.metadata ?? {}),
-      generatedAt,
-    },
+  // 5. Save main artifact and emit event
+  const artifact = await ctx.callbacks.saveArtifact(
+    state.runId, artifactTitle, normalized.content, artifactType,
+    { ...(normalized.metadata ?? {}), generatedAt },
   );
-  emitArtifactCreated(eventPublisher, state, artifact, artifactType);
-
-  const jsonBudgetFailure = tokenBudgetGuard?.check();
-  if (jsonBudgetFailure) {
-    return {
-      evaluation: jsonBudgetFailure,
-      errorMessage: jsonBudgetFailure.reason,
-    };
-  }
-
-  const jsonChain = finalizerJsonPrompt.pipe(
-    llm.withStructuredOutput(FinalizerJsonSchema, { method: soMethod }),
-  );
-  const jsonSummary = await jsonChain.invoke({
-    revisionInput: state.revisionInput,
-    artifactType,
-    executionContext,
+  ctx.eventPublisher.emit(TASK_EVENTS.ARTIFACT_CREATED, {
+    taskId: state.taskId, runId: state.runId, artifactId: artifact.id,
+    type: artifactType, title: artifact.title,
   });
 
-  const summaryArtifact = await callbacks.saveArtifact(
-    state.runId,
-    `结构化摘要: ${state.revisionInput.slice(0, 40)}`,
-    JSON.stringify(
-      {
-        summary: jsonSummary.summary,
-        sources: jsonSummary.sources,
-        key_points: jsonSummary.key_points,
-        artifact_type: artifactType,
-        generated_at: generatedAt,
-      },
-      null,
-      2,
-    ),
-    ArtifactType.JSON,
-    {
-      sourceArtifactId: artifact.id,
-      generatedAt,
-    },
-  );
-  emitArtifactCreated(
-    eventPublisher,
-    state,
-    summaryArtifact,
-    ArtifactType.JSON,
-  );
-
-  if (exportPdfEnabled) {
+  // 6. LLM-generated JSON summary (skip if budget exceeded)
+  const budgetFailure3 = ctx.tokenBudgetGuard.check();
+  if (!budgetFailure3) {
     try {
-      const pdfBytes = await createPdfBufferFromText(
-        artifactTitle,
-        normalized.content,
+      const jsonChain = finalizerJsonPrompt.pipe(
+        ctx.llm.withStructuredOutput(FinalizerJsonSchema, { method: ctx.soMethod }),
       );
-      const fileArtifact = await callbacks.saveArtifact(
+      const jsonSummary = await jsonChain.invoke({
+        revisionInput: state.userInput, artifactType, executionContext,
+      });
+      const summaryArtifact = await ctx.callbacks.saveArtifact(
         state.runId,
-        `PDF 导出: ${state.revisionInput.slice(0, 40)}`,
+        `结构化摘要: ${state.userInput.slice(0, 40)}`,
+        JSON.stringify({
+          summary: jsonSummary.summary,
+          sources: jsonSummary.sources,
+          key_points: jsonSummary.key_points,
+          artifact_type: artifactType,
+          generated_at: generatedAt,
+        }, null, 2),
+        ArtifactType.JSON,
+        { sourceArtifactId: artifact.id, generatedAt },
+      );
+      ctx.eventPublisher.emit(TASK_EVENTS.ARTIFACT_CREATED, {
+        taskId: state.taskId, runId: state.runId, artifactId: summaryArtifact.id,
+        type: ArtifactType.JSON, title: summaryArtifact.title,
+      });
+    } catch (err) {
+      logger.warn(`JSON 摘要生成失败: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // 7. Optional PDF export
+  if (ctx.exportPdfEnabled) {
+    try {
+      const pdfBytes = await createPdfBufferFromText(artifactTitle, normalized.content);
+      const fileArtifact = await ctx.callbacks.saveArtifact(
+        state.runId,
+        `PDF 导出: ${state.userInput.slice(0, 40)}`,
         Buffer.from(pdfBytes).toString('base64'),
         ArtifactType.FILE,
         {
@@ -228,53 +151,28 @@ export async function finalizerNode(
           generatedAt,
         },
       );
-      emitArtifactCreated(
-        eventPublisher,
-        state,
-        fileArtifact,
-        ArtifactType.FILE,
-      );
+      ctx.eventPublisher.emit(TASK_EVENTS.ARTIFACT_CREATED, {
+        taskId: state.taskId, runId: state.runId, artifactId: fileArtifact.id,
+        type: ArtifactType.FILE, title: fileArtifact.title,
+      });
       logger.log(`PDF 导出成功 (${pdfBytes.byteLength} bytes)`);
     } catch (err) {
-      logger.warn(
-        `PDF 导出失败（不影响主产物）: ${err instanceof Error ? err.message : err}`,
-      );
+      logger.warn(`PDF 导出失败（不影响主产物）: ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  // ─── 写入跨 Run 记忆到 LangGraph Store ──────────────────────────────────────
-  const store = config ? getStore(config) : undefined;
+  // 8. Write cross-run memory to LangGraph Store
+  const store = getStore(config);
   if (store) {
     try {
-      const usedExecutors = [
-        ...new Set(
-          state.currentPlan?.steps.map(
-            (s) => s.skillName ?? s.toolHint ?? 'think',
-          ) ?? [],
-        ),
-      ];
-      // 出现过问题的步骤描述（最多 3 个），供 Planner 在下次规划时参考
-      const problematicSteps =
-        state.retryCount > 0 || state.replanCount > 0
-          ? state.stepResults
-              .slice(0, -1)
-              .map((s) => s.description)
-              .slice(0, 3)
-          : [];
       await store.put(['task_memory', state.taskId], state.runId, {
-        summary: `${state.revisionInput.slice(0, 100)} → ${state.stepResults.length} 步完成`,
+        summary: `${state.userInput.slice(0, 100)} → ${state.stepResults.length} 步完成`,
         completedAt: new Date().toISOString(),
         stepCount: state.stepResults.length,
-        // ── 反思字段：记录本次执行的问题，帮助 Planner 规避重复错误 ──
         retryCount: state.retryCount,
         replanCount: state.replanCount,
-        tokenUsed: state.usedTokens,
-        usedExecutors,
-        problematicSteps,
       });
-    } catch {
-      // 写入失败不阻断 finalizer
-    }
+    } catch { /* ignore — store write must not block finalizer */ }
   }
 
   return {};
