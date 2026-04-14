@@ -1,569 +1,273 @@
 import { Logger } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import {
-  AgentState,
-  PlanDef,
-  PlanStepDef,
-  TaskIntent,
-} from '@/agent/agent.state';
-import { AgentCallbacks } from '@/agent/agent.callbacks';
-import { SkillRegistry } from '@/skill/skill.registry';
-import { ToolRegistry } from '@/tool/tool.registry';
-import { TASK_EVENTS } from '@/common/events/task.events';
-import { EventPublisher } from '@/event/event.publisher';
-import {
-  plannerPrompt,
-  INTENT_GUIDANCE,
-  templateParamExtractionPrompt,
-} from '@/prompts';
-import {
-  PlanSemanticValidationOptions,
-  validatePlanSemantics,
-  formatValidationErrors,
-} from '@/agent/plan-semantic-validator';
-import { interrupt, getStore } from '@langchain/langgraph';
+import { Command, END, interrupt, getStore } from '@langchain/langgraph';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { AgentState, PlanDef, PlanStepDef, TaskIntent } from '@/agent/agent.state';
+import { getCtx, type NodeContext } from '@/agent/agent.context';
+import { getIntentConfig } from '@/agent/intent.config';
+import { validatePlanSemantics, formatValidationErrors } from '@/agent/plan-validator';
 import { buildGuardedPlannerChain } from '@/agent/guardrails/guardrail.chain';
 import { GuardrailBlockedError } from '@/agent/guardrails/guardrail-blocked.error';
+import { combinedPlannerPrompt, plannerPrompt, INTENT_GUIDANCE } from '@/prompts';
 import { RunStatus } from '@/common/enums';
-import { WorkflowRegistry, WorkflowBuilder } from '@/agent/workflow.registry';
-import { SubAgentRegistry } from '@/agent/subagents/subagent.registry';
-
-// ─── 确定性 Workflow ─────────────────────────────────────────────────────────
-// 高频意图的固定计划，代码直接返回，不经 LLM Planner。
-// 技能选择和步骤顺序是确定的，只有技能内部的工具调用是动态的。
-//
-// 占位符 __STEP_RESULTS__：executor 在运行时替换为前序步骤的真实输出。
-// DETERMINISTIC_WORKFLOWS 保留导出供测试直接使用；
-// 运行时由 AgentModule.onModuleInit 注册到 WorkflowRegistry。
-
-/** 步骤结果占位符，executor 在执行前替换为真实 stepResults 摘要 */
-export const STEP_RESULTS_PLACEHOLDER = '__STEP_RESULTS__';
-
-export const DETERMINISTIC_WORKFLOWS: Partial<
-  Record<TaskIntent, WorkflowBuilder>
-> = {
-  code_generation: (state, ctx) => {
-    const steps: PlanStepDef[] = [
-      {
-        stepIndex: 0,
-        description: '根据需求生成完整代码项目',
-        skillName: 'code_project_generation',
-        skillInput: {
-          task_id: state.taskId,
-          project_description: state.revisionInput,
-        },
-      },
-    ];
-
-    // 沙箱可用时加入执行验证步骤（S2 闭环：generate → sandbox_run → fix → package）
-    // Tool Calling 会根据上下文（step 0 输出的文件列表）决议实际入口文件
-    if (ctx.toolRegistry.has('sandbox_run_node')) {
-      steps.push({
-        stepIndex: 1,
-        description: '在沙箱中运行生成的代码，验证可执行性并获取输出',
-        toolHint: 'sandbox_run_node',
-        toolInput: {
-          task_id: state.taskId,
-          entry: 'project/index.js', // 约定默认值，Tool Calling 会根据实际文件列表覆盖
-        },
-      });
-    }
-
-    return steps;
-  },
-
-  research_report: (state, _ctx) => [
-    {
-      stepIndex: 0,
-      description: `围绕主题进行深度网络调研`,
-      subAgent: 'researcher' as const,
-      objective: `调研主题：${state.revisionInput}。\n\n请使用搜索和浏览工具从多角度收集信息，阅读 2-4 个高质量来源，综合整理核心发现、数据和结论，最终输出完整的调研报告。`,
-    },
-    {
-      stepIndex: 1,
-      description: `基于调研结果撰写并输出完整报告文件`,
-      subAgent: 'writer' as const,
-      objective: `报告主题：${state.revisionInput}。\n\n前序调研摘要：\n${STEP_RESULTS_PLACEHOLDER}\n\n请基于以上材料撰写完整的调研报告，保存为 task-report.md，同时导出 task-report.pdf。`,
-    },
-  ],
-
-  competitive_analysis: (state, _ctx) => [
-    {
-      stepIndex: 0,
-      description: `对两个对比对象进行系统性调研`,
-      subAgent: 'researcher' as const,
-      objective: `对比调研：${state.revisionInput}。\n\n请系统搜索两个对比对象的官方文档、技术博客和第三方评测，重点收集架构设计、性能表现、集成能力、开发体验和成本模型等维度的数据。每个对象都要有充分的资料支撑，最终输出全面的调研摘要。`,
-    },
-    {
-      stepIndex: 1,
-      description: `基于调研结果撰写并输出完整对比报告文件`,
-      subAgent: 'writer' as const,
-      objective: `对比报告主题：${state.revisionInput}。\n\n前序调研摘要：\n${STEP_RESULTS_PLACEHOLDER}\n\n请基于以上材料撰写结构完整的对比报告（至少包含：架构差异、性能、集成能力、定价、适用场景），保存为 comparison-report.md，同时导出 comparison-report.pdf。`,
-    },
-  ],
-};
-
-// ─── WorkflowTemplate：参数化中间层 ─────────────────────────────────────────
-// 介于"完全硬编码"（DETERMINISTIC_WORKFLOWS）和"完全 LLM"之间：
-// 步骤骨架固定，动态参数由一次轻量 LLM 调用提取（比完整规划便宜 ~60%）。
-// 首次引入 competitive_analysis，验证稳定后可扩展更多意图。
-
-interface TemplateStepSkeleton {
-  description: string;
-  skillName?: string;
-  toolHint?: string;
-  /** LLM 需要填充的参数名列表 */
-  dynamicParams: string[];
-  /** 固定不变的参数（__TASK_ID__ 会在运行时替换为真实 taskId） */
-  staticParams: Record<string, unknown>;
-}
-
-interface WorkflowTemplate {
-  skeleton: TemplateStepSkeleton[];
-
-  paramSchema: z.ZodObject<any>;
-}
-
-// WORKFLOW_TEMPLATES：参数化中间层（暂无条目）
-// competitive_analysis 已迁移到 LLM Planner + SubAgent 模式（见 INTENT_GUIDANCE）
-export const WORKFLOW_TEMPLATES: Partial<Record<TaskIntent, WorkflowTemplate>> =
-  {};
-
-async function fillTemplateParams(
-  template: WorkflowTemplate,
-  state: AgentState,
-  llm: ChatOpenAI,
-  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode',
-): Promise<PlanStepDef[]> {
-  const chain = templateParamExtractionPrompt.pipe(
-    llm.withStructuredOutput(template.paramSchema, { method: soMethod }),
-  );
-
-  const params = await chain.invoke({
-    revisionInput: state.revisionInput,
-    taskId: state.taskId,
-  });
-
-  return template.skeleton.map((s, i) => {
-    const dynamicEntries = Object.fromEntries(
-      s.dynamicParams.map((k) => [k, params[k]]),
-    );
-    // __TASK_ID__ 占位符替换为真实 taskId
-    const resolvedStatic = Object.fromEntries(
-      Object.entries(s.staticParams).map(([k, v]) => [
-        k,
-        v === '__TASK_ID__' ? state.taskId : v,
-      ]),
-    );
-    const mergedParams = { ...resolvedStatic, ...dynamicEntries };
-
-    return {
-      stepIndex: i,
-      description: s.description,
-      skillName: s.skillName ?? null,
-      toolHint: s.toolHint ?? null,
-      skillInput: s.skillName ? mergedParams : null,
-      toolInput: s.toolHint ? mergedParams : null,
-    };
-  });
-}
+import { TASK_EVENTS } from '@/common/events/task.events';
 
 const logger = new Logger('PlannerNode');
 
-const PlanSchema = z.object({
-  steps: z.array(
-    z.object({
-      stepIndex: z.number().int().min(0),
-      description: z.string().min(1),
-      skillName: z.string().nullable().optional(),
-      // z.any() → JSON schema 生成 {} ，避免 z.record() 产生的 patternProperties
-      // Qwen 不支持 json_schema 格式里的 patternProperties
-      skillInput: z.any().optional(),
-      toolHint: z.string().nullable().optional(),
-      toolInput: z.any().optional(),
-      // SubAgent 字段：ReAct 子 Agent（createReactAgent 模式）
-      subAgent: z.string().nullable().optional(),
-      objective: z.string().nullable().optional(),
-    }),
-  ),
+const VALID_INTENTS: TaskIntent[] = [
+  'code_generation', 'research_report', 'competitive_analysis', 'content_writing', 'general',
+];
+
+const CombinedPlannerSchema = z.object({
+  intent: z.enum(VALID_INTENTS as [TaskIntent, ...TaskIntent[]]),
+  steps: z.array(z.object({
+    stepIndex: z.number().int().min(0),
+    description: z.string().min(1),
+    skillName: z.string().nullable().optional(),
+    skillInput: z.any().optional(),
+    toolHint: z.string().nullable().optional(),
+    toolInput: z.any().optional(),
+    subAgent: z.string().nullable().optional(),
+    objective: z.string().nullable().optional(),
+  })),
 });
 
-/** 共享 HITL plan_first 审批逻辑（确定性 workflow 和 LLM 路径共用） */
-async function handlePlanApproval(
-  plan: { id: string },
-  planSteps: PlanStepDef[],
-  state: AgentState,
-  skillRegistry: SkillRegistry,
-  toolRegistry: ToolRegistry,
-  callbacks: AgentCallbacks,
-  subAgentRegistry?: SubAgentRegistry,
-): Promise<'approved' | 'rejected'> {
-  const stepSummaries = planSteps.map((s) => ({
-    stepIndex: s.stepIndex,
-    description: s.description,
-    executor: s.subAgent
-      ? `subagent:${s.subAgent}`
-      : (s.skillName ?? s.toolHint ?? 'think'),
-    isSideEffect: s.subAgent
-      ? (subAgentRegistry?.get(s.subAgent)?.isSideEffect ??
-        s.subAgent === 'writer')
-      : (s.skillName && skillRegistry.has(s.skillName)
-          ? skillRegistry.get(s.skillName).effect === 'side-effect'
-          : false) ||
-        (s.toolHint && toolRegistry.has(s.toolHint)
-          ? toolRegistry.get(s.toolHint).type === 'side-effect'
-          : false),
-  }));
-  const planReviewInfo = {
-    type: 'plan_review' as const,
-    planId: plan.id,
-    stepCount: planSteps.length,
-    steps: stepSummaries,
-  };
-  // DB 状态由外层 while loop 在检测到 __interrupt__ 后统一写入，
-  // 不在此处调用 setRunAwaitingApproval —— 避免 resume 时节点重跑导致状态闪回。
-  const decision = interrupt(planReviewInfo);
-  await callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
-  return decision;
-}
+const ReplanSchema = z.object({
+  steps: z.array(z.object({
+    stepIndex: z.number().int().min(0),
+    description: z.string().min(1),
+    skillName: z.string().nullable().optional(),
+    skillInput: z.any().optional(),
+    toolHint: z.string().nullable().optional(),
+    toolInput: z.any().optional(),
+    subAgent: z.string().nullable().optional(),
+    objective: z.string().nullable().optional(),
+  })),
+});
 
 export async function plannerNode(
   state: AgentState,
-  config: RunnableConfig | undefined,
-  llm: ChatOpenAI,
-  skillRegistry: SkillRegistry,
-  toolRegistry: ToolRegistry,
-  callbacks: AgentCallbacks,
-  eventPublisher: EventPublisher,
-  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode' = 'functionCalling',
-  validationOptions: PlanSemanticValidationOptions = {},
-  workflowRegistry?: WorkflowRegistry,
-  subAgentRegistry?: SubAgentRegistry,
-): Promise<Partial<AgentState>> {
+  config: RunnableConfig,
+): Promise<Command> {
+  const ctx = getCtx(config);
   const isReplan = state.replanCount > 0;
-  // replan 时 router 被跳过，planner 自己发事件
+
   if (isReplan) {
-    eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
-      taskId: state.taskId,
-      runId: state.runId,
-      isReplan: true,
+    ctx.eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
+      taskId: state.taskId, runId: state.runId, isReplan: true,
     });
   }
 
-  // ─── 确定性 Workflow：高频意图代码直接返回固定计划，不调 LLM ────────────────
-  // registry 优先（可注入自定义 workflow）；fallback 到模块级 DETERMINISTIC_WORKFLOWS。
-  // replan 时不走确定性路径，改用 LLM 重新规划（首次策略可能有问题）
-  const workflowBuilder = !isReplan
-    ? (workflowRegistry?.get(state.taskIntent) ??
-      DETERMINISTIC_WORKFLOWS[state.taskIntent])
-    : undefined;
+  let resolvedIntent: TaskIntent;
+  let planSteps: PlanStepDef[];
 
-  if (workflowBuilder) {
-    logger.log(`确定性 workflow: ${state.taskIntent}（跳过 LLM Planner）`);
-    const planSteps = workflowBuilder(state, { toolRegistry, skillRegistry });
-    const plan = await callbacks.savePlan(state.runId, planSteps);
-    eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
-      taskId: state.taskId,
-      runId: state.runId,
-      planId: plan.id,
-      steps: planSteps as unknown as Record<string, unknown>[],
-    });
-
-    if (state.approvalMode === 'plan_first') {
-      const decision = await handlePlanApproval(
-        plan,
-        planSteps,
-        state,
-        skillRegistry,
-        toolRegistry,
-        callbacks,
-        subAgentRegistry,
-      );
-      if (decision === 'rejected') {
-        return { shouldStop: true, errorMessage: 'plan_rejected' };
-      }
-    }
-
-    return {
-      currentPlan: { planId: plan.id, steps: planSteps } as PlanDef,
-      currentStepIndex: 0,
-      retryCount: 0,
-      evaluation: null,
-      lastStepRunId: '',
-      lastStepOutput: '',
-    };
-  }
-
-  // ─── WorkflowTemplate：参数化中间层（有模板 + 非 replan + 无确定性 workflow）──────
-  const workflowTemplate = !isReplan
-    ? WORKFLOW_TEMPLATES[state.taskIntent]
-    : undefined;
-
-  if (workflowTemplate) {
-    logger.log(
-      `模板规划: ${state.taskIntent}（轻量 LLM 参数提取，跳过完整 Planner）`,
-    );
-    const planSteps = await fillTemplateParams(
-      workflowTemplate,
-      state,
-      llm,
-      soMethod,
-    );
-    const plan = await callbacks.savePlan(state.runId, planSteps);
-    eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
-      taskId: state.taskId,
-      runId: state.runId,
-      planId: plan.id,
-      steps: planSteps as unknown as Record<string, unknown>[],
-    });
-
-    if (state.approvalMode === 'plan_first') {
-      const decision = await handlePlanApproval(
-        plan,
-        planSteps,
-        state,
-        skillRegistry,
-        toolRegistry,
-        callbacks,
-        subAgentRegistry,
-      );
-      if (decision === 'rejected') {
-        return { shouldStop: true, errorMessage: 'plan_rejected' };
-      }
-    }
-
-    return {
-      currentPlan: { planId: plan.id, steps: planSteps } as PlanDef,
-      currentStepIndex: 0,
-      retryCount: 0,
-      evaluation: null,
-      lastStepRunId: '',
-      lastStepOutput: '',
-    };
-  }
-
-  // ─── LLM Planner 路径（general / content_writing / replan）────────────────────
-  const skillSection = skillRegistry.getPlannerPromptSection();
-
-  const toolInputExamples = [
-    '- web_search:      {"query": "搜索词"}\n' +
-      '- browse_url:      {"url": "https://..."}\n' +
-      '- fetch_url_as_markdown: {"url": "https://..."}\n' +
-      '- read_file:       {"task_id": "<taskId>", "path": "文件名"}\n' +
-      // write_file 只用于单文件场景，多文件代码项目应使用 code_project_generation skill
-      '- write_file:      {"task_id": "<taskId>", "path": "文件名", "content": "完整文件内容（非占位符）"}\n' +
-      '- list_directory:  {"task_id": "<taskId>", "path": "."}\n' +
-      '- download_file:   {"task_id": "<taskId>", "url": "https://...", "path": "资料.pdf"}\n' +
-      '- extract_pdf_text: {"task_id": "<taskId>", "path": "资料.pdf"}\n' +
-      '- export_pdf:      {"task_id": "<taskId>", "title": "报告", "content": "...", "path": "report.pdf"}\n' +
-      '- github_search:   {"query": "langgraph agent", "max_results": 5}\n' +
-      '- think:           {"thought": "推理内容"}\n\n' +
-      '⚠️ 选择执行器的关键原则：\n' +
-      '  • 任务涉及"生成多个代码文件"或"脚手架项目" → 必须使用 code_project_generation skill，不可拆成多个 write_file step\n' +
-      '  • write_file 只用于写单个配置文件或数据文件\n' +
-      '  • 调研 / 网络搜索 → 使用 subAgent: "researcher"，填写 objective\n' +
-      '  • 撰写文档 / 生成报告文件 → 使用 subAgent: "writer"，填写 objective',
-  ];
-
-  if (toolRegistry.has('browser_open')) {
-    toolInputExamples.push(
-      '- browser_open:   {"task_id": "<taskId>", "url": "https://...", "timeout_ms": 15000}\n' +
-        '- browser_extract: {"session_id": "<browser_open 返回的 session_id>", "selector": "main", "max_length": 12000}\n' +
-        '- browser_screenshot: {"task_id": "<taskId>", "session_id": "<browser_open 返回的 session_id>", "path": "browser-screenshots/page.png", "full_page": true}',
-    );
-  }
-
-  const toolSection =
-    '可直接使用的工具（无对应 skill 时使用，需填写 toolHint 和 toolInput）：\n' +
-    toolRegistry
-      .getAvailableForPlanner()
-      .map((t) => `- ${t.name} [${t.type}]: ${t.description}`)
-      .join('\n') +
-    '\n工具参数示例（toolInput 字段）：\n' +
-    toolInputExamples.join('\n');
-
-  const completedContext =
-    state.stepResults.length > 0
-      ? '\n\n已完成步骤摘要：\n' +
-        state.stepResults
-          .map((s) => `- ${s.description}: ${s.resultSummary}`)
-          .join('\n')
-      : '';
-
-  // ─── 历史记忆注入（LangGraph Store 优先，降级到 callbacks）──────────────────
-  // Store 是跨 Run 的持久化 key-value 存储，粒度更细、可检索
-  // 注意：记忆内容来自外部工具输出，视为半可信来源，仅供参考
-  let memoryContext = '';
-  const store = config ? getStore(config) : undefined;
-  if (store) {
-    try {
-      const memories = await store.search(['task_memory', state.taskId], {
-        limit: 5,
-      });
-      if (memories.length > 0) {
-        memoryContext =
-          '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
-          memories
-            .map((m) => (m.value as { summary: string }).summary)
-            .join('\n');
-      }
-    } catch {
-      // Store 读取失败不阻断规划
-    }
-  } else {
-    // 降级：使用原有的 callbacks.getRecentMemory
-    try {
-      const memory = await callbacks.getRecentMemory(state.taskId);
-      if (memory) {
-        memoryContext =
-          '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
-          memory;
-      }
-    } catch {
-      // 记忆读取失败不应阻断规划，静默忽略
-    }
-  }
-
-  // ─── Guardrail 包裹的 Planner chain ────────────────────────────────────────
-  // 执行顺序：plannerLLM → outputGuardrail → semanticValidator
-  const llmChain = plannerPrompt.pipe(
-    llm.withStructuredOutput(PlanSchema, { method: soMethod }),
-  );
-  const chain = buildGuardedPlannerChain(llmChain);
-
-  const intentGuidance = INTENT_GUIDANCE[state.taskIntent] ?? '';
-  if (intentGuidance) {
-    logger.log(`应用意图特化策略: ${state.taskIntent}`);
-  }
-
-  // ─── 预算感知：Token 紧张时提示 Planner 缩减步骤 ──────────────────────────
-  const remaining = state.tokenBudget - state.usedTokens;
-  const budgetHint =
-    state.usedTokens > 0 && remaining < state.tokenBudget * 0.4
-      ? `\n⚠️ Token 预算紧张（已用 ${Math.round(state.usedTokens / 1000)}K，剩余约 ${Math.round(remaining / 1000)}K），请将步骤控制在 3 步以内。`
-      : '';
-
-  const baseInvokeArgs = {
-    revisionInput: state.revisionInput,
-    taskId: state.taskId,
-    completedContext,
-    skillSection,
-    toolSection,
-    memoryContext,
-    intentGuidance,
-    budgetHint,
-  };
-
-  // ─── 语义校验：最多尝试 2 次，第二次携带错误反馈 ─────────────────────────────
-  let planSteps: z.infer<typeof PlanSchema>['steps'];
-
-  let result1: z.infer<typeof PlanSchema>;
   try {
-    result1 = (await chain.invoke({
-      ...baseInvokeArgs,
-      validationErrors: '',
-    })) as z.infer<typeof PlanSchema>;
-  } catch (err) {
-    if (err instanceof GuardrailBlockedError) {
-      logger.warn(`Guardrail blocked (attempt 1): ${err.message}`);
-      return {
-        shouldStop: true,
-        errorMessage: `guardrail_blocked:${err.reason}`,
-      };
-    }
-    throw err;
-  }
-  const errors1 = validatePlanSemantics(
-    result1.steps,
-    skillRegistry,
-    toolRegistry,
-    validationOptions,
-  );
-
-  if (errors1.length === 0) {
-    planSteps = result1.steps;
-  } else {
-    logger.warn(
-      `Plan semantic validation failed (attempt 1): ${errors1.map((e) => e.message).join(' | ')}`,
-    );
-    const validationErrors = formatValidationErrors(errors1);
-    let result2: z.infer<typeof PlanSchema>;
-    try {
-      result2 = (await chain.invoke({
-        ...baseInvokeArgs,
-        validationErrors,
-      })) as z.infer<typeof PlanSchema>;
-    } catch (err) {
-      if (err instanceof GuardrailBlockedError) {
-        logger.warn(`Guardrail blocked (attempt 2): ${err.message}`);
-        return {
-          shouldStop: true,
-          errorMessage: `guardrail_blocked:${err.reason}`,
-        };
-      }
-      throw err;
-    }
-    const errors2 = validatePlanSemantics(
-      result2.steps,
-      skillRegistry,
-      toolRegistry,
-      validationOptions,
-    );
-
-    if (errors2.length === 0) {
-      planSteps = result2.steps;
+    if (isReplan) {
+      // ─── Replan: keep existing intent, use original plannerPrompt for re-planning ──
+      resolvedIntent = state.intent;
+      planSteps = await replan(state, ctx, config);
     } else {
-      logger.error(
-        `Plan semantic validation failed after 2 attempts: ${errors2.map((e) => e.message).join(' | ')}`,
-      );
-      // 两次语义校验均失败，终止本 Run
-      return {
-        errorMessage: `Planner 语义校验连续失败（${errors2
-          .map((e) => e.message)
-          .slice(0, 2)
-          .join('；')}），请简化任务描述后重试`,
-      };
+      // ─── First run: classify intent + plan in one LLM call ─────────────────
+      const result = await classifyAndPlan(state, ctx, config);
+      if ('error' in result) {
+        return new Command({ update: { error: result.error }, goto: END });
+      }
+      resolvedIntent = result.intent;
+
+      // Check for deterministic workflow
+      const intentConfig = getIntentConfig(resolvedIntent);
+      if (intentConfig.workflowBuilder) {
+        logger.log(`确定性 workflow: ${resolvedIntent}（跳过 LLM 规划步骤）`);
+        planSteps = intentConfig.workflowBuilder(state, ctx);
+      } else {
+        planSteps = result.steps;
+      }
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Planner failed: ${msg}`);
+    return new Command({ update: { error: msg }, goto: END });
   }
 
-  const plan = await callbacks.savePlan(state.runId, planSteps);
-
-  const planDef: PlanDef = {
-    planId: plan.id,
-    steps: planSteps,
-  };
-
-  eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
-    taskId: state.taskId,
-    runId: state.runId,
-    planId: plan.id,
+  // ─── Persist plan ──────────────────────────────────────────────────────
+  const plan = await ctx.callbacks.savePlan(state.runId, planSteps);
+  ctx.eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
+    taskId: state.taskId, runId: state.runId, planId: plan.id,
     steps: planSteps as unknown as Record<string, unknown>[],
   });
 
-  // ─── plan_first HITL：计划生成后、执行前暂停等待用户审批 ──────────────────────
+  // ─── HITL: plan_first approval ─────────────────────────────────────────
   if (state.approvalMode === 'plan_first') {
-    const decision = await handlePlanApproval(
-      plan,
-      planSteps,
-      state,
-      skillRegistry,
-      toolRegistry,
-      callbacks,
-      subAgentRegistry,
-    );
+    const stepSummaries = planSteps.map(s => ({
+      stepIndex: s.stepIndex, description: s.description,
+      executor: s.subAgent ? `subagent:${s.subAgent}` : (s.skillName ?? s.toolHint ?? 'think'),
+    }));
+    const decision = interrupt({
+      type: 'plan_review', planId: plan.id, stepCount: planSteps.length, steps: stepSummaries,
+    });
+    await ctx.callbacks.setRunStatus(state.runId, RunStatus.RUNNING);
     if (decision === 'rejected') {
-      return { shouldStop: true, errorMessage: 'plan_rejected' };
+      return new Command({ update: { error: 'plan_rejected' }, goto: END });
     }
   }
 
-  return {
-    currentPlan: planDef,
-    currentStepIndex: 0,
-    retryCount: 0,
-    evaluation: null,
-    lastStepRunId: '',
-    lastStepOutput: '',
+  const planDef: PlanDef = { planId: plan.id, steps: planSteps };
+
+  return new Command({
+    update: {
+      intent: resolvedIntent,
+      plan: planDef,
+      stepIndex: 0,
+      retryCount: 0,
+      lastStepRunId: '',
+      lastOutput: '',
+    },
+    goto: 'executor',
+  });
+}
+
+// ─── Private helpers ─────────────────────────────────────────────────────────
+
+function buildPromptArgs(state: AgentState, ctx: NodeContext) {
+  const skillSection = ctx.skillRegistry.getPlannerPromptSection();
+  const toolSection = '可用工具：\n' + ctx.toolRegistry.getAvailableForPlanner()
+    .map(t => `- ${t.name} [${t.type}]: ${t.description}`).join('\n');
+
+  const completedContext = state.stepResults.length > 0
+    ? '\n\n已完成步骤摘要：\n' + state.stepResults.map(s => `- ${s.description}: ${s.resultSummary}`).join('\n')
+    : '';
+
+  const usedTokens = ctx.tokenTracker.totalTokens;
+  const budget = 100_000; // rough default
+  const remaining = budget - usedTokens;
+  const budgetHint = usedTokens > 0 && remaining < budget * 0.4
+    ? `\n⚠️ Token 预算紧张（已用 ${Math.round(usedTokens / 1000)}K），请将步骤控制在 3 步以内。`
+    : '';
+
+  return { skillSection, toolSection, completedContext, budgetHint };
+}
+
+async function getMemoryContext(state: AgentState, ctx: NodeContext, config: RunnableConfig): Promise<string> {
+  const store = getStore(config);
+  if (store) {
+    try {
+      const memories = await store.search(['task_memory', state.taskId], { limit: 5 });
+      if (memories.length > 0) {
+        return '\n\n[历史执行记忆]\n' + memories.map(m => (m.value as { summary: string }).summary).join('\n');
+      }
+    } catch { /* ignore */ }
+  }
+  try {
+    const memory = await ctx.callbacks.getRecentMemory(state.taskId);
+    if (memory) return '\n\n[历史执行记忆]\n' + memory;
+  } catch { /* ignore */ }
+  return '';
+}
+
+/** Combined intent classification + step planning in one LLM call (first run) */
+async function classifyAndPlan(
+  state: AgentState, ctx: NodeContext, config: RunnableConfig,
+): Promise<{ intent: TaskIntent; steps: PlanStepDef[] } | { error: string }> {
+  const { skillSection, toolSection, completedContext, budgetHint } = buildPromptArgs(state, ctx);
+  const memoryContext = await getMemoryContext(state, ctx, config);
+
+  const llmChain = combinedPlannerPrompt.pipe(
+    ctx.llm.withStructuredOutput(CombinedPlannerSchema, { method: ctx.soMethod }),
+  );
+  const chain = buildGuardedPlannerChain(llmChain);
+
+  const baseArgs = {
+    revisionInput: state.userInput, taskId: state.taskId,
+    completedContext, skillSection, toolSection, memoryContext,
+    intentGuidance: '', budgetHint, validationErrors: '',
   };
+
+  let result: z.infer<typeof CombinedPlannerSchema>;
+  try {
+    result = await chain.invoke(baseArgs) as z.infer<typeof CombinedPlannerSchema>;
+  } catch (err) {
+    if (err instanceof GuardrailBlockedError) return { error: `guardrail_blocked:${err.reason}` };
+    throw err;
+  }
+
+  // Validate intent
+  if (!VALID_INTENTS.includes(result.intent as TaskIntent)) {
+    logger.warn(`未知意图 "${result.intent}"，fallback 到 general`);
+    result = { ...result, intent: 'general' };
+  }
+
+  ctx.eventPublisher.emit(TASK_EVENTS.PLAN_GENERATING, {
+    taskId: state.taskId, runId: state.runId, isReplan: false, intent: result.intent,
+  });
+
+  // Skip semantic validation for deterministic intents (their steps come from workflowBuilder)
+  const intentConfig = getIntentConfig(result.intent as TaskIntent);
+  if (intentConfig.workflowBuilder) {
+    return { intent: result.intent as TaskIntent, steps: result.steps };
+  }
+
+  // Semantic validation with retry
+  const errors1 = validatePlanSemantics(result.steps, ctx.skillRegistry, ctx.toolRegistry, ctx.planValidationOptions);
+  if (errors1.length === 0) {
+    return { intent: result.intent as TaskIntent, steps: result.steps };
+  }
+
+  logger.warn(`Plan validation failed (attempt 1): ${errors1.map(e => e.message).join(' | ')}`);
+  const intentGuidance = intentConfig.plannerGuidance ?? '';
+  try {
+    result = await chain.invoke({ ...baseArgs, intentGuidance, validationErrors: formatValidationErrors(errors1) }) as z.infer<typeof CombinedPlannerSchema>;
+  } catch (err) {
+    if (err instanceof GuardrailBlockedError) return { error: `guardrail_blocked:${err.reason}` };
+    throw err;
+  }
+
+  const errors2 = validatePlanSemantics(result.steps, ctx.skillRegistry, ctx.toolRegistry, ctx.planValidationOptions);
+  if (errors2.length > 0) {
+    return { error: `Planner 语义校验连续失败（${errors2.slice(0, 2).map(e => e.message).join('；')}）` };
+  }
+
+  return { intent: result.intent as TaskIntent, steps: result.steps };
+}
+
+/** Replan: intent already known, use plannerPrompt (without classification) */
+async function replan(state: AgentState, ctx: NodeContext, config: RunnableConfig): Promise<PlanStepDef[]> {
+  const { skillSection, toolSection, completedContext, budgetHint } = buildPromptArgs(state, ctx);
+  const memoryContext = await getMemoryContext(state, ctx, config);
+  const intentGuidance = getIntentConfig(state.intent).plannerGuidance ?? INTENT_GUIDANCE[state.intent] ?? '';
+
+  const llmChain = plannerPrompt.pipe(
+    ctx.llm.withStructuredOutput(ReplanSchema, { method: ctx.soMethod }),
+  );
+  const chain = buildGuardedPlannerChain(llmChain);
+
+  const baseArgs = {
+    revisionInput: state.userInput, taskId: state.taskId,
+    completedContext, skillSection, toolSection, memoryContext,
+    intentGuidance, budgetHint, validationErrors: '',
+  };
+
+  let result: z.infer<typeof ReplanSchema>;
+  try {
+    result = await chain.invoke(baseArgs) as z.infer<typeof ReplanSchema>;
+  } catch (err) {
+    if (err instanceof GuardrailBlockedError) throw new Error(`guardrail_blocked:${err.reason}`);
+    throw err;
+  }
+
+  const errors = validatePlanSemantics(result.steps, ctx.skillRegistry, ctx.toolRegistry, ctx.planValidationOptions);
+  if (errors.length > 0) {
+    // One retry for replan
+    try {
+      result = await chain.invoke({ ...baseArgs, validationErrors: formatValidationErrors(errors) }) as z.infer<typeof ReplanSchema>;
+    } catch (err) {
+      if (err instanceof GuardrailBlockedError) throw new Error(`guardrail_blocked:${err.reason}`);
+      throw err;
+    }
+    const errors2 = validatePlanSemantics(result.steps, ctx.skillRegistry, ctx.toolRegistry, ctx.planValidationOptions);
+    if (errors2.length > 0) {
+      throw new Error(`Replan 语义校验失败（${errors2.slice(0, 2).map(e => e.message).join('；')}）`);
+    }
+  }
+
+  return result.steps;
 }

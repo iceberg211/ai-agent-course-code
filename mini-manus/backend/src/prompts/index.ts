@@ -453,3 +453,41 @@ export const toolCallingPrompt = ChatPromptTemplate.fromMessages([
 {stepContext}{retryHint}`,
   ],
 ]);
+
+// ─── Combined Planner (merged router + planner) ──────────────────────────────
+// 一次 LLM 调用完成意图分类 + 步骤规划，替代原来分离的 routerPrompt + plannerPrompt
+export const combinedPlannerPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    `你是一个任务规划器。你需要完成两件事：
+
+**第一步：判断任务意图（intent）**
+- code_generation: 生成代码项目、脚手架、写程序、创建应用
+- research_report: 调研报告、技术方案、深度分析、信息收集
+- competitive_analysis: 对比分析、竞品调研、方案比较
+- content_writing: 撰写文档、文章、邮件、演讲稿、总结
+- general: 以上都不匹配
+
+**第二步：将任务拆解成 3-6 个可执行步骤**
+
+{skillSection}
+
+{toolSection}
+
+{intentGuidance}
+
+规划要求：
+1. 如果某一步需要网络搜索 / 调研 → 填写 subAgent: "researcher" 和 objective（调研目标），留空其他字段
+2. 如果某一步需要撰写文档 / 报告并保存文件 → 填写 subAgent: "writer" 和 objective（写作目标），留空其他字段
+3. 如果某一步能被已加载的 skill 覆盖 → 优先使用 skill（填写 skillName 和 skillInput）
+4. 如果没有合适的 subAgent / skill → 填写 toolHint（工具名）和 toolInput（完整参数对象）
+5. toolInput 中如果有 task_id 字段，必须填入 "{taskId}"
+6. 步骤数量 3-6 个，每步描述清晰
+7. 只返回 JSON，不要其他内容`,
+  ],
+  [
+    'human',
+    `任务：{revisionInput}
+当前任务ID（用于文件操作）：{taskId}{completedContext}{memoryContext}{validationErrors}{budgetHint}`,
+  ],
+]);
