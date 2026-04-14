@@ -14,7 +14,12 @@ const schema = z.object({
   url: z.string().url().describe('需要抓取为 Markdown 的网页地址'),
 });
 
-function toMarkdown(html: string, url: string): string {
+interface PageData {
+  title: string;
+  markdown: string;
+}
+
+function toMarkdown(html: string, url: string): PageData {
   const $ = cheerio.load(html);
   $('script, style, nav, footer, header, iframe, noscript').remove();
 
@@ -61,7 +66,7 @@ function toMarkdown(html: string, url: string): string {
     lines.push(...links);
   }
 
-  return lines.join('\n').trim();
+  return { title, markdown: lines.join('\n').trim() };
 }
 
 @Injectable()
@@ -83,10 +88,11 @@ export class FetchUrlAsMarkdownTool implements Tool {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MiniManus/1.0)' },
       });
 
-      const markdown = toMarkdown(String(response.data ?? ''), url);
+      const { title, markdown } = toMarkdown(String(response.data ?? ''), url);
       return {
         success: true,
         output: truncateOutput(markdown || `# ${url}\n\n(空页面)`),
+        structuredData: { url, title, content: markdown },
       };
     } catch (err: unknown) {
       return classifyToolError(err, 'Failed to fetch URL as markdown');

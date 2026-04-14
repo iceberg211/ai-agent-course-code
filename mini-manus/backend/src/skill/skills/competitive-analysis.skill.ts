@@ -53,10 +53,20 @@ export class CompetitiveAnalysisSkill implements Skill {
         errorCode: searchResult.errorCode ?? null,
       };
 
-      const urls = Array.from(
-        searchResult.output.matchAll(/URL: (https?:\/\/\S+)/g),
-        (match) => match[1],
-      ).slice(0, pageDepth);
+      // 优先用 structuredData 提取 URL，兼容新格式（{answer,results}）和旧格式（Array）
+      const structured = searchResult.structuredData as
+        | { results?: Array<{ url: string }> }
+        | Array<{ url: string }>
+        | undefined;
+      const resultItems = Array.isArray(structured)
+        ? structured
+        : ((structured as { results?: Array<{ url: string }> })?.results ?? []);
+      const urls = resultItems.length
+        ? resultItems.map((r) => r.url).slice(0, pageDepth)
+        : Array.from(
+            searchResult.output.matchAll(/URL: (https?:\/\/\S+)/g),
+            (m) => m[1],
+          ).slice(0, pageDepth);
 
       const contexts: string[] = [];
       const sources: string[] = [];

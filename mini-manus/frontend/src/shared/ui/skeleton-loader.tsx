@@ -1,42 +1,37 @@
-import React from 'react'
-
 interface SkeletonLoaderProps {
   className?: string
-  style?: React.CSSProperties
 }
 
-export function SkeletonLoader({ className, style }: SkeletonLoaderProps) {
+export function SkeletonLoader({ className }: SkeletonLoaderProps) {
   return (
-    <div className={`skeleton-loader ${className || ''}`} style={style}>
-      <div 
-        className="skeleton-title" 
-        style={{ 
-          width: '40%', 
-          height: '24px', 
-          background: 'rgba(0,0,0,0.06)', 
-          borderRadius: '4px', 
-          marginBottom: '16px' 
-        }} 
-      />
-      <div 
-        className="skeleton-line" 
-        style={{ 
-          width: '80%', 
-          height: '16px', 
-          background: 'rgba(0,0,0,0.04)', 
-          borderRadius: '4px', 
-          marginBottom: '12px' 
-        }} 
-      />
-      <div 
-        className="skeleton-line" 
-        style={{ 
-          width: '60%', 
-          height: '16px', 
-          background: 'rgba(0,0,0,0.04)', 
-          borderRadius: '4px' 
-        }} 
-      />
+    <div className={`skeleton-loader ${className ?? ''}`}>
+      {/* 任务头部区 */}
+      <div className="skeleton-card skeleton-card--header">
+        <div className="skeleton-block skeleton-block--title" />
+        <div className="skeleton-block skeleton-block--line" />
+        <div className="skeleton-block skeleton-block--line skeleton-block--short" />
+        <div className="skeleton-toolbar">
+          <div className="skeleton-pill" />
+          <div className="skeleton-pill" />
+          <div className="skeleton-pill skeleton-pill--wide" />
+        </div>
+      </div>
+
+      {/* 主内容双列区 */}
+      <div className="skeleton-columns">
+        <div className="skeleton-card skeleton-card--tall">
+          <div className="skeleton-block skeleton-block--eyebrow" />
+          <div className="skeleton-block skeleton-block--line" />
+          <div className="skeleton-block skeleton-block--line skeleton-block--short" />
+          <div className="skeleton-block skeleton-block--line skeleton-block--mid" />
+          <div className="skeleton-block skeleton-block--line skeleton-block--short" />
+        </div>
+        <div className="skeleton-card skeleton-card--tall">
+          <div className="skeleton-block skeleton-block--eyebrow" />
+          <div className="skeleton-block skeleton-block--line skeleton-block--mid" />
+          <div className="skeleton-block skeleton-block--line skeleton-block--short" />
+        </div>
+      </div>
     </div>
   )
 }

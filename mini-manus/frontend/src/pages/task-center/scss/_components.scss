@@ -68,6 +68,100 @@
   &--skipped { @include m.status-badge(t.$ink-soft, rgba(95, 86, 76, 0.12)); }
 }
 
+// ─── Skeleton Loader ──────────────────────────────────────────────────────────
+.skeleton-loader {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  animation: panel-fade 200ms ease;
+}
+
+// shimmer base mixin
+%shimmer-base {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.05) 0%,
+    rgba(0, 0, 0, 0.09) 40%,
+    rgba(0, 0, 0, 0.05) 80%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+.skeleton-block {
+  @extend %shimmer-base;
+
+  &--eyebrow { width: 24%; height: 12px; margin-bottom: 14px; }
+  &--title   { width: 45%; height: 26px; }
+  &--line    { width: 82%; height: 14px;
+    &.skeleton-block--short { width: 55%; }
+    &.skeleton-block--mid   { width: 70%; }
+  }
+}
+
+.skeleton-card {
+  @include m.card;
+  padding: 22px 24px;
+  display: grid;
+  gap: 10px;
+
+  &--header { gap: 14px; }
+
+  &--tall { min-height: 160px; align-content: start; }
+}
+
+.skeleton-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.skeleton-pill {
+  @extend %shimmer-base;
+  height: 30px;
+  width: 72px;
+  border-radius: 20px;
+  animation-delay: 0.15s;
+
+  &--wide { width: 110px; animation-delay: 0.3s; }
+}
+
+.skeleton-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: 12px;
+}
+
+// ─── Error State ──────────────────────────────────────────────────────────────
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+
+  &__icon {
+    font-size: 36px;
+    line-height: 1;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: t.$ink;
+  }
+
+  &__desc {
+    margin: 0;
+    font-size: 14px;
+    color: t.$ink-soft;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+}
+
 // ─── Task Dot ─────────────────────────────────────────────────────────────────
 .task-dot {
   width: 10px;

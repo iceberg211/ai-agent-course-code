@@ -227,18 +227,32 @@ export async function finalizerNode(
   const store = config ? getStore(config) : undefined;
   if (store) {
     try {
-      const stepSummary = state.stepResults
-        .map((s) => s.description)
-        .join('；');
-      await store.put(
-        ['task_memory', state.taskId],
-        state.runId,
-        {
-          summary: `${state.revisionInput.slice(0, 100)} → ${state.stepResults.length} 步完成（${stepSummary.slice(0, 200)}）`,
-          completedAt: new Date().toISOString(),
-          stepCount: state.stepResults.length,
-        },
-      );
+      const usedExecutors = [
+        ...new Set(
+          state.currentPlan?.steps.map(
+            (s) => s.skillName ?? s.toolHint ?? 'think',
+          ) ?? [],
+        ),
+      ];
+      // 出现过问题的步骤描述（最多 3 个），供 Planner 在下次规划时参考
+      const problematicSteps =
+        state.retryCount > 0 || state.replanCount > 0
+          ? state.stepResults
+              .slice(0, -1)
+              .map((s) => s.description)
+              .slice(0, 3)
+          : [];
+      await store.put(['task_memory', state.taskId], state.runId, {
+        summary: `${state.revisionInput.slice(0, 100)} → ${state.stepResults.length} 步完成`,
+        completedAt: new Date().toISOString(),
+        stepCount: state.stepResults.length,
+        // ── 反思字段：记录本次执行的问题，帮助 Planner 规避重复错误 ──
+        retryCount: state.retryCount,
+        replanCount: state.replanCount,
+        tokenUsed: state.usedTokens,
+        usedExecutors,
+        problematicSteps,
+      });
     } catch {
       // 写入失败不阻断 finalizer
     }

@@ -65,6 +65,15 @@ export class GitHubSearchTool implements Tool {
       return {
         success: true,
         output: truncateOutput(output || '无搜索结果'),
+        // 结构化数据：Skill 直接用此字段提取 URL/仓库信息，不必正则解析 output
+        structuredData: items.map((item) => ({
+          fullName: item.full_name,
+          url: item.html_url,
+          description: item.description,
+          stars: item.stargazers_count,
+          language: item.language,
+          updatedAt: item.updated_at,
+        })),
       };
     } catch (err: unknown) {
       return classifyToolError(err, 'GitHub search failed');

@@ -11,10 +11,50 @@ import { TokenBudgetGuard } from '@/agent/token-budget.guard';
 
 const logger = new Logger('EvaluatorNode');
 
+/** 工具输出写入 StepResult.toolOutput 的最大字符数 */
+const TOOL_OUTPUT_SUMMARY_MAX = 2000;
+
+/**
+ * 按信息价值动态构建近期步骤摘要，替代硬编码 .slice(-3)。
+ * 策略：最近步骤优先，逐步向前累积，直到超出 maxChars 为止。
+ * 每一步优先使用 toolOutput（真实工具输出），退化到 resultSummary（评估摘要）。
+ */
+function buildRecentSummaries(
+  stepResults: StepResult[],
+  maxChars = 3000,
+): string {
+  if (stepResults.length === 0) return '暂无';
+  const current = stepResults[stepResults.length - 1];
+  // 当前步骤内容截断到 maxChars * 0.6，为历史步骤留出空间
+  const currentContent = (current.toolOutput ?? current.resultSummary).slice(
+    0,
+    Math.floor(maxChars * 0.6),
+  );
+  let result = `[当前] ${current.description}: ${currentContent}`;
+  let remaining = maxChars - result.length;
+  for (let i = stepResults.length - 2; i >= 0 && remaining > 200; i--) {
+    const s = stepResults[i];
+    const content = (s.toolOutput ?? s.resultSummary ?? '').slice(0, 300);
+    const line = `[步骤${s.executionOrder + 1}] ${s.description}: ${content}`;
+    if (line.length > remaining) break;
+    result = line + '\n' + result;
+    remaining -= line.length;
+  }
+  return result;
+}
+
 const EvalSchema = z.object({
   decision: z.enum(['continue', 'retry', 'replan', 'complete', 'fail']),
   reason: z.string(),
 });
+
+// ─── 工具降级映射：工具不可用时降级到替代工具（retry 时 executor 读取 fallbackTool）─
+const TOOL_FALLBACKS: Record<string, string> = {
+  sandbox_run_node: 'think', // Docker 不可用 → 跳过执行验证
+  sandbox_run_python: 'think',
+  browser_open: 'fetch_url_as_markdown', // Playwright 不可用 → 静态抓取
+  browser_screenshot: 'fetch_url_as_markdown',
+};
 
 // ─── 结构性错误：重试不会恢复，跳过重试直接 replan/fail ──────────────────────
 const STRUCTURAL_ERROR_PATTERNS = [
@@ -65,6 +105,24 @@ function runPreChecks(
   const isTimeout = lower.includes('超时') || lower.includes('timeout');
 
   const structural = isStructuralError(lower);
+
+  // 工具资源不可用（Docker 未启动、Playwright 未安装）：降级到替代工具，走 retry
+  if (lower.includes('resource_unavailable')) {
+    // 从错误信息中提取失败工具名（格式：error (tool_execution_failed): resource_unavailable: sandbox_run_node）
+    const toolMatch = trimmed.match(/resource_unavailable[:\s]+(\w+)/i);
+    const failedTool = toolMatch?.[1] ?? '';
+    const fallback = TOOL_FALLBACKS[failedTool];
+    if (fallback && retryCount < maxRetries) {
+      logger.warn(
+        `工具 ${failedTool} 不可用 → 降级到 ${fallback}（retry ${retryCount + 1}/${maxRetries}）`,
+      );
+      return {
+        decision: 'retry',
+        reason: `工具 ${failedTool} 不可用，降级使用 ${fallback}`,
+        metadata: { fallbackTool: fallback },
+      };
+    }
+  }
 
   // 代码执行失败（沙箱 exitCode≠0）：retry 无意义，直接 replan 让 Planner 修复代码
   if (lower.includes(CODE_EXECUTION_FAILED)) {
@@ -193,7 +251,7 @@ async function applyDecision(
     description: currentStep?.description ?? '',
     resultSummary: result.reason,
     // 保留真实工具输出（截断），供后续步骤 Tool Calling 读取 URL/内容等数据
-    toolOutput: lastStepOutput.slice(0, 1000),
+    toolOutput: lastStepOutput.slice(0, TOOL_OUTPUT_SUMMARY_MAX),
     executionOrder: state.executionOrder - 1,
   };
 
@@ -310,18 +368,14 @@ export async function evaluatorNode(
   }
 
   // 3. LLM 评估 — 处理无法规则判断的情况
-  const recentSummaries =
-    state.stepResults
-      .slice(-3)
-      .map((s) => s.resultSummary)
-      .join('\n') || '无';
+  const recentSummaries = buildRecentSummaries(state.stepResults);
 
   const chain = evaluatorPrompt.pipe(
     llm.withStructuredOutput(EvalSchema, { method: soMethod }),
   );
   const result = (await chain.invoke({
     stepDescription: currentStep?.description ?? '未知',
-    lastStepOutput: lastStepOutput.slice(0, 1000),
+    lastStepOutput: lastStepOutput.slice(0, TOOL_OUTPUT_SUMMARY_MAX),
     recentSummaries,
     retryCount: String(state.retryCount),
     replanCount: String(state.replanCount),

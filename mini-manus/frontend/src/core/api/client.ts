@@ -29,6 +29,9 @@ apiClient.interceptors.response.use(
     }
     // 无响应（网络断了 / 超时）
     if (!error.response) {
+      if (error.code === 'ECONNABORTED' || error.message?.toLowerCase().includes('timeout')) {
+        return Promise.reject(new Error('请求超时，服务器响应过慢，请稍后重试'))
+      }
       return Promise.reject(new Error('网络请求失败，请检查连接'))
     }
     return Promise.reject(error)

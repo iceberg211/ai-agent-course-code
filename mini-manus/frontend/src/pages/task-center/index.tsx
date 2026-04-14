@@ -115,8 +115,23 @@ export function TaskCenterPage() {
           <section className="task-center-empty">
             <EmptyState
               title="创建你的第一个任务"
-              description="💡 用自然语言描述你想要完成的任务，系统将自动进行规划并执行落地。"
+              description="用自然语言描述你想要完成的任务，系统将自动进行规划并执行落地。"
             />
+          </section>
+        ) : taskDetailQuery.isError && !taskDetailQuery.data ? (
+          <section className="task-center-empty">
+            <div className="error-state">
+              <div className="error-state__icon">⚠️</div>
+              <h3 className="error-state__title">加载失败</h3>
+              <p className="error-state__desc">
+                {taskDetailQuery.error instanceof Error
+                  ? taskDetailQuery.error.message
+                  : '获取任务详情失败，请稍后重试'}
+              </p>
+              <Button variant="secondary" onClick={() => taskDetailQuery.refetch()}>
+                重新加载
+              </Button>
+            </div>
           </section>
         ) : !taskDetailQuery.data ? (
           <section className="task-center-empty">

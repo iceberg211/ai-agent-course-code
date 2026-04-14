@@ -52,7 +52,13 @@ export const INTENT_GUIDANCE: Record<string, string> = {
   code_generation: `【代码生成任务专用规划策略】
 - 必须使用 code_project_generation skill 生成代码文件，禁止拆成多个 write_file step
 - 推荐流程：web_research（可选，调研技术方案）→ code_project_generation → report_packaging（可选）
-- 如果需求明确，可以直接 code_project_generation，不需要调研`,
+- 如果需求明确，可以直接 code_project_generation，不需要调研
+
+【代码修复策略（replan 时使用）】
+- 如果 completedContext 中出现 code_execution_failed，说明是代码执行失败后的重规划
+- 此时必须使用 code_fix skill（不要重新生成整个项目，浪费 token）
+- code_fix 的 error_output 字段填入前序步骤中的错误输出内容
+- 修复后再加一步 sandbox_run_node 验证修复是否生效`,
   research_report: `【调研报告任务专用规划策略】
 - 推荐流程：web_research → competitive_analysis 或 document_writing → report_packaging
 - 搜索至少 2-3 个不同维度的关键词
@@ -315,6 +321,105 @@ export const reportMetadataPrompt = ChatPromptTemplate.fromMessages([
   ],
 ]);
 
+// ─── Router ───────────────────────────────────────────────────────────────────
+// 意图分类：根据用户任务描述判断 intent 和 subType
+export const routerPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    `你是一个任务意图分类器。根据用户任务描述，判断 intent 和 subType，并给出 reason。
+
+intent 选项：
+- code_generation: 生成代码项目、脚手架、写程序、创建应用
+- research_report: 调研报告、技术方案、深度分析、信息收集
+- competitive_analysis: 对比分析、竞品调研、方案比较
+- content_writing: 撰写文档、文章、邮件、演讲稿、总结
+- general: 以上都不匹配
+
+subType 规则（根据 intent 填写）：
+- code_generation → web_app / cli_tool / data_script / api_server / other
+- research_report → technical_analysis / market_research / tutorial / other
+- competitive_analysis / content_writing / general → other
+
+只返回 JSON。`,
+  ],
+  ['human', `任务：{revisionInput}`],
+]);
+
+// ─── Planner: WorkflowTemplate 参数提取 ──────────────────────────────────────
+// 从任务描述中提取模板所需的动态参数（比完整规划便宜 ~60%）
+export const templateParamExtractionPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    '根据任务描述，提取模板所需的参数值。只返回 JSON，不要其他内容。',
+  ],
+  ['human', '任务：{revisionInput}\n任务 ID：{taskId}'],
+]);
+
+// ─── Skill: Code Fix ──────────────────────────────────────────────────────────
+// 根据沙箱运行错误修复代码文件（replan 后使用，不重新生成整个项目）
+export const codeFixPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    `你是一个代码调试助手。根据错误信息和项目代码，输出需要修改的文件内容。
+
+输出格式：每个需要修改的文件以 ---FILE: 相对路径 单独一行开头，下面是完整的修复后文件内容。
+只输出需要修改的文件，不要输出不需要变动的文件。
+不要包裹在代码块（\`\`\`）中，直接输出文件内容。`,
+  ],
+  [
+    'human',
+    `错误信息：
+{errorOutput}
+
+项目文件列表：
+{fileList}
+
+关键文件内容：
+{fileContents}
+
+请输出修复后的文件：`,
+  ],
+]);
+
+// ─── Skill: Code Project Generation ──────────────────────────────────────────
+// 一次 LLM 调用生成所有文件（单 Artifact 模式，bolt.new / Claude Artifacts 最佳实践）
+export const codeProjectGenerationPrompt = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    `你是一个全栈项目生成助手。一次性生成项目所有文件的完整内容。
+
+输出格式要求：
+- 每个文件用 "---FILE: 相对路径" 作为开头标记（独占一行）
+- 标记行后紧接文件的完整内容
+- 文件内容不要包裹在代码块中
+- 按依赖顺序排列（配置文件在前，业务代码在后）
+- 最多 10 个核心文件，不要过度设计
+
+示例格式：
+---FILE: package.json
+{{
+  "name": "my-app",
+  "scripts": {{ "dev": "vite" }}
+}}
+---FILE: src/main.tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
+
+要求：
+- 生成完整可运行的代码，不要省略
+- 文件间的 import/require 路径必须一致
+- 配置文件（package.json, tsconfig 等）的依赖版本使用当前主流稳定版`,
+  ],
+  [
+    'human',
+    `项目需求：{projectDescription}
+
+请按上述格式一次性输出所有文件：`,
+  ],
+]);
+
 // ─── Executor: Tool Calling ───────────────────────────────────────────────────
 // 当 Planner 使用 toolHint 指定工具但未给出完整参数时，Executor 使用此 prompt
 // 让 LLM 根据步骤目标和前序结果生成真实的工具参数（ReAct 原语）。
@@ -328,9 +433,14 @@ export const toolCallingPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
     `你是一个工具调用助手。根据步骤目标和前序步骤的执行结果，调用指定工具并填入正确参数。
-必须调用工具，不要只回复文字。
 
-提示：前序步骤的完整输出保存在 .steps/ 目录下（文件名格式：.steps/step_{序号}_{工具名}.json），可通过 read_file 按需读取。下方摘要已包含关键信息，通常无需额外读取。`,
+规则（按优先级）：
+1. 必须调用工具，不要只回复文字
+2. 参数来源：前序步骤的真实输出 > 步骤描述中的线索 > 合理推断
+3. URL 参数：只使用前序步骤中出现的真实 URL，不要编造
+4. task_id 参数：始终使用任务目标中注明的 task_id，不要修改或替换
+5. 如果有 retryHint（前次失败原因），换不同的参数重试
+6. 前序步骤的完整输出在 .steps/step_{序号}_{工具名}.json，可通过 read_file 读取；下方摘要通常已足够`,
   ],
   [
     'human',

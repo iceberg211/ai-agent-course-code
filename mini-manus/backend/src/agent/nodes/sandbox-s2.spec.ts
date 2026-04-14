@@ -32,11 +32,14 @@ function mockState(overrides: Partial<AgentState> = {}): AgentState {
     shouldStop: false,
     errorMessage: null,
     taskIntent: 'code_generation' as TaskIntent,
+    taskIntentSubType: '',
     approvalMode: 'none',
     lastStepRunId: '',
     lastStepOutput: '',
     usedTokens: 0,
     tokenBudget: 100_000,
+    parallelStepOutputs: [],
+    parallelTopicIdx: -1,
     ...overrides,
   };
 }

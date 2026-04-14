@@ -1,10 +1,13 @@
+import { Logger } from '@nestjs/common';
 import { z } from 'zod';
 import {
   Skill,
   SkillContext,
   SkillEvent,
 } from '@/skill/interfaces/skill.interface';
-import { ChatPromptTemplate } from '@langchain/core/prompts';
+import { codeProjectGenerationPrompt } from '@/prompts';
+
+const logger = new Logger('CodeProjectGenerationSkill');
 
 const inputSchema = z.object({
   task_id: z.string().uuid(),
@@ -63,47 +66,15 @@ function detectEntryFile(files: string[]): string {
 // 业界最佳实践（bolt.new / Claude Artifacts）：一次 LLM 调用生成所有文件，
 // 用分隔标记拆分，保证文件间上下文一致性，成本降为逐文件方案的 1/N。
 
-/** 单次生成的文件数量硬上限，防止 LLM 无视 prompt 约束输出过多文件 */
-const MAX_FILES = 10;
+/**
+ * 单次生成的文件数量"软"上限。
+ * 成熟 Agent（bolt.new / Devin / Claude Artifacts）从不在代码层硬限制文件数——
+ * LLM 生成几个文件就写几个，约束靠 prompt 引导，不靠 throw。
+ * 这里只用于 warn 日志，不阻断生成。
+ */
+const WARN_FILES = 20;
 
 const FILE_SEPARATOR = '---FILE:';
-
-const projectPrompt = ChatPromptTemplate.fromMessages([
-  [
-    'system',
-    `你是一个全栈项目生成助手。一次性生成项目所有文件的完整内容。
-
-输出格式要求：
-- 每个文件用 "${FILE_SEPARATOR} 相对路径" 作为开头标记（独占一行）
-- 标记行后紧接文件的完整内容
-- 文件内容不要包裹在代码块中
-- 按依赖顺序排列（配置文件在前，业务代码在后）
-- 最多 10 个核心文件，不要过度设计
-
-示例格式：
-${FILE_SEPARATOR} package.json
-{{
-  "name": "my-app",
-  "scripts": {{ "dev": "vite" }}
-}}
-${FILE_SEPARATOR} src/main.tsx
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App'
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />)
-
-要求：
-- 生成完整可运行的代码，不要省略
-- 文件间的 import/require 路径必须一致
-- 配置文件（package.json, tsconfig 等）的依赖版本使用当前主流稳定版`,
-  ],
-  [
-    'human',
-    `项目需求：{projectDescription}
-
-请按上述格式一次性输出所有文件：`,
-  ],
-]);
 
 /** 解析 LLM 输出中的 ---FILE: path--- 分隔块 */
 function parseFileBlocks(
@@ -167,7 +138,7 @@ export class CodeProjectGenerationSkill implements Skill {
       message: '正在生成项目代码（单次生成所有文件）…',
     };
 
-    const chain = projectPrompt.pipe(ctx.llm);
+    const chain = codeProjectGenerationPrompt.pipe(ctx.llm);
     // P2-3: 传入 AbortSignal，让 LangChain SDK 尽量中止底层 HTTP 请求
     const response = await chain.invoke(
       { projectDescription: project_description },
@@ -195,11 +166,10 @@ export class CodeProjectGenerationSkill implements Skill {
       );
     }
 
-    // P2-4: 解析后硬限制文件数量，防止 LLM 无视 prompt 约束输出过多文件
-    if (files.length > MAX_FILES) {
-      throw new Error(
-        `代码生成失败：LLM 输出了 ${files.length} 个文件，超过单次上限 ${MAX_FILES}。` +
-          `请缩小项目范围后重试。`,
+    // 超出参考上限时只告警，不阻断——成熟 Agent（bolt.new / Devin）从不在代码层硬限制文件数
+    if (files.length > WARN_FILES) {
+      logger.warn(
+        `LLM 生成了 ${files.length} 个文件（参考上限 ${WARN_FILES}），继续写入全部文件`,
       );
     }
 

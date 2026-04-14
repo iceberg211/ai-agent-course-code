@@ -39,27 +39,42 @@ export class WebSearchTool implements Tool {
 
       const response = await axios.post(
         'https://api.tavily.com/search',
-        { query: parsed.query, max_results: parsed.max_results ?? 5 },
+        {
+          query: parsed.query,
+          max_results: parsed.max_results ?? 5,
+          include_answer: true, // Tavily 直接返回 AI 合成答案，作为首要参考
+        },
         { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 15000 },
       );
 
       const responseData = response.data as {
         results?: Array<{ title: string; url: string; content: string }>;
+        answer?: string;
       };
       const results = responseData.results ?? [];
-      const output = results
-        .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`)
-        .join('\n\n');
+
+      // answer 字段优先展示，供 LLM 直接参考，质量通常高于原始 snippet
+      const answerBlock = responseData.answer
+        ? `直接回答：${responseData.answer}\n\n来源：\n`
+        : '';
+      const output =
+        answerBlock +
+        results
+          .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`)
+          .join('\n\n');
 
       return {
         success: true,
         output: truncateOutput(output || '无结果'),
-        // 结构化数据：Skill 直接用此字段提取 URL，不必正则解析 output
-        structuredData: results.map((r) => ({
-          title: r.title,
-          url: r.url,
-          snippet: r.content,
-        })),
+        // 结构化数据：Skill 直接用此字段提取 URL/snippet，不必正则解析 output
+        structuredData: {
+          answer: responseData.answer ?? null,
+          results: results.map((r) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.content,
+          })),
+        },
       };
     } catch (err: unknown) {
       return classifyToolError(err, 'Search failed');

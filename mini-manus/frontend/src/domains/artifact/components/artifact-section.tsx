@@ -1,93 +1,15 @@
-import { useEffect, useMemo, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useMemo } from 'react'
 import type { ArtifactDetail } from '@/domains/artifact/types/artifact.types'
+import { DiagramPreview } from '@/domains/artifact/components/diagram-preview'
+import { MarkdownPreview } from '@/domains/artifact/components/markdown-preview'
+import { downloadArtifact, getArtifactFilename } from '@/domains/artifact/utils/artifact-download'
 import { Button } from '@/shared/ui/button'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { PanelSection } from '@/shared/ui/panel-section'
-import { formatDateTime } from '@/shared/utils/date'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { CodePreview, JsonPreview } from '@/shared/ui/code-preview'
+import { formatDateTime } from '@/shared/utils/date'
 
-// ─── Sub-renderers ────────────────────────────────────────────────────────────
-
-function MarkdownPreview({ content }: { content: string }) {
-  return (
-    <div className="markdown-body">
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '')
-            return match ? (
-              <SyntaxHighlighter
-                style={vscDarkPlus as any}
-                language={match[1]}
-                PreTag="div"
-                ref={undefined}
-                {...(props as any)}
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            )
-          }
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
-}
-
-function DiagramPreview({ content }: { content: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!containerRef.current) return
-
-    // 延迟加载 mermaid，避免 SSR 问题
-    void import('mermaid').then((mermaidModule) => {
-      const mermaid = mermaidModule.default
-      mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
-
-      // 清空旧内容
-      if (!containerRef.current) return
-      containerRef.current.innerHTML = ''
-
-      // 渲染 mermaid 图
-      const id = `mermaid-${Date.now()}`
-      void mermaid
-        .render(id, content)
-        .then(({ svg }) => {
-          if (containerRef.current) {
-            containerRef.current.innerHTML = svg
-          }
-        })
-        .catch(() => {
-          if (containerRef.current) {
-            const pre = document.createElement('pre')
-            pre.textContent = content
-            containerRef.current.replaceChildren(pre)
-          }
-        })
-    })
-  }, [content])
-
-  return <div ref={containerRef} className="artifact-diagram" />
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-interface ArtifactSectionProps {
-  artifacts: ArtifactDetail[]
-  onSelectArtifact: (artifactId: string) => void
-  selectedArtifactId: string | null
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS: Record<string, string> = {
   markdown: 'Markdown',
@@ -97,84 +19,15 @@ const TYPE_LABELS: Record<string, string> = {
   diagram: '图表',
 }
 
-const TYPE_EXTENSIONS: Record<string, string> = {
-  markdown: 'md',
-  json: 'json',
-  file: 'bin',
-  code: 'txt',
-  diagram: 'mmd',
+// ─── ArtifactSection ─────────────────────────────────────────────────────────
+
+interface ArtifactSectionProps {
+  artifacts: ArtifactDetail[]
+  onSelectArtifact: (artifactId: string) => void
+  selectedArtifactId: string | null
 }
 
-const LANGUAGE_EXTENSIONS: Record<string, string> = {
-  javascript: 'js',
-  typescript: 'ts',
-  python: 'py',
-  json: 'json',
-  bash: 'sh',
-  shell: 'sh',
-  html: 'html',
-  css: 'css',
-  sql: 'sql',
-}
-
-function sanitizeFilenamePart(input: string) {
-  return input.replace(/[^a-zA-Z0-9\u4e00-\u9fa5-_]+/g, '_').replace(/^_+|_+$/g, '')
-}
-
-function getArtifactFilename(artifact: ArtifactDetail) {
-  const metadataName =
-    typeof artifact.metadata?.fileName === 'string' ? artifact.metadata.fileName : null
-  if (metadataName) return metadataName
-
-  const extension =
-    artifact.type === 'code' && typeof artifact.metadata?.language === 'string'
-      ? (LANGUAGE_EXTENSIONS[artifact.metadata.language] ?? artifact.metadata.language)
-      : TYPE_EXTENSIONS[artifact.type] ?? 'txt'
-
-  return `${sanitizeFilenamePart(artifact.title || 'artifact')}.${extension}`
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-function downloadArtifact(artifact: ArtifactDetail) {
-  const filename = getArtifactFilename(artifact)
-  if (
-    artifact.type === 'file' &&
-    artifact.metadata?.encoding === 'base64' &&
-    typeof artifact.metadata?.mimeType === 'string'
-  ) {
-    const binary = atob(artifact.content)
-    const bytes = new Uint8Array(binary.length)
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
-    triggerDownload(new Blob([bytes], { type: artifact.metadata.mimeType }), filename)
-    return
-  }
-
-  const mimeType =
-    artifact.type === 'json'
-      ? 'application/json'
-      : artifact.type === 'markdown'
-        ? 'text/markdown'
-        : artifact.type === 'diagram'
-          ? 'text/plain'
-          : 'text/plain'
-  triggerDownload(new Blob([artifact.content], { type: mimeType }), filename)
-}
-
-export function ArtifactSection({
-  artifacts,
-  onSelectArtifact,
-  selectedArtifactId,
-}: ArtifactSectionProps) {
+export function ArtifactSection({ artifacts, onSelectArtifact, selectedArtifactId }: ArtifactSectionProps) {
   const selectedArtifact = useMemo(
     () => artifacts.find((a) => a.id === selectedArtifactId) ?? artifacts[0] ?? null,
     [artifacts, selectedArtifactId],
@@ -208,11 +61,7 @@ export function ArtifactSection({
         {artifacts.map((artifact) => (
           <button
             key={artifact.id}
-            className={
-              artifact.id === selectedArtifact?.id
-                ? 'artifact-tab artifact-tab--active'
-                : 'artifact-tab'
-            }
+            className={artifact.id === selectedArtifact?.id ? 'artifact-tab artifact-tab--active' : 'artifact-tab'}
             onClick={() => onSelectArtifact(artifact.id)}
           >
             <span className="artifact-tab__type">{TYPE_LABELS[artifact.type] ?? artifact.type}</span>

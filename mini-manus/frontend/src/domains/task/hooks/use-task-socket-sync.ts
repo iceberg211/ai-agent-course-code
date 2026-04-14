@@ -226,6 +226,11 @@ export function useTaskSocketSync(
    * 断线重连后用此游标做增量续拉，避免全量重新加载或漏掉中间事件。
    */
   const lastEventCursorRef = useRef<{ createdAt: string; eventId: string } | null>(null)
+  /**
+   * 历史回放进行中标志。回放期间跳过 invalidateQueries，
+   * 避免每条历史事件都触发一次服务端请求，回放结束后统一刷新一次。
+   */
+  const isReplayingRef = useRef(false)
   // 用 lazy initializer 读取初始连接状态，避免在 effect 内同步 setState
   const [socketConnected, setSocketConnected] = useState(() => getTaskSocket().connected)
 
@@ -248,11 +253,12 @@ export function useTaskSocketSync(
   // - 结构性变更（plan.created / step.completed / terminal）才刷新 React Query
 
   const invalidateTasks = useEffectEvent(() => {
+    if (isReplayingRef.current) return
     void queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
   })
 
   const invalidateDetail = useEffectEvent((payload?: BasePayload) => {
-    if (!selectedTaskId) return
+    if (!selectedTaskId || isReplayingRef.current) return
     void queryClient.invalidateQueries({ queryKey: queryKeys.taskDetail(selectedTaskId) })
     if (payload?.runId && payload.runId === selectedRunId) {
       void queryClient.invalidateQueries({
@@ -354,6 +360,7 @@ export function useTaskSocketSync(
           latestNarration: payload.description
             ? `开始执行：${payload.description}`
             : '开始执行新的步骤',
+          pendingApproval: null, // 步骤开始执行，清除审批面板
           stepOrder: addStepOrder(feed.stepOrder, payload.stepRunId!),
           steps: { ...feed.steps, [payload.stepRunId!]: nextStep },
         }
@@ -537,6 +544,7 @@ export function useTaskSocketSync(
           runStatus,
           activeStepRunId: null,
           latestNarration: message,
+          pendingApproval: null, // run 终态时清除审批面板
           terminalErrorCode: payload.errorCode ?? null,
           terminalErrorMetadata: payload.metadata ?? null,
         })),
@@ -765,6 +773,7 @@ export function useTaskSocketSync(
    */
   const replayHistoryEvents = useEffectEvent(async (incremental: boolean) => {
     if (!selectedTaskId) return
+    isReplayingRef.current = true
     try {
       const cursor = incremental ? lastEventCursorRef.current : null
       const events = await fetchTaskEvents(selectedTaskId, {
@@ -778,6 +787,10 @@ export function useTaskSocketSync(
       }
     } catch (err) {
       console.warn('[EventReplay] Failed to fetch task events:', err)
+    } finally {
+      isReplayingRef.current = false
+      // 回放结束后统一刷新一次，而不是每个历史事件都触发请求
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskDetail(selectedTaskId) })
     }
   })
 

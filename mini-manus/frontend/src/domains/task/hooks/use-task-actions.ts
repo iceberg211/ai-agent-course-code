@@ -32,9 +32,12 @@ export function useTaskActions() {
     mutationFn: ({ input, approvalMode }: { input: string; approvalMode?: import('@/core/api/task.api').ApprovalMode }) =>
       createTask(input, approvalMode),
     onSuccess: async (task) => {
-      selectionActions.selectTask(task.id)
       panels.closeSidebar()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.tasks() })
+      // 先等任务列表刷新（包含新任务），再切换选中。
+      // 若先 selectTask 再 invalidate，useTaskSelectionSync 会在列表还没有新任务时
+      // 把 selectedTaskId 重置为 tasks[0]（旧任务）。
+      await queryClient.refetchQueries({ queryKey: queryKeys.tasks() })
+      selectionActions.selectTask(task.id)
     },
   })
 

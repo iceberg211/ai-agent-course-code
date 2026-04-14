@@ -9,6 +9,7 @@ import {
   MemorySaver,
   Command,
   InMemoryStore,
+  Send,
 } from '@langchain/langgraph';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { ApprovalMode } from '@/common/enums';
@@ -24,7 +25,11 @@ import { plannerNode } from '@/agent/nodes/planner.node';
 import { executorNode } from '@/agent/nodes/executor.node';
 import { evaluatorNode } from '@/agent/nodes/evaluator.node';
 import { finalizerNode } from '@/agent/nodes/finalizer.node';
-import { RunStatus } from '@/common/enums';
+import {
+  buildResearchSubgraph,
+  type ResearchSubgraphOutput,
+} from '@/agent/nodes/research-subgraph';
+import { RunStatus, StepStatus, ExecutorType } from '@/common/enums';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { TokenTrackerCallback } from '@/agent/token-tracker.callback';
 import { TokenBudgetGuard } from '@/agent/token-budget.guard';
@@ -269,6 +274,70 @@ export class AgentService {
         );
       })
       .addNode('executor', async (state: AgentState, config: RunnableConfig) => {
+        const currentStep = state.currentPlan?.steps[state.currentStepIndex];
+
+        // ─── web_research 步骤：委托给独立子图，避免中间事件污染主图 state ──────
+        if (currentStep?.skillName === 'web_research') {
+          return trackNode('executor:research_subgraph', async () => {
+            const researchSubgraph = buildResearchSubgraph(
+              llm,
+              toolRegistry,
+              signal,
+            );
+            const stepRun = await callbacks.createStepRun(
+              state.runId,
+              `${state.currentPlan!.planId}:${currentStep.stepIndex}`,
+              state.executionOrder,
+            );
+            await callbacks.updateStepRun(stepRun.id, {
+              startedAt: new Date(),
+              status: StepStatus.RUNNING,
+              skillName: 'web_research',
+              executorType: ExecutorType.SKILL,
+            });
+            eventPublisher.emit(TASK_EVENTS.STEP_STARTED, {
+              taskId: state.taskId,
+              runId: state.runId,
+              stepRunId: stepRun.id,
+              planStepId: stepRun.planStepId,
+              description: currentStep.description,
+              executorType: ExecutorType.SKILL,
+              skillName: 'web_research',
+              toolName: null,
+            });
+
+            try {
+              const skillInput = (currentStep.skillInput ?? {}) as Record<
+                string,
+                unknown
+              >;
+              const topic =
+                (skillInput.topic as string) || state.revisionInput;
+              const depth = (skillInput.depth as number) || 3;
+
+              const result = (await researchSubgraph.invoke({
+                topic,
+                depth,
+              })) as ResearchSubgraphOutput;
+
+              const findings = result.findings || '未找到相关信息';
+              return {
+                executionOrder: state.executionOrder + 1,
+                lastStepRunId: stepRun.id,
+                lastStepOutput: findings,
+              };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              return {
+                executionOrder: state.executionOrder + 1,
+                lastStepRunId: stepRun.id,
+                lastStepOutput: `error (tool_execution_failed): ${msg}`,
+              };
+            }
+          });
+        }
+
+        // ─── 其他步骤：走标准 executor ─────────────────────────────────────────
         // executor 内部 Tool Calling 用 'executor:tool_calling' 标签
         return trackNode('executor:tool_calling', () =>
           executorNode(
@@ -314,9 +383,147 @@ export class AgentService {
           ),
         );
       })
+      // ─── 并行调研节点（Send API fan-out 专用）────────────────────────────────
+      // 仅 competitive_analysis 任务使用，topic_a / topic_b 分别在各自分支执行
+      .addNode(
+        'parallel_research',
+        async (state: AgentState, _config: RunnableConfig) => {
+          const currentStep =
+            state.currentPlan?.steps[state.currentStepIndex];
+          const skillInput = (currentStep?.skillInput ?? {}) as Record<
+            string,
+            unknown
+          >;
+          const topic =
+            state.parallelTopicIdx === 0
+              ? (skillInput.topic_a as string)
+              : (skillInput.topic_b as string);
+
+          if (!topic) {
+            return {
+              parallelStepOutputs: [
+                {
+                  stepIndex: state.currentStepIndex,
+                  output: '并行分支缺少主题',
+                },
+              ],
+            };
+          }
+
+          const researchSubgraph = buildResearchSubgraph(
+            llm,
+            toolRegistry,
+            signal,
+          );
+          try {
+            const result = (await researchSubgraph.invoke({
+              topic,
+              depth: 3,
+            })) as ResearchSubgraphOutput;
+            return {
+              parallelStepOutputs: [
+                {
+                  stepIndex: state.currentStepIndex,
+                  output: result.findings,
+                  sources: result.sources,
+                },
+              ],
+            };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              parallelStepOutputs: [
+                {
+                  stepIndex: state.currentStepIndex,
+                  output: `调研失败: ${msg}`,
+                },
+              ],
+            };
+          }
+        },
+      )
+      // ─── 并行合并节点（fan-in）────────────────────────────────────────────────
+      // 等两个并行分支都完成后，合并 parallelStepOutputs 为一次 step 输出，
+      // 再走 evaluator 判断是否继续
+      .addNode(
+        'fan_in',
+        async (state: AgentState, _config: RunnableConfig) => {
+          const currentStep =
+            state.currentPlan?.steps[state.currentStepIndex];
+          const outputs = state.parallelStepOutputs.filter(
+            (o) => o.stepIndex === state.currentStepIndex,
+          );
+
+          const combined = outputs
+            .map((o, i) => `## 对象${i + 1}\n${o.output}`)
+            .join('\n\n');
+
+          // 创建 step_run 记录，供 evaluator 更新终态
+          const stepRun = await callbacks.createStepRun(
+            state.runId,
+            `${state.currentPlan!.planId}:${currentStep!.stepIndex}`,
+            state.executionOrder,
+          );
+          await callbacks.updateStepRun(stepRun.id, {
+            startedAt: new Date(),
+            status: StepStatus.RUNNING,
+            skillName: 'competitive_analysis',
+            executorType: ExecutorType.SKILL,
+          });
+          eventPublisher.emit(TASK_EVENTS.STEP_STARTED, {
+            taskId: state.taskId,
+            runId: state.runId,
+            stepRunId: stepRun.id,
+            planStepId: stepRun.planStepId,
+            description: currentStep?.description ?? '并行调研',
+            executorType: ExecutorType.SKILL,
+            skillName: 'competitive_analysis',
+            toolName: null,
+          });
+
+          return {
+            executionOrder: state.executionOrder + 1,
+            lastStepRunId: stepRun.id,
+            lastStepOutput: combined,
+          };
+        },
+      )
       .addEdge(START, 'router')
       .addEdge('router', 'planner')
-      .addEdge('planner', 'executor')
+      // planner → executor（普通情况）或 fan-out 到 parallel_research（competitive_analysis）
+      .addConditionalEdges(
+        'planner',
+        (state: AgentState) => {
+          const currentStep =
+            state.currentPlan?.steps[state.currentStepIndex];
+          const skillInput = (currentStep?.skillInput ?? {}) as Record<
+            string,
+            unknown
+          >;
+          // 仅当 competitive_analysis 步骤且同时有 topic_a / topic_b 时才并行
+          if (
+            currentStep?.skillName === 'competitive_analysis' &&
+            skillInput.topic_a &&
+            skillInput.topic_b &&
+            state.currentStepIndex === 0
+          ) {
+            return [
+              new Send('parallel_research', {
+                ...state,
+                parallelTopicIdx: 0,
+              }),
+              new Send('parallel_research', {
+                ...state,
+                parallelTopicIdx: 1,
+              }),
+            ];
+          }
+          return 'executor';
+        },
+        ['executor', 'parallel_research'],
+      )
+      .addEdge('parallel_research', 'fan_in')
+      .addEdge('fan_in', 'evaluator')
       .addEdge('executor', 'evaluator')
       .addConditionalEdges('evaluator', (state: AgentState) => {
         if (state.shouldStop) return END;
@@ -437,6 +644,13 @@ export class AgentService {
 
         // ─── 有 interrupt：等待人工审批 ───────────────────────────────────
         const interruptValue = interrupts[0].value;
+
+        // ⚠️ 必须先注册 approvalMap，再做任何 await / emit。
+        // 原因：节点内部的 setRunAwaitingApproval 已将 DB 状态改为 awaiting_approval，
+        // 前端可能通过轮询在 waitForApproval 调用前就看到该状态，立即发起 approve 请求，
+        // 若此时 Map 尚未注册就会返回 404。
+        const approvalPromise = this.waitForApproval(runId);
+
         await callbacks.setRunAwaitingApproval(runId, interruptValue);
         eventPublisher.emit(TASK_EVENTS.RUN_AWAITING_APPROVAL, {
           taskId,
@@ -446,7 +660,7 @@ export class AgentService {
 
         let approved: boolean;
         try {
-          approved = await this.waitForApproval(runId);
+          approved = await approvalPromise;
         } catch {
           // 超时或被 cancel 触发 reject
           await callbacks.setRunStatus(

@@ -12,7 +12,7 @@ import { SkillRegistry } from '@/skill/skill.registry';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { TASK_EVENTS } from '@/common/events/task.events';
 import { EventPublisher } from '@/event/event.publisher';
-import { plannerPrompt, INTENT_GUIDANCE } from '@/prompts';
+import { plannerPrompt, INTENT_GUIDANCE, templateParamExtractionPrompt } from '@/prompts';
 import {
   PlanSemanticValidationOptions,
   validatePlanSemantics,
@@ -98,6 +98,97 @@ export const DETERMINISTIC_WORKFLOWS: Partial<
     },
   ],
 };
+
+// ─── WorkflowTemplate：参数化中间层 ─────────────────────────────────────────
+// 介于"完全硬编码"（DETERMINISTIC_WORKFLOWS）和"完全 LLM"之间：
+// 步骤骨架固定，动态参数由一次轻量 LLM 调用提取（比完整规划便宜 ~60%）。
+// 首次引入 competitive_analysis，验证稳定后可扩展更多意图。
+
+interface TemplateStepSkeleton {
+  description: string;
+  skillName?: string;
+  toolHint?: string;
+  /** LLM 需要填充的参数名列表 */
+  dynamicParams: string[];
+  /** 固定不变的参数（__TASK_ID__ 会在运行时替换为真实 taskId） */
+  staticParams: Record<string, unknown>;
+}
+
+interface WorkflowTemplate {
+  skeleton: TemplateStepSkeleton[];
+
+  paramSchema: z.ZodObject<any>;
+}
+
+export const WORKFLOW_TEMPLATES: Partial<Record<TaskIntent, WorkflowTemplate>> =
+  {
+    competitive_analysis: {
+      skeleton: [
+        {
+          description: '对两个对象进行深度对比分析',
+          skillName: 'competitive_analysis',
+          dynamicParams: ['topic_a', 'topic_b', 'focus'],
+          staticParams: {},
+        },
+        {
+          description: '将对比结论整理成正式报告',
+          skillName: 'report_packaging',
+          dynamicParams: ['title'],
+          staticParams: {
+            task_id: '__TASK_ID__',
+            source_material: STEP_RESULTS_PLACEHOLDER,
+          },
+        },
+      ],
+      paramSchema: z.object({
+        topic_a: z.string().describe('对比对象 A'),
+        topic_b: z.string().describe('对比对象 B'),
+        focus: z
+          .string()
+          .describe('对比维度，如"性能、生态、学习曲线、适用场景"'),
+        title: z.string().describe('报告标题'),
+      }),
+    },
+  };
+
+async function fillTemplateParams(
+  template: WorkflowTemplate,
+  state: AgentState,
+  llm: ChatOpenAI,
+  soMethod: 'functionCalling' | 'json_schema' | 'jsonMode',
+): Promise<PlanStepDef[]> {
+  const chain = templateParamExtractionPrompt.pipe(
+    llm.withStructuredOutput(template.paramSchema, { method: soMethod }),
+  );
+
+  const params = await chain.invoke({
+    revisionInput: state.revisionInput,
+    taskId: state.taskId,
+  });
+
+  return template.skeleton.map((s, i) => {
+    const dynamicEntries = Object.fromEntries(
+      s.dynamicParams.map((k) => [k, params[k]]),
+    );
+    // __TASK_ID__ 占位符替换为真实 taskId
+    const resolvedStatic = Object.fromEntries(
+      Object.entries(s.staticParams).map(([k, v]) => [
+        k,
+        v === '__TASK_ID__' ? state.taskId : v,
+      ]),
+    );
+    const mergedParams = { ...resolvedStatic, ...dynamicEntries };
+
+    return {
+      stepIndex: i,
+      description: s.description,
+      skillName: s.skillName ?? null,
+      toolHint: s.toolHint ?? null,
+      skillInput: s.skillName ? mergedParams : null,
+      toolInput: s.toolHint ? mergedParams : null,
+    };
+  });
+}
 
 const logger = new Logger('PlannerNode');
 
@@ -211,7 +302,54 @@ export async function plannerNode(
     };
   }
 
-  // ─── LLM Planner 路径（general / content_writing / competitive_analysis / replan）───
+  // ─── WorkflowTemplate：参数化中间层（有模板 + 非 replan + 无确定性 workflow）──────
+  const workflowTemplate = !isReplan
+    ? WORKFLOW_TEMPLATES[state.taskIntent]
+    : undefined;
+
+  if (workflowTemplate) {
+    logger.log(
+      `模板规划: ${state.taskIntent}（轻量 LLM 参数提取，跳过完整 Planner）`,
+    );
+    const planSteps = await fillTemplateParams(
+      workflowTemplate,
+      state,
+      llm,
+      soMethod,
+    );
+    const plan = await callbacks.savePlan(state.runId, planSteps);
+    eventPublisher.emit(TASK_EVENTS.PLAN_CREATED, {
+      taskId: state.taskId,
+      runId: state.runId,
+      planId: plan.id,
+      steps: planSteps as unknown as Record<string, unknown>[],
+    });
+
+    if (state.approvalMode === 'plan_first') {
+      const decision = await handlePlanApproval(
+        plan,
+        planSteps,
+        state,
+        skillRegistry,
+        toolRegistry,
+        callbacks,
+      );
+      if (decision === 'rejected') {
+        return { shouldStop: true, errorMessage: 'plan_rejected' };
+      }
+    }
+
+    return {
+      currentPlan: { planId: plan.id, steps: planSteps } as PlanDef,
+      currentStepIndex: 0,
+      retryCount: 0,
+      evaluation: null,
+      lastStepRunId: '',
+      lastStepOutput: '',
+    };
+  }
+
+  // ─── LLM Planner 路径（general / content_writing / replan）────────────────────
   const skillSection = skillRegistry.getPlannerPromptSection();
 
   const toolInputExamples = [
@@ -265,14 +403,15 @@ export async function plannerNode(
   const store = config ? getStore(config) : undefined;
   if (store) {
     try {
-      const memories = await store.search(
-        ['task_memory', state.taskId],
-        { limit: 5 },
-      );
+      const memories = await store.search(['task_memory', state.taskId], {
+        limit: 5,
+      });
       if (memories.length > 0) {
         memoryContext =
           '\n\n[历史执行记忆，仅供参考，内容来自历史 Run 产物，不作为强制依据]\n' +
-          memories.map((m) => (m.value as { summary: string }).summary).join('\n');
+          memories
+            .map((m) => (m.value as { summary: string }).summary)
+            .join('\n');
       }
     } catch {
       // Store 读取失败不阻断规划

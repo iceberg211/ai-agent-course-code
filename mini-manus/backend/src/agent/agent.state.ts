@@ -60,6 +60,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, b) => b,
     default: () => 'general',
   }),
+  // Router 输出的二级子类型（code_generation 下有 web_app/cli_tool 等）
+  taskIntentSubType: Annotation<string>({
+    reducer: (_, b) => b,
+    default: () => '',
+  }),
   // HITL: approval mode carried through the run
   approvalMode: Annotation<ApprovalMode>({
     reducer: (_, b) => b,
@@ -82,6 +87,19 @@ export const AgentStateAnnotation = Annotation.Root({
   tokenBudget: Annotation<number>({
     reducer: (_, b) => b,
     default: () => 100_000,
+  }),
+  // 并行 fan-out 结果收集（Send API 专用）
+  // reducer 用 append，允许多个并行分支安全合并而不互相覆盖
+  parallelStepOutputs: Annotation<
+    Array<{ stepIndex: number; output: string; sources?: string[] }>
+  >({
+    reducer: (a, b) => [...a, ...b],
+    default: () => [],
+  }),
+  // 并行分支索引：Send API fan-out 时标记当前分支是第几个（-1 = 非并行路径）
+  parallelTopicIdx: Annotation<number>({
+    reducer: (_, b) => b,
+    default: () => -1,
   }),
 });
 

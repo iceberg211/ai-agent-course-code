@@ -283,9 +283,13 @@ export async function executorNode(
   const usesSkill = Boolean(
     step.skillName && skillRegistry.has(step.skillName),
   );
+  // evaluator 降级时 fallbackTool 优先（resource_unavailable 场景）
+  const effectiveToolName =
+    (state.evaluation?.metadata as Record<string, string> | undefined)
+      ?.fallbackTool ?? step.toolHint ?? 'think';
 
   logger.log(
-    `step[${state.currentStepIndex}] ${usesSkill ? 'skill:' + step.skillName : 'tool:' + (step.toolHint ?? 'think')} | ${step.description.slice(0, 60)}${state.retryCount > 0 ? ` (retry #${state.retryCount})` : ''}`,
+    `step[${state.currentStepIndex}] ${usesSkill ? 'skill:' + step.skillName : 'tool:' + effectiveToolName} | ${step.description.slice(0, 60)}${state.retryCount > 0 ? ` (retry #${state.retryCount})` : ''}`,
   );
 
   // ─── HITL interrupt 检查 ──────────────────────────────────────────────────
@@ -339,7 +343,7 @@ export async function executorNode(
     description: step.description,
     executorType: usesSkill ? ExecutorType.SKILL : ExecutorType.TOOL,
     skillName: usesSkill ? step.skillName : null,
-    toolName: usesSkill ? null : (step.toolHint ?? 'think'),
+    toolName: usesSkill ? null : effectiveToolName,
   });
 
   try {
@@ -368,6 +372,9 @@ export async function executorNode(
             workspace,
             signal,
             soMethod,
+            taskId: state.taskId,
+            priorStepSummaries: state.stepResults.map((s) => s.description),
+            remainingBudgetHint: state.tokenBudget - state.usedTokens,
           })) {
             if (event.type === 'tool_call') {
               eventPublisher.emit(TASK_EVENTS.TOOL_CALLED, {
@@ -434,6 +441,9 @@ export async function executorNode(
         step.skillName!,
         step.description,
         resultSummary,
+        typeof finalOutput === 'object' && finalOutput !== null
+          ? finalOutput
+          : undefined,
       );
 
       return {
@@ -445,7 +455,7 @@ export async function executorNode(
     } else {
       // ─── Tool 路径（Tool Calling）────────────────────────────────────────
       // LLM 根据步骤目标 + 前序结果生成真实参数，解决静态计划参数问题
-      const toolName = step.toolHint ?? 'think';
+      const toolName = effectiveToolName; // fallbackTool 优先（已在函数顶部解析）
       const plannerInput: Record<string, unknown> = step.toolInput ?? {
         thought: step.description,
       };

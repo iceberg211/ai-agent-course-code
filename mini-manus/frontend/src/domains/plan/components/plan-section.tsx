@@ -1,9 +1,76 @@
 import { useMemo } from 'react'
-import type { PlanDetail } from '@/domains/plan/types/plan.types'
+import type { PlanDetail, PlanStep } from '@/domains/plan/types/plan.types'
 import type { LiveRunFeed, StepRunDetail } from '@/domains/run/types/run.types'
 import { EmptyState } from '@/shared/ui/empty-state'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { cn } from '@/shared/utils/cn'
+
+// ─── PlanStepItem ─────────────────────────────────────────────────────────────
+
+interface PlanStepItemProps {
+  step: PlanStep
+  stepRun: StepRunDetail | undefined
+  liveStep: LiveRunFeed['steps'][string] | undefined
+  /** run 已进入终态：忽略 live feed 里的步骤状态，只用服务端持久化数据 */
+  isTerminal: boolean
+}
+
+function PlanStepItem({ step, stepRun, liveStep, isTerminal }: PlanStepItemProps) {
+  const isActive = !isTerminal && liveStep?.status === 'running'
+  const effectiveStatus = isActive ? liveStep!.status : stepRun?.status
+  const progressMessage = isActive
+    ? (liveStep!.progressMessages.at(-1) ?? null)
+    : null
+  const executor = step.skillName ?? step.toolHint ?? 'think'
+
+  return (
+    <li className={cn('plan-step', isActive && 'plan-step--active')}>
+      <div className="plan-step__index">{step.stepIndex + 1}</div>
+      <div className="plan-step__content">
+        <div className="plan-step__title-row">
+          <strong>{step.description}</strong>
+          {effectiveStatus ? <StatusBadge status={effectiveStatus} /> : null}
+        </div>
+        <p className="plan-step__meta">{executor}</p>
+        {progressMessage ? <p className="plan-step__progress">{progressMessage}</p> : null}
+      </div>
+    </li>
+  )
+}
+
+// ─── PlanCard ─────────────────────────────────────────────────────────────────
+
+interface PlanCardProps {
+  plan: PlanDetail
+  isActive: boolean
+  latestStepRuns: Map<string, StepRunDetail>
+  liveStepsByPlanStepId: Map<string, LiveRunFeed['steps'][string]>
+  isTerminal: boolean
+}
+
+function PlanCard({ plan, isActive, latestStepRuns, liveStepsByPlanStepId, isTerminal }: PlanCardProps) {
+  return (
+    <details className="plan-card" open={isActive}>
+      <summary className="plan-card__summary">
+        <p>{isActive ? '当前计划' : `历史计划 v${plan.version}`}</p>
+        <span>{plan.steps.length} 步</span>
+      </summary>
+      <ol className="plan-steps">
+        {plan.steps.map((step) => (
+          <PlanStepItem
+            key={step.id}
+            step={step}
+            stepRun={latestStepRuns.get(step.id)}
+            liveStep={liveStepsByPlanStepId.get(step.id)}
+            isTerminal={isTerminal}
+          />
+        ))}
+      </ol>
+    </details>
+  )
+}
+
+// ─── PlanSection ──────────────────────────────────────────────────────────────
 
 interface PlanSectionProps {
   liveRunFeed: LiveRunFeed | null
@@ -33,6 +100,13 @@ export function PlanSection({ liveRunFeed, plans, stepRuns }: PlanSectionProps) 
     return map
   }, [liveRunFeed])
 
+  // 提升到循环外：只依赖 liveRunFeed.runStatus，所有步骤共享同一个结果
+  const isTerminal =
+    liveRunFeed != null &&
+    (liveRunFeed.runStatus === 'completed' ||
+      liveRunFeed.runStatus === 'failed' ||
+      liveRunFeed.runStatus === 'cancelled')
+
   if (!plans.length) {
     return (
       <section className="panel-section">
@@ -61,50 +135,14 @@ export function PlanSection({ liveRunFeed, plans, stepRuns }: PlanSectionProps) 
       <div className="panel-section__body">
         <div className="plan-stack">
           {plans.map((plan) => (
-            <details key={plan.id} className="plan-card" open={plan.id === activePlanId}>
-              <summary className="plan-card__summary">
-                <div>
-                  <p>
-                    {plan.id === activePlanId ? '当前计划' : `历史计划 v${plan.version}`}
-                  </p>
-                </div>
-                <span>{plan.steps.length} 步</span>
-              </summary>
-
-              <ol className="plan-steps">
-                {plan.steps.map((step) => {
-                  const stepRun = latestStepRuns.get(step.id)
-                  const liveStep = liveStepsByPlanStepId.get(step.id)
-                  const effectiveStatus =
-                    liveStep?.status === 'running' ? liveStep.status : stepRun?.status
-                  const progressMessage =
-                    liveStep?.progressMessages[liveStep.progressMessages.length - 1] ?? null
-                  const executor = step.skillName ?? step.toolHint ?? 'think'
-
-                  return (
-                    <li
-                      key={step.id}
-                      className={cn(
-                        'plan-step',
-                        liveStep?.status === 'running' && 'plan-step--active',
-                      )}
-                    >
-                      <div className="plan-step__index">{step.stepIndex + 1}</div>
-                      <div className="plan-step__content">
-                        <div className="plan-step__title-row">
-                          <strong>{step.description}</strong>
-                          {effectiveStatus ? <StatusBadge status={effectiveStatus} /> : null}
-                        </div>
-                        <p className="plan-step__meta">{executor}</p>
-                        {progressMessage ? (
-                          <p className="plan-step__progress">{progressMessage}</p>
-                        ) : null}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ol>
-            </details>
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              isActive={plan.id === activePlanId}
+              latestStepRuns={latestStepRuns}
+              liveStepsByPlanStepId={liveStepsByPlanStepId}
+              isTerminal={isTerminal}
+            />
           ))}
         </div>
       </div>
