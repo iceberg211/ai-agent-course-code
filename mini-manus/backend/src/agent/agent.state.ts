@@ -32,6 +32,10 @@ export interface PlanStepDef {
   skillInput?: Record<string, unknown> | null;
   toolHint?: string | null;
   toolInput?: Record<string, unknown> | null; // Bug 2 fix: planner specifies exact tool input
+  // SubAgent：ReAct 子 Agent（createReactAgent 模式），替代"workflow disguised as Skill"反模式
+  // 当前支持: 'researcher'（搜索调研）| 'writer'（撰写文件）
+  subAgent?: string | null;
+  objective?: string | null; // SubAgent 执行目标（支持 __STEP_RESULTS__ 占位符）
 }
 
 export interface PlanDef {

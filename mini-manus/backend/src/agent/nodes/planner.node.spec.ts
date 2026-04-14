@@ -91,7 +91,7 @@ describe('Deterministic Workflows', () => {
   });
 
   describe('research_report', () => {
-    it('应返回固定计划：web_research → report_packaging', () => {
+    it('应返回固定计划：researcher SubAgent → writer SubAgent', () => {
       const builder = DETERMINISTIC_WORKFLOWS.research_report!;
       const state = mockState({
         taskIntent: 'research_report',
@@ -101,28 +101,33 @@ describe('Deterministic Workflows', () => {
       const steps = builder(state, mockCtx);
 
       expect(steps).toHaveLength(2);
-      expect(steps[0].skillName).toBe('web_research');
-      expect(steps[0].skillInput).toEqual({
-        topic: state.revisionInput,
-        depth: 2,
-      });
-      expect(steps[1].skillName).toBe('report_packaging');
-      expect(steps[1].skillInput).toMatchObject({
-        task_id: state.taskId,
-        title: state.revisionInput,
-      });
+      expect(steps[0].subAgent).toBe('researcher');
+      expect(steps[0].objective).toContain(state.revisionInput);
+      expect(steps[1].subAgent).toBe('writer');
+      expect(steps[1].objective).toContain(state.revisionInput);
     });
 
-    it('report_packaging 的 source_material 应使用占位符', () => {
+    it('writer SubAgent 的 objective 应包含 __STEP_RESULTS__ 占位符', () => {
       const builder = DETERMINISTIC_WORKFLOWS.research_report!;
       const steps = builder(
         mockState({ taskIntent: 'research_report' }),
         mockCtx,
       );
 
-      expect(
-        (steps[1].skillInput as Record<string, unknown>).source_material,
-      ).toBe(STEP_RESULTS_PLACEHOLDER);
+      expect(steps[1].objective).toContain(STEP_RESULTS_PLACEHOLDER);
+    });
+
+    it('SubAgent 步骤不应设置 skillName 或 toolHint', () => {
+      const builder = DETERMINISTIC_WORKFLOWS.research_report!;
+      const steps = builder(
+        mockState({ taskIntent: 'research_report' }),
+        mockCtx,
+      );
+
+      steps.forEach((step) => {
+        expect(step.skillName).toBeFalsy();
+        expect(step.toolHint).toBeFalsy();
+      });
     });
   });
 
@@ -149,7 +154,7 @@ describe('Deterministic Workflows', () => {
       }
     });
 
-    it('沙箱未启用时，所有确定性 workflow 的步骤都使用 skill（不走裸 tool）', () => {
+    it('沙箱未启用时，所有确定性 workflow 的步骤都使用 skill 或 subAgent（不走裸 tool）', () => {
       // mockCtx 里 toolRegistry.has 返回 false，沙箱步骤不会被添加
       for (const [intent, builder] of Object.entries(DETERMINISTIC_WORKFLOWS)) {
         const steps = builder(
@@ -157,7 +162,9 @@ describe('Deterministic Workflows', () => {
           mockCtx,
         );
         steps.forEach((step) => {
-          expect(step.skillName).toBeTruthy();
+          // 步骤必须使用 skill 或 subAgent，不走裸 tool 路径
+          const hasHighLevelExecutor = step.skillName || step.subAgent;
+          expect(hasHighLevelExecutor).toBeTruthy();
           expect(step.toolHint).toBeFalsy();
         });
       }

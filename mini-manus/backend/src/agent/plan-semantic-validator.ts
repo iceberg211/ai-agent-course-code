@@ -8,6 +8,8 @@ interface RawStep {
   skillInput?: unknown;
   toolHint?: string | null;
   toolInput?: unknown;
+  subAgent?: string | null;
+  objective?: string | null;
 }
 
 export interface PlanValidationError {
@@ -98,15 +100,19 @@ export function validatePlanSemantics(
 
     const hasSkill = Boolean(step.skillName && String(step.skillName).trim());
     const hasTool = Boolean(step.toolHint && String(step.toolHint).trim());
+    const hasSubAgent = Boolean(step.subAgent && String(step.subAgent).trim());
 
-    if (!hasSkill && !hasTool) {
+    if (!hasSkill && !hasTool && !hasSubAgent) {
       errors.push({
         stepIndex: idx,
         field: 'executor',
-        message: '步骤必须指定 skillName 或 toolHint 之一',
+        message: '步骤必须指定 skillName、toolHint 或 subAgent 之一',
       });
       continue; // 无法继续校验其他字段
     }
+
+    // SubAgent 步骤：无需进一步校验 skill/tool，直接跳过
+    if (hasSubAgent) continue;
 
     if (hasSkill && hasTool) {
       errors.push({

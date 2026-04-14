@@ -34,11 +34,13 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
 {intentGuidance}
 
 规划要求：
-1. 如果某一步能被已加载的 skill 覆盖，优先使用 skill（填写 skillName 和 skillInput，留空 toolHint / toolInput）
-2. 如果没有合适的 skill，填写 toolHint（工具名）和 toolInput（完整参数对象），留空 skillName
-3. toolInput 中如果有 task_id 字段，必须填入 "{taskId}"
-4. 步骤数量 3-6 个，每步描述清晰
-5. 只返回 JSON，不要其他内容`,
+1. 如果某一步需要网络搜索 / 调研 → 填写 subAgent: "researcher" 和 objective（调研目标），留空其他字段
+2. 如果某一步需要撰写文档 / 报告并保存文件 → 填写 subAgent: "writer" 和 objective（写作目标），留空其他字段
+3. 如果某一步能被已加载的 skill 覆盖 → 优先使用 skill（填写 skillName 和 skillInput）
+4. 如果没有合适的 subAgent / skill → 填写 toolHint（工具名）和 toolInput（完整参数对象）
+5. toolInput 中如果有 task_id 字段，必须填入 "{taskId}"
+6. 步骤数量 3-6 个，每步描述清晰
+7. 只返回 JSON，不要其他内容`,
   ],
   [
     'human',
@@ -51,7 +53,7 @@ export const plannerPrompt = ChatPromptTemplate.fromMessages([
 export const INTENT_GUIDANCE: Record<string, string> = {
   code_generation: `【代码生成任务专用规划策略】
 - 必须使用 code_project_generation skill 生成代码文件，禁止拆成多个 write_file step
-- 推荐流程：web_research（可选，调研技术方案）→ code_project_generation → report_packaging（可选）
+- 推荐流程：researcher SubAgent（可选，调研技术方案）→ code_project_generation → writer SubAgent（可选，输出文档）
 - 如果需求明确，可以直接 code_project_generation，不需要调研
 
 【代码修复策略（replan 时使用）】
@@ -60,17 +62,17 @@ export const INTENT_GUIDANCE: Record<string, string> = {
 - code_fix 的 error_output 字段填入前序步骤中的错误输出内容
 - 修复后再加一步 sandbox_run_node 验证修复是否生效`,
   research_report: `【调研报告任务专用规划策略】
-- 推荐流程：web_research → competitive_analysis 或 document_writing → report_packaging
-- 搜索至少 2-3 个不同维度的关键词
-- 最终必须用 report_packaging 或 document_writing 输出正式报告`,
+- 推荐流程：researcher SubAgent（调研）→ writer SubAgent（撰写报告文件）
+- researcher objective 应包含主题和期望的调研深度
+- writer objective 应包含报告目标、文件名约定（task-report.md / task-report.pdf）`,
   competitive_analysis: `【对比分析任务专用规划策略】
-- 必须使用 competitive_analysis skill 执行对比
-- 推荐流程：competitive_analysis → report_packaging
-- 两个对比对象都需要充分的数据支撑`,
+- 推荐流程：researcher SubAgent（同时调研两个对比对象）→ writer SubAgent（撰写对比报告）
+- researcher objective 中需明确两个对比对象和关注维度
+- writer 负责整理对比结论并输出正式报告文件`,
   content_writing: `【内容撰写任务专用规划策略】
-- 推荐使用 document_writing skill
-- 如果需要素材，先 web_research 收集，再 document_writing 撰写
-- 推荐流程：web_research（可选）→ document_writing → report_packaging（可选）`,
+- 优先使用 writer SubAgent 直接撰写内容
+- 如果需要素材，先 researcher SubAgent 收集，再 writer SubAgent 撰写
+- 推荐流程：researcher（可选）→ writer`,
   general: '',
 };
 

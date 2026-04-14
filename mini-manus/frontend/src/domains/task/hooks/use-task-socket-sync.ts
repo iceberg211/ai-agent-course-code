@@ -212,6 +212,28 @@ function patchFeed(
   }
 }
 
+// ─── Event registry ───────────────────────────────────────────────────────────
+// 所有通过 dispatch 路由的事件（taskSnapshot 除外，它走独立快照路径）
+const REGULAR_EVENTS = [
+  TASK_EVENTS.taskCreated,
+  TASK_EVENTS.revisionCreated,
+  TASK_EVENTS.runStarted,
+  TASK_EVENTS.planGenerating,
+  TASK_EVENTS.planCreated,
+  TASK_EVENTS.stepStarted,
+  TASK_EVENTS.stepProgress,
+  TASK_EVENTS.toolCalled,
+  TASK_EVENTS.toolCompleted,
+  TASK_EVENTS.stepCompleted,
+  TASK_EVENTS.stepFailed,
+  TASK_EVENTS.runCompleted,
+  TASK_EVENTS.runFailed,
+  TASK_EVENTS.runCancelled,
+  TASK_EVENTS.artifactCreated,
+  TASK_EVENTS.runTokenUsage,
+  TASK_EVENTS.runAwaitingApproval,
+] as const
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useTaskSocketSync(
@@ -596,82 +618,46 @@ export function useTaskSocketSync(
     )
   })
 
+  // ── 统一 dispatch（Socket 实时事件 和 历史回放 共用同一套路由逻辑） ───────────
+  // 新增事件只需改两处：REGULAR_EVENTS 数组 + 此 switch
+
+  const dispatch = useEffectEvent(
+    (eventName: string, payload: BasePayload & Record<string, unknown>) => {
+      if (markEventSeen(payload)) return
+      switch (eventName) {
+        case TASK_EVENTS.taskCreated: handleTaskCreated(); break
+        case TASK_EVENTS.revisionCreated: handleRevisionCreated(payload); break
+        case TASK_EVENTS.runStarted: handleRunStarted(payload); break
+        case TASK_EVENTS.planGenerating: handlePlanGenerating(payload); break
+        case TASK_EVENTS.planCreated: handlePlanCreated(payload); break
+        case TASK_EVENTS.stepStarted: handleStepStarted(payload); break
+        case TASK_EVENTS.stepProgress: handleStepProgress(payload); break
+        case TASK_EVENTS.toolCalled: handleToolCalled(payload); break
+        case TASK_EVENTS.toolCompleted: handleToolCompleted(payload); break
+        case TASK_EVENTS.stepCompleted: handleStepCompleted(payload); break
+        case TASK_EVENTS.stepFailed: handleStepFailed(payload); break
+        case TASK_EVENTS.runCompleted:
+          handleRunTerminal(payload, 'completed', '本轮任务已完成'); break
+        case TASK_EVENTS.runFailed:
+          handleRunTerminal(payload, 'failed', typeof payload.error === 'string' ? payload.error : '本轮任务执行失败'); break
+        case TASK_EVENTS.runCancelled:
+          handleRunTerminal(payload, 'cancelled', '本轮任务已取消'); break
+        case TASK_EVENTS.artifactCreated: handleArtifactCreated(payload); break
+        case TASK_EVENTS.runTokenUsage: handleRunTokenUsage(payload); break
+        case TASK_EVENTS.runAwaitingApproval: handleRunAwaitingApproval(payload); break
+        default: break
+      }
+    },
+  )
+
   const applyLoggedEvent = useEffectEvent((event: TaskEventLog) => {
     const payload = {
       ...event.payload,
-      _eventId:
-        typeof event.payload._eventId === 'string' ? event.payload._eventId : event.id,
-      _eventName:
-        typeof event.payload._eventName === 'string'
-          ? event.payload._eventName
-          : event.eventName,
-      _eventCreatedAt:
-        typeof event.payload._eventCreatedAt === 'string'
-          ? event.payload._eventCreatedAt
-          : event.createdAt,
+      _eventId: typeof event.payload._eventId === 'string' ? event.payload._eventId : event.id,
+      _eventName: typeof event.payload._eventName === 'string' ? event.payload._eventName : event.eventName,
+      _eventCreatedAt: typeof event.payload._eventCreatedAt === 'string' ? event.payload._eventCreatedAt : event.createdAt,
     } as BasePayload & Record<string, unknown>
-
-    if (markEventSeen(payload)) return
-
-    switch (event.eventName) {
-      case TASK_EVENTS.taskCreated:
-        handleTaskCreated()
-        break
-      case TASK_EVENTS.revisionCreated:
-        handleRevisionCreated(payload)
-        break
-      case TASK_EVENTS.runStarted:
-        handleRunStarted(payload)
-        break
-      case TASK_EVENTS.planGenerating:
-        handlePlanGenerating(payload)
-        break
-      case TASK_EVENTS.planCreated:
-        handlePlanCreated(payload)
-        break
-      case TASK_EVENTS.stepStarted:
-        handleStepStarted(payload)
-        break
-      case TASK_EVENTS.stepProgress:
-        handleStepProgress(payload)
-        break
-      case TASK_EVENTS.toolCalled:
-        handleToolCalled(payload)
-        break
-      case TASK_EVENTS.toolCompleted:
-        handleToolCompleted(payload)
-        break
-      case TASK_EVENTS.stepCompleted:
-        handleStepCompleted(payload)
-        break
-      case TASK_EVENTS.stepFailed:
-        handleStepFailed(payload)
-        break
-      case TASK_EVENTS.runCompleted:
-        handleRunTerminal(payload, 'completed', '本轮任务已完成')
-        break
-      case TASK_EVENTS.runFailed:
-        handleRunTerminal(
-          payload,
-          'failed',
-          typeof payload.error === 'string' ? payload.error : '本轮任务执行失败',
-        )
-        break
-      case TASK_EVENTS.runCancelled:
-        handleRunTerminal(payload, 'cancelled', '本轮任务已取消')
-        break
-      case TASK_EVENTS.artifactCreated:
-        handleArtifactCreated(payload)
-        break
-      case TASK_EVENTS.runTokenUsage:
-        handleRunTokenUsage(payload)
-        break
-      case TASK_EVENTS.runAwaitingApproval:
-        handleRunAwaitingApproval(payload)
-        break
-      default:
-        break
-    }
+    dispatch(event.eventName, payload)
   })
 
   // ── Socket 生命周期 ────────────────────────────────────────────────────────
@@ -681,80 +667,24 @@ export function useTaskSocketSync(
 
     const onConnect = () => setSocketConnected(true)
     const onDisconnect = () => setSocketConnected(false)
-    const withEventGuard =
-      <T extends BasePayload>(handler: (payload: T) => void) =>
-      (payload: T) => {
-        if (markEventSeen(payload)) return
-        handler(payload)
-      }
-
-    const onTaskCreated = withEventGuard(handleTaskCreated)
-    const onRevisionCreated = withEventGuard(handleRevisionCreated)
-    const onRunStarted = withEventGuard(handleRunStarted)
-    const onPlanGenerating = withEventGuard(handlePlanGenerating)
-    const onPlanCreated = withEventGuard(handlePlanCreated)
-    const onStepStarted = withEventGuard(handleStepStarted)
-    const onStepProgress = withEventGuard(handleStepProgress)
-    const onToolCalled = withEventGuard(handleToolCalled)
-    const onToolCompleted = withEventGuard(handleToolCompleted)
-    const onStepCompleted = withEventGuard(handleStepCompleted)
-    const onStepFailed = withEventGuard(handleStepFailed)
-    const onArtifactCreated = withEventGuard(handleArtifactCreated)
-    const onRunTokenUsage = withEventGuard(handleRunTokenUsage)
-    const onRunAwaitingApproval = withEventGuard(handleRunAwaitingApproval)
-    const onRunCompleted = withEventGuard((p: BasePayload) =>
-      handleRunTerminal(p, 'completed', '本轮任务已完成'),
-    )
-    const onRunFailed = (p: RunFailedPayload) =>
-      withEventGuard((payload: RunFailedPayload) =>
-        handleRunTerminal(payload, 'failed', payload.error ?? '本轮任务执行失败'),
-      )(p)
-    const onRunCancelled = withEventGuard((p: BasePayload) =>
-      handleRunTerminal(p, 'cancelled', '本轮任务已取消'),
-    )
 
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
-    socket.on(TASK_EVENTS.taskCreated, onTaskCreated)
-    socket.on(TASK_EVENTS.revisionCreated, onRevisionCreated)
     socket.on(TASK_EVENTS.taskSnapshot, handleSnapshot)
-    socket.on(TASK_EVENTS.runStarted, onRunStarted)
-    socket.on(TASK_EVENTS.planGenerating, onPlanGenerating)
-    socket.on(TASK_EVENTS.planCreated, onPlanCreated)
-    socket.on(TASK_EVENTS.stepStarted, onStepStarted)
-    socket.on(TASK_EVENTS.stepProgress, onStepProgress)
-    socket.on(TASK_EVENTS.toolCalled, onToolCalled)
-    socket.on(TASK_EVENTS.toolCompleted, onToolCompleted)
-    socket.on(TASK_EVENTS.stepCompleted, onStepCompleted)
-    socket.on(TASK_EVENTS.stepFailed, onStepFailed)
-    socket.on(TASK_EVENTS.runCompleted, onRunCompleted)
-    socket.on(TASK_EVENTS.runFailed, onRunFailed)
-    socket.on(TASK_EVENTS.runCancelled, onRunCancelled)
-    socket.on(TASK_EVENTS.artifactCreated, onArtifactCreated)
-    socket.on(TASK_EVENTS.runTokenUsage, onRunTokenUsage)
-    socket.on(TASK_EVENTS.runAwaitingApproval, onRunAwaitingApproval)
+
+    // 用 REGULAR_EVENTS 统一注册，避免每次新增事件都要改三处
+    const handlers = REGULAR_EVENTS.map((eventName) => {
+      const handler = (payload: BasePayload) =>
+        dispatch(eventName, payload as BasePayload & Record<string, unknown>)
+      socket.on(eventName, handler)
+      return { eventName, handler } as { eventName: string; handler: (p: BasePayload) => void }
+    })
 
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
-      socket.off(TASK_EVENTS.taskCreated, onTaskCreated)
-      socket.off(TASK_EVENTS.revisionCreated, onRevisionCreated)
       socket.off(TASK_EVENTS.taskSnapshot, handleSnapshot)
-      socket.off(TASK_EVENTS.runStarted, onRunStarted)
-      socket.off(TASK_EVENTS.planGenerating, onPlanGenerating)
-      socket.off(TASK_EVENTS.planCreated, onPlanCreated)
-      socket.off(TASK_EVENTS.stepStarted, onStepStarted)
-      socket.off(TASK_EVENTS.stepProgress, onStepProgress)
-      socket.off(TASK_EVENTS.toolCalled, onToolCalled)
-      socket.off(TASK_EVENTS.toolCompleted, onToolCompleted)
-      socket.off(TASK_EVENTS.stepCompleted, onStepCompleted)
-      socket.off(TASK_EVENTS.stepFailed, onStepFailed)
-      socket.off(TASK_EVENTS.runCompleted, onRunCompleted)
-      socket.off(TASK_EVENTS.runFailed, onRunFailed)
-      socket.off(TASK_EVENTS.runCancelled, onRunCancelled)
-      socket.off(TASK_EVENTS.artifactCreated, onArtifactCreated)
-      socket.off(TASK_EVENTS.runTokenUsage, onRunTokenUsage)
-      socket.off(TASK_EVENTS.runAwaitingApproval, onRunAwaitingApproval)
+      handlers.forEach(({ eventName, handler }) => socket.off(eventName, handler))
       setSocketConnected(false)
       releaseTaskSocket()
     }

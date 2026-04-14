@@ -80,21 +80,14 @@ export const DETERMINISTIC_WORKFLOWS: Partial<
     {
       stepIndex: 0,
       description: `围绕主题进行深度网络调研`,
-      skillName: 'web_research',
-      skillInput: {
-        topic: state.revisionInput,
-        depth: 2,
-      },
+      subAgent: 'researcher' as const,
+      objective: `调研主题：${state.revisionInput}。\n\n请使用搜索和浏览工具从多角度收集信息，阅读 2-4 个高质量来源，综合整理核心发现、数据和结论，最终输出完整的调研报告。`,
     },
     {
       stepIndex: 1,
-      description: `基于调研结果生成完整报告并打包交付`,
-      skillName: 'report_packaging',
-      skillInput: {
-        task_id: state.taskId,
-        title: state.revisionInput,
-        source_material: STEP_RESULTS_PLACEHOLDER,
-      },
+      description: `基于调研结果撰写并输出完整报告文件`,
+      subAgent: 'writer' as const,
+      objective: `报告主题：${state.revisionInput}。\n\n前序调研摘要：\n${STEP_RESULTS_PLACEHOLDER}\n\n请基于以上材料撰写完整的调研报告，保存为 task-report.md，同时导出 task-report.pdf。`,
     },
   ],
 };
@@ -120,36 +113,10 @@ interface WorkflowTemplate {
   paramSchema: z.ZodObject<any>;
 }
 
+// WORKFLOW_TEMPLATES：参数化中间层（暂无条目）
+// competitive_analysis 已迁移到 LLM Planner + SubAgent 模式（见 INTENT_GUIDANCE）
 export const WORKFLOW_TEMPLATES: Partial<Record<TaskIntent, WorkflowTemplate>> =
-  {
-    competitive_analysis: {
-      skeleton: [
-        {
-          description: '对两个对象进行深度对比分析',
-          skillName: 'competitive_analysis',
-          dynamicParams: ['topic_a', 'topic_b', 'focus'],
-          staticParams: {},
-        },
-        {
-          description: '将对比结论整理成正式报告',
-          skillName: 'report_packaging',
-          dynamicParams: ['title'],
-          staticParams: {
-            task_id: '__TASK_ID__',
-            source_material: STEP_RESULTS_PLACEHOLDER,
-          },
-        },
-      ],
-      paramSchema: z.object({
-        topic_a: z.string().describe('对比对象 A'),
-        topic_b: z.string().describe('对比对象 B'),
-        focus: z
-          .string()
-          .describe('对比维度，如"性能、生态、学习曲线、适用场景"'),
-        title: z.string().describe('报告标题'),
-      }),
-    },
-  };
+  {};
 
 async function fillTemplateParams(
   template: WorkflowTemplate,
@@ -203,6 +170,9 @@ const PlanSchema = z.object({
       skillInput: z.any().optional(),
       toolHint: z.string().nullable().optional(),
       toolInput: z.any().optional(),
+      // SubAgent 字段：ReAct 子 Agent（createReactAgent 模式）
+      subAgent: z.string().nullable().optional(),
+      objective: z.string().nullable().optional(),
     }),
   ),
 });
@@ -219,14 +189,17 @@ async function handlePlanApproval(
   const stepSummaries = planSteps.map((s) => ({
     stepIndex: s.stepIndex,
     description: s.description,
-    executor: s.skillName ?? s.toolHint ?? 'think',
-    isSideEffect:
-      (s.skillName && skillRegistry.has(s.skillName)
-        ? skillRegistry.get(s.skillName).effect === 'side-effect'
-        : false) ||
-      (s.toolHint && toolRegistry.has(s.toolHint)
-        ? toolRegistry.get(s.toolHint).type === 'side-effect'
-        : false),
+    executor: s.subAgent
+      ? `subagent:${s.subAgent}`
+      : (s.skillName ?? s.toolHint ?? 'think'),
+    isSideEffect: s.subAgent
+      ? s.subAgent === 'writer'
+      : (s.skillName && skillRegistry.has(s.skillName)
+          ? skillRegistry.get(s.skillName).effect === 'side-effect'
+          : false) ||
+        (s.toolHint && toolRegistry.has(s.toolHint)
+          ? toolRegistry.get(s.toolHint).type === 'side-effect'
+          : false),
   }));
   const planReviewInfo = {
     type: 'plan_review' as const,
@@ -367,8 +340,9 @@ export async function plannerNode(
       '- think:           {"thought": "推理内容"}\n\n' +
       '⚠️ 选择执行器的关键原则：\n' +
       '  • 任务涉及"生成多个代码文件"或"脚手架项目" → 必须使用 code_project_generation skill，不可拆成多个 write_file step\n' +
-      '  • write_file 只用于写单个配置文件、数据文件或 skill 内部辅助写入\n' +
-      '  • 调研/报告/briefing/对比 → 优先使用对应 skill（web_research / report_packaging / competitive_analysis 等）',
+      '  • write_file 只用于写单个配置文件或数据文件\n' +
+      '  • 调研 / 网络搜索 → 使用 subAgent: "researcher"，填写 objective\n' +
+      '  • 撰写文档 / 生成报告文件 → 使用 subAgent: "writer"，填写 objective',
   ];
 
   if (toolRegistry.has('browser_open')) {

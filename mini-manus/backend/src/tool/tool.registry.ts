@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { z } from 'zod';
+import { tool as lcTool } from '@langchain/core/tools';
 import {
   Tool,
   ToolResult,
@@ -69,6 +71,48 @@ export class ToolRegistry implements OnModuleInit {
     if (!this.availabilityChecker) return this.getAll();
     return this.getAll().filter(
       (t) => !t.requires?.some((req) => !this.availabilityChecker!(req)),
+    );
+  }
+
+  /**
+   * 将 ToolRegistry 中的 Tool 转换为 LangChain DynamicStructuredTool，
+   * 供 createReactAgent 等社区方案直接使用。
+   *
+   * @param name        工具名
+   * @param injectArgs  注入参数（如 task_id），从暴露给 LLM 的 schema 中隐藏，调用时自动合并。
+   *                    这样 SubAgent 的 LLM 不需要知道 task_id 等实现细节。
+   */
+  getAsLangChainTool(name: string, injectArgs?: Record<string, unknown>) {
+    const t = this.get(name);
+    const registry = this;
+
+    // 从暴露给 LLM 的 schema 中移除注入字段，避免 LLM 填写实现细节
+    let schema: z.ZodTypeAny = t.schema;
+    if (injectArgs && Object.keys(injectArgs).length > 0) {
+      try {
+        const obj = t.schema as z.ZodObject<z.ZodRawShape>;
+        const omitShape = Object.fromEntries(
+          Object.keys(injectArgs).map((k) => [k, true as const]),
+        ) as { [K in string]: true };
+        schema = obj.omit(omitShape);
+      } catch {
+        // schema 不是 ZodObject（极少数情况），保持原样
+      }
+    }
+
+    return lcTool(
+      async (input: Record<string, unknown>) => {
+        const merged = { ...(injectArgs ?? {}), ...input };
+        const result = await registry.executeWithCache(name, merged);
+        return result.success
+          ? result.output
+          : `Error (${result.errorCode ?? 'unknown'}): ${result.error}`;
+      },
+      {
+        name: t.name,
+        description: t.description,
+        schema: schema as z.ZodObject<z.ZodRawShape>,
+      },
     );
   }
 

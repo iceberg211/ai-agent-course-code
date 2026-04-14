@@ -7,6 +7,7 @@ import { tool as lcTool } from '@langchain/core/tools';
 import { toolCallingPrompt } from '@/prompts';
 import { AgentState } from '@/agent/agent.state';
 import { AgentCallbacks } from '@/agent/agent.callbacks';
+import { runSubAgent } from '@/agent/subagents/react-subagent';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
@@ -280,7 +281,8 @@ export async function executorNode(
   const step = state.currentPlan.steps[state.currentStepIndex];
   if (!step) throw new Error(`No step at index ${state.currentStepIndex}`);
 
-  const usesSkill = Boolean(
+  const usesSubAgent = Boolean(step.subAgent);
+  const usesSkill = !usesSubAgent && Boolean(
     step.skillName && skillRegistry.has(step.skillName),
   );
   // evaluator 降级时 fallbackTool 优先（resource_unavailable 场景）
@@ -289,16 +291,24 @@ export async function executorNode(
       ?.fallbackTool ?? step.toolHint ?? 'think';
 
   logger.log(
-    `step[${state.currentStepIndex}] ${usesSkill ? 'skill:' + step.skillName : 'tool:' + effectiveToolName} | ${step.description.slice(0, 60)}${state.retryCount > 0 ? ` (retry #${state.retryCount})` : ''}`,
+    `step[${state.currentStepIndex}] ${
+      usesSubAgent
+        ? 'subagent:' + step.subAgent
+        : usesSkill
+          ? 'skill:' + step.skillName
+          : 'tool:' + effectiveToolName
+    } | ${step.description.slice(0, 60)}${state.retryCount > 0 ? ` (retry #${state.retryCount})` : ''}`,
   );
 
   // ─── HITL interrupt 检查 ──────────────────────────────────────────────────
   // 根据 approvalMode 决定是否在执行前暂停等待人工确认
-  const isSideEffect = usesSkill
-    ? skillRegistry.get(step.skillName!).effect === 'side-effect'
-    : toolRegistry.has(step.toolHint ?? '')
-      ? toolRegistry.get(step.toolHint!).type === 'side-effect'
-      : false;
+  const isSideEffect = usesSubAgent
+    ? step.subAgent === 'writer' // writer SubAgent 有写操作（side-effect）
+    : usesSkill
+      ? skillRegistry.get(step.skillName!).effect === 'side-effect'
+      : toolRegistry.has(step.toolHint ?? '')
+        ? toolRegistry.get(step.toolHint!).type === 'side-effect'
+        : false;
 
   const shouldPause =
     state.approvalMode === 'all_steps' ||
@@ -341,9 +351,14 @@ export async function executorNode(
     stepRunId: stepRun.id,
     planStepId: stepRun.planStepId,
     description: step.description,
-    executorType: usesSkill ? ExecutorType.SKILL : ExecutorType.TOOL,
-    skillName: usesSkill ? step.skillName : null,
-    toolName: usesSkill ? null : effectiveToolName,
+    executorType:
+      usesSubAgent || usesSkill ? ExecutorType.SKILL : ExecutorType.TOOL,
+    skillName: usesSubAgent
+      ? `subagent:${step.subAgent}`
+      : usesSkill
+        ? step.skillName
+        : null,
+    toolName: !usesSubAgent && !usesSkill ? effectiveToolName : null,
   });
 
   try {
@@ -451,6 +466,76 @@ export async function executorNode(
         evaluation: null,
         lastStepRunId: stepRun.id,
         lastStepOutput: resultSummary,
+      };
+    } else if (usesSubAgent) {
+      // ─── SubAgent 路径（createReactAgent 模式）────────────────────────────
+      // 成熟社区方案：@langchain/langgraph/prebuilt createReactAgent
+      // SubAgent 自主决定工具调用顺序，完成后返回最终输出。
+      // researcher: 只有读工具（search + fetch），用于调研
+      // writer:     只有写工具（write_file + export_pdf），用于生成文件交付物
+      const subAgentName = step.subAgent!;
+
+      // 解析目标描述中的 __STEP_RESULTS__ 占位符（writer 步骤需要前序调研结果）
+      const rawObjective = step.objective ?? step.description;
+      const resolvedObjective = rawObjective.includes(STEP_RESULTS_PLACEHOLDER)
+        ? rawObjective.replace(
+            STEP_RESULTS_PLACEHOLDER,
+            state.stepResults.length > 0
+              ? state.stepResults
+                  .map(
+                    (s) =>
+                      `${s.description}:\n${s.toolOutput ?? s.resultSummary}`,
+                  )
+                  .join('\n\n')
+              : '（无前序步骤结果）',
+          )
+        : rawObjective;
+
+      eventPublisher.emit(TASK_EVENTS.STEP_PROGRESS, {
+        taskId: state.taskId,
+        runId: state.runId,
+        stepRunId: stepRun.id,
+        planStepId: stepRun.planStepId,
+        message: `SubAgent [${subAgentName}] 启动中…`,
+      });
+
+      const subAgentOutput = await withTimeout(
+        runSubAgent(
+          subAgentName,
+          resolvedObjective,
+          state.taskId,
+          llm,
+          toolRegistry,
+          signal,
+        ),
+        skillTimeoutMs,
+      );
+
+      if (signal.aborted) throw new Error('cancelled');
+
+      const subAgentSummary = subAgentOutput.slice(0, 500);
+
+      await callbacks.updateStepRun(stepRun.id, {
+        executorType: ExecutorType.SKILL,
+        skillName: `subagent:${subAgentName}`,
+        resultSummary: subAgentSummary,
+        completedAt: new Date(),
+      });
+
+      await persistStepOutput(
+        workspace,
+        state.taskId,
+        state.executionOrder,
+        `subagent_${subAgentName}`,
+        step.description,
+        subAgentOutput,
+      );
+
+      return {
+        executionOrder: state.executionOrder + 1,
+        evaluation: null,
+        lastStepRunId: stepRun.id,
+        lastStepOutput: subAgentOutput,
       };
     } else {
       // ─── Tool 路径（Tool Calling）────────────────────────────────────────
