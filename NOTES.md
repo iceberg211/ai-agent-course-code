@@ -658,319 +658,61 @@ for (const person of result.people) {
 
 为什么 PromptTemplate、ChatOpenAI、Parser、自定义函数，都可以用 `.pipe()` 串在一起？因为 LangChain 抽象出了 **Runnable 接口**——一个"可被调用的盒子"，有输入输出，支持 `invoke()`、`stream()`、`batch()`。所有组件都实现了这个接口，因此可以自由组合。
 
----
-
-### RunnableSequence——最基本的顺序链
-
-来自 `runnable.mjs` 的真实代码：
+### 核心用法：pipe 串联
 
 ```javascript
-import { RunnableSequence } from "@langchain/core/runnables";
-import { StructuredOutputParser } from "@langchain/core/output_parsers";
-
-const outputParser = StructuredOutputParser.fromZodSchema(
-  z.object({
-    translation: z.string().describe("翻译后的英文文本"),
-    keywords: z.array(z.string()).length(3).describe("3个关键词"),
-  })
-);
-
-const promptTemplate = PromptTemplate.fromTemplate(
-  '将以下文本翻译成英文，并总结3个关键词。\n\n文本：{text}\n\n{format_instructions}'
-);
-
+const chain = promptTemplate.pipe(model).pipe(outputParser);
+// 等价写法：
 const chain = RunnableSequence.from([promptTemplate, model, outputParser]);
-// 等价于：promptTemplate.pipe(model).pipe(outputParser)
 
-const result = await chain.invoke({
-  text: 'LangChain 是一个强大的 AI 应用开发框架',
-  format_instructions: outputParser.getFormatInstructions(),
-});
-// result = { translation: "LangChain is a powerful...", keywords: ["AI", "framework", "development"] }
+const result = await chain.invoke({ text: "...", format_instructions: "..." });
+// 执行过程：prompt渲染 → 模型调用 → 结构化解析
 ```
 
-`pipe` 把三个盒子串起来，前一个的输出是后一个的输入。这是 LangChain 最常见的用法。
+前一个的输出是后一个的输入。`.pipe()` 是最常用的 LangChain 写法，`RunnableSequence.from` 是等价的显式写法。
 
----
+### Runnable 速查表
 
-### RunnableLambda——把普通函数变成 Runnable
+| Runnable | 用途 | 典型场景 |
+|---|---|---|
+| `.pipe()` / `RunnableSequence` | 顺序串联多个步骤 | Prompt → 模型 → Parser |
+| `RunnableLambda` | 把普通函数变成 Runnable | 在链中插入自定义处理逻辑 |
+| `RunnableMap` | 多路并行，结果合并成对象 | 同一问题同时做向量检索 + 关键词检索 |
+| `RunnablePassthrough` | 透传输入并扩展字段 | RAG 中保留原问题同时注入检索结果 |
+| `RunnableBranch` | 按条件路由（顺序检查，短路求值） | 根据输入类型走不同处理链（if-else） |
+| `RouterRunnable` | 按 key 直接查找路由 | 多路由场景（switch-case，比 Branch 快） |
+| `RunnablePick` | 只取对象的指定字段 | 过滤掉下游不需要的字段 |
+| `RunnableEach` | 对数组每个元素执行链 | 批量处理文档列表 |
+| `.withRetry()` | 失败后自动重试同一操作 | 不稳定的外部 API 调用（临时故障） |
+| `.withFallbacks()` | 主方案失败切换备选 | 服务降级（换一件事做，不是重试） |
+| `.withConfig()` | 绑定运行时配置，所有节点可读 | 多租户传用户 ID、语言偏好等上下文 |
+| `RunnableWithMessageHistory` | 自动管理多轮对话历史 | 有记忆的聊天机器人 |
 
-来自 `RunnableLambda.mjs` 的真实代码：
+**Retry vs Fallback 的本质区别**：Retry 重复同一件事（适合临时故障），Fallback 换一件事做（适合服务降级）。实际项目通常结合：先对主方案重试 2 次，都失败了再切换备选。
 
-```javascript
-import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
+### RunnablePassthrough——RAG 场景的标准写法
 
-const addOne     = RunnableLambda.from((input) => input + 1);
-const multiplyTwo = RunnableLambda.from((input) => input * 2);
-
-const chain = RunnableSequence.from([addOne, multiplyTwo, addOne]);
-
-const result = await chain.invoke(5);
-// 执行过程：5 → (+1) → 6 → (*2) → 12 → (+1) → 13
-console.log(result); // 13
-```
-
-这样自定义函数就能无缝插入链的任意位置，和 PromptTemplate、ChatOpenAI 一样对待。
-
----
-
-### RunnableMap——并行处理
-
-来自 `RunnableMap.mjs`，多个 Runnable 同时接收同一个输入，结果合并成对象：
-
-```javascript
-import { RunnableMap, RunnableLambda } from "@langchain/core/runnables";
-import { PromptTemplate } from "@langchain/core/prompts";
-
-const addOne    = RunnableLambda.from((input) => input.num + 1);
-const multiplyTwo = RunnableLambda.from((input) => input.num * 2);
-const square    = RunnableLambda.from((input) => input.num * input.num);
-
-const greetTemplate   = PromptTemplate.fromTemplate("你好，{name}！");
-const weatherTemplate = PromptTemplate.fromTemplate("今天天气{weather}。");
-
-const runnableMap = RunnableMap.from({
-  add: addOne,
-  multiply: multiplyTwo,
-  square: square,
-  greeting: greetTemplate,
-  weather: weatherTemplate,
-});
-
-const result = await runnableMap.invoke({ name: "神光", weather: "多云", num: 5 });
-// result = {
-//   add: 6,
-//   multiply: 10,
-//   square: 25,
-//   greeting: StringPromptValue("你好，神光！"),
-//   weather: StringPromptValue("今天天气多云。"),
-// }
-```
-
-五个 Runnable 并行执行，比串行快得多。常用于 RAG 场景：同一个问题同时做向量检索和关键词检索。
-
----
-
-### RunnablePassthrough——透传并扩展字段
-
-来自 `RunnablePassthrough.mjs`，保留输入的同时计算新字段：
+RAG 里的经典问题：经过检索步骤之后，原始问题丢失了，没法传给模型。`RunnablePassthrough.assign` 解决这个问题——保留所有现有字段，同时追加新字段：
 
 ```javascript
 import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
 
-const chain = RunnableSequence.from([
-  (input) => ({ concept: input }),        // 把字符串包成对象
+const ragChain = RunnableSequence.from([
   RunnablePassthrough.assign({
-    original: new RunnablePassthrough(),   // 透传整个 {concept: ...} 对象
-    processed: (obj) => ({
-      upper: obj.concept.toUpperCase(),
-      length: obj.concept.length,
-    }),
+    context: (input) => retriever.invoke(input.question), // 检索文档，追加为 context 字段
+    // question 字段自动透传，不需要额外声明
   }),
+  prompt,   // prompt 里同时使用 {question} 和 {context}
+  model,
+  new StringOutputParser(),
 ]);
 
-const result = await chain.invoke("神说要有光");
-// result = {
-//   concept: "神说要有光",
-//   original: { concept: "神说要有光" },
-//   processed: { upper: "神说要有光", length: 7 }
-// }
+await ragChain.invoke({ question: "鸠摩智会什么武功？" });
 ```
-
-RAG 中典型用法：先检索文档（`retriever.invoke(question)`），然后用 `RunnablePassthrough.assign` 把文档和原始问题合并，一起传给模型。
-
----
-
-### RunnableBranch——条件路由
-
-来自 `RunnableBranch.mjs`：
-
-```javascript
-import { RunnableBranch, RunnableLambda } from "@langchain/core/runnables";
-
-const branch = RunnableBranch.from([
-  [RunnableLambda.from((n) => n > 0),      RunnableLambda.from((n) => `正数: ${n} + 10 = ${n + 10}`)],
-  [RunnableLambda.from((n) => n < 0),      RunnableLambda.from((n) => `负数: ${n} - 10 = ${n - 10}`)],
-  [RunnableLambda.from((n) => n % 2 === 0), RunnableLambda.from((n) => `偶数: ${n} * 2 = ${n * 2}`)],
-  RunnableLambda.from((n) => `默认: ${n}`), // 最后一个无条件，是兜底
-]);
-
-// 测试
-console.log(await branch.invoke(5));  // "正数: 5 + 10 = 15"  （第一条件命中，后面不再检查）
-console.log(await branch.invoke(-3)); // "负数: -3 - 10 = -13"
-console.log(await branch.invoke(0));  // "偶数: 0 * 2 = 0"    （前两条不满足，第三条满足）
-```
-
-按顺序检查条件，第一个为 true 的分支执行，其余跳过（**短路求值**）。最后没有条件的元素是默认兜底。
-
----
-
-### withRetry 和 withFallbacks——容错机制
-
-来自真实代码的场景（`RunnableWithRetry.mjs` 和 `RunnableWithFallbacks.mjs`）：
-
-```javascript
-// withRetry：同一个操作失败后自动重试（模拟 70% 失败率的不稳定接口）
-let attempt = 0;
-const unstableRunnable = RunnableLambda.from(async (input) => {
-  attempt += 1;
-  if (Math.random() < 0.7) throw new Error("模拟的随机错误");
-  return `成功处理: ${input}`;
-});
-
-const withRetry = unstableRunnable.withRetry({ stopAfterAttempt: 5 });
-const result = await withRetry.invoke("演示");
-// 在 5 次以内，只要有一次成功就返回，全失败则 throw
-
-// withFallbacks：主方案失败，切换备选（模拟服务降级）
-const premiumTranslator  = RunnableLambda.from(async (text) => {
-  throw new Error("Premium 服务超时"); // 主服务挂了
-});
-const standardTranslator = RunnableLambda.from(async (text) => {
-  return "xxx"; // 标准服务可用
-});
-const localTranslator    = RunnableLambda.from(async (text) => {
-  return text.split(" ").map(w => dict[w] ?? w).join(""); // 本地兜底
-});
-
-const translator = premiumTranslator.withFallbacks({
-  fallbacks: [standardTranslator, localTranslator],
-});
-// 尝试顺序：premium → standard（成功，返回"xxx"，不再尝试 local）
-```
-
-**Retry vs Fallback** 的本质区别：Retry 重复同一件事（适合临时故障），Fallback 换一件事（适合服务降级）。实际项目通常结合：先对主方案重试 2 次，都失败了再切换备选。
-
----
-
-### RunnablePick——只取你要的字段
-
-来自 `RunnablePick.mjs`，当上游 Runnable 输出了一个大对象，但下游只需要其中几个字段：
-
-```javascript
-import { RunnablePick } from "@langchain/core/runnables";
-
-const pick = new RunnablePick(["name", "score"]);
-const result = await pick.invoke({ name: "张三", age: 25, score: 98, address: "..." });
-// result = { name: "张三", score: 98 }
-```
-
-常用于 RAG 场景：检索返回了文档、分数、元数据，但下游 Prompt 只需要文档内容。
-
----
-
-### RunnableEach——对数组每个元素执行链
-
-来自 `RunnableEach.mjs`，把一个 Runnable 应用到数组的每个元素上：
-
-```javascript
-import { RunnableEach, RunnableLambda } from "@langchain/core/runnables";
-
-const processItem = RunnableLambda.from((name) => `Hello, ${name}!`);
-const chain = new RunnableEach({ bound: processItem });
-
-const results = await chain.invoke(["Alice", "Bob", "Carol"]);
-// results = ["Hello, Alice!", "Hello, Bob!", "Hello, Carol!"]
-```
-
-比手动写 `Promise.all(items.map(item => chain.invoke(item)))` 更语义化，而且自动处理并发。
-
----
-
-### RouterRunnable——按 key 动态路由
-
-来自 `RouterRunnable.mjs`，根据输入的 `key` 字段选择不同的处理链：
-
-```javascript
-import { RouterRunnable, RunnableLambda } from "@langchain/core/runnables";
-
-const toUpperCase = RunnableLambda.from((input) => input.toUpperCase());
-const reverseText = RunnableLambda.from((input) => input.split("").reverse().join(""));
-
-const router = new RouterRunnable({
-  runnables: { toUpperCase, reverseText },
-});
-
-await router.invoke({ key: "reverseText", input: "Hello" });
-// → "olleH"
-await router.invoke({ key: "toUpperCase", input: "Hello" });
-// → "HELLO"
-```
-
-比 `RunnableBranch` 更适合**多路由场景**——Branch 是按条件逐个检查（if-else），Router 是按名字直接查找（switch-case），性能更好。
-
----
-
-### RunnableWithConfig——给链绑定配置
-
-来自 `RunnableWithConfig.mjs`，在 Runnable 执行时传入配置参数，所有节点都能访问：
-
-```javascript
-const chain = RunnableLambda.from(async (input, config) => {
-  const userId = config?.configurable?.userId;
-  const locale = config?.configurable?.locale;
-  return `用户 ${userId}（${locale}）查询：${input}`;
-});
-
-const configuredChain = chain.withConfig({
-  configurable: { userId: "user-123", locale: "zh-CN" },
-});
-
-await configuredChain.invoke("最近的订单");
-// → "用户 user-123（zh-CN）查询：最近的订单"
-```
-
-**`configurable`** 是透传给链中所有节点的上下文信息。常用于多租户场景——同一条链，不同用户调用时传不同的 config（用户 ID、语言偏好、权限等级）。
-
----
-
-### RunnableWithCallbacks——观测每一步
-
-来自 `RunnableWithCallbacks.mjs`，构建一个文本处理链：清洗 → 分词 → 统计，用 callback 观测每步：
-
-```javascript
-import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
-
-const clean    = RunnableLambda.from((text) => text.trim().replace(/\s+/g, " "));
-const tokenize = RunnableLambda.from((text) => text.split(" "));
-const count    = RunnableLambda.from((tokens) => ({ tokens, wordCount: tokens.length }));
-
-const chain = RunnableSequence.from([clean, tokenize, count]);
-
-const callback = {
-  handleChainStart(chain) {
-    const step = chain?.id?.[chain.id.length - 1] ?? "unknown";
-    console.log(`[START] ${step}`);
-  },
-  handleChainEnd(output) {
-    console.log(`[END]   output=${JSON.stringify(output)}\n`);
-  },
-  handleChainError(err) {
-    console.log(`[ERROR] ${err.message}\n`);
-  },
-};
-
-const result = await chain.invoke("  hello   world   from   langchain  ", {
-  callbacks: [callback],
-});
-// 输出：
-// [START] clean
-// [END]   output="hello world from langchain"
-//
-// [START] tokenize
-// [END]   output=["hello","world","from","langchain"]
-//
-// [START] count
-// [END]   output={"tokens":["hello","world","from","langchain"],"wordCount":4}
-```
-
-`chain.id` 是一个数组，最后一个元素是当前节点名称（`clean`、`tokenize`、`count`）。生产环境里把 callback 接到日志系统，可以追踪整个链路每步的耗时和输出。
-
----
 
 ### RunnableWithMessageHistory——自动管理多轮对话历史
 
-来自 `RunnableWithMessageHistory.mjs` 的真实案例：
+每次调用自动：**取出历史 → 注入 Prompt → 执行 → 把新一轮问答追加到历史**。`sessionId` 区分不同用户，互不干扰。
 
 ```javascript
 import { RunnableWithMessageHistory } from "@langchain/core/runnables";
@@ -978,49 +720,34 @@ import { InMemoryChatMessageHistory } from "@langchain/core/chat_history";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 
 const prompt = ChatPromptTemplate.fromMessages([
-  ["system", "你是一个简洁、有帮助的中文助手，会用1-2句话回答用户问题。"],
-  new MessagesPlaceholder("history"),
+  ["system", "你是一个简洁、有帮助的中文助手。"],
+  new MessagesPlaceholder("history"),  // 历史消息注入点
   ["human", "{question}"],
 ]);
-
-const simpleChain = prompt.pipe(model).pipe(new StringOutputParser());
 
 const messageHistories = new Map();
 
 const chain = new RunnableWithMessageHistory({
-  runnable: simpleChain,
+  runnable: prompt.pipe(model).pipe(new StringOutputParser()),
   getMessageHistory: (sessionId) => {
     if (!messageHistories.has(sessionId))
       messageHistories.set(sessionId, new InMemoryChatMessageHistory());
     return messageHistories.get(sessionId);
   },
-  inputMessagesKey: "question",
-  historyMessagesKey: "history",
+  inputMessagesKey: "question",   // 对应 Prompt 里的 {question}
+  historyMessagesKey: "history",  // 对应 MessagesPlaceholder("history")
 });
 
-// 第 1 轮
-const r1 = await chain.invoke(
-  { question: "我的名字是神光，我来自山东，我喜欢编程、写作、金铲铲。" },
+await chain.invoke(
+  { question: "我的名字是神光，来自山东。" },
   { configurable: { sessionId: "user-123" } }
 );
-console.log(r1); // "很高兴认识你，神光！..."
-
-// 第 2 轮——自动注入了第 1 轮的历史
-const r2 = await chain.invoke(
-  { question: "我刚才说我来自哪里？" },
+await chain.invoke(
+  { question: "我叫什么名字？来自哪里？" },
   { configurable: { sessionId: "user-123" } }
 );
-console.log(r2); // "你说你来自山东。"
-
-// 第 3 轮
-const r3 = await chain.invoke(
-  { question: "我的爱好是什么？" },
-  { configurable: { sessionId: "user-123" } }
-);
-console.log(r3); // "你的爱好是编程、写作和金铲铲。"
+// → "你叫神光，来自山东。"  （第一轮历史自动注入）
 ```
-
-每次调用自动：取出历史 → 注入 `{history}` → 执行链 → **把新一轮的问答自动追加到历史**。`sessionId` 区分不同用户的对话，不同 sessionId 的历史互不干扰。
 
 ---
 
@@ -1114,9 +841,11 @@ splitDocuments.forEach(doc => {
 
 中文字符比英文用更多 token。如果你的文档是中文，按字符数设置 `chunkSize` 可能会低估实际的 token 消耗。用 `lengthFunction: (text) => enc.encode(text).length` 改成按 token 计数更准确。
 
-### 补充：其他切割器——不同文档类型用不同策略
+### 补充：其他切割器——按需查阅，普通项目直接用 Recursive 即可
 
-`RecursiveCharacterTextSplitter` 是通用方案，但针对特定文档类型有更好的选择：
+`RecursiveCharacterTextSplitter` 之所以是**最通用的默认选择**，是因为它的分割策略最接近人类的阅读习惯：先按段落（`\n\n`）切，段落太长就再按换行（`\n`）切，还太长就按句子切……一层一层递归下去，始终优先保留语义完整的单元。相比之下，其他切割器都是针对特定格式优化的专用工具——**不知道用哪个就用 RecursiveCharacterTextSplitter，不会太差**。
+
+但针对特定文档类型，有更好的选择：
 
 **CharacterTextSplitter——最简单的单分隔符切割**
 
@@ -1179,7 +908,21 @@ const splitter = new LatexTextSplitter({ chunkSize: 200, chunkOverlap: 40 });
 
 ### 向量化与检索
 
-来自 `hello-rag.mjs` 的完整 RAG 流程：
+在存和查两个环节，"向量化"都是核心操作——把文字变成一串数字（向量），让计算机能计算语义上的"距离"。整个流程分两条线：
+
+**建库（离线，一次性）**
+```
+原始文档 → [加载] → Document[] → [切割] → 小 chunk[] → [Embedding 模型] → 向量[] → [存入向量库]
+```
+
+**查询（在线，每次提问）**
+```
+用户问题 → [Embedding 模型] → 问题向量 → [向量相似度搜索] → Top-K 相关 chunk → [拼进 Prompt] → 模型生成回答
+```
+
+关键点：建库和查询必须用**同一个 Embedding 模型**。如果建库时用 1024 维的模型，查询时换成 1536 维的，向量维度对不上，根本无法比较。
+
+来自 `hello-rag.mjs` 的完整 RAG 流程（`MemoryVectorStore` 把以上所有步骤封装进一个方法调用）：
 
 ```javascript
 import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
@@ -1245,6 +988,15 @@ const context = docs.map(d => d.pageContent).join("\n---\n");
 ## 六、对话记忆（memory-test）
 
 大模型本身是无状态的——你每次调用它，它都不记得上次说了什么。解决这个问题是 Agent 开发的基础需求。
+
+三种策略各有取舍，先看对比再读代码：
+
+| 维度 | 截断 | 摘要 | 检索 |
+| --- | --- | --- | --- |
+| 信息保留 | 差（旧信息直接丢失） | 中（细节丢失，语义保留） | 好（按需精准召回） |
+| 实现复杂度 | 低 | 中（需要额外 LLM 调用） | 高（需要向量数据库） |
+| 额外延迟 | 无 | 有（摘要生成耗时） | 有（向量搜索耗时） |
+| 适合场景 | 短对话、简单客服 | 长对话、闲聊机器人 | 知识密集型、专业场景 |
 
 ### 先看最简单的情况
 
@@ -1483,20 +1235,30 @@ await saveConversation(`用户: ${query}\nAI: ${response.content}`, nextRound);
 
 ---
 
-### 三种策略对比
-
-| 维度 | 截断 | 摘要 | 检索 |
-| --- | --- | --- | --- |
-| 信息保留 | 差（旧信息直接丢失） | 中（细节丢失，语义保留） | 好（按需精准召回） |
-| 实现复杂度 | 低 | 中（需要额外 LLM 调用） | 高（需要向量数据库） |
-| 额外延迟 | 无 | 有（摘要生成耗时） | 有（向量搜索耗时） |
-| 适合场景 | 短对话、简单客服 | 长对话、闲聊机器人 | 知识密集型、专业场景 |
-
----
-
 ## 七、向量数据库 Milvus（milvus-test）
 
 `MemoryVectorStore` 是玩具——数据存在内存里，重启就丢。生产环境需要 Milvus 这样的持久化向量数据库。
+
+### Milvus 是什么，和普通数据库有什么不同
+
+普通数据库（MySQL、PostgreSQL）查的是"精确匹配"：`WHERE id = 123`、`WHERE name LIKE '%张%'`。向量数据库查的是"语义相似"：给我最接近这段话意思的 Top-K 条记录。
+
+Milvus 的核心概念对应关系：
+
+| Milvus 概念 | 类比 | 说明 |
+|---|---|---|
+| Collection | 数据表 | 存一类数据的地方（如 `ai_diary`） |
+| Field | 列 | 每条记录的各个字段 |
+| FloatVector Field | 向量列 | 必须有且只有一列，存 Embedding |
+| Index（索引） | 数据库索引 | 决定搜索算法，**不建索引就不能搜** |
+| loadCollection | 上线 | Milvus 把数据加载进内存才能被检索 |
+
+**索引类型的选择**：最常用的是 `IVF_FLAT`——先用 k-means 把向量聚成 `nlist` 个簇，搜索时只扫描最近的几个簇，不用遍历全部数据。`nlist` 越大精度越高，但建索引越慢。小数据集（< 10万条）直接用 `FLAT`（暴力扫描全部），不需要调参。
+
+**相似度度量方式**：
+- `COSINE`（余弦相似度）——最常用，只关心方向不关心长度，适合语义检索
+- `L2`（欧氏距离）——关心绝对距离，适合图像特征等需要量级信息的场景
+- `IP`（内积）——向量已归一化时和 COSINE 等价，但略快
 
 ### 建表与索引
 
@@ -1565,6 +1327,10 @@ await client.delete({ collection_name: "ai_diary", filter: 'id in ["diary_002", 
 ```
 
 ### 电子书 RAG 实战（天龙八部）
+
+这是一个完整的生产级 RAG 建库流程：加载 ePub 电子书 → 按章节切割 → 每个 chunk 向量化 → 写入 Milvus。建库是一次性的离线任务，建完之后问答就是实时检索。
+
+注意 ID 的设计：`tlbb_ch${chapterIdx}_${chunkIdx}` 把章节号和 chunk 序号编进了 ID 里，方便后续排查某个检索结果来自哪一章。
 
 ```javascript
 import { EPubLoader } from "@langchain/community/document_loaders/fs/epub";
@@ -1815,6 +1581,21 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {}
 
 ## 九、语音服务（tts-stt-test）
 
+这一章把 ASR（语音转文字）+ AI 推理 + TTS（文字转语音）串成一条完整的实时语音对话链路：
+
+```
+用户录音 → POST /speech/asr → 腾讯 ASR → 识别文字
+                                              ↓
+                                    GET /ai/chat/stream
+                                              ↓
+                         AI 生成文字 → SSE 推给前端（显示文字）
+                                    → EventEmitter 推给 TTS Service
+                                              ↓
+                              腾讯 TTS WebSocket → MP3 流 → 浏览器播放
+```
+
+EventEmitter 解耦 AI 和 TTS：AI Service 只管"发事件通知"，TTS Service 只管"做合成"，互不依赖。
+
 ### TTS：文字转语音
 
 **非流式版本**——整段文字一次性合成，适合短文本：
@@ -1914,17 +1695,6 @@ handleAiStreamEvent(event: AiTtsStreamEvent) {
 **为什么要解耦？** 如果 AI Service 直接调用 TTS Service，两者就耦合了，改动任何一个都要关注另一个的影响，也无法单独测试。EventEmitter 让 AI 只管"发通知"，TTS 只管"做合成"，互不干扰。
 
 **pendingChunks 队列**解决了时序问题：AI 生成文字很快，但腾讯 TTS WebSocket 建连需要时间（有一个 `{ ready: 1 }` 的就绪信号）。在就绪信号到来前，文字先存在队列里，就绪后一次性发出。
-
-完整链路：
-
-```
-1. 用户录音 → POST /speech/asr → 腾讯 ASR → 识别文字
-2. 浏览器建立 /speech/tts/ws 连接 → 获取 sessionId
-3. 请求 GET /ai/chat/stream?query=xxx&ttsSessionId=yyy
-4. AI 生成文字 → SSE 推给前端（显示文字）+ EventEmitter 推给 TTS
-5. TTS 连腾讯合成 → MP3 二进制流 → 中继给浏览器 WebSocket
-6. 浏览器 MediaSource API → 边接收边播放语音
-```
 
 ### 补充：FileInterceptor——文件上传
 
