@@ -343,16 +343,17 @@ async function applyDecision(
         metadata: result.metadata ?? null,
       });
     } else {
+      // Only set terminal status — tool.executor already wrote resultSummary
+      // (the real tool output). Overwriting with result.reason would lose the data.
       await ctx.callbacks.updateStepRun(lastStepRunId, {
         status: StepStatus.COMPLETED,
-        resultSummary: result.reason,
         completedAt: new Date(),
       });
       ctx.eventPublisher.emit(TASK_EVENTS.STEP_COMPLETED, {
         taskId: state.taskId,
         runId: state.runId,
         stepRunId: lastStepRunId,
-        resultSummary: result.reason,
+        resultSummary: lastOutput.slice(0, EVENT_REASON_MAX),
       });
     }
   }

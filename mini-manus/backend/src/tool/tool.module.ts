@@ -12,6 +12,8 @@ import { ExtractPdfTextTool } from '@/tool/tools/extract-pdf-text.tool';
 import { FetchUrlAsMarkdownTool } from '@/tool/tools/fetch-url-as-markdown.tool';
 import { ExportPdfTool } from '@/tool/tools/export-pdf.tool';
 import { GitHubSearchTool } from '@/tool/tools/github-search.tool';
+import { GitHubGetFileTool } from '@/tool/tools/github-get-file.tool';
+import { GetCurrentTimeTool } from '@/tool/tools/get-current-time.tool';
 import { BrowserOpenTool } from '@/tool/tools/browser/browser-open.tool';
 import { BrowserExtractTool } from '@/tool/tools/browser/browser-extract.tool';
 import { BrowserScreenshotTool } from '@/tool/tools/browser/browser-screenshot.tool';
@@ -46,6 +48,8 @@ function readBoolean(
     FetchUrlAsMarkdownTool,
     ExportPdfTool,
     GitHubSearchTool,
+    GitHubGetFileTool,
+    GetCurrentTimeTool,
     BrowserOpenTool,
     BrowserExtractTool,
     BrowserScreenshotTool,
@@ -75,6 +79,8 @@ export class ToolModule {
     private readonly fetchUrlAsMarkdown: FetchUrlAsMarkdownTool,
     private readonly exportPdf: ExportPdfTool,
     private readonly githubSearch: GitHubSearchTool,
+    private readonly githubGetFile: GitHubGetFileTool,
+    private readonly getCurrentTime: GetCurrentTimeTool,
     private readonly browserOpen: BrowserOpenTool,
     private readonly browserExtract: BrowserExtractTool,
     private readonly browserScreenshot: BrowserScreenshotTool,
@@ -96,6 +102,8 @@ export class ToolModule {
     this.registry.register(this.fetchUrlAsMarkdown);
     this.registry.register(this.exportPdf);
     this.registry.register(this.githubSearch);
+    this.registry.register(this.githubGetFile);
+    this.registry.register(this.getCurrentTime);
     if (
       readBoolean(this.config.get<string>('BROWSER_AUTOMATION_ENABLED'), false)
     ) {
