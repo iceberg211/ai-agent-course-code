@@ -26,7 +26,12 @@ function createService(values: Record<string, ConfigValue>) {
     {} as WorkspaceService,
     { emit: jest.fn() } as unknown as EventPublisher,
     { closeRun: jest.fn() } as unknown as BrowserSessionService,
-    { register: jest.fn(), get: jest.fn(), has: jest.fn(), getNames: jest.fn().mockReturnValue([]) } as unknown as SubAgentRegistry,
+    {
+      register: jest.fn(),
+      get: jest.fn(),
+      has: jest.fn(),
+      getNames: jest.fn().mockReturnValue([]),
+    } as unknown as SubAgentRegistry,
   );
 }
 

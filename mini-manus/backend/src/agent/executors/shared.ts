@@ -32,8 +32,15 @@ export async function persistStepOutput(
     await fs.writeFile(
       safePath,
       JSON.stringify(
-        { description, output, structuredData: structuredData ?? null, executionOrder, timestamp: new Date().toISOString() },
-        null, 2,
+        {
+          description,
+          output,
+          structuredData: structuredData ?? null,
+          executionOrder,
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2,
       ),
       'utf8',
     );
@@ -48,9 +55,12 @@ export function resolveStepResultsInString(
   stepResults: StepResult[],
 ): string {
   if (!text.includes(STEP_RESULTS_PLACEHOLDER)) return text;
-  const summary = stepResults.length > 0
-    ? stepResults.map(s => `${s.description}:\n${s.toolOutput ?? s.resultSummary}`).join('\n\n')
-    : '（无前序步骤结果）';
+  const summary =
+    stepResults.length > 0
+      ? stepResults
+          .map((s) => `${s.description}:\n${s.toolOutput ?? s.resultSummary}`)
+          .join('\n\n')
+      : '（无前序步骤结果）';
   return text.replace(STEP_RESULTS_PLACEHOLDER, summary);
 }
 
@@ -59,11 +69,16 @@ export function resolveStepResultsInRecord(
   input: Record<string, unknown>,
   stepResults: StepResult[],
 ): Record<string, unknown> {
-  const hasPlaceholder = Object.values(input).some(v => v === STEP_RESULTS_PLACEHOLDER);
+  const hasPlaceholder = Object.values(input).some(
+    (v) => v === STEP_RESULTS_PLACEHOLDER,
+  );
   if (!hasPlaceholder) return input;
-  const summary = stepResults.length > 0
-    ? stepResults.map(s => `${s.description}:\n${s.toolOutput ?? s.resultSummary}`).join('\n\n')
-    : '（无前序步骤结果）';
+  const summary =
+    stepResults.length > 0
+      ? stepResults
+          .map((s) => `${s.description}:\n${s.toolOutput ?? s.resultSummary}`)
+          .join('\n\n')
+      : '（无前序步骤结果）';
   const resolved: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
     resolved[key] = value === STEP_RESULTS_PLACEHOLDER ? summary : value;
@@ -77,5 +92,9 @@ export function attachRuntimeContext(
   taskId: string,
   runId: string,
 ): Record<string, unknown> {
-  return { ...input, task_id: input.task_id ?? taskId, run_id: input.run_id ?? runId };
+  return {
+    ...input,
+    task_id: input.task_id ?? taskId,
+    run_id: input.run_id ?? runId,
+  };
 }

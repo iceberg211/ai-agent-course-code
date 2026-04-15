@@ -1,4 +1,10 @@
-import { StateGraph, START, END, MemorySaver, InMemoryStore } from '@langchain/langgraph';
+import {
+  StateGraph,
+  START,
+  END,
+  MemorySaver,
+  InMemoryStore,
+} from '@langchain/langgraph';
 import { AgentStateAnnotation } from '@/agent/agent.state';
 import { plannerNode } from '@/agent/nodes/planner.node';
 import { executorNode } from '@/agent/nodes/executor.node';
@@ -18,7 +24,9 @@ export function buildAgentGraph() {
   return new StateGraph(AgentStateAnnotation)
     .addNode('planner', plannerNode, { ends: ['executor', END] })
     .addNode('executor', executorNode)
-    .addNode('checker', checkerNode, { ends: ['executor', 'planner', 'finalizer', END] })
+    .addNode('checker', checkerNode, {
+      ends: ['executor', 'planner', 'finalizer', END],
+    })
     .addNode('finalizer', finalizerNode)
     .addEdge(START, 'planner')
     .addEdge('executor', 'checker')

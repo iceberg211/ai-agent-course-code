@@ -8,7 +8,10 @@ import { RunStatus } from '@/common/enums';
 import type { AgentState } from '@/agent/agent.state';
 import type { AgentCallbacks } from '@/agent/agent.callbacks';
 import type { NodeContext } from '@/agent/agent.context';
-import { compileAgentGraph, type CompiledAgentGraph } from '@/agent/agent.graph';
+import {
+  compileAgentGraph,
+  type CompiledAgentGraph,
+} from '@/agent/agent.graph';
 import { ToolRegistry } from '@/tool/tool.registry';
 import { SkillRegistry } from '@/skill/skill.registry';
 import { WorkspaceService } from '@/workspace/workspace.service';
@@ -21,7 +24,10 @@ import { TASK_EVENTS } from '@/common/events/task.events';
 import type { PlanSemanticValidationOptions } from '@/agent/agent.context';
 
 /** 主流模型价格表（USD / 1M tokens）。未收录的模型不估算成本。 */
-const MODEL_PRICING: Record<string, { inputPerMillion: number; outputPerMillion: number }> = {
+const MODEL_PRICING: Record<
+  string,
+  { inputPerMillion: number; outputPerMillion: number }
+> = {
   'gpt-4o': { inputPerMillion: 5.0, outputPerMillion: 15.0 },
   'gpt-4o-mini': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   'gpt-4-turbo': { inputPerMillion: 10.0, outputPerMillion: 30.0 },
@@ -45,18 +51,27 @@ function estimateCostUsd(
   );
 }
 
-function readBoolean(value: string | undefined, defaultValue: boolean): boolean {
+function readBoolean(
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean {
   if (value == null) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
-function readCleanString(value: string | undefined, defaultValue: string): string {
+function readCleanString(
+  value: string | undefined,
+  defaultValue: string,
+): string {
   const trimmed = value?.trim();
   return trimmed?.length ? trimmed : defaultValue;
 }
 
 function readCsv(value: string | undefined): string[] {
-  return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  return (value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 @Injectable()
@@ -71,7 +86,10 @@ export class AgentService {
   >();
   private readonly approvalTimeoutMs: number;
   private readonly tokenBudget: number;
-  private readonly sharedConfig: Omit<NodeContext, 'signal' | 'tokenTracker' | 'tokenBudgetGuard' | 'callbacks'>;
+  private readonly sharedConfig: Omit<
+    NodeContext,
+    'signal' | 'tokenTracker' | 'tokenBudgetGuard' | 'callbacks'
+  >;
 
   /**
    * 结构化输出方式：
@@ -81,7 +99,10 @@ export class AgentService {
    *
    * 通过 STRUCTURED_OUTPUT_METHOD 环境变量覆盖，默认 functionCalling。
    */
-  readonly structuredOutputMethod: 'functionCalling' | 'json_schema' | 'jsonMode';
+  readonly structuredOutputMethod:
+    | 'functionCalling'
+    | 'json_schema'
+    | 'jsonMode';
 
   constructor(
     private readonly config: ConfigService,
@@ -92,7 +113,10 @@ export class AgentService {
     private readonly browserSessions: BrowserSessionService,
     private readonly subAgentRegistry: SubAgentRegistry,
   ) {
-    this.modelName = readCleanString(config.get<string>('MODEL_NAME'), 'gpt-4o-mini');
+    this.modelName = readCleanString(
+      config.get<string>('MODEL_NAME'),
+      'gpt-4o-mini',
+    );
     this.llm = new ChatOpenAI({
       modelName: this.modelName,
       apiKey: readCleanString(config.get<string>('OPENAI_API_KEY'), ''),
@@ -103,9 +127,13 @@ export class AgentService {
         : undefined,
     });
 
-    const raw = config.get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling').trim();
+    const raw = config
+      .get<string>('STRUCTURED_OUTPUT_METHOD', 'functionCalling')
+      .trim();
     this.structuredOutputMethod = (
-      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw) ? raw : 'functionCalling'
+      ['functionCalling', 'json_schema', 'jsonMode'].includes(raw)
+        ? raw
+        : 'functionCalling'
     ) as typeof this.structuredOutputMethod;
 
     const planValidationOptions: PlanSemanticValidationOptions = {
@@ -143,14 +171,23 @@ export class AgentService {
       maxSteps: config.get<number>('MAX_STEPS', 20),
       stepTimeoutMs: config.get<number>('STEP_TIMEOUT_MS', 180_000),
       skillTimeoutMs: config.get<number>('SKILL_TIMEOUT_MS', 300_000),
-      exportPdfEnabled: readBoolean(config.get<string>('EXPORT_PDF_ENABLED'), false),
+      exportPdfEnabled: readBoolean(
+        config.get<string>('EXPORT_PDF_ENABLED'),
+        false,
+      ),
       planValidationOptions,
     };
 
     // 设置工具可用性检查器，让 Planner 只看到实际可用的工具
     const tavilyKey = config.get<string>('TAVILY_API_KEY', '');
-    const sandboxEnabled = readBoolean(config.get<string>('SANDBOX_ENABLED'), false);
-    const browserEnabled = readBoolean(config.get<string>('BROWSER_AUTOMATION_ENABLED'), false);
+    const sandboxEnabled = readBoolean(
+      config.get<string>('SANDBOX_ENABLED'),
+      false,
+    );
+    const browserEnabled = readBoolean(
+      config.get<string>('BROWSER_AUTOMATION_ENABLED'),
+      false,
+    );
     toolRegistry.setAvailabilityChecker((req) => {
       if (req === 'tavily_api') return !!tavilyKey;
       if (req === 'docker') return sandboxEnabled;
@@ -160,7 +197,9 @@ export class AgentService {
 
     // Compile graph once
     this.compiled = compileAgentGraph();
-    this.logger.log(`Agent graph compiled. Model: ${this.modelName}, SO: ${this.structuredOutputMethod}`);
+    this.logger.log(
+      `Agent graph compiled. Model: ${this.modelName}, SO: ${this.structuredOutputMethod}`,
+    );
   }
 
   async executeRun(
@@ -175,10 +214,21 @@ export class AgentService {
     const tokenBudgetGuard = new TokenBudgetGuard(
       tokenTracker,
       this.tokenBudget,
-      () => estimateCostUsd(this.modelName, tokenTracker.inputTokens, tokenTracker.outputTokens),
+      () =>
+        estimateCostUsd(
+          this.modelName,
+          tokenTracker.inputTokens,
+          tokenTracker.outputTokens,
+        ),
     );
 
-    const ctx: NodeContext = { ...this.sharedConfig, signal, tokenTracker, tokenBudgetGuard, callbacks };
+    const ctx: NodeContext = {
+      ...this.sharedConfig,
+      signal,
+      tokenTracker,
+      tokenBudgetGuard,
+      callbacks,
+    };
 
     const initialState: Partial<AgentState> = {
       taskId,
@@ -205,27 +255,48 @@ export class AgentService {
       // 每次 interrupt() 后暂停，等待外部 resume（approved/rejected），
       // 再以 Command 重新 invoke，直到图执行完成或终止
       let invokeInput: Partial<AgentState> | Command = initialState;
-      const graphConfig = { configurable: { thread_id: runId, ctx }, callbacks: [tokenTracker] };
+      const graphConfig = {
+        configurable: { thread_id: runId, ctx },
+        callbacks: [tokenTracker],
+      };
 
       while (true) {
-        const result = await this.compiled.invoke(invokeInput as any, graphConfig);
+        const result = await this.compiled.invoke(
+          invokeInput as any,
+          graphConfig,
+        );
 
         // 检查是否有 interrupt 待处理
         const interrupts = (result as Record<string, unknown>).__interrupt__ as
-          Array<{ value: Record<string, unknown> }> | undefined;
+          | Array<{ value: Record<string, unknown> }>
+          | undefined;
 
         if (!interrupts?.length) {
           // 图已正常结束，result 是 finalState
-          const finalState = result as AgentState;
+          const finalState = result;
           if (finalState.error === 'cancelled') {
             await callbacks.setRunStatus(runId, RunStatus.CANCELLED);
-            this.eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, { taskId, runId });
+            this.eventPublisher.emit(TASK_EVENTS.RUN_CANCELLED, {
+              taskId,
+              runId,
+            });
           } else if (finalState.error) {
-            await callbacks.setRunStatus(runId, RunStatus.FAILED, finalState.error);
-            this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: finalState.error });
+            await callbacks.setRunStatus(
+              runId,
+              RunStatus.FAILED,
+              finalState.error,
+            );
+            this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+              taskId,
+              runId,
+              error: finalState.error,
+            });
           } else {
             await callbacks.setRunStatus(runId, RunStatus.COMPLETED);
-            this.eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, { taskId, runId });
+            this.eventPublisher.emit(TASK_EVENTS.RUN_COMPLETED, {
+              taskId,
+              runId,
+            });
           }
           break;
         }
@@ -251,18 +322,32 @@ export class AgentService {
           approved = await approvalPromise;
         } catch {
           // 超时或被 cancel 触发 reject
-          await callbacks.setRunStatus(runId, RunStatus.FAILED, 'approval_timeout');
-          this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: 'approval_timeout' });
+          await callbacks.setRunStatus(
+            runId,
+            RunStatus.FAILED,
+            'approval_timeout',
+          );
+          this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+            taskId,
+            runId,
+            error: 'approval_timeout',
+          });
           break;
         }
 
-        invokeInput = new Command({ resume: approved ? 'approved' : 'rejected' });
+        invokeInput = new Command({
+          resume: approved ? 'approved' : 'rejected',
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Run ${runId} failed with error: ${msg}`);
       await callbacks.setRunStatus(runId, RunStatus.FAILED, msg);
-      this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, { taskId, runId, error: msg });
+      this.eventPublisher.emit(TASK_EVENTS.RUN_FAILED, {
+        taskId,
+        runId,
+        error: msg,
+      });
     } finally {
       // 持久化 token 统计 + 推送实时事件
       const estimatedCostUsd = estimateCostUsd(
@@ -294,7 +379,9 @@ export class AgentService {
           modelName: this.modelName,
         });
       } catch (err) {
-        this.logger.warn(`Failed to save token usage for run ${runId}: ${String(err)}`);
+        this.logger.warn(
+          `Failed to save token usage for run ${runId}: ${String(err)}`,
+        );
       }
       // 保存节点级 LLM 明细
       if (tokenTracker.nodeUsages.length > 0) {
@@ -304,11 +391,17 @@ export class AgentService {
             this.modelName,
             tokenTracker.nodeUsages.map((u) => ({
               ...u,
-              estimatedCostUsd: estimateCostUsd(this.modelName, u.inputTokens, u.outputTokens),
+              estimatedCostUsd: estimateCostUsd(
+                this.modelName,
+                u.inputTokens,
+                u.outputTokens,
+              ),
             })),
           );
         } catch (err) {
-          this.logger.warn(`Failed to save llm_call_logs for run ${runId}: ${String(err)}`);
+          this.logger.warn(
+            `Failed to save llm_call_logs for run ${runId}: ${String(err)}`,
+          );
         }
       }
       try {
