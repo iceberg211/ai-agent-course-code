@@ -11,13 +11,12 @@
 2. prompt-template-test    → 学会精确控制模型的输入（Prompt 工程）
 3. output-parser-test      → 让模型按你要的格式输出结构化数据
 4. runnable-test           → 理解 LangChain 的组合哲学（Runnable 体系）
-5. memory-test             → 让 Agent 记住对话——三种策略各有取舍
-6. rag-test                → 给 Agent 接上"外部知识库"（文档加载与切割）
+5. rag-test                → 给 Agent 接上"外部知识库"（文档加载与切割）
+6. memory-test             → 让 Agent 记住对话——三种策略各有取舍
 7. milvus-test             → 换上生产级向量数据库，跑电子书 RAG 实战
 8. cron-job-tool           → 把所有能力合在一起：定时任务 + 多工具 Agent
 9. tts-stt-test            → 加上耳朵和嘴巴：语音识别与语音合成
 10. asr-and-tts-nest-service → 把语音和 AI 接成一条完整的流水线
-11. hello-nest-langchain    → 最后一步：把 LangChain 封装进 NestJS 服务对外暴露
 12. langgraph-test          → 状态图 Agent：从 while 循环升级到声明式 StateGraph
 ```
 
@@ -396,292 +395,13 @@ const executeCommandTool = tool(
 
 ## 二、Prompt 工程（prompt-template-test）
 
-搞清楚了怎么调模型，下一步是学会"精确说话"。这一章所有示例围绕一个真实场景：**工程团队周报自动生成**。
-
-### 为什么需要 PromptTemplate
-
-最直接的方式是手动拼字符串：`const prompt = \`公司：${companyName}...\``。
-
-这在简单情况下没问题，但一旦模板复杂起来——变量多、不同场景复用、团队协作维护——字符串拼接就很难管理了。`PromptTemplate` 把模板和数据分离：
-
-```javascript
-import { PromptTemplate } from "@langchain/core/prompts";
-
-const template = PromptTemplate.fromTemplate(
-  `公司：{company_name}，部门：{team_name}
-   周期：{week_range}，目标：{team_goal}
-   本周开发活动：{dev_activities}
-   请生成一份专业的技术周报。`
-);
-
-const formatted = await template.format({
-  company_name: "星航科技",
-  team_name: "数据智能平台组",
-  week_range: "2025-03-10 ~ 2025-03-16",
-  team_goal: "用户画像服务灰度上线",
-  dev_activities: "阿兵：27 次提交，灰度部署和回滚脚本优化...",
-});
-```
-
-`fromTemplate()` 自动从字符串里提取所有 `{变量名}` 作为 `inputVariables`，`format()` 时如果漏了某个变量会直接报错——比手动拼接更安全。
-
----
-
-### ChatPromptTemplate——给消息分角色
-
-上面的 `PromptTemplate` 生成的是**纯文本**。但聊天模型接收的是**带角色的消息数组**。这时候用 `ChatPromptTemplate`：
-
-```javascript
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-
-const chatPrompt = ChatPromptTemplate.fromMessages([
-  ["system", "你是一名资深工程团队负责人，写作风格：{tone}。"],
-  ["human", "本周信息：公司 {company_name}，部门 {team_name}... 请生成周报。"],
-]);
-
-// formatMessages 返回 [SystemMessage, HumanMessage]，可以直接传给 model.invoke()
-const messages = await chatPrompt.formatMessages({
-  tone: "专业清晰",
-  company_name: "星航科技",
-  // ...
-});
-```
-
-System 和 Human 分开写有实际效果：system 设定角色，模型会一直遵循；human 放具体任务。把它们混在一起效果通常更差。
-
-**MessagesPlaceholder** 是进阶用法，用来在固定位置插入动态的历史消息，是实现多轮对话记忆的关键：
-
-```javascript
-import { MessagesPlaceholder } from "@langchain/core/prompts";
-
-const chatPromptWithHistory = ChatPromptTemplate.fromMessages([
-  ["system", "你是工程效率顾问"],
-  new MessagesPlaceholder("history"), // {history} 会被替换成历史对话数组
-  ["human", "新问题：{current_input}"],
-]);
-
-// 传入历史消息（数组格式）
-const messages = await chatPromptWithHistory.formatMessages({
-  history: [
-    { role: "human", content: "我们在做 Prompt 模块化..." },
-    { role: "ai", content: "建议按职责拆分为 4 个块..." },
-  ],
-  current_input: "协同编辑流程有什么建议？",
-});
-// 生成：[SystemMessage, HumanMessage(历史1), AIMessage(历史2), HumanMessage(当前问题)]
-```
-
----
-
-### FewShotPromptTemplate——与其描述，不如举例
-
-有时候你想让模型输出特定风格，但用语言描述起来很难。直接给几个例子效果更好：
-
-```javascript
-import { FewShotPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
-
-const examples = [
-  {
-    requirement: "本周主要在修 Bug，重点突出稳定性",
-    report: "- 支付链路本周处理 P1 Bug 2 个、P2 Bug 3 个，全部在 SLA 内解决...",
-  },
-  {
-    requirement: "本周有新功能上线，想多展示成果",
-    report: "- 新上线「订单实时看板」，上线首日访问量 1200+ 次...",
-  },
-];
-
-// 定义单条示例的格式
-const examplePrompt = PromptTemplate.fromTemplate(
-  "需求：{requirement}\n周报：{report}"
-);
-
-const fewShotPrompt = new FewShotPromptTemplate({
-  examples,
-  examplePrompt,
-  prefix: "下面是几条周报示例，请学习它们的风格：",
-  suffix: "现在请根据以下需求写周报：{requirement}",
-  inputVariables: ["requirement"],
-});
-
-// format() 会把 examples 全部按 examplePrompt 格式化，拼在 prefix 和 suffix 之间
-const result = await fewShotPrompt.format({ requirement: "本周做了大量重构..." });
-```
-
----
-
-### FewShotChatMessagePromptTemplate——对话形式的少样本
-
-`FewShotPromptTemplate` 生成纯文本，而 `FewShotChatMessagePromptTemplate` 把每条示例都变成 human/ai 对话对，嵌入聊天模板里：
-
-```javascript
-import {
-  FewShotChatMessagePromptTemplate,
-  ChatPromptTemplate,
-} from "@langchain/core/prompts";
-
-const examples = [
-  {
-    input: "本周主要推进支付稳定性治理，做了事故处置、告警优化和演练。",
-    output: "- 本周聚焦支付链路稳定性，处理线上告警 12 条，合并冗余规则 8 条...",
-  },
-  {
-    input: "本周交付了新运营看板，并给业务同学做了多场分享。",
-    output: "- 上线新一代「运营实时看板」，衔接埋点和数据仓库...",
-  },
-];
-
-const fewShotExamples = new FewShotChatMessagePromptTemplate({
-  examplePrompt: ChatPromptTemplate.fromMessages([
-    ["human", "工作概述：{input}，请整理成周报要点。"],
-    ["ai", "{output}"],
-  ]),
-  examples,
-  inputVariables: [],
-});
-
-// 嵌入完整的 ChatPromptTemplate
-const finalPrompt = ChatPromptTemplate.fromMessages([
-  ["system", "你是资深技术负责人，请参考示例风格输出周报。"],
-  fewShotExamples,   // 示例块直接嵌入，会展开成多条消息
-  ["human", "工作概述：{current_work}，请整理成周报要点。"],
-]);
-
-const messages = await finalPrompt.formatMessages({ current_work: "本周完成了订单模块重构..." });
-// 生成：[SystemMessage, HumanMsg(示例1), AIMsg(示例1), HumanMsg(示例2), AIMsg(示例2), HumanMsg(当前任务)]
-```
-
----
-
-### 示例选择器——示例太多时动态筛选
-
-静态示例里所有例子每次都会包含，Token 受限。当你积累了很多示例时，用选择器动态挑选最合适的几个：
-
-**LengthBasedExampleSelector** — 按长度贪心选：
-
-```javascript
-import { LengthBasedExampleSelector } from "@langchain/core/example_selectors";
-
-const selector = await LengthBasedExampleSelector.fromExamples(examples, {
-  examplePrompt,
-  maxLength: 500,                               // 总字符数上限
-  getTextLength: (text) => text.length,         // 用字符数计算（也可换成 token 数）
-});
-
-const fewShotPrompt = new FewShotPromptTemplate({
-  exampleSelector: selector,  // 替换 examples
-  examplePrompt,
-  suffix: "需求：{requirement}",
-  inputVariables: ["requirement"],
-});
-```
-
-逻辑：按顺序贪心选，加进来不超限就留，超了就停。简单无状态，适合示例库不大的场景。
-
-**SemanticSimilarityExampleSelector** — 语义相似度选（更智能）：
-
-```javascript
-import { SemanticSimilarityExampleSelector } from "@langchain/core/example_selectors";
-import { Milvus } from "@langchain/community/vectorstores/milvus";
-
-// 先把所有示例向量化存入 Milvus（一次性准备工作）
-const vectorStore = await Milvus.fromExistingCollection(embeddings, {
-  collectionName: "weekly_report_examples",
-  clientConfig: { address: "localhost:19530" },
-});
-
-const selector = new SemanticSimilarityExampleSelector({
-  vectorStore,
-  k: 2, // 返回最相似的 2 个
-});
-```
-
-原理：用户输入向量化 → Milvus COSINE 相似度搜索 → 返回 top-k 个最像的例子。你问"稳定性治理怎么写"，它会找到历史里关于稳定性的示例，而不是随便选。
-
----
-
-### PipelinePromptTemplate——把大 Prompt 拆成可复用模块
-
-当 Prompt 越来越复杂，可以按职责拆分成独立模块，再用 `PipelinePromptTemplate` 组合：
-
-```javascript
-import { PipelinePromptTemplate } from "@langchain/core/prompts";
-
-// 4 个独立模块，各自维护，各自有独立变量
-const personaPrompt  = PromptTemplate.fromTemplate("你是资深工程负责人，风格：{tone}。");
-const contextPrompt  = PromptTemplate.fromTemplate("公司：{company_name}，部门：{team_name}...");
-const taskPrompt     = PromptTemplate.fromTemplate("本周活动：{dev_activities}，请提炼亮点和风险。");
-const formatPrompt   = PromptTemplate.fromTemplate("用 Markdown 输出，体现{company_values}的价值观。");
-
-const pipeline = new PipelinePromptTemplate({
-  pipelinePrompts: [
-    { name: "persona_block",  prompt: personaPrompt },
-    { name: "context_block",  prompt: contextPrompt },
-    { name: "task_block",     prompt: taskPrompt },
-    { name: "format_block",   prompt: formatPrompt },
-  ],
-  finalPrompt: PromptTemplate.fromTemplate(
-    "{persona_block}\n{context_block}\n{task_block}\n{format_block}\n\n请开始生成："
-  ),
-});
-```
-
-调用 `format()` 时，先把四个模块各自渲染，再拼进最终模板。**复用**是最大优势：同一套 `personaPrompt` + `contextPrompt` 可以搭配不同的 task/format 块，生成周报、OKR 回顾、晋升述职——每种场景只换最后两个模块。
-
-**Partial** 是配套工具——预先填好不变的变量：
-
-```javascript
-const companyLevel = await pipeline.partial({
-  company_name: "星航科技",
-  company_values: "「极致、开放、靠谱」",
-  tone: "偏正式但不僵硬",
-});
-
-const report1 = await companyLevel.format({ team_name: "AI 平台组", ... });
-const report2 = await companyLevel.format({ team_name: "数据工程组", ... });
-```
-
-### 补充：显式消息模板类
-
-除了用 `["system", "..."]` 元组格式，还可以用显式的 `SystemMessagePromptTemplate` / `HumanMessagePromptTemplate` 类：
-
-```javascript
-import { SystemMessagePromptTemplate, HumanMessagePromptTemplate } from "@langchain/core/prompts";
-
-const systemTemplate = SystemMessagePromptTemplate.fromTemplate(
-  "你是资深工程团队负责人，写作风格：{tone}。"
-);
-const humanTemplate = HumanMessagePromptTemplate.fromTemplate(
-  "请基于以下信息生成周报：{dev_activities}"
-);
-
-const chatPrompt = ChatPromptTemplate.fromMessages([systemTemplate, humanTemplate]);
-```
-
-效果和 `["system", "..."]` 元组完全一样，但显式类在需要**独立复用某个消息模板**时更灵活——比如同一个 `systemTemplate` 可以搭配不同的 human 模板。
-
-### 补充：PipelinePromptTemplate + ChatPromptTemplate 组合
-
-PipelinePromptTemplate 默认生成纯文本，但可以把 Pipeline 的输出块嵌入 ChatPromptTemplate，让最终输出是**带角色的消息数组**：
-
-```javascript
-// pipeline-prompt-template3.mjs
-const pipeline = new PipelinePromptTemplate({
-  pipelinePrompts: [
-    { name: "persona_block", prompt: personaPrompt },
-    { name: "task_block", prompt: taskPrompt },
-  ],
-  finalPrompt: ChatPromptTemplate.fromMessages([
-    ["system", "{persona_block}"],
-    ["human", "{task_block}"],
-  ]),
-});
-
-const messages = await pipeline.formatPromptValue({ tone: "专业", ... });
-// 返回 ChatPromptValue，可以直接传给 model.invoke()
-```
-
-这是 Pipeline 和 Chat 两种模式的桥接——Pipeline 负责模块化组装内容，ChatPromptTemplate 负责给内容分配角色。
+这一部分主要讨论如何通过 `PromptTemplate` 和 `ChatPromptTemplate` 更好地组织大模型输入。核心理念是**模板与数据分离**，提高 Prompt 的可复用性和维护性。
+
+核心知识点：
+1. **PromptTemplate**：用于生成纯文本的模板，通过 `{v}` 插入动态变量。
+2. **ChatPromptTemplate**：针对聊天模型，将输入组织成 `System` 和 `Human` 的带角色消息队列，这有助于让模型始终坚定执行系统预设。
+3. **少样本提示 (FewShot)**：比起语言描述，“举例子”往往能带来更好的效果。对于复杂的格式（如周报生成），可以提供 Examples 供模型学习。
+4. **PipelinePromptTemplate**：当业务复杂时，可通过多级模板将 Prompt 拆分为独立的面相（如人设、任务、规则），增强复用性。
 
 ---
 
@@ -1304,7 +1024,225 @@ console.log(r3); // "你的爱好是编程、写作和金铲铲。"
 
 ---
 
-## 五、对话记忆（memory-test）
+## 五、RAG 文档处理（rag-test）
+
+RAG（Retrieval-Augmented Generation）解决的是"大模型不知道你私有文档"的问题。
+
+### 流程
+
+```
+建库：文档 → 加载 → 切割 → 向量化 → 存入向量库
+查询：问题 → 向量化 → 相似度检索 → 相关片段 + 问题 → 模型生成回答
+```
+
+### 加载文档——不只是手动构造 Document
+
+除了手动 `new Document()`，还可以用 **Loader** 从网页直接加载：
+
+```javascript
+import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+
+const loader = new CheerioWebBaseLoader("https://juejin.cn/post/xxx", {
+  selector: "article",  // CSS 选择器，只提取文章正文
+});
+const docs = await loader.load(); // 返回 Document[]，pageContent 是提取的文本
+```
+
+`CheerioWebBaseLoader` 底层用 `cheerio`（服务端 jQuery）解析 HTML，`selector` 参数精确控制提取哪部分内容，避免把导航栏、广告等噪音也加载进来。
+
+### 手动构造 Document
+
+```javascript
+import { Document } from "@langchain/core/documents";
+
+// 来自 hello-rag.mjs 的真实数据——一个关于光光和东东的故事
+const documents = [
+  new Document({
+    pageContent: `光光是一个活泼开朗的小男孩，他有一双明亮的大眼睛，总是带着灿烂的笑容。
+光光最喜欢的事情就是和朋友们一起玩耍，他特别擅长踢足球...`,
+    metadata: {
+      chapter: 1,
+      character: "光光",
+      type: "角色介绍",
+      mood: "活泼",
+    },
+  }),
+  // ...更多章节
+];
+```
+
+`metadata` 很重要——检索到片段后，你需要知道它来自哪个章节，是什么角色，什么类型的内容。这些元数据可以用来过滤（只搜第 3 章的内容）或者在回答里引用。
+
+### 切割文档
+
+文档不能直接整篇存——太长的话单次向量化效果差，检索也不精确。要切割成合适的 chunk。
+
+来自 `RecursiveCharacterTextSplitter-test.mjs` 的真实案例：
+
+```javascript
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { getEncoding } from "js-tiktoken";
+
+const enc = getEncoding("cl100k_base");
+
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 150,
+  chunkOverlap: 20,
+  separators: ['\n', '。', '，'],     // 优先从这些位置断开
+  // lengthFunction: (text) => enc.encode(text).length, // 改成按 token 数而非字符数
+});
+
+const splitDocuments = await splitter.splitDocuments([logDocument]);
+
+splitDocuments.forEach(doc => {
+  console.log('字符长度:', doc.pageContent.length);
+  console.log('token 长度:', enc.encode(doc.pageContent).length); // 两者可能相差很大
+});
+```
+
+**递归分割的原理**：先用第一个分隔符（`\n` 换行）切，切出来的块如果还太长，就用第二个（`。`句号）再切……直到所有块都不超过 `chunkSize`。这样既尊重语义边界，又保证了大小。
+
+`chunkOverlap` 解决边界信息丢失：相邻块之间有 20 个字符的重叠，防止一句话被切在中间导致两块都缺失关键信息。
+
+**字符长度 vs Token 长度的差异**：
+
+```
+"apple"         → 5 字符,  1 token
+"苹果"           → 2 字符,  2 tokens
+"一二三"         → 3 字符,  3 tokens
+```
+
+中文字符比英文用更多 token。如果你的文档是中文，按字符数设置 `chunkSize` 可能会低估实际的 token 消耗。用 `lengthFunction: (text) => enc.encode(text).length` 改成按 token 计数更准确。
+
+### 补充：其他切割器——不同文档类型用不同策略
+
+`RecursiveCharacterTextSplitter` 是通用方案，但针对特定文档类型有更好的选择：
+
+**CharacterTextSplitter——最简单的单分隔符切割**
+
+```javascript
+import { CharacterTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new CharacterTextSplitter({
+  separator: '\n',      // 只用一个分隔符（不递归）
+  chunkSize: 200,
+  chunkOverlap: 20,
+});
+```
+
+适合结构整齐的内容（日志、CSV 风格文本），每行都是独立的记录。
+
+**TokenTextSplitter——直接按 Token 切割**
+
+```javascript
+import { TokenTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new TokenTextSplitter({
+  chunkSize: 50,           // 每块 50 个 token
+  chunkOverlap: 10,        // 重叠 10 个 token
+  encodingName: 'cl100k_base',  // 指定 tokenizer
+});
+```
+
+不需要自定义 `lengthFunction`，天然按 token 计数。当你需要精确控制每块的 token 消耗时用这个。
+
+**MarkdownTextSplitter——尊重 Markdown 标题层级**
+
+```javascript
+import { MarkdownTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new MarkdownTextSplitter({ chunkSize: 400, chunkOverlap: 80 });
+```
+
+会优先在 `#`、`##`、`###` 标题处断开，保证一个 chunk 不会跨越标题边界。处理技术文档、README 时效果比通用切割器好很多。
+
+**RecursiveCharacterTextSplitter.fromLanguage——代码专用**
+
+```javascript
+const splitter = RecursiveCharacterTextSplitter.fromLanguage('js', {
+  chunkSize: 1000,
+  chunkOverlap: 200,
+});
+```
+
+`fromLanguage('js')` 会自动使用 JavaScript 语法感知的分隔符（函数边界、类边界等），不会把一个函数切成两半。支持 `'js'`、`'python'`、`'go'`、`'java'` 等语言。
+
+**LatexTextSplitter——LaTeX 公式完整性**
+
+```javascript
+import { LatexTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new LatexTextSplitter({ chunkSize: 200, chunkOverlap: 40 });
+```
+
+理解 `\begin{...}...\end{...}` 结构，不会把数学公式或矩阵切断。处理学术论文时必须用。
+
+### 向量化与检索
+
+来自 `hello-rag.mjs` 的完整 RAG 流程：
+
+```javascript
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const embeddings = new OpenAIEmbeddings({
+  model: process.env.EMBEDDINGS_MODEL_NAME,
+  configuration: { baseURL: process.env.OPENAI_BASE_URL },
+});
+
+// 向量化所有文档，存入内存向量库
+const vectorStore = await MemoryVectorStore.fromDocuments(documents, embeddings);
+
+// 检索（带相似度分数）
+const question = "东东和光光是怎么成为朋友的？";
+const scoredResults = await vectorStore.similaritySearchWithScore(question, 3);
+
+scoredResults.forEach(([doc, score], i) => {
+  // score 是余弦距离（越小越相似），相似度 = 1 - score
+  const similarity = (1 - score).toFixed(4);
+  console.log(`[文档 ${i + 1}] 相似度: ${similarity}`);
+  console.log(`章节=${doc.metadata.chapter}, 类型=${doc.metadata.type}`);
+  console.log(`内容: ${doc.pageContent.slice(0, 60)}...`);
+});
+
+// 构建 Prompt，把检索到的内容作为上下文
+const context = scoredResults
+  .map(([doc], i) => `[片段${i + 1}]\n${doc.pageContent}`)
+  .join("\n\n━━━━━\n\n");
+
+const prompt = `你是一个讲友情故事的老师。基于以下故事片段回答问题。
+
+故事片段:
+${context}
+
+问题: ${question}
+
+老师的回答:`;
+
+const response = await model.invoke(prompt);
+console.log(response.content);
+```
+
+**相似度分数的理解**：`similaritySearchWithScore` 返回的 score 是余弦距离（0 最近，2 最远），用 `1 - score` 转换成相似度（1 最相似，-1 最不相似）。实际上文本语义相关的内容，相似度通常在 0.7 以上。
+
+### 补充：Retriever 接口——更简洁的检索方式
+
+`similaritySearchWithScore` 返回文档和分数，适合需要精确控制的场景。如果只需要拿到最相关的文档，`asRetriever()` 更简洁：
+
+```javascript
+const retriever = vectorStore.asRetriever({ k: 3 }); // 返回 top 3
+
+const docs = await retriever.invoke("东东和光光怎么认识的？");
+// docs = [Document, Document, Document]，没有分数，只有文档
+
+const context = docs.map(d => d.pageContent).join("\n---\n");
+```
+
+`retriever.invoke()` 返回的是纯 `Document[]`（无分数），可以直接 `.pipe()` 进 LangChain 的链中——这就是为什么 Retriever 是 Runnable 接口的一部分。
+
+---
+
+## 六、对话记忆（memory-test）
 
 大模型本身是无状态的——你每次调用它，它都不记得上次说了什么。解决这个问题是 Agent 开发的基础需求。
 
@@ -1553,224 +1491,6 @@ await saveConversation(`用户: ${query}\nAI: ${response.content}`, nextRound);
 | 实现复杂度 | 低 | 中（需要额外 LLM 调用） | 高（需要向量数据库） |
 | 额外延迟 | 无 | 有（摘要生成耗时） | 有（向量搜索耗时） |
 | 适合场景 | 短对话、简单客服 | 长对话、闲聊机器人 | 知识密集型、专业场景 |
-
----
-
-## 六、RAG 文档处理（rag-test）
-
-RAG（Retrieval-Augmented Generation）解决的是"大模型不知道你私有文档"的问题。
-
-### 流程
-
-```
-建库：文档 → 加载 → 切割 → 向量化 → 存入向量库
-查询：问题 → 向量化 → 相似度检索 → 相关片段 + 问题 → 模型生成回答
-```
-
-### 加载文档——不只是手动构造 Document
-
-除了手动 `new Document()`，还可以用 **Loader** 从网页直接加载：
-
-```javascript
-import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
-
-const loader = new CheerioWebBaseLoader("https://juejin.cn/post/xxx", {
-  selector: "article",  // CSS 选择器，只提取文章正文
-});
-const docs = await loader.load(); // 返回 Document[]，pageContent 是提取的文本
-```
-
-`CheerioWebBaseLoader` 底层用 `cheerio`（服务端 jQuery）解析 HTML，`selector` 参数精确控制提取哪部分内容，避免把导航栏、广告等噪音也加载进来。
-
-### 手动构造 Document
-
-```javascript
-import { Document } from "@langchain/core/documents";
-
-// 来自 hello-rag.mjs 的真实数据——一个关于光光和东东的故事
-const documents = [
-  new Document({
-    pageContent: `光光是一个活泼开朗的小男孩，他有一双明亮的大眼睛，总是带着灿烂的笑容。
-光光最喜欢的事情就是和朋友们一起玩耍，他特别擅长踢足球...`,
-    metadata: {
-      chapter: 1,
-      character: "光光",
-      type: "角色介绍",
-      mood: "活泼",
-    },
-  }),
-  // ...更多章节
-];
-```
-
-`metadata` 很重要——检索到片段后，你需要知道它来自哪个章节，是什么角色，什么类型的内容。这些元数据可以用来过滤（只搜第 3 章的内容）或者在回答里引用。
-
-### 切割文档
-
-文档不能直接整篇存——太长的话单次向量化效果差，检索也不精确。要切割成合适的 chunk。
-
-来自 `RecursiveCharacterTextSplitter-test.mjs` 的真实案例：
-
-```javascript
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { getEncoding } from "js-tiktoken";
-
-const enc = getEncoding("cl100k_base");
-
-const splitter = new RecursiveCharacterTextSplitter({
-  chunkSize: 150,
-  chunkOverlap: 20,
-  separators: ['\n', '。', '，'],     // 优先从这些位置断开
-  // lengthFunction: (text) => enc.encode(text).length, // 改成按 token 数而非字符数
-});
-
-const splitDocuments = await splitter.splitDocuments([logDocument]);
-
-splitDocuments.forEach(doc => {
-  console.log('字符长度:', doc.pageContent.length);
-  console.log('token 长度:', enc.encode(doc.pageContent).length); // 两者可能相差很大
-});
-```
-
-**递归分割的原理**：先用第一个分隔符（`\n` 换行）切，切出来的块如果还太长，就用第二个（`。`句号）再切……直到所有块都不超过 `chunkSize`。这样既尊重语义边界，又保证了大小。
-
-`chunkOverlap` 解决边界信息丢失：相邻块之间有 20 个字符的重叠，防止一句话被切在中间导致两块都缺失关键信息。
-
-**字符长度 vs Token 长度的差异**：
-
-```
-"apple"         → 5 字符,  1 token
-"苹果"           → 2 字符,  2 tokens
-"一二三"         → 3 字符,  3 tokens
-```
-
-中文字符比英文用更多 token。如果你的文档是中文，按字符数设置 `chunkSize` 可能会低估实际的 token 消耗。用 `lengthFunction: (text) => enc.encode(text).length` 改成按 token 计数更准确。
-
-### 补充：其他切割器——不同文档类型用不同策略
-
-`RecursiveCharacterTextSplitter` 是通用方案，但针对特定文档类型有更好的选择：
-
-**CharacterTextSplitter——最简单的单分隔符切割**
-
-```javascript
-import { CharacterTextSplitter } from "@langchain/textsplitters";
-
-const splitter = new CharacterTextSplitter({
-  separator: '\n',      // 只用一个分隔符（不递归）
-  chunkSize: 200,
-  chunkOverlap: 20,
-});
-```
-
-适合结构整齐的内容（日志、CSV 风格文本），每行都是独立的记录。
-
-**TokenTextSplitter——直接按 Token 切割**
-
-```javascript
-import { TokenTextSplitter } from "@langchain/textsplitters";
-
-const splitter = new TokenTextSplitter({
-  chunkSize: 50,           // 每块 50 个 token
-  chunkOverlap: 10,        // 重叠 10 个 token
-  encodingName: 'cl100k_base',  // 指定 tokenizer
-});
-```
-
-不需要自定义 `lengthFunction`，天然按 token 计数。当你需要精确控制每块的 token 消耗时用这个。
-
-**MarkdownTextSplitter——尊重 Markdown 标题层级**
-
-```javascript
-import { MarkdownTextSplitter } from "@langchain/textsplitters";
-
-const splitter = new MarkdownTextSplitter({ chunkSize: 400, chunkOverlap: 80 });
-```
-
-会优先在 `#`、`##`、`###` 标题处断开，保证一个 chunk 不会跨越标题边界。处理技术文档、README 时效果比通用切割器好很多。
-
-**RecursiveCharacterTextSplitter.fromLanguage——代码专用**
-
-```javascript
-const splitter = RecursiveCharacterTextSplitter.fromLanguage('js', {
-  chunkSize: 1000,
-  chunkOverlap: 200,
-});
-```
-
-`fromLanguage('js')` 会自动使用 JavaScript 语法感知的分隔符（函数边界、类边界等），不会把一个函数切成两半。支持 `'js'`、`'python'`、`'go'`、`'java'` 等语言。
-
-**LatexTextSplitter——LaTeX 公式完整性**
-
-```javascript
-import { LatexTextSplitter } from "@langchain/textsplitters";
-
-const splitter = new LatexTextSplitter({ chunkSize: 200, chunkOverlap: 40 });
-```
-
-理解 `\begin{...}...\end{...}` 结构，不会把数学公式或矩阵切断。处理学术论文时必须用。
-
-### 向量化与检索
-
-来自 `hello-rag.mjs` 的完整 RAG 流程：
-
-```javascript
-import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
-import { OpenAIEmbeddings } from "@langchain/openai";
-
-const embeddings = new OpenAIEmbeddings({
-  model: process.env.EMBEDDINGS_MODEL_NAME,
-  configuration: { baseURL: process.env.OPENAI_BASE_URL },
-});
-
-// 向量化所有文档，存入内存向量库
-const vectorStore = await MemoryVectorStore.fromDocuments(documents, embeddings);
-
-// 检索（带相似度分数）
-const question = "东东和光光是怎么成为朋友的？";
-const scoredResults = await vectorStore.similaritySearchWithScore(question, 3);
-
-scoredResults.forEach(([doc, score], i) => {
-  // score 是余弦距离（越小越相似），相似度 = 1 - score
-  const similarity = (1 - score).toFixed(4);
-  console.log(`[文档 ${i + 1}] 相似度: ${similarity}`);
-  console.log(`章节=${doc.metadata.chapter}, 类型=${doc.metadata.type}`);
-  console.log(`内容: ${doc.pageContent.slice(0, 60)}...`);
-});
-
-// 构建 Prompt，把检索到的内容作为上下文
-const context = scoredResults
-  .map(([doc], i) => `[片段${i + 1}]\n${doc.pageContent}`)
-  .join("\n\n━━━━━\n\n");
-
-const prompt = `你是一个讲友情故事的老师。基于以下故事片段回答问题。
-
-故事片段:
-${context}
-
-问题: ${question}
-
-老师的回答:`;
-
-const response = await model.invoke(prompt);
-console.log(response.content);
-```
-
-**相似度分数的理解**：`similaritySearchWithScore` 返回的 score 是余弦距离（0 最近，2 最远），用 `1 - score` 转换成相似度（1 最相似，-1 最不相似）。实际上文本语义相关的内容，相似度通常在 0.7 以上。
-
-### 补充：Retriever 接口——更简洁的检索方式
-
-`similaritySearchWithScore` 返回文档和分数，适合需要精确控制的场景。如果只需要拿到最相关的文档，`asRetriever()` 更简洁：
-
-```javascript
-const retriever = vectorStore.asRetriever({ k: 3 }); // 返回 top 3
-
-const docs = await retriever.invoke("东东和光光怎么认识的？");
-// docs = [Document, Document, Document]，没有分数，只有文档
-
-const context = docs.map(d => d.pageContent).join("\n---\n");
-```
-
-`retriever.invoke()` 返回的是纯 `Document[]`（无分数），可以直接 `.pipe()` 进 LangChain 的链中——这就是为什么 Retriever 是 Runnable 接口的一部分。
 
 ---
 
@@ -2243,154 +1963,6 @@ export type AiTtsStreamEvent =
 ```
 
 **区分联合类型**（Discriminated Union）的好处：在 `switch (event.type)` 里，TypeScript 会自动收窄类型——`case "chunk"` 分支里 `event.chunk` 自动有类型提示，`case "start"` 里 `event.query` 自动有类型提示。
-
----
-
-## 十一、NestJS 服务封装（hello-nest-langchain）
-
-最后一步：把 LangChain 链封装进 NestJS 服务对外暴露。
-
-### 链在构造函数里初始化，不要每次请求都创建
-
-来自 `ai.service.ts` 的真实代码：
-
-```typescript
-@Injectable()
-export class AiService {
-  private readonly chain: Runnable;
-
-  constructor(@Inject('CHAT_MODEL') model: ChatOpenAI) {
-    const prompt = PromptTemplate.fromTemplate('请回答以下问题：\n\n{query}');
-    // chain 在构造函数里创建一次，之后每次请求直接复用
-    this.chain = prompt.pipe(model).pipe(new StringOutputParser());
-  }
-
-  async runChain(query: string): Promise<string> {
-    return this.chain.invoke({ query }); // 同步调用，等模型完成后返回
-  }
-
-  async *streamChain(query: string): AsyncGenerator<string> {
-    const stream = await this.chain.stream({ query });
-    for await (const chunk of stream) {
-      yield chunk; // 把 LangChain 的流转换成 AsyncGenerator
-    }
-  }
-}
-```
-
-`ChatOpenAI` 通过 `@Inject('CHAT_MODEL')` 注入，模型实例在模块级别创建一次。如果每次请求都 `new ChatOpenAI()`，会重复读取配置、重复建立连接，浪费资源。
-
-### ChatOpenAI 的工厂 Provider
-
-```typescript
-// ai.module.ts
-{
-  provide: 'CHAT_MODEL',
-  useFactory: (configService: ConfigService) => {
-    return new ChatOpenAI({
-      model: configService.get('MODEL_NAME'),
-      apiKey: configService.get('OPENAI_API_KEY'),
-      configuration: { baseURL: configService.get('OPENAI_BASE_URL') },
-    });
-  },
-  inject: [ConfigService],
-}
-```
-
-工厂模式让模型配置从 `.env` 读取，不硬编码，支持多环境部署。
-
-### 两种端点：REST vs SSE
-
-来自 `ai.controller.ts` 的真实代码：
-
-```typescript
-@Controller('ai')
-export class AiController {
-  constructor(private readonly aiService: AiService) {}
-
-  // 普通 REST：等模型全部生成完再返回
-  @Get('chat')
-  async chat(@Query('query') query: string) {
-    const answer = await this.aiService.runChain(query);
-    return { answer };
-  }
-
-  // SSE 端点：实时流式返回
-  @Sse('chat/stream')
-  chatStream(@Query('query') query: string): Observable<{ data: string }> {
-    return from(this.aiService.streamChain(query)).pipe(
-      map((chunk) => ({ data: chunk }))
-    );
-  }
-}
-```
-
-**SSE 的数据流**：LangChain `chain.stream()` → `AsyncGenerator<string>` → RxJS `from()` 转 `Observable` → NestJS `@Sse` 自动序列化 → HTTP `text/event-stream` → 浏览器 `EventSource`：
-
-```javascript
-// 前端消费 SSE
-const es = new EventSource('/ai/chat/stream?query=什么是LangChain？');
-es.onmessage = ({ data }) => {
-  output.textContent += data; // 每收到一个 chunk 就追加显示
-};
-es.onerror = () => es.close();
-```
-
-`from()` 是 RxJS 的核心工具，能把 AsyncGenerator、Promise、数组等都转成 Observable。NestJS 的 `@Sse` 装饰器消费 `Observable<MessageEvent>` 类型，自动按 SSE 协议格式化输出。
-
-### 补充：BookModule——不依赖数据库的 Mock Repository
-
-来自 `book/book.module.ts`，展示了如何用工厂 Provider 创建内存 Mock 数据，开发测试时不需要连数据库：
-
-```typescript
-@Module({
-  providers: [
-    BookService,
-    {
-      provide: 'BOOK_REPOSITORY',
-      useFactory: () => ({
-        findAll: () => [
-          { id: 1, name: 'JavaScript 高级程序设计', author: '马特·弗里斯比' },
-          { id: 2, name: 'CSS 世界', author: '张鑫旭' },
-          { id: 3, name: '深入浅出 Node.js', author: '朴灵' },
-        ],
-      }),
-    },
-  ],
-  controllers: [BookController],
-})
-export class BookModule {}
-```
-
-`BookService` 通过 `@Inject('BOOK_REPOSITORY')` 注入这个 Mock 对象。后续切换到真实数据库时，只需要把 `useFactory` 换成 TypeORM Repository，`BookService` 的代码完全不用改。这就是 DI 的价值——解耦实现和消费。
-
-### 补充：NestJS CRUD 控制器常用装饰器
-
-来自 `book/book.controller.ts`，标准的 RESTful CRUD 路由模式：
-
-```typescript
-@Controller('book')
-export class BookController {
-  constructor(private readonly bookService: BookService) {}
-
-  @Post()                                          // POST /book
-  create(@Body() createBookDto: CreateBookDto) {}   // @Body() 解析请求体
-
-  @Get()                                           // GET /book
-  findAll() {}
-
-  @Get(':id')                                      // GET /book/123
-  findOne(@Param('id') id: string) {}              // @Param() 解析路径参数
-
-  @Patch(':id')                                    // PATCH /book/123
-  update(@Param('id') id: string, @Body() dto: UpdateBookDto) {}
-
-  @Delete(':id')                                   // DELETE /book/123
-  remove(@Param('id') id: string) {}
-}
-```
-
-**`@Body()`** 自动反序列化 JSON 请求体为 DTO 对象。**`@Param('id')`** 提取 URL 路径参数。**`@Query('query')`** 提取 URL 查询参数。这三个装饰器覆盖了 HTTP 请求入参的所有来源。
 
 ---
 
