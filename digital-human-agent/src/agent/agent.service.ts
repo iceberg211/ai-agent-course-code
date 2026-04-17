@@ -52,17 +52,9 @@ export class AgentService {
       onCitations,
     } = params;
 
-    // 1. retrieve
-    const chunks: KnowledgeChunk[] = await this.knowledgeService.retrieve(
-      personaId,
-      userMessage,
-      {
-        rerank: true,
-        stage1TopK: 20,
-        finalTopK: 5,
-        threshold: 0.6,
-      },
-    );
+    // 1. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
+    const chunks: KnowledgeChunk[] =
+      await this.knowledgeService.retrieveForPersona(personaId, userMessage);
 
     // 2. 推送引用来源
     if (chunks.length > 0) onCitations(chunks);
