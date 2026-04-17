@@ -103,3 +103,41 @@ export interface WsEnvelope<T = Record<string, unknown>> {
   turnId?: string
   payload?: T
 }
+
+// ── Knowledge Base ─────────────────────────────────────────────────────────
+
+export interface RetrievalConfig {
+  threshold: number
+  stage1TopK: number
+  finalTopK: number
+  rerank: boolean
+}
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  description?: string | null
+  ownerPersonaId?: string | null
+  retrievalConfig: RetrievalConfig
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeChunk {
+  id: string
+  documentId: string
+  chunkIndex: number
+  content: string
+  charCount: number
+  enabled: boolean
+  source: string
+  category?: string | null
+  createdAt: string
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocument {
+  knowledgeBaseId: string
+  mimeType?: string | null
+  fileSize?: number | null
+  sourceType: 'upload'
+}
