@@ -62,9 +62,29 @@ export class KnowledgeService {
     content: string,
     category?: string,
   ): Promise<KnowledgeDocument> {
+    // 解析 persona 的默认知识库 id
+    // Phase 1 只有 1 对 1 映射（003 migration 保证每个 persona 有 owner KB）
+    // Phase 2 引入 KnowledgeBaseService 后改为通过 service 层查询
+    const { data: kbRow, error: kbErr } = await this.supabase
+      .from('knowledge_base')
+      .select('id')
+      .eq('owner_persona_id', personaId)
+      .limit(1)
+      .single();
+    if (kbErr || !kbRow?.id) {
+      throw new Error(
+        `未找到 persona ${personaId} 的默认知识库，请确认 003 migration 已执行`,
+      );
+    }
+    const knowledgeBaseId = kbRow.id as string;
+
     // 1. 创建文档记录
     const doc = await this.docRepo.save(
-      this.docRepo.create({ personaId, filename, status: 'processing' }),
+      this.docRepo.create({
+        knowledgeBaseId,
+        filename,
+        status: 'processing',
+      }),
     );
 
     try {
@@ -84,7 +104,6 @@ export class KnowledgeService {
 
       // 4. 写入 Supabase
       const rows = chunks.map((chunk, i) => ({
-        persona_id: personaId,
         document_id: doc.id,
         chunk_index: i,
         content: chunk.pageContent,
@@ -104,7 +123,7 @@ export class KnowledgeService {
           `insert batch ${Math.floor(i / BATCH_SIZE) + 1}`,
           async () => {
             const r = await this.supabase
-              .from('persona_knowledge')
+              .from('knowledge_chunk')
               .insert(batch);
             return { error: r.error ? { message: r.error.message } : null };
           },
@@ -206,14 +225,16 @@ export class KnowledgeService {
   }
 
   listDocuments(personaId: string): Promise<KnowledgeDocument[]> {
-    return this.docRepo.find({
-      where: { personaId },
-      order: { createdAt: 'DESC' },
-    });
+    return this.docRepo
+      .createQueryBuilder('doc')
+      .innerJoin('persona_knowledge_base', 'pkb', 'pkb.knowledge_base_id = doc.knowledge_base_id')
+      .where('pkb.persona_id = :personaId', { personaId })
+      .orderBy('doc.created_at', 'DESC')
+      .getMany();
   }
 
   async deleteDocument(documentId: string): Promise<void> {
-    // persona_knowledge 的 ON DELETE CASCADE 会级联删向量
+    // knowledge_chunk.document_id 的 ON DELETE CASCADE 会级联删 chunks + embedding
     await this.docRepo.delete(documentId);
   }
 
@@ -299,7 +320,10 @@ export class KnowledgeService {
     }>(
       'match_knowledge rpc',
       async () => {
-        const result = await this.supabase.rpc('match_knowledge', {
+        // Phase 1 过渡期：Agent 仍按 personaId 检索，走 shim RPC 在 SQL 内部
+        // 翻译为 kb_ids。Phase 2 切换到 retrieveForPersona + match_knowledge
+        // (单 KB 版) 后，删除此调用并删除 match_knowledge_legacy shim。
+        const result = await this.supabase.rpc('match_knowledge_legacy', {
           query_embedding: queryEmbedding,
           p_persona_id: personaId,
           match_threshold: threshold,
