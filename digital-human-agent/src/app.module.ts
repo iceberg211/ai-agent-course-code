@@ -4,6 +4,7 @@ import { DatabaseModule } from './database/database.module';
 import { PersonaModule } from './persona/persona.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 import { AsrModule } from './asr/asr.module';
 import { TtsModule } from './tts/tts.module';
 import { RealtimeSessionModule } from './realtime-session/realtime-session.module';
@@ -22,6 +23,7 @@ import { HealthModule } from './health/health.module';
     PersonaModule,
     ConversationModule,
     KnowledgeModule,
+    KnowledgeBaseModule,
     AsrModule,
     TtsModule,
     RealtimeSessionModule,
