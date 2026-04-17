@@ -21,6 +21,7 @@ const MIGRATIONS = [
   '004_migrate_documents.sql',
   '005_knowledge_chunk.sql',
   '006_rpc_rewrite.sql',
+  '007_drop_legacy_shim.sql',
 ];
 
 async function migrate() {
@@ -45,9 +46,12 @@ async function migrate() {
         await client.query(sql);
         console.log(`✅ ${file} done\n`);
       } catch (err) {
-        // 表已存在是幂等场景，跳过该文件继续
-        if (err.code === '42P07') {
-          console.log(`⚠️  ${file} skipped (tables already exist)\n`);
+        // 幂等跳过：
+        //   42P07 = duplicate_table (表已存在)
+        //   42P13 = invalid_function_definition (函数签名已变更，无法 CREATE OR REPLACE)
+        //   42723 = duplicate_function (函数已存在)
+        if (err.code === '42P07' || err.code === '42P13' || err.code === '42723') {
+          console.log(`⚠️  ${file} skipped (already applied)\n`);
           continue;
         }
         throw err;
