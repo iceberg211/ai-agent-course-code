@@ -4,6 +4,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { usePersonaStore } from '../stores/persona'
 import { useSessionStore } from '../stores/session'
 import { useConversation } from './useConversation'
+import { useCitationResolver } from './useCitationResolver'
 import type { ChatMessage, Citation, MessageStatus, StreamMetadata } from '../types'
 
 
@@ -22,8 +23,10 @@ type StreamUIMessage = UIMessage<StreamMetadata>
 export function useTextChat(conversation: ReturnType<typeof useConversation>) {
   const personaStore = usePersonaStore()
   const sessionStore = useSessionStore()
+  const citationResolver = useCitationResolver()
 
   const textRequestActive = ref(false)
+  const resolvingCitations = ref(false)
 
   const textChat = new Chat<StreamUIMessage>({
     transport: new DefaultChatTransport<StreamUIMessage>({
@@ -105,6 +108,7 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
         conversation.messages.value.push(mapped)
       }
     }
+    void resolvePendingCitationNames()
     conversation.scrollToBottom()
   }
 
@@ -132,9 +136,37 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
       role: message.role === 'assistant' ? 'assistant' : 'user',
       content,
       status,
-      citations,
+      citations: citationResolver.applyCached(personaStore.selectedId, citations),
       streaming,
       turnId: message.metadata?.turnId,
+    }
+  }
+
+  async function resolvePendingCitationNames() {
+    if (resolvingCitations.value || !personaStore.selectedId) return
+    const targets = conversation.messages.value.filter((message) =>
+      message.citations.some(citationResolver.hasMissingKnowledgeBaseName),
+    )
+    if (!targets.length) return
+
+    resolvingCitations.value = true
+    try {
+      const resolved = await Promise.all(
+        targets.map(async (message) => ({
+          id: message.id,
+          citations: await citationResolver.resolve(
+            personaStore.selectedId,
+            message.citations,
+          ),
+        })),
+      )
+
+      for (const item of resolved) {
+        const target = conversation.messages.value.find((message) => message.id === item.id)
+        if (target) target.citations = item.citations
+      }
+    } finally {
+      resolvingCitations.value = false
     }
   }
 

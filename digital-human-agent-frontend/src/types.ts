@@ -14,6 +14,8 @@ export interface Citation {
   source?: string
   chunkIndex?: number
   chunk_index?: number
+  knowledgeBaseId?: string
+  knowledge_base_id?: string
   similarity?: number
   knowledgeBaseName?: string
   [key: string]: unknown

@@ -17,6 +17,7 @@ export interface KnowledgeChunk {
   chunk_index: number;
   category: string | null;
   similarity: number;
+  knowledge_base_id?: string;
   rerank_score?: number;
 }
 
@@ -37,8 +38,15 @@ export interface RetrieveKnowledgeDebugResult {
 @Injectable()
 export class KnowledgeService {
   private readonly logger = new Logger(KnowledgeService.name);
+  private readonly embeddingBatchSize = this.toNumber(
+    process.env.EMBEDDINGS_BATCH_SIZE,
+    10,
+    1,
+    10,
+  );
   private readonly embeddings = new OpenAIEmbeddings({
     model: process.env.EMBEDDINGS_MODEL_NAME ?? 'text-embedding-v3',
+    batchSize: this.embeddingBatchSize,
     configuration: {
       baseURL: process.env.OPENAI_BASE_URL,
       apiKey: process.env.OPENAI_API_KEY,
@@ -364,7 +372,7 @@ export class KnowledgeService {
       // 3. 向量化
       const texts = chunks.map((c) => c.pageContent);
       this.logger.log(
-        `[开始 Embedding] model=${this.embeddings.model} texts=${texts.length}`,
+        `[开始 Embedding] model=${this.embeddings.model} texts=${texts.length} batchSize=${this.embeddingBatchSize}`,
       );
       const embeddings = await this.embeddings.embedDocuments(texts);
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);

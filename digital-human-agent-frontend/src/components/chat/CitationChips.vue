@@ -8,7 +8,7 @@
       :title="resolveTitle(c)"
     >
       <LinkIcon :size="10" aria-hidden="true" />
-      {{ resolveSource(c) }} · §{{ resolveChunkNumber(c) }}<template v-if="c.knowledgeBaseName"> · {{ c.knowledgeBaseName }}</template>
+      {{ resolveSource(c) }} · §{{ resolveChunkNumber(c) }}<template v-if="resolveKnowledgeBaseName(c)"> · {{ resolveKnowledgeBaseName(c) }}</template>
     </span>
   </div>
 </template>
@@ -33,7 +33,14 @@ function resolveSource(citation: Citation): string {
 
 function resolveTitle(citation: Citation): string {
   const base = `来源：${resolveSource(citation)} 第${resolveChunkNumber(citation)}段`
-  return citation.knowledgeBaseName ? `${base}（${citation.knowledgeBaseName}）` : base
+  const kbName = resolveKnowledgeBaseName(citation)
+  return kbName ? `${base}（${kbName}）` : base
+}
+
+function resolveKnowledgeBaseName(citation: Citation): string {
+  if (citation.knowledgeBaseName) return citation.knowledgeBaseName
+  const raw = citation.knowledgeBaseId ?? citation.knowledge_base_id
+  return typeof raw === 'string' && raw ? `KB ${raw.slice(0, 8)}` : ''
 }
 </script>
 

@@ -4,7 +4,6 @@ import { useSessionStore } from '../stores/session'
 import { useWebSocket } from './useWebSocket'
 import { useAudio } from './useAudio'
 import { useConversation } from './useConversation'
-import { useKnowledge } from './useKnowledge'
 import { useVoiceClone } from './useVoiceClone'
 import { useDigitalHuman } from './useDigitalHuman'
 import { useToast } from './useToast'
@@ -31,7 +30,6 @@ export function useAppController() {
   const { connect, send, sendBinary, on, connected: wsConnected } = useWebSocket()
   const audio = useAudio()
   const conversation = useConversation()
-  const knowledge = useKnowledge()
   const voiceClone = useVoiceClone()
   const digitalHuman = useDigitalHuman((msg) => send(msg))
   const { toastMsg, showToast } = useToast()
@@ -42,11 +40,11 @@ export function useAppController() {
   const mic = useMicController(conversation, audio, send, sendBinary, showToast)
 
   const { mode, onSelectPersona, onDeletePersona, onChangeMode, onNewConversation } = usePersonaActions(
-    conversation, knowledge, voiceClone, digitalHuman, textChat, send, showToast,
+    conversation, voiceClone, digitalHuman, textChat, send, showToast,
   )
 
   useWsEventHandler(
-    { conversation, audio, knowledge, voiceClone, digitalHuman, textChat, mode },
+    { conversation, audio, voiceClone, digitalHuman, textChat, mode },
     on, showToast, send,
   )
 
@@ -119,24 +117,6 @@ export function useAppController() {
       await textChat.stopText()
       showToast('已停止生成')
     },
-    onUpload: async (file: File) => {
-      showToast(`上传中：${file.name}`)
-      const { ok } = await knowledge.uploadDocument(personaStore.selectedId, file)
-      showToast(ok ? `✓ ${file.name} 上传成功` : '上传失败，请重试')
-    },
-    onDeleteDoc: async (docId: string) => {
-      if (!confirm('删除后相关向量也将同步清除，确认继续？')) return
-      const { ok } = await knowledge.deleteDocument(personaStore.selectedId, docId)
-      if (!ok) showToast('删除失败')
-    },
-    onSearchKnowledge: async (query: string) => {
-      if (!personaStore.selectedId) { showToast('请先选择角色'); return }
-      const result = await knowledge.searchKnowledge(personaStore.selectedId, query)
-      if (!result.ok) { showToast(result.message ?? '检索测试失败'); return }
-      const s1 = knowledge.searchResult.value?.stage1.length ?? 0
-      const s2 = knowledge.searchResult.value?.stage2.length ?? 0
-      showToast(`检索完成：stage1 ${s1} 条，stage2 ${s2} 条`)
-    },
     onUploadVoiceSample: async (file: File) => {
       if (!personaStore.selectedId) { showToast('请先选择角色'); return }
       showToast(`上传语音样本：${file.name}`)
@@ -149,9 +129,8 @@ export function useAppController() {
       const result = await voiceClone.fetchStatus(personaStore.selectedId)
       if (!result.ok) showToast(result.message ?? '查询语音克隆状态失败')
     },
-    // 状态对象（App.vue 直接渲染，避免重复创建 useConversation/useKnowledge/useToast）
+    // 状态对象（App.vue 直接渲染，避免重复创建 useConversation/useToast）
     conversation,
-    knowledge,
     voiceClone,
     toastMsg,
     // 需要在 App.vue 模板中 ref 绑定的 hook 实例

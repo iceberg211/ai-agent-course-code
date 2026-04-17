@@ -2,7 +2,6 @@ import { ref } from 'vue'
 import { usePersonaStore } from '../stores/persona'
 import { useSessionStore } from '../stores/session'
 import { useConversation } from './useConversation'
-import { useKnowledge } from './useKnowledge'
 import { useVoiceClone } from './useVoiceClone'
 import { useDigitalHuman } from './useDigitalHuman'
 import { useTextChat } from './useTextChat'
@@ -20,7 +19,6 @@ import { useTextChat } from './useTextChat'
  */
 export function usePersonaActions(
   conversation: ReturnType<typeof useConversation>,
-  knowledge: ReturnType<typeof useKnowledge>,
   voiceClone: ReturnType<typeof useVoiceClone>,
   digitalHuman: ReturnType<typeof useDigitalHuman>,
   textChat: ReturnType<typeof useTextChat>,
@@ -39,7 +37,6 @@ export function usePersonaActions(
 
     personaStore.select(id)
     voiceClone.clear()
-    knowledge.clearSearchResult()
     conversation.clearMessages()
     sessionStore.reset()
     sessionStore.setHistoryLoading(true)
@@ -59,7 +56,7 @@ export function usePersonaActions(
   async function onDeletePersona(personaId: string) {
     const target = personaStore.personas.find((p) => p.id === personaId)
     const name = target?.name ?? '该角色'
-    if (!confirm(`确认删除「${name}」？其对话与知识库会一并删除。`)) return
+    if (!confirm(`确认删除「${name}」？其对话会一并删除，已挂载知识库不受影响。`)) return
 
     const deletingSelected = personaStore.selectedId === personaId
     if (deletingSelected && sessionStore.sessionId) {
@@ -82,8 +79,6 @@ export function usePersonaActions(
       void digitalHuman.close()
       conversation.clearMessages()
       conversation.state.value = 'idle'
-      knowledge.clearDocuments()
-      knowledge.clearSearchResult()
       voiceClone.clear()
     }
 

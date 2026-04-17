@@ -135,7 +135,7 @@ export class KnowledgeBaseController {
     });
   }
 
-  // -------- 文档文本抽取（从老 KnowledgeController 复用）--------
+  // -------- 文档文本抽取 --------
 
   private async extractDocumentText(
     file: Express.Multer.File,

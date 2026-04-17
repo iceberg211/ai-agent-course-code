@@ -30,6 +30,7 @@
           :active="selectedId === p.id"
           @select="$emit('select', $event)"
           @delete="$emit('delete', $event)"
+          @manage-kb="openKbModal"
         />
       </template>
       <li v-if="!loading && !personas.length" class="empty-hint" role="status">
@@ -81,6 +82,13 @@
     <div class="panel-footer">
       <ConnectionStatus :connected="connected" />
     </div>
+
+    <PersonaKbModal
+      v-if="kbModalPersona"
+      :persona-id="kbModalPersona.id"
+      :persona-name="kbModalPersona.name"
+      @close="kbModalPersona = null"
+    />
   </nav>
 </template>
 
@@ -88,6 +96,7 @@
 import { computed, ref } from 'vue'
 import { BotIcon, UserIcon, PlusIcon } from 'lucide-vue-next'
 import PersonaItem from './PersonaItem.vue'
+import PersonaKbModal from './PersonaKbModal.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
 import type { Persona, VoiceCloneState } from '../../types'
 
@@ -111,6 +120,7 @@ const props = defineProps<{
 }>()
 
 const voiceInputEl = ref<HTMLInputElement | null>(null)
+const kbModalPersona = ref<Persona | null>(null)
 
 const cloneStatusLabel = computed(() => {
   const status = props.voiceCloneState?.status ?? 'not_started'
@@ -138,6 +148,10 @@ function onVoiceFileChange(event: Event) {
   if (!file) return
   emit('upload-voice-sample', file)
   target.value = ''
+}
+
+function openKbModal(persona: Persona) {
+  kbModalPersona.value = persona
 }
 </script>
 

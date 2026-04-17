@@ -2,10 +2,10 @@ import { useSessionStore } from '../stores/session'
 import { usePersonaStore } from '../stores/persona'
 import { useConversation } from './useConversation'
 import { useAudio } from './useAudio'
-import { useKnowledge } from './useKnowledge'
 import { useVoiceClone } from './useVoiceClone'
 import { useDigitalHuman } from './useDigitalHuman'
 import { useTextChat } from './useTextChat'
+import { useCitationResolver } from './useCitationResolver'
 import type { Citation } from '../types'
 
 type BaseWsMessage<T = Record<string, unknown>> = {
@@ -26,7 +26,6 @@ export function useWsEventHandler(
   {
     conversation,
     audio,
-    knowledge,
     voiceClone,
     digitalHuman,
     textChat,
@@ -34,7 +33,6 @@ export function useWsEventHandler(
   }: {
     conversation: ReturnType<typeof useConversation>
     audio: ReturnType<typeof useAudio>
-    knowledge: ReturnType<typeof useKnowledge>
     voiceClone: ReturnType<typeof useVoiceClone>
     digitalHuman: ReturnType<typeof useDigitalHuman>
     textChat: ReturnType<typeof useTextChat>
@@ -46,6 +44,7 @@ export function useWsEventHandler(
 ) {
   const sessionStore = useSessionStore()
   const personaStore = usePersonaStore()
+  const citationResolver = useCitationResolver()
 
   // ── session:ready ──────────────────────────────────────────────────────────
   on('session:ready', (msg: BaseWsMessage<{
@@ -62,7 +61,6 @@ export function useWsEventHandler(
     textChat.reset()
     sessionStore.setHistoryLoading(false)
     conversation.state.value = 'idle'
-    knowledge.fetchDocuments(personaStore.selectedId)
     void voiceClone.fetchStatus(personaStore.selectedId)
   })
 
@@ -93,7 +91,18 @@ export function useWsEventHandler(
 
   // ── conversation:citations ─────────────────────────────────────────────────
   on('conversation:citations', (msg: BaseWsMessage<{ citations?: Citation[] }>) => {
-    conversation.setCitations(msg.turnId ?? '', msg.payload?.citations ?? [])
+    const turnId = msg.turnId ?? ''
+    const personaId = personaStore.selectedId
+    const citations = citationResolver.applyCached(personaId, msg.payload?.citations ?? [])
+    conversation.setCitations(turnId, citations)
+
+    if (!personaId || !citations.some(citationResolver.hasMissingKnowledgeBaseName)) {
+      return
+    }
+
+    void citationResolver
+      .resolve(personaId, citations)
+      .then((resolved) => conversation.setCitations(turnId, resolved))
   })
 
   // ── digital-human:ready ────────────────────────────────────────────────────

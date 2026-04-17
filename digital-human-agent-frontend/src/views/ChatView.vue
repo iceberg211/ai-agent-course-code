@@ -63,21 +63,12 @@
       <audio ref="audioEl" style="display:none" aria-hidden="true" />
     </main>
 
-    <!-- 右侧知识库抽屉：直接从 knowledge 取 -->
+    <!-- 右侧知识库抽屉：展示当前角色已挂载的知识库 -->
     <Transition name="slide-drawer">
       <DocsDrawer
         v-if="docsOpen"
         :persona-id="personaStore.selectedId"
-        :documents="knowledgeDocuments"
-        :uploading="knowledgeUploading"
-        :loading="knowledgeLoading"
-        :searching="knowledgeSearching"
-        :search-result="knowledgeSearchResult"
-        :status-label="knowledgeStatusLabel"
         @close="docsOpen = false"
-        @upload="onUpload"
-        @delete="onDeleteDoc"
-        @search="onSearchKnowledge"
       />
     </Transition>
 
@@ -115,7 +106,6 @@ const sessionStore = useSessionStore()
 // ── AppController：仅获取操作句柄 + ref 绑定接口 ────────────────────────────
 const {
   conversation,
-  knowledge,
   voiceClone,
   toastMsg,
   audio,
@@ -129,9 +119,6 @@ const {
   onMicUp,
   onSendText,
   onStopText,
-  onUpload,
-  onDeleteDoc,
-  onSearchKnowledge,
   onUploadVoiceSample,
   onRefreshVoiceCloneStatus,
 } = useAppController()
@@ -139,12 +126,6 @@ const {
 // 从 useAppController 返回的同一套 Hook 派生模板绑定的 computed
 const conversationMessages = computed(() => conversation.messages.value)
 const conversationState = computed(() => conversation.state.value)
-const knowledgeDocuments = computed(() => knowledge.documents.value)
-const knowledgeUploading = computed(() => knowledge.uploading.value)
-const knowledgeLoading = computed(() => knowledge.loading.value)
-const knowledgeSearching = computed(() => knowledge.searching.value)
-const knowledgeSearchResult = computed(() => knowledge.searchResult.value)
-const knowledgeStatusLabel = computed(() => knowledge.statusLabel)
 const voiceCloneState = computed(() => voiceClone.state.value)
 const voiceCloneLoading = computed(() => voiceClone.loading.value)
 const voiceCloneUploading = computed(() => voiceClone.uploading.value)
