@@ -78,7 +78,7 @@ export class KnowledgeBaseController {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
     const content = await this.extractDocumentText(file);
-    return this.knowledgeService.ingestDocumentByKb(
+    return this.knowledgeService.ingestDocument(
       kbId,
       file.originalname,
       content,
@@ -127,7 +127,7 @@ export class KnowledgeBaseController {
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Body() body: KnowledgeSearchDto,
   ) {
-    return this.knowledgeService.retrieveWithStagesByKb(kbId, body.query, {
+    return this.knowledgeService.retrieveWithStages(kbId, body.query, {
       rerank: body.rerank,
       threshold: body.threshold,
       stage1TopK: body.stage1TopK,
