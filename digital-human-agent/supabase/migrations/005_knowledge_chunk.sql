@@ -25,7 +25,8 @@ ALTER TABLE knowledge_chunk DROP COLUMN IF EXISTS persona_id;
 CREATE INDEX IF NOT EXISTS knowledge_chunk_document_id_idx
   ON knowledge_chunk (document_id);
 
--- 向量索引：幂等创建
+-- 向量索引：幂等创建（需要足够的 maintenance_work_mem）
+SET maintenance_work_mem = '64MB';
 DO $$
 BEGIN
   IF NOT EXISTS (

@@ -11,11 +11,21 @@ ALTER TABLE knowledge_document
   ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'upload';
 
 -- 2. 回填 knowledge_base_id：用 persona → 该 persona 的默认 KB 的映射
-UPDATE knowledge_document d
-SET knowledge_base_id = kb.id
-FROM knowledge_base kb
-WHERE kb.owner_persona_id = d.persona_id
-  AND d.knowledge_base_id IS NULL;
+--    仅当 persona_id 列尚存在时执行（幂等保护）
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'knowledge_document' AND column_name = 'persona_id'
+  ) THEN
+    UPDATE knowledge_document d
+    SET knowledge_base_id = kb.id
+    FROM knowledge_base kb
+    WHERE kb.owner_persona_id = d.persona_id
+      AND d.knowledge_base_id IS NULL;
+  END IF;
+END
+$$;
 
 -- 3. 回填完成后，把 knowledge_base_id 设为 NOT NULL
 ALTER TABLE knowledge_document

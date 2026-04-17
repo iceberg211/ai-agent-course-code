@@ -14,7 +14,14 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const MIGRATION_DIR = path.join(__dirname, '../supabase/migrations');
-const MIGRATIONS = ['001_init.sql', '002_rpc.sql'];
+const MIGRATIONS = [
+  '001_init.sql',
+  '002_rpc.sql',
+  '003_knowledge_base.sql',
+  '004_migrate_documents.sql',
+  '005_knowledge_chunk.sql',
+  '006_rpc_rewrite.sql',
+];
 
 async function migrate() {
   const url = process.env.DIRECT_URL;
@@ -34,19 +41,23 @@ async function migrate() {
       const sql = fs.readFileSync(filePath, 'utf-8');
 
       console.log(`⏳ Running ${file}...`);
-      await client.query(sql);
-      console.log(`✅ ${file} done\n`);
+      try {
+        await client.query(sql);
+        console.log(`✅ ${file} done\n`);
+      } catch (err) {
+        // 表已存在是幂等场景，跳过该文件继续
+        if (err.code === '42P07') {
+          console.log(`⚠️  ${file} skipped (tables already exist)\n`);
+          continue;
+        }
+        throw err;
+      }
     }
 
     console.log('🎉 All migrations completed successfully');
   } catch (err) {
-    // 表已存在不报错，其余错误正常抛出
-    if (err.code === '42P07') {
-      console.log('⚠️  Tables already exist, skipping (idempotent)');
-    } else {
-      console.error('❌ Migration failed:', err.message);
-      process.exit(1);
-    }
+    console.error('❌ Migration failed:', err.message);
+    process.exit(1);
   } finally {
     await client.end();
   }
