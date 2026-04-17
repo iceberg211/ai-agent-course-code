@@ -81,7 +81,11 @@ export async function executorNode(
       const result = await executeSubAgentStep(
         state,
         ctx,
-        step as { description: string; subAgent: string; objective?: string | null },
+        step as {
+          description: string;
+          subAgent: string;
+          objective?: string | null;
+        },
         stepRun.id,
       );
       output = result.output;
@@ -89,7 +93,11 @@ export async function executorNode(
       const result = await executeSkillStep(
         state,
         ctx,
-        step as { description: string; skillName: string; skillInput?: Record<string, unknown> | null },
+        step as {
+          description: string;
+          skillName: string;
+          skillInput?: Record<string, unknown> | null;
+        },
         stepRun.id,
       );
       output = result.output;
@@ -98,9 +106,7 @@ export async function executorNode(
       output = result.output;
     }
 
-    logger.log(
-      `step[${state.stepIndex}] completed | ${output.slice(0, 80)}`,
-    );
+    logger.log(`step[${state.stepIndex}] completed | ${output.slice(0, 80)}`);
 
     return {
       lastStepRunId: stepRun.id,
