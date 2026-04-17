@@ -5,10 +5,10 @@
       :key="i"
       class="chip"
       role="listitem"
-      :title="`来源：${resolveSource(c)} 第${resolveChunkNumber(c)}段`"
+      :title="resolveTitle(c)"
     >
       <LinkIcon :size="10" aria-hidden="true" />
-      {{ resolveSource(c) }} · §{{ resolveChunkNumber(c) }}
+      {{ resolveSource(c) }} · §{{ resolveChunkNumber(c) }}<template v-if="c.knowledgeBaseName"> · {{ c.knowledgeBaseName }}</template>
     </span>
   </div>
 </template>
@@ -29,6 +29,11 @@ function resolveChunkNumber(citation: Citation): number {
 
 function resolveSource(citation: Citation): string {
   return citation.source ?? '未知来源'
+}
+
+function resolveTitle(citation: Citation): string {
+  const base = `来源：${resolveSource(citation)} 第${resolveChunkNumber(citation)}段`
+  return citation.knowledgeBaseName ? `${base}（${citation.knowledgeBaseName}）` : base
 }
 </script>
 
