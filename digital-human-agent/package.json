@@ -7,6 +7,8 @@
   "license": "UNLICENSED",
   "scripts": {
     "db:migrate": "node scripts/migrate.js",
+    "rag:seed-eval": "node -r ts-node/register scripts/rag-seed-eval.ts",
+    "rag:eval": "node -r ts-node/register scripts/rag-eval.ts",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

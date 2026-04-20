@@ -1,0 +1,27 @@
+{
+  "datasetId": "rag-eval-default",
+  "personas": [
+    {
+      "key": "persona-dev-assistant",
+      "name": "开发助手",
+      "description": "用于 RAG 评估的开发助手",
+      "speakingStyle": "清晰、直接",
+      "expertise": ["RAG", "NestJS", "知识库检索"]
+    }
+  ],
+  "knowledgeBases": [
+    {
+      "key": "kb-rag-course",
+      "name": "RAG 课程评估库",
+      "description": "用于固定 RAG 评估的 seed 知识库",
+      "attachToPersonaKeys": ["persona-dev-assistant"],
+      "documents": [
+        {
+          "sourceName": "embedding-batch-limit.md",
+          "path": "eval/rag/seed-docs/embedding-batch-limit.md",
+          "category": "rag"
+        }
+      ]
+    }
+  ]
+}

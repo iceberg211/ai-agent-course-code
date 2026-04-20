@@ -54,10 +54,10 @@ export class PersonaKnowledgeBaseController {
     @Param('personaId', ParseUUIDPipe) personaId: string,
     @Body('query') query: string,
   ) {
-    const chunks = await this.knowledgeService.retrieveForPersona(
+    const result = await this.knowledgeService.retrieveForPersonaWithTrace(
       personaId,
       String(query ?? ''),
     );
-    return { query, results: chunks };
+    return result;
   }
 }

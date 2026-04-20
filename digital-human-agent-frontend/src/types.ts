@@ -78,6 +78,81 @@ export interface KnowledgeSearchChunk {
   rerank_score?: number
 }
 
+export type RetrievalOrigin = 'vector' | 'keyword' | 'web'
+export type RetrievalRankStage = 'raw' | 'fusion' | 'rerank'
+export type RagStageName =
+  | 'query_rewrite'
+  | 'vector_retrieval'
+  | 'keyword_retrieval'
+  | 'fusion'
+  | 'rerank'
+  | 'multi_hop'
+  | 'web_fallback'
+  | 'context_assembly'
+  | 'generation'
+
+export interface RetrievalHit {
+  id: string
+  chunkId?: string
+  documentId?: string
+  knowledgeBaseId?: string
+  chunkIndex?: number
+  title?: string
+  sourceName?: string
+  sourceUrl?: string
+  content: string
+  contentPreview: string
+  sources: RetrievalOrigin[]
+  rankStage: RetrievalRankStage
+  rank: number
+  originalRanks?: Partial<Record<RetrievalOrigin, number>>
+  score?: number
+  similarity?: number
+  bm25Score?: number
+  fusionScore?: number
+  rerankScore?: number
+  metadata?: Record<string, unknown>
+}
+
+export interface RagStageTrace {
+  name: RagStageName
+  input?: unknown
+  output?: unknown
+  skipped?: boolean
+  skipReason?: string
+  latencyMs?: number
+}
+
+export interface RagDebugTrace {
+  traceId: string
+  langsmithRunId?: string
+  chainType: 'kb_hit_test' | 'persona_retrieval' | 'agent_answer'
+  personaId?: string
+  knowledgeBaseIds: string[]
+  originalQuery: string
+  rewrittenQuery?: string
+  retrievalMode: 'vector' | 'keyword' | 'hybrid'
+  lowConfidence: boolean
+  lowConfidenceReason?: string
+  stages: RagStageTrace[]
+  hits: RetrievalHit[]
+  rerank?: {
+    enabled: boolean
+    model?: string
+    before: Array<{ id: string; rank: number; score?: number }>
+    after: Array<{ id: string; rank: number; rerankScore?: number }>
+  }
+  fallback?: {
+    enabled: boolean
+    used: boolean
+    reason?: string
+    policy: 'never' | 'low_confidence' | 'user_confirmed' | 'realtime_only'
+    externalSources: RetrievalHit[]
+  }
+  timingsMs: Record<string, number>
+  createdAt: string
+}
+
 export interface KnowledgeSearchResult {
   query: string
   options?: {
@@ -88,6 +163,7 @@ export interface KnowledgeSearchResult {
   }
   stage1: KnowledgeSearchChunk[]
   stage2: KnowledgeSearchChunk[]
+  debugTrace?: RagDebugTrace
 }
 
 /**

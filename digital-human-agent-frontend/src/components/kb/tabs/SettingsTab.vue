@@ -276,7 +276,7 @@ async function onDelete() {
 
 .field input[type='text'], .field textarea, .field input[type='number'] {
   width: 100%;
-  min-height: 38px;
+  min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -366,7 +366,7 @@ async function onDelete() {
 .btn-primary,
 .btn-ghost,
 .btn-danger {
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 16px;
   border-radius: 8px;
   font-size: 13px;

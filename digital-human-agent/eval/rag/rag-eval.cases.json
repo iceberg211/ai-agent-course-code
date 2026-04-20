@@ -1,0 +1,24 @@
+[
+  {
+    "id": "kb-error-code-001",
+    "category": "keyword",
+    "query": "batch size is invalid 不超过 10 是什么问题？",
+    "personaKey": "persona-dev-assistant",
+    "knowledgeBaseKeys": ["kb-rag-course"],
+    "history": [],
+    "expectedHitSelectors": [
+      {
+        "sourceName": "embedding-batch-limit.md",
+        "chunkIndex": 0,
+        "contentIncludes": "OpenAIEmbeddings 的 batchSize 需要小于等于 10"
+      }
+    ],
+    "expectedAnswerPoints": [
+      "批量大小不能超过 10",
+      "OpenAIEmbeddings 的 batchSize 需要小于等于 10",
+      "通过 EMBEDDINGS_BATCH_SIZE 环境变量或 OpenAIEmbeddings 初始化配置限制 batchSize"
+    ],
+    "shouldTriggerFallback": false,
+    "expectedLowConfidence": false
+  }
+]

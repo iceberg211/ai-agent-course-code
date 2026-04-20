@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
@@ -9,6 +10,13 @@ import { KnowledgeDocument } from './knowledge-document.entity';
 import { KnowledgeChunk as KnowledgeChunkEntity } from './knowledge-chunk.entity';
 import type { KnowledgeBaseRetrievalConfig } from '../knowledge-base/knowledge-base.entity';
 import { RerankerService } from './reranker.service';
+import type {
+  RagDebugTrace,
+  RagStageTrace,
+  RerankTrace,
+  RetrievalHit,
+  RetrievalRankStage,
+} from './rag-debug.types';
 
 export interface KnowledgeChunk {
   id: string;
@@ -33,6 +41,13 @@ export interface RetrieveKnowledgeDebugResult {
   options: Required<RetrieveKnowledgeOptions>;
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
+  debugTrace: RagDebugTrace;
+}
+
+export interface RetrievePersonaDebugResult {
+  query: string;
+  results: KnowledgeChunk[];
+  debugTrace: RagDebugTrace;
 }
 
 @Injectable()
@@ -170,53 +185,176 @@ export class KnowledgeService {
     query: string,
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
+    const startedAt = Date.now();
     const normalizedQuery = query.trim();
     const normalizedOptions = this.normalizeRetrieveOptions(options);
 
     if (!normalizedQuery) {
+      const debugTrace = this.createDebugTrace({
+        chainType: 'kb_hit_test',
+        knowledgeBaseIds: [kbId],
+        originalQuery: normalizedQuery,
+        hits: [],
+        timingsMs: { total: Date.now() - startedAt },
+        stages: [
+          {
+            name: 'vector_retrieval',
+            skipped: true,
+            skipReason: 'empty_query',
+          },
+          this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+          this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+          this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+          this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+        ],
+        lowConfidence: true,
+        lowConfidenceReason: 'empty_query',
+      });
       return {
         query: normalizedQuery,
         options: normalizedOptions,
         stage1: [],
         stage2: [],
+        debugTrace,
       };
     }
 
+    const timingsMs: Record<string, number> = {};
     const queryEmbedding = await this.withTransientRetry(
       'embed query',
-      () => this.embeddings.embedQuery(normalizedQuery),
+      async () => {
+        const embedStartedAt = Date.now();
+        const embedding = await this.embeddings.embedQuery(normalizedQuery);
+        timingsMs.embedQuery = Date.now() - embedStartedAt;
+        return embedding;
+      },
       3,
     );
 
+    const vectorStartedAt = Date.now();
     const stage1 = await this.retrieveStage1(
       kbId,
       queryEmbedding,
       normalizedOptions.threshold,
       normalizedOptions.stage1TopK,
     );
+    timingsMs.vectorRetrieval = Date.now() - vectorStartedAt;
 
     let stage2 = stage1.slice(0, normalizedOptions.finalTopK);
+    let rerankTrace: RerankTrace | undefined;
+    let rankStage: RetrievalRankStage = 'raw';
+    const rerankStage: RagStageTrace = {
+      name: 'rerank',
+      input: {
+        enabled: normalizedOptions.rerank,
+        candidateCount: stage1.length,
+        finalTopK: normalizedOptions.finalTopK,
+      },
+    };
     if (normalizedOptions.rerank && stage1.length > 1) {
+      const rerankStartedAt = Date.now();
       try {
         stage2 = await this.rerankerService.rerank(
           normalizedQuery,
           stage1,
           normalizedOptions.finalTopK,
         );
+        timingsMs.rerank = Date.now() - rerankStartedAt;
+        rankStage = 'rerank';
+        rerankTrace = this.createRerankTrace(stage1, stage2, true);
+        rerankStage.output = {
+          hitCount: stage2.length,
+          hits: stage2.map((chunk, index) =>
+            this.toRetrievalHit(chunk, index + 1, 'rerank'),
+          ),
+        };
+        rerankStage.latencyMs = timingsMs.rerank;
       } catch (error) {
+        timingsMs.rerank = Date.now() - rerankStartedAt;
+        rerankTrace = this.createRerankTrace(stage1, stage2, true);
+        rerankStage.skipped = true;
+        rerankStage.skipReason = 'rerank_failed';
+        rerankStage.output = {
+          error: error instanceof Error ? error.message : String(error),
+          fallbackHitCount: stage2.length,
+        };
+        rerankStage.latencyMs = timingsMs.rerank;
         this.logger.warn(
           `Reranker 失败，回退为向量检索结果：${
             error instanceof Error ? error.message : String(error)
           }`,
         );
       }
+    } else {
+      rerankTrace = this.createRerankTrace(
+        stage1,
+        stage2,
+        normalizedOptions.rerank,
+      );
+      rerankStage.skipped = true;
+      rerankStage.skipReason = normalizedOptions.rerank
+        ? 'not_enough_candidates'
+        : 'disabled';
+      rerankStage.output = {
+        hitCount: stage2.length,
+      };
     }
+
+    const finalHits = stage2.map((chunk, index) =>
+      this.toRetrievalHit(chunk, index + 1, rankStage),
+    );
+    const confidence = this.assessLowConfidence(
+      stage2,
+      normalizedOptions.threshold,
+    );
+    timingsMs.total = Date.now() - startedAt;
+
+    const debugTrace = this.createDebugTrace({
+      chainType: 'kb_hit_test',
+      knowledgeBaseIds: [kbId],
+      originalQuery: normalizedQuery,
+      hits: finalHits,
+      rerank: rerankTrace,
+      timingsMs,
+      lowConfidence: confidence.lowConfidence,
+      lowConfidenceReason: confidence.reason,
+      stages: [
+        {
+          name: 'query_rewrite',
+          skipped: true,
+          skipReason: 'not_implemented_in_p0',
+          input: { originalQuery: normalizedQuery },
+          output: { rewrittenQuery: normalizedQuery },
+        },
+        {
+          name: 'vector_retrieval',
+          input: {
+            knowledgeBaseId: kbId,
+            threshold: normalizedOptions.threshold,
+            topK: normalizedOptions.stage1TopK,
+          },
+          output: {
+            hitCount: stage1.length,
+            hits: stage1.map((chunk, index) =>
+              this.toRetrievalHit(chunk, index + 1, 'raw'),
+            ),
+          },
+          latencyMs: timingsMs.vectorRetrieval,
+        },
+        this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+        this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+        rerankStage,
+        this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+        this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+      ],
+    });
 
     return {
       query: normalizedQuery,
       options: normalizedOptions,
       stage1,
       stage2,
+      debugTrace,
     };
   }
 
@@ -231,8 +369,44 @@ export class KnowledgeService {
     personaId: string,
     query: string,
   ): Promise<KnowledgeChunk[]> {
+    const result = await this.retrieveForPersonaWithTrace(personaId, query);
+    return result.results;
+  }
+
+  async retrieveForPersonaWithTrace(
+    personaId: string,
+    query: string,
+  ): Promise<RetrievePersonaDebugResult> {
+    const startedAt = Date.now();
     const normalizedQuery = query.trim();
-    if (!normalizedQuery) return [];
+    if (!normalizedQuery) {
+      return {
+        query: normalizedQuery,
+        results: [],
+        debugTrace: this.createDebugTrace({
+          chainType: 'persona_retrieval',
+          personaId,
+          knowledgeBaseIds: [],
+          originalQuery: normalizedQuery,
+          hits: [],
+          timingsMs: { total: Date.now() - startedAt },
+          stages: [
+            {
+              name: 'vector_retrieval',
+              skipped: true,
+              skipReason: 'empty_query',
+            },
+            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+            this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+            this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+          ],
+          lowConfidence: true,
+          lowConfidenceReason: 'empty_query',
+        }),
+      };
+    }
+    const timingsMs: Record<string, number> = {};
 
     // 1. 两步查 persona 挂载的 KB + 各自的 retrieval_config
     //    （不用 PostgREST 内联 join，避免 FK 元数据依赖，更稳）
@@ -245,11 +419,60 @@ export class KnowledgeService {
       this.logger.warn(
         `查询 persona ${personaId} 挂载失败：${mountErr.message}`,
       );
-      return [];
+      return {
+        query: normalizedQuery,
+        results: [],
+        debugTrace: this.createDebugTrace({
+          chainType: 'persona_retrieval',
+          personaId,
+          knowledgeBaseIds: [],
+          originalQuery: normalizedQuery,
+          hits: [],
+          timingsMs: { total: Date.now() - startedAt },
+          stages: [
+            {
+              name: 'vector_retrieval',
+              skipped: true,
+              skipReason: 'mount_query_failed',
+              output: { error: mountErr.message },
+            },
+            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+            this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+            this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+          ],
+          lowConfidence: true,
+          lowConfidenceReason: 'mount_query_failed',
+        }),
+      };
     }
     if (!mountRows || mountRows.length === 0) {
       this.logger.log(`persona ${personaId} 未挂载任何知识库`);
-      return [];
+      return {
+        query: normalizedQuery,
+        results: [],
+        debugTrace: this.createDebugTrace({
+          chainType: 'persona_retrieval',
+          personaId,
+          knowledgeBaseIds: [],
+          originalQuery: normalizedQuery,
+          hits: [],
+          timingsMs: { total: Date.now() - startedAt },
+          stages: [
+            {
+              name: 'vector_retrieval',
+              skipped: true,
+              skipReason: 'no_mounted_knowledge_bases',
+            },
+            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+            this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+            this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+          ],
+          lowConfidence: true,
+          lowConfidenceReason: 'no_mounted_knowledge_bases',
+        }),
+      };
     }
     const kbIds = mountRows.map((r) => r.knowledge_base_id as string);
 
@@ -262,13 +485,43 @@ export class KnowledgeService {
       if (kbErr) {
         this.logger.warn(`查询 KB 配置失败：${kbErr.message}`);
       }
-      return [];
+      return {
+        query: normalizedQuery,
+        results: [],
+        debugTrace: this.createDebugTrace({
+          chainType: 'persona_retrieval',
+          personaId,
+          knowledgeBaseIds: kbIds,
+          originalQuery: normalizedQuery,
+          hits: [],
+          timingsMs: { total: Date.now() - startedAt },
+          stages: [
+            {
+              name: 'vector_retrieval',
+              skipped: true,
+              skipReason: 'knowledge_base_config_query_failed',
+              output: { error: kbErr?.message },
+            },
+            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+            this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+            this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+          ],
+          lowConfidence: true,
+          lowConfidenceReason: 'knowledge_base_config_query_failed',
+        }),
+      };
     }
 
     // 2. 计算 query embedding（全局复用）
     const queryEmbedding = await this.withTransientRetry(
       'embed query',
-      () => this.embeddings.embedQuery(normalizedQuery),
+      async () => {
+        const embedStartedAt = Date.now();
+        const embedding = await this.embeddings.embedQuery(normalizedQuery);
+        timingsMs.embedQuery = Date.now() - embedStartedAt;
+        return embedding;
+      },
       3,
     );
 
@@ -283,6 +536,7 @@ export class KnowledgeService {
       };
     });
 
+    const vectorStartedAt = Date.now();
     const stage1Results = await Promise.all(
       perKbOptions.map(async (o) => {
         try {
@@ -302,6 +556,7 @@ export class KnowledgeService {
         }
       }),
     );
+    timingsMs.vectorRetrieval = Date.now() - vectorStartedAt;
 
     // 4. 合并去重（同一 chunk.id 保留 similarity 最高的那条）
     const dedup = new Map<string, KnowledgeChunk>();
@@ -327,22 +582,232 @@ export class KnowledgeService {
 
     // 6. 全局 rerank；finalTopK 固定为 5（persona 级兜底）
     const GLOBAL_FINAL_TOPK = 5;
-    if (stage1Final.length <= 1) return stage1Final;
+    let results = stage1Final.slice(0, GLOBAL_FINAL_TOPK);
+    let rerankTrace: RerankTrace | undefined;
+    let rankStage: RetrievalRankStage = 'raw';
 
-    try {
-      return await this.rerankerService.rerank(
-        normalizedQuery,
-        stage1Final,
-        GLOBAL_FINAL_TOPK,
-      );
-    } catch (e) {
-      this.logger.warn(
-        `全局 rerank 失败，回退向量排序：${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
-      return stage1Final.slice(0, GLOBAL_FINAL_TOPK);
+    const rerankStage: RagStageTrace = {
+      name: 'rerank',
+      input: {
+        enabled: stage1Final.length > 1,
+        candidateCount: stage1Final.length,
+        finalTopK: GLOBAL_FINAL_TOPK,
+      },
+    };
+
+    if (stage1Final.length > 1) {
+      const rerankStartedAt = Date.now();
+      try {
+        results = await this.rerankerService.rerank(
+          normalizedQuery,
+          stage1Final,
+          GLOBAL_FINAL_TOPK,
+        );
+        timingsMs.rerank = Date.now() - rerankStartedAt;
+        rankStage = 'rerank';
+        rerankTrace = this.createRerankTrace(stage1Final, results, true);
+        rerankStage.output = {
+          hitCount: results.length,
+          hits: results.map((chunk, index) =>
+            this.toRetrievalHit(chunk, index + 1, 'rerank'),
+          ),
+        };
+        rerankStage.latencyMs = timingsMs.rerank;
+      } catch (e) {
+        timingsMs.rerank = Date.now() - rerankStartedAt;
+        rerankTrace = this.createRerankTrace(stage1Final, results, true);
+        rerankStage.skipped = true;
+        rerankStage.skipReason = 'rerank_failed';
+        rerankStage.output = {
+          error: e instanceof Error ? e.message : String(e),
+          fallbackHitCount: results.length,
+        };
+        rerankStage.latencyMs = timingsMs.rerank;
+        this.logger.warn(
+          `全局 rerank 失败，回退向量排序：${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    } else {
+      rerankTrace = this.createRerankTrace(stage1Final, results, true);
+      rerankStage.skipped = true;
+      rerankStage.skipReason = 'not_enough_candidates';
+      rerankStage.output = {
+        hitCount: results.length,
+      };
     }
+
+    timingsMs.total = Date.now() - startedAt;
+    const confidence = this.assessLowConfidence(results, 0.6);
+    const finalHits = results.map((chunk, index) =>
+      this.toRetrievalHit(chunk, index + 1, rankStage),
+    );
+
+    return {
+      query: normalizedQuery,
+      results,
+      debugTrace: this.createDebugTrace({
+        chainType: 'persona_retrieval',
+        personaId,
+        knowledgeBaseIds: kbIds,
+        originalQuery: normalizedQuery,
+        hits: finalHits,
+        rerank: rerankTrace,
+        timingsMs,
+        lowConfidence: confidence.lowConfidence,
+        lowConfidenceReason: confidence.reason,
+        stages: [
+          {
+            name: 'query_rewrite',
+            skipped: true,
+            skipReason: 'not_implemented_in_p0',
+            input: { originalQuery: normalizedQuery },
+            output: { rewrittenQuery: normalizedQuery },
+          },
+          {
+            name: 'vector_retrieval',
+            input: {
+              knowledgeBaseIds: kbIds,
+              perKnowledgeBaseOptions: perKbOptions,
+            },
+            output: {
+              hitCount: stage1Final.length,
+              perKnowledgeBaseHitCounts: stage1Results.map((chunks, index) => ({
+                knowledgeBaseId: perKbOptions[index]?.kbId,
+                hitCount: chunks.length,
+              })),
+              hits: stage1Final.map((chunk, index) =>
+                this.toRetrievalHit(chunk, index + 1, 'raw'),
+              ),
+            },
+            latencyMs: timingsMs.vectorRetrieval,
+          },
+          this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+          this.createSkippedStage('fusion', 'not_implemented_in_p0'),
+          rerankStage,
+          this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
+          this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
+        ],
+      }),
+    };
+  }
+
+  private createSkippedStage(
+    name: RagStageTrace['name'],
+    skipReason: string,
+  ): RagStageTrace {
+    return {
+      name,
+      skipped: true,
+      skipReason,
+    };
+  }
+
+  private createDebugTrace(params: {
+    chainType: RagDebugTrace['chainType'];
+    personaId?: string;
+    knowledgeBaseIds: string[];
+    originalQuery: string;
+    hits: RetrievalHit[];
+    stages: RagStageTrace[];
+    timingsMs: Record<string, number>;
+    rerank?: RerankTrace;
+    lowConfidence: boolean;
+    lowConfidenceReason?: string;
+  }): RagDebugTrace {
+    return {
+      traceId: randomUUID(),
+      chainType: params.chainType,
+      personaId: params.personaId,
+      knowledgeBaseIds: params.knowledgeBaseIds,
+      originalQuery: params.originalQuery,
+      rewrittenQuery: params.originalQuery,
+      retrievalMode: 'vector',
+      lowConfidence: params.lowConfidence,
+      lowConfidenceReason: params.lowConfidenceReason,
+      stages: params.stages,
+      hits: params.hits,
+      rerank: params.rerank,
+      fallback: {
+        enabled: false,
+        used: false,
+        policy: 'never',
+        externalSources: [],
+      },
+      timingsMs: params.timingsMs,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  private toRetrievalHit(
+    chunk: KnowledgeChunk,
+    rank: number,
+    rankStage: RetrievalRankStage,
+  ): RetrievalHit {
+    return {
+      id: chunk.id,
+      chunkId: chunk.id,
+      knowledgeBaseId: chunk.knowledge_base_id,
+      chunkIndex: chunk.chunk_index,
+      sourceName: chunk.source,
+      content: chunk.content,
+      contentPreview: this.previewContent(chunk.content),
+      sources: ['vector'],
+      rankStage,
+      rank,
+      score: chunk.rerank_score ?? chunk.similarity,
+      similarity: chunk.similarity,
+      rerankScore: chunk.rerank_score,
+      metadata: {
+        category: chunk.category,
+      },
+    };
+  }
+
+  private previewContent(content: string): string {
+    const normalized = content.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 180) return normalized;
+    return `${normalized.slice(0, 180)}...`;
+  }
+
+  private createRerankTrace(
+    before: KnowledgeChunk[],
+    after: KnowledgeChunk[],
+    enabled: boolean,
+  ): RerankTrace {
+    return {
+      enabled,
+      model:
+        process.env.RERANKER_MODEL_NAME ?? process.env.MODEL_NAME ?? 'qwen-plus',
+      before: before.map((chunk, index) => ({
+        id: chunk.id,
+        rank: index + 1,
+        score: chunk.similarity,
+      })),
+      after: after.map((chunk, index) => ({
+        id: chunk.id,
+        rank: index + 1,
+        rerankScore: chunk.rerank_score,
+      })),
+    };
+  }
+
+  private assessLowConfidence(
+    chunks: KnowledgeChunk[],
+    threshold: number,
+  ): { lowConfidence: boolean; reason?: string } {
+    if (chunks.length === 0) {
+      return { lowConfidence: true, reason: 'no_hits' };
+    }
+    const topSimilarity = chunks[0]?.similarity ?? 0;
+    if (topSimilarity < threshold) {
+      return {
+        lowConfidence: true,
+        reason: 'top_similarity_below_threshold',
+      };
+    }
+    return { lowConfidence: false };
   }
 
   async ingestDocument(

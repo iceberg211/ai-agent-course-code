@@ -64,10 +64,43 @@
           </div>
           <div>
             <dt>模式</dt>
-            <dd>{{ result.options.rerank ? 'Rerank' : '截断' }}</dd>
+            <dd>{{ result.options?.rerank ? 'Rerank' : '截断' }}</dd>
+          </div>
+          <div v-if="result.debugTrace">
+            <dt>置信度</dt>
+            <dd>{{ result.debugTrace.lowConfidence ? '偏低' : '正常' }}</dd>
           </div>
         </dl>
       </div>
+
+      <section v-if="result.debugTrace" class="trace-panel" aria-label="检索过程">
+        <header class="trace-panel__head">
+          <div>
+            <p class="eyebrow">检索过程</p>
+            <h4>{{ result.debugTrace.rewrittenQuery || result.debugTrace.originalQuery }}</h4>
+          </div>
+          <span>{{ result.debugTrace.retrievalMode }}</span>
+        </header>
+        <div class="trace-meta">
+          <span>Trace {{ result.debugTrace.traceId }}</span>
+          <span v-if="result.debugTrace.lowConfidenceReason">
+            低置信原因 {{ result.debugTrace.lowConfidenceReason }}
+          </span>
+          <span v-if="result.debugTrace.timingsMs.total != null">
+            总耗时 {{ Math.round(result.debugTrace.timingsMs.total) }}ms
+          </span>
+        </div>
+        <ol class="stage-list">
+          <li v-for="stage in result.debugTrace.stages" :key="stage.name">
+            <span class="stage-dot" :class="{ 'stage-dot--skip': stage.skipped }"></span>
+            <strong>{{ stageNameLabel(stage.name) }}</strong>
+            <small>
+              {{ stage.skipped ? stage.skipReason || '已跳过' : '已执行' }}
+              <template v-if="stage.latencyMs != null"> · {{ Math.round(stage.latencyMs) }}ms</template>
+            </small>
+          </li>
+        </ol>
+      </section>
 
       <div class="results__columns">
         <article class="result-list">
@@ -95,7 +128,7 @@
         <article class="result-list result-list--final">
           <header class="result-list__head">
             <span>Stage 2</span>
-            <strong>{{ result.options.rerank ? '重排结果' : '最终结果' }}</strong>
+            <strong>{{ result.options?.rerank ? '重排结果' : '最终结果' }}</strong>
           </header>
           <ol v-if="result.stage2.length" class="hit-list">
             <li
@@ -206,6 +239,21 @@ function fmt(n: number | undefined): string {
   const v = Number(n)
   return Number.isFinite(v) ? v.toFixed(3) : '-'
 }
+
+function stageNameLabel(name: string): string {
+  const labels: Record<string, string> = {
+    query_rewrite: 'Query Rewrite',
+    vector_retrieval: '向量召回',
+    keyword_retrieval: '关键词召回',
+    fusion: '融合',
+    rerank: '重排',
+    multi_hop: '多跳',
+    web_fallback: '联网补充',
+    context_assembly: '上下文组装',
+    generation: '生成',
+  }
+  return labels[name] ?? name
+}
 </script>
 
 <style scoped>
@@ -268,10 +316,14 @@ function fmt(n: number | undefined): string {
   gap: 10px;
 }
 
+.query-field {
+  display: block;
+  min-width: 0;
+}
+
 .query-field input {
   width: 100%;
-  flex: 1;
-  height: 42px;
+  height: 44px;
   padding: 0 13px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -294,7 +346,7 @@ function fmt(n: number | undefined): string {
   justify-content: center;
   gap: 7px;
   min-width: 112px;
-  height: 42px;
+  height: 44px;
   padding: 0 18px;
   background: var(--primary);
   color: #fff;
@@ -445,6 +497,103 @@ function fmt(n: number | undefined): string {
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.trace-panel {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trace-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.trace-panel h4 {
+  margin: 1px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.trace-panel__head > span {
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.trace-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.trace-meta span {
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.stage-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.stage-list li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+}
+
+.stage-list strong,
+.stage-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-list strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.stage-list small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.stage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.stage-dot--skip {
+  background: var(--text-muted);
 }
 
 .results__columns {
