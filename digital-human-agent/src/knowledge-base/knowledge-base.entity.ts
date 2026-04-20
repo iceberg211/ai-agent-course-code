@@ -7,11 +7,16 @@ import {
 } from 'typeorm';
 
 export interface KnowledgeBaseRetrievalConfig {
+  /** v2 版本标识；无此字段或值为 1 时视为旧版本 */
+  schemaVersion?: number;
   retrievalMode: 'vector' | 'keyword' | 'hybrid';
   threshold: number;
-  stage1TopK: number;
+  /** @deprecated 迁移为 vectorTopK，v1 向下兼容保留 */
+  stage1TopK?: number;
   vectorTopK: number;
   keywordTopK: number;
+  /** 融合候选上限；默认 = vectorTopK + keywordTopK */
+  candidateLimit?: number;
   finalTopK: number;
   rerank: boolean;
   fusion: {
@@ -19,6 +24,13 @@ export interface KnowledgeBaseRetrievalConfig {
     rrfK: number;
     vectorWeight: number;
     keywordWeight: number;
+  };
+  /** 置信度相关参数（BM25 归一化、最少支撑命中数） */
+  confidence?: {
+    /** BM25 分数饱和点，用于归一化到 0-1 区间；默认 12 */
+    keywordBm25SaturationScore: number;
+    /** 要求至少有几个候选支撑答案；默认 1 */
+    minSupportingHits: number;
   };
 }
 

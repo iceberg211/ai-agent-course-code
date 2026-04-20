@@ -15,7 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { extname } from 'node:path';
 import { KnowledgeService } from '../knowledge/knowledge.service';
-import { KnowledgeSearchDto } from '../knowledge/dto/knowledge-search.dto';
+import { KnowledgeSearchDto } from '../knowledge/api/dto/knowledge-search.dto';
 import { KnowledgeBaseService } from './knowledge-base.service';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
@@ -134,6 +134,7 @@ export class KnowledgeBaseController {
       stage1TopK: body.stage1TopK,
       vectorTopK: body.vectorTopK,
       keywordTopK: body.keywordTopK,
+      candidateLimit: body.candidateLimit,
       finalTopK: body.finalTopK,
       fusion: body.fusion,
       rewrite: body.rewrite,

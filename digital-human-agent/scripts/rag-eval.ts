@@ -178,7 +178,10 @@ function summarize(results: CaseResult[]) {
 async function evaluateCase(
   app: INestApplicationContext,
   item: EvalCase,
-  options: { rewrite: boolean },
+  options: {
+    rewrite: boolean;
+    retrievalMode?: 'vector' | 'keyword' | 'hybrid';
+  },
 ): Promise<CaseResult> {
   const knowledgeService = app.get(KnowledgeService);
   let trace: RagDebugTrace;
@@ -187,6 +190,7 @@ async function evaluateCase(
     trace = (
       await knowledgeService.retrieveForPersonaWithTrace(personaId, item.query, {
         rewrite: options.rewrite,
+        retrievalMode: options.retrievalMode,
         history: item.history,
       })
     ).debugTrace;
@@ -199,6 +203,7 @@ async function evaluateCase(
     trace = (
       await knowledgeService.retrieveWithStages(kbId, item.query, {
         rewrite: options.rewrite,
+        retrievalMode: options.retrievalMode,
         history: item.history,
       })
     ).debugTrace;
@@ -250,6 +255,11 @@ async function main() {
       await seedEvalDataset(app);
     }
     const rewrite = boolArg('--rewrite', false);
+    const rawMode = argValue('--mode');
+    const retrievalMode =
+      rawMode === 'vector' || rawMode === 'keyword' || rawMode === 'hybrid'
+        ? rawMode
+        : undefined;
 
     const cases = readJson<EvalCase[]>(
       resolve(process.cwd(), 'eval/rag/rag-eval.cases.json'),
@@ -264,13 +274,18 @@ async function main() {
 
     const results: CaseResult[] = [];
     for (const item of selectedCases) {
-      results.push(await evaluateCase(app, item, { rewrite }));
+      results.push(
+        await evaluateCase(app, item, {
+          rewrite,
+          retrievalMode,
+        }),
+      );
     }
 
     console.log(
       JSON.stringify(
         {
-          mode: argValue('--mode') ?? 'vector',
+          mode: retrievalMode ?? 'configured',
           rewrite,
           summary: summarize(results),
           cases: results,

@@ -49,11 +49,13 @@ describe('KnowledgeBaseService', () => {
     });
 
     expect(result.retrievalConfig).toEqual({
+      schemaVersion: 2,
       retrievalMode: 'hybrid',
       threshold: 0.6,
       stage1TopK: 12,
       vectorTopK: 12,
       keywordTopK: 8,
+      candidateLimit: 20,
       finalTopK: 5,
       rerank: true,
       fusion: {
@@ -61,6 +63,10 @@ describe('KnowledgeBaseService', () => {
         rrfK: 80,
         vectorWeight: 1,
         keywordWeight: 1,
+      },
+      confidence: {
+        keywordBm25SaturationScore: 12,
+        minSupportingHits: 1,
       },
     });
   });
@@ -87,11 +93,13 @@ describe('KnowledgeBaseService', () => {
     });
 
     expect(result.retrievalConfig).toMatchObject({
+      schemaVersion: 2,
       retrievalMode: 'vector',
       threshold: 0.42,
       stage1TopK: 18,
       vectorTopK: 18,
       keywordTopK: 20,
+      candidateLimit: 38,
       finalTopK: 4,
       rerank: false,
       fusion: {
@@ -99,6 +107,10 @@ describe('KnowledgeBaseService', () => {
         rrfK: 60,
         vectorWeight: 1,
         keywordWeight: 2,
+      },
+      confidence: {
+        keywordBm25SaturationScore: 12,
+        minSupportingHits: 1,
       },
     });
   });

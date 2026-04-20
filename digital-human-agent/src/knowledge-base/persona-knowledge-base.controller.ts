@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from '../knowledge/knowledge.service';
-import { KnowledgeSearchDto } from '../knowledge/dto/knowledge-search.dto';
+import { KnowledgeSearchDto } from '../knowledge/api/dto/knowledge-search.dto';
 import { KnowledgeBaseService } from './knowledge-base.service';
 import { AttachKnowledgeBaseDto } from './dto/attach-knowledge-base.dto';
 
@@ -60,6 +60,14 @@ export class PersonaKnowledgeBaseController {
       String(body.query ?? ''),
       {
         retrievalMode: body.retrievalMode,
+        rerank: body.rerank,
+        threshold: body.threshold,
+        stage1TopK: body.stage1TopK,
+        vectorTopK: body.vectorTopK,
+        keywordTopK: body.keywordTopK,
+        candidateLimit: body.candidateLimit,
+        finalTopK: body.finalTopK,
+        fusion: body.fusion,
         rewrite: body.rewrite,
         history: body.history,
       },

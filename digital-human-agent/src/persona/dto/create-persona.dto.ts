@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
+import type { PersonaRagPolicy } from '../persona.entity';
 
 export class CreatePersonaDto {
   @ApiProperty({ description: '角色名称', example: '李老师' })
@@ -43,4 +44,17 @@ export class CreatePersonaDto {
   @Transform(({ value, obj }) => value ?? obj?.system_prompt_extra)
   @IsOptional() @IsString()
   systemPromptExtra?: string;
+
+  @ApiPropertyOptional({
+    description: 'Persona 级 RAG 编排策略；不传时服务端使用默认值',
+    example: {
+      schemaVersion: 1,
+      minConfidence: 0.45,
+      queryRewrite: { enabled: false, historyTurns: 4 },
+      multiHop: { enabled: false, maxSubQuestions: 4, maxRetrievals: 4 },
+      webFallback: { enabled: false, policy: 'never', requireConfirmation: true },
+    },
+  })
+  @IsOptional() @IsObject()
+  ragPolicy?: PersonaRagPolicy;
 }

@@ -14,11 +14,13 @@ import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
 
 const DEFAULT_RETRIEVAL_CONFIG: KnowledgeBaseRetrievalConfig = {
+  schemaVersion: 2,
   retrievalMode: 'vector',
   threshold: 0.6,
   stage1TopK: 20,
   vectorTopK: 20,
   keywordTopK: 20,
+  candidateLimit: 40,
   finalTopK: 5,
   rerank: true,
   fusion: {
@@ -27,13 +29,18 @@ const DEFAULT_RETRIEVAL_CONFIG: KnowledgeBaseRetrievalConfig = {
     vectorWeight: 1,
     keywordWeight: 1,
   },
+  confidence: {
+    keywordBm25SaturationScore: 12,
+    minSupportingHits: 1,
+  },
 };
 
 type RetrievalConfigInput = Omit<
   Partial<KnowledgeBaseRetrievalConfig>,
-  'fusion'
+  'fusion' | 'confidence'
 > & {
   fusion?: Partial<KnowledgeBaseRetrievalConfig['fusion']>;
+  confidence?: Partial<KnowledgeBaseRetrievalConfig['confidence']>;
 };
 
 @Injectable()
@@ -163,6 +170,11 @@ export class KnowledgeBaseService {
         ...(base.fusion ?? {}),
         ...(input?.fusion ?? {}),
       },
+      confidence: {
+        ...DEFAULT_RETRIEVAL_CONFIG.confidence,
+        ...(base.confidence ?? {}),
+        ...(input?.confidence ?? {}),
+      },
     };
     const vectorTopK = this.toInt(
       input?.vectorTopK ?? input?.stage1TopK ?? merged.vectorTopK,
@@ -170,8 +182,31 @@ export class KnowledgeBaseService {
       1,
       50,
     );
+    const finalTopK = this.toInt(
+      merged.finalTopK,
+      DEFAULT_RETRIEVAL_CONFIG.finalTopK,
+      1,
+      20,
+    );
+    const keywordTopK = this.toInt(
+      merged.keywordTopK,
+      DEFAULT_RETRIEVAL_CONFIG.keywordTopK,
+      1,
+      50,
+    );
+    const candidateLimit = this.toInt(
+      input?.candidateLimit ?? base.candidateLimit,
+      Math.max(vectorTopK + keywordTopK, finalTopK),
+      finalTopK,
+      100,
+    );
+    const defaultConfidence = DEFAULT_RETRIEVAL_CONFIG.confidence ?? {
+      keywordBm25SaturationScore: 12,
+      minSupportingHits: 1,
+    };
 
     return {
+      schemaVersion: 2,
       retrievalMode: this.normalizeRetrievalMode(merged.retrievalMode),
       threshold: this.toNumber(
         merged.threshold,
@@ -181,18 +216,9 @@ export class KnowledgeBaseService {
       ),
       stage1TopK: vectorTopK,
       vectorTopK,
-      keywordTopK: this.toInt(
-        merged.keywordTopK,
-        DEFAULT_RETRIEVAL_CONFIG.keywordTopK,
-        1,
-        50,
-      ),
-      finalTopK: this.toInt(
-        merged.finalTopK,
-        DEFAULT_RETRIEVAL_CONFIG.finalTopK,
-        1,
-        20,
-      ),
+      keywordTopK,
+      candidateLimit,
+      finalTopK,
       rerank: merged.rerank !== false,
       fusion: {
         method: 'rrf',
@@ -212,6 +238,20 @@ export class KnowledgeBaseService {
           merged.fusion.keywordWeight,
           DEFAULT_RETRIEVAL_CONFIG.fusion.keywordWeight,
           0,
+          10,
+        ),
+      },
+      confidence: {
+        keywordBm25SaturationScore: this.toNumber(
+          merged.confidence.keywordBm25SaturationScore,
+          defaultConfidence.keywordBm25SaturationScore,
+          1,
+          100,
+        ),
+        minSupportingHits: this.toInt(
+          merged.confidence.minSupportingHits,
+          defaultConfidence.minSupportingHits,
+          1,
           10,
         ),
       },

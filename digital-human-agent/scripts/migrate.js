@@ -10,8 +10,13 @@ const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// 加载 .env
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+// 加载 .env（优先用 Node 原生能力，避免额外依赖）
+const envPath = path.join(__dirname, '../.env');
+if (typeof process.loadEnvFile === 'function') {
+  process.loadEnvFile(envPath);
+} else {
+  require('dotenv').config({ path: envPath });
+}
 
 const MIGRATION_DIR = path.join(__dirname, '../supabase/migrations');
 const MIGRATIONS = [
@@ -23,6 +28,7 @@ const MIGRATIONS = [
   '006_rpc_rewrite.sql',
   '007_drop_legacy_shim.sql',
   '008_retrieval_config_hybrid.sql',
+  '009_persona_rag_policy.sql',
 ];
 
 async function migrate() {

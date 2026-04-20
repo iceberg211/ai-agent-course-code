@@ -71,11 +71,17 @@ export interface KnowledgeDocument {
 
 export interface KnowledgeSearchChunk {
   id: string
+  document_id?: string
+  knowledge_base_id?: string
   source: string
   chunk_index: number
   content: string
-  similarity: number
+  similarity?: number
+  bm25_score?: number
+  fusion_score?: number
   rerank_score?: number
+  sources?: RetrievalOrigin[]
+  original_ranks?: Partial<Record<RetrievalOrigin, number>>
 }
 
 export type RetrievalOrigin = 'vector' | 'keyword' | 'web'
@@ -134,6 +140,25 @@ export interface RagDebugTrace {
   retrievalMode: 'vector' | 'keyword' | 'hybrid'
   lowConfidence: boolean
   lowConfidenceReason?: string
+  confidence: {
+    finalConfidence: number
+    threshold: number
+    method:
+      | 'none'
+      | 'vector_similarity'
+      | 'keyword_bm25_normalized'
+      | 'hybrid_rerank'
+      | 'llm_relevance'
+    signals: {
+      topSimilarity?: number
+      topBm25Score?: number
+      normalizedBm25?: number
+      topFusionScore?: number
+      topRerankScore?: number
+      llmRelevant?: boolean
+      supportingHits?: number
+    }
+  }
   stages: RagStageTrace[]
   hits: RetrievalHit[]
   rerank?: {
@@ -162,6 +187,7 @@ export interface KnowledgeSearchResult {
     stage1TopK: number
     vectorTopK: number
     keywordTopK: number
+    candidateLimit: number
     finalTopK: number
     fusion: RetrievalFusionConfig
   }
@@ -199,14 +225,20 @@ export interface RetrievalFusionConfig {
 }
 
 export interface RetrievalConfig {
+  schemaVersion?: number
   retrievalMode: RetrievalMode
   threshold: number
   stage1TopK: number
   vectorTopK: number
   keywordTopK: number
+  candidateLimit: number
   finalTopK: number
   rerank: boolean
   fusion: RetrievalFusionConfig
+  confidence?: {
+    keywordBm25SaturationScore: number
+    minSupportingHits: number
+  }
 }
 
 export interface KnowledgeBase {

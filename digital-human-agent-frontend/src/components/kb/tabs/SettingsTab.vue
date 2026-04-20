@@ -67,7 +67,7 @@
             <option value="keyword">关键词</option>
             <option value="hybrid">混合</option>
           </select>
-          <small>关键词和混合模式会在 ES 检索阶段启用。</small>
+          <small>关键词模式走数据库关键词召回，混合模式会融合向量与关键词结果。</small>
         </label>
 
         <label class="range-field">
@@ -105,6 +105,16 @@
               max="50"
             />
             <small>关键词召回进入融合前的候选数量。</small>
+          </label>
+          <label class="field">
+            <span>融合候选上限</span>
+            <input
+              v-model.number="draft.retrievalConfig.candidateLimit"
+              type="number"
+              min="1"
+              max="100"
+            />
+            <small>融合后保留给重排阶段的候选数量。</small>
           </label>
           <label class="field">
             <span>最终片段数</span>
@@ -190,11 +200,13 @@ const deleting = ref(false)
 const saveError = ref('')
 
 const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
+  schemaVersion: 2,
   retrievalMode: 'vector',
   threshold: 0.6,
   stage1TopK: 20,
   vectorTopK: 20,
   keywordTopK: 20,
+  candidateLimit: 40,
   finalTopK: 5,
   rerank: true,
   fusion: {
@@ -202,6 +214,10 @@ const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
     rrfK: 60,
     vectorWeight: 1,
     keywordWeight: 1,
+  },
+  confidence: {
+    keywordBm25SaturationScore: 12,
+    minSupportingHits: 1,
   },
 }
 
@@ -216,14 +232,30 @@ function normalizeRetrievalConfig(
   return {
     ...DEFAULT_RETRIEVAL_CONFIG,
     ...config,
+    schemaVersion: 2,
     retrievalMode:
       config.retrievalMode ?? DEFAULT_RETRIEVAL_CONFIG.retrievalMode,
     vectorTopK,
     stage1TopK: vectorTopK,
+    candidateLimit:
+      Math.max(
+        Number(
+          config.candidateLimit ??
+            vectorTopK +
+              Number(
+                config.keywordTopK ?? DEFAULT_RETRIEVAL_CONFIG.keywordTopK,
+              ),
+        ),
+        Number(config.finalTopK ?? DEFAULT_RETRIEVAL_CONFIG.finalTopK),
+      ),
     fusion: {
       ...DEFAULT_RETRIEVAL_CONFIG.fusion,
       ...(config.fusion ?? {}),
       method: 'rrf',
+    },
+    confidence: {
+      ...DEFAULT_RETRIEVAL_CONFIG.confidence,
+      ...(config.confidence ?? {}),
     },
   }
 }

@@ -177,6 +177,7 @@ export function useKnowledgeBase() {
       stage1TopK: number
       vectorTopK: number
       keywordTopK: number
+      candidateLimit: number
       finalTopK: number
       fusion: Partial<RetrievalFusionConfig>
       rewrite: boolean

@@ -102,7 +102,11 @@
           </div>
           <div v-if="result.debugTrace">
             <dt>置信度</dt>
-            <dd>{{ result.debugTrace.lowConfidence ? '偏低' : '正常' }}</dd>
+            <dd>
+              {{
+                `${result.debugTrace.lowConfidence ? '偏低' : '正常'} · ${result.debugTrace.confidence.finalConfidence.toFixed(3)}`
+              }}
+            </dd>
           </div>
         </dl>
       </div>
@@ -154,7 +158,7 @@
         <article class="result-list">
           <header class="result-list__head">
             <span>Stage 1</span>
-            <strong>向量召回</strong>
+            <strong>{{ stage1Label }}</strong>
           </header>
           <ol v-if="result.stage1.length" class="hit-list">
             <li
@@ -166,10 +170,12 @@
                 <span class="rank">{{ index + 1 }}</span>
                 <span class="hit-copy">
                   <strong>{{ c.source }}</strong>
-                  <small
-                    >第 {{ c.chunk_index + 1 }} 段 · 相似度
-                    {{ fmt(c.similarity) }}</small
-                  >
+                  <small>
+                    第 {{ c.chunk_index + 1 }} 段 · {{ scoreSummary(c) }}
+                    <template v-if="originSummary(c)">
+                      · {{ originSummary(c) }}</template
+                    >
+                  </small>
                 </span>
               </button>
             </li>
@@ -179,9 +185,7 @@
         <article class="result-list result-list--final">
           <header class="result-list__head">
             <span>Stage 2</span>
-            <strong>{{
-              result.options?.rerank ? '重排结果' : '最终结果'
-            }}</strong>
+            <strong>{{ stage2Label }}</strong>
           </header>
           <ol v-if="result.stage2.length" class="hit-list">
             <li
@@ -195,10 +199,10 @@
                   <strong>{{ c.source }}</strong>
                   <small>
                     第 {{ c.chunk_index + 1 }} 段
-                    <template v-if="c.rerank_score != null">
-                      · 重排 {{ fmt(c.rerank_score) }}</template
+                    · {{ scoreSummary(c) }}
+                    <template v-if="originSummary(c)">
+                      · {{ originSummary(c) }}</template
                     >
-                    · 相似度 {{ fmt(c.similarity) }}
                   </small>
                 </span>
               </button>
@@ -258,6 +262,20 @@ const canSearch = computed(
   () => !hook.searching.value && query.value.trim().length > 0,
 )
 
+/** Stage1 列标题：根据检索模式动态展示 */
+const stage1Label = computed(() => {
+  if (retrievalMode.value === 'keyword') return '关键词召回'
+  if (retrievalMode.value === 'hybrid') return '向量 + 关键词召回'
+  return '向量召回'
+})
+
+/** Stage2 列标题：rerank 后优先显示重排，hybrid 融合显示融合结果 */
+const stage2Label = computed(() => {
+  if (result.value?.options?.rerank) return '重排结果'
+  if (retrievalMode.value === 'hybrid') return '融合结果'
+  return '最终结果'
+})
+
 watch(
   () => props.kb.id,
   () => {
@@ -288,6 +306,7 @@ async function runSearch() {
     stage1TopK: stage1TopK.value,
     vectorTopK: stage1TopK.value,
     keywordTopK: props.kb.retrievalConfig.keywordTopK,
+    candidateLimit: props.kb.retrievalConfig.candidateLimit,
     finalTopK: finalTopK.value,
     fusion: props.kb.retrievalConfig.fusion,
     rerank: rerank.value,
@@ -305,6 +324,25 @@ async function runSearch() {
 function fmt(n: number | undefined): string {
   const v = Number(n)
   return Number.isFinite(v) ? v.toFixed(3) : '-'
+}
+
+function scoreSummary(chunk: KnowledgeSearchChunk): string {
+  const parts: string[] = []
+  if (chunk.rerank_score != null) parts.push(`重排 ${fmt(chunk.rerank_score)}`)
+  if (chunk.fusion_score != null) parts.push(`融合 ${fmt(chunk.fusion_score)}`)
+  if (chunk.bm25_score != null) parts.push(`关键词 ${fmt(chunk.bm25_score)}`)
+  if (chunk.similarity != null) parts.push(`相似度 ${fmt(chunk.similarity)}`)
+  return parts.join(' · ') || '无分数'
+}
+
+function originSummary(chunk: KnowledgeSearchChunk): string {
+  if (!chunk.sources?.length) return ''
+  const labels: Record<string, string> = {
+    vector: '向量',
+    keyword: '关键词',
+    web: '联网',
+  }
+  return `来源 ${chunk.sources.map((item) => labels[item] ?? item).join(' + ')}`
 }
 
 function stageNameLabel(name: string): string {

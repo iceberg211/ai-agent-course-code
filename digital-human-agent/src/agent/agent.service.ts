@@ -9,6 +9,7 @@ import {
   KnowledgeService,
   KnowledgeChunk,
 } from '../knowledge/knowledge.service';
+import { LangSmithTraceService } from '../knowledge/tracing/langsmith-trace.service';
 import { PersonaService } from '../persona/persona.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { Persona } from '../persona/persona.entity';
@@ -38,50 +39,113 @@ export class AgentService {
 
   constructor(
     private readonly knowledgeService: KnowledgeService,
+    private readonly langSmithTraceService: LangSmithTraceService,
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
   ) {}
 
   async run(params: RunAgentParams): Promise<void> {
-    const {
-      conversationId,
-      personaId,
-      userMessage,
-      signal,
-      onToken,
-      onCitations,
-    } = params;
+    await this.langSmithTraceService.trace(
+      {
+        name: 'agent.run',
+        runType: 'chain',
+        tags: ['rag', 'agent', 'answer'],
+        metadata: {
+          chainType: 'agent_answer',
+          feature: 'agent_answer',
+        },
+        inputs: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+          userMessage: params.userMessage,
+          queryRewriteEnabled: process.env.QUERY_REWRITE_ENABLED === 'true',
+        },
+        processOutputs: (result) => result,
+      },
+      async () => {
+        const {
+          conversationId,
+          personaId,
+          userMessage,
+          turnId,
+          signal,
+          onToken,
+          onCitations,
+        } = params;
 
-    // 1. 加载 persona 和历史；历史也可用于检索前 query rewrite
-    const [persona, history] = await Promise.all([
-      this.personaService.findOne(personaId),
-      this.conversationService.getCompletedMessages(conversationId, 10),
-    ]);
+        // 1. 加载 persona 和历史；历史也可用于检索前 query rewrite
+        const [persona, history] = await Promise.all([
+          this.personaService.findOne(personaId),
+          this.conversationService.getCompletedMessages(conversationId, 10),
+        ]);
 
-    // 2. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
-    const chunks: KnowledgeChunk[] =
-      await this.knowledgeService.retrieveForPersona(personaId, userMessage, {
-        rewrite: process.env.QUERY_REWRITE_ENABLED === 'true',
-        history: history.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
-      });
+        // 2. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
+        const chunks: KnowledgeChunk[] =
+          await this.knowledgeService.retrieveForPersona(
+            personaId,
+            userMessage,
+            {
+              rewrite: process.env.QUERY_REWRITE_ENABLED === 'true',
+              history: history.map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+              })),
+            },
+          );
 
-    // 3. 推送引用来源
-    if (chunks.length > 0) onCitations(chunks);
+        // 3. 推送引用来源
+        if (chunks.length > 0) onCitations(chunks);
 
-    // 4. 构建 messages
-    const messages = this.buildMessages(persona, chunks, history, userMessage);
+        // 4. 构建 messages
+        const messages = this.buildMessages(
+          persona,
+          chunks,
+          history,
+          userMessage,
+        );
 
-    // 5. 流式生成
-    const stream = await this.llm.stream(messages, { signal });
+        // 5. 流式生成
+        const stream = await this.llm.stream(messages, {
+          signal,
+          ...this.langSmithTraceService.runnableConfig({
+            runName: 'agent.generation',
+            tags: ['rag', 'agent', 'generation'],
+            metadata: {
+              conversationId,
+              personaId,
+              turnId,
+              historyTurns: history.length,
+              retrievedChunkCount: chunks.length,
+              knowledgeBaseIds: Array.from(
+                new Set(
+                  chunks
+                    .map((chunk) => chunk.knowledge_base_id)
+                    .filter((id): id is string => Boolean(id)),
+                ),
+              ),
+            },
+          }),
+        });
 
-    for await (const chunk of stream) {
-      if (signal.aborted) break;
-      const token = typeof chunk.content === 'string' ? chunk.content : '';
-      if (token) onToken(token);
-    }
+        let replyChars = 0;
+        for await (const chunk of stream) {
+          if (signal.aborted) break;
+          const token = typeof chunk.content === 'string' ? chunk.content : '';
+          if (token) {
+            replyChars += token.length;
+            onToken(token);
+          }
+        }
+
+        return {
+          status: signal.aborted ? 'interrupted' : 'completed',
+          replyChars,
+          retrievedChunkCount: chunks.length,
+          citationsCount: chunks.length,
+        };
+      },
+    );
   }
 
   private buildMessages(

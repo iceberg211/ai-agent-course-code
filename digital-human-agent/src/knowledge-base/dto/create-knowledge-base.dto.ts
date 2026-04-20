@@ -48,6 +48,14 @@ export class FusionConfigDto {
 }
 
 export class RetrievalConfigDto {
+  @ApiPropertyOptional({ default: 2 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2)
+  @Max(2)
+  schemaVersion?: number;
+
   @ApiPropertyOptional({
     enum: ['vector', 'keyword', 'hybrid'],
     default: 'vector',
@@ -88,6 +96,14 @@ export class RetrievalConfigDto {
   @Max(50)
   keywordTopK?: number;
 
+  @ApiPropertyOptional({ default: 40, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  candidateLimit?: number;
+
   @ApiPropertyOptional({ default: 5, minimum: 1, maximum: 20 })
   @IsOptional()
   @Type(() => Number)
@@ -108,6 +124,19 @@ export class RetrievalConfigDto {
   @ValidateNested()
   @Type(() => FusionConfigDto)
   fusion?: FusionConfigDto;
+
+  @ApiPropertyOptional({
+    default: {
+      keywordBm25SaturationScore: 12,
+      minSupportingHits: 1,
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  confidence?: {
+    keywordBm25SaturationScore?: number;
+    minSupportingHits?: number;
+  };
 }
 
 export class CreateKnowledgeBaseDto {

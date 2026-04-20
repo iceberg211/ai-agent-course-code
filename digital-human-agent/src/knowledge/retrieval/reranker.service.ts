@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { LangSmithTraceService } from './tracing/langsmith-trace.service';
 import type { KnowledgeChunk } from './knowledge.service';
 
 interface RerankItem {
@@ -14,15 +15,15 @@ export class RerankerService {
 
   private readonly llm = new ChatOpenAI({
     model:
-      process.env.RERANKER_MODEL_NAME ??
-      process.env.MODEL_NAME ??
-      'qwen-plus',
+      process.env.RERANKER_MODEL_NAME ?? process.env.MODEL_NAME ?? 'qwen-plus',
     temperature: 0,
     configuration: {
       baseURL: process.env.OPENAI_BASE_URL,
       apiKey: process.env.OPENAI_API_KEY,
     },
   });
+
+  constructor(private readonly langSmithTraceService: LangSmithTraceService) {}
 
   async rerank(
     query: string,
@@ -42,23 +43,34 @@ export class RerankerService {
       content: chunk.content.slice(0, 1200),
     }));
 
-    const response = await this.llm.invoke([
-      new SystemMessage(
-        '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。' +
-          '只返回 JSON 数组，不要 Markdown，不要额外解释。' +
-          '格式必须是 [{"index":0,"score":8.6}]，score 范围 0-10。',
-      ),
-      new HumanMessage(
-        JSON.stringify(
-          {
-            query,
-            candidates: promptCandidates,
-          },
-          null,
-          2,
+    const response = await this.llm.invoke(
+      [
+        new SystemMessage(
+          '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。' +
+            '只返回 JSON 数组，不要 Markdown，不要额外解释。' +
+            '格式必须是 [{"index":0,"score":8.6}]，score 范围 0-10。',
         ),
-      ),
-    ]);
+        new HumanMessage(
+          JSON.stringify(
+            {
+              query,
+              candidates: promptCandidates,
+            },
+            null,
+            2,
+          ),
+        ),
+      ],
+      this.langSmithTraceService.runnableConfig({
+        runName: 'knowledge.rerank_llm',
+        tags: ['rag', 'knowledge', 'rerank', 'llm'],
+        metadata: {
+          query,
+          candidateCount: candidates.length,
+          topK: safeTopK,
+        },
+      }),
+    );
 
     const raw = this.extractText(response.content);
     const parsed = this.parseRerankItems(raw);

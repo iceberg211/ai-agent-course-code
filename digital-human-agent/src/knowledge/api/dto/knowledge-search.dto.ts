@@ -69,8 +69,7 @@ export class KnowledgeSearchDto {
   query: string;
 
   @ApiPropertyOptional({
-    description:
-      '检索模式。keyword/hybrid 会在后续 ES 阶段接入，当前仍保留 vector 执行路径',
+    description: '检索模式：向量、关键词或混合检索',
     enum: ['vector', 'keyword', 'hybrid'],
     default: 'vector',
   })
@@ -114,7 +113,7 @@ export class KnowledgeSearchDto {
   vectorTopK?: number;
 
   @ApiPropertyOptional({
-    description: '关键词召回条数；为 P3 keyword/hybrid 检索预留',
+    description: '关键词召回条数',
     default: 20,
     minimum: 1,
     maximum: 50,
@@ -125,6 +124,19 @@ export class KnowledgeSearchDto {
   @Min(1)
   @Max(50)
   keywordTopK?: number;
+
+  @ApiPropertyOptional({
+    description: '融合候选上限；hybrid 模式下用于截断融合后的候选集',
+    default: 40,
+    minimum: 1,
+    maximum: 100,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  candidateLimit?: number;
 
   @ApiPropertyOptional({
     description: '最终返回条数',
@@ -153,8 +165,7 @@ export class KnowledgeSearchDto {
   threshold?: number;
 
   @ApiPropertyOptional({
-    description:
-      '融合配置；当前仅保存到 trace 输入，后续 keyword/hybrid 阶段使用',
+    description: '融合配置；hybrid 模式下使用 RRF 融合候选集',
     type: KnowledgeSearchFusionDto,
   })
   @IsOptional()

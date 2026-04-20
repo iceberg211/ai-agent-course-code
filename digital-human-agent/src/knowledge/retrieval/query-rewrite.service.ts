@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
-import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+} from '@langchain/core/messages';
+import { LangSmithTraceService } from './tracing/langsmith-trace.service';
 
 export interface QueryRewriteMessage {
   role: 'user' | 'assistant';
@@ -30,6 +35,8 @@ export class QueryRewriteService {
     },
   });
 
+  constructor(private readonly langSmithTraceService: LangSmithTraceService) {}
+
   async rewrite(
     query: string,
     history: QueryRewriteMessage[] = [],
@@ -58,17 +65,27 @@ export class QueryRewriteService {
     }
 
     try {
-      const response = await this.llm.invoke([
-        new SystemMessage(
-          '你是 RAG 检索问题改写器。请结合最近对话，把用户当前问题改写成一个可独立检索的完整中文问题。只输出改写后的问题，不要解释，不要 Markdown。',
-        ),
-        ...usefulHistory.map((item) =>
-          item.role === 'user'
-            ? new HumanMessage(item.content)
-            : new AIMessage(item.content),
-        ),
-        new HumanMessage(`当前问题：${originalQuery}`),
-      ]);
+      const response = await this.llm.invoke(
+        [
+          new SystemMessage(
+            '你是 RAG 检索问题改写器。请结合最近对话，把用户当前问题改写成一个可独立检索的完整中文问题。只输出改写后的问题，不要解释，不要 Markdown。',
+          ),
+          ...usefulHistory.map((item) =>
+            item.role === 'user'
+              ? new HumanMessage(item.content)
+              : new AIMessage(item.content),
+          ),
+          new HumanMessage(`当前问题：${originalQuery}`),
+        ],
+        this.langSmithTraceService.runnableConfig({
+          runName: 'knowledge.query_rewrite_llm',
+          tags: ['rag', 'knowledge', 'query-rewrite', 'llm'],
+          metadata: {
+            originalQuery,
+            historyTurns: usefulHistory.length,
+          },
+        }),
+      );
 
       const rewritten = this.extractText(response.content)
         .replace(/^["“]|["”]$/g, '')
