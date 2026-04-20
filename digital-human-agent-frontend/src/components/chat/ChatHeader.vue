@@ -34,7 +34,7 @@
       </div>
       <button
         v-if="persona"
-        class="docs-btn"
+        class="header-btn"
         @click="$emit('new-conversation')"
         aria-label="新建对话"
         title="新建对话（清空当前会话）"
@@ -43,10 +43,10 @@
         <span>新对话</span>
       </button>
       <button
-        class="docs-btn"
-        :class="{ active: docsOpen }"
-        @click="$emit('toggle-docs')"
-        :aria-pressed="docsOpen"
+        class="header-btn"
+        :class="{ active: knowledgeDrawerOpen }"
+        @click="$emit('toggle-knowledge-drawer')"
+        :aria-pressed="knowledgeDrawerOpen"
         aria-label="打开知识库管理"
       >
         <BookOpenIcon :size="15" aria-hidden="true" />
@@ -59,11 +59,11 @@
 <script setup lang="ts">
 import { BookOpenIcon, PlusSquareIcon } from 'lucide-vue-next'
 defineProps({
-  persona:  { type: Object,  default: null },
-  docsOpen: { type: Boolean, default: false },
+  persona: { type: Object, default: null },
+  knowledgeDrawerOpen: { type: Boolean, default: false },
   mode: { type: String, default: 'voice' },
 })
-defineEmits(['toggle-docs', 'change-mode', 'new-conversation'])
+defineEmits(['toggle-knowledge-drawer', 'change-mode', 'new-conversation'])
 </script>
 
 <style scoped>
@@ -90,7 +90,7 @@ defineEmits(['toggle-docs', 'change-mode', 'new-conversation'])
 .name { font-size: 14px; font-weight: 600; color: var(--text); }
 .sub  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
-.docs-btn {
+.header-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -105,8 +105,8 @@ defineEmits(['toggle-docs', 'change-mode', 'new-conversation'])
   transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
   font-family: inherit;
 }
-.docs-btn:hover { background: var(--primary-bg); border-color: var(--primary-muted); color: var(--primary); }
-.docs-btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+.header-btn:hover { background: var(--primary-bg); border-color: var(--primary-muted); color: var(--primary); }
+.header-btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
 .header-actions {
   display: flex;
   align-items: center;
@@ -142,7 +142,7 @@ defineEmits(['toggle-docs', 'change-mode', 'new-conversation'])
   .sub {
     display: none;
   }
-  .docs-btn {
+  .header-btn {
     padding: 6px 10px;
   }
   .mode-btn {

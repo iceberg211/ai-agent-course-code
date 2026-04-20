@@ -37,8 +37,8 @@ import { useRouter } from 'vue-router'
 import { PlusIcon } from 'lucide-vue-next'
 import { useKnowledgeBaseStore } from '../../stores/knowledgeBase'
 import { useKnowledgeBase } from '../../hooks/useKnowledgeBase'
-import KnowledgeBaseCard from '../../components/kb/KnowledgeBaseCard.vue'
-import KnowledgeBaseCreateModal from '../../components/kb/KnowledgeBaseCreateModal.vue'
+import KnowledgeBaseCard from '../../components/knowledge-base/KnowledgeBaseCard.vue'
+import KnowledgeBaseCreateModal from '../../components/knowledge-base/KnowledgeBaseCreateModal.vue'
 
 const store = useKnowledgeBaseStore()
 const hook = useKnowledgeBase()

@@ -14,57 +14,20 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { extname } from 'node:path';
-import { KnowledgeService } from '../knowledge/knowledge.service';
-import { KnowledgeSearchDto } from '../knowledge/dto/knowledge-search.dto';
-import { KnowledgeBaseService } from './knowledge-base.service';
-import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
-import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
-import { UpdateChunkDto } from './dto/update-chunk.dto';
+import { KnowledgeSearchDto } from './dto/knowledge-search.dto';
+import { KnowledgeContentService } from './knowledge-content.service';
+import { UpdateChunkDto } from '../knowledge-base/dto/update-chunk.dto';
 
-@ApiTags('knowledge-bases')
+@ApiTags('knowledge-content')
 @Controller('knowledge-bases')
-export class KnowledgeBaseController {
+export class KnowledgeContentController {
   constructor(
-    private readonly kbService: KnowledgeBaseService,
-    private readonly knowledgeService: KnowledgeService,
+    private readonly knowledgeContentService: KnowledgeContentService,
   ) {}
-
-  // -------- KB CRUD --------
-
-  @Get()
-  listAll() {
-    return this.kbService.listAll();
-  }
-
-  @Post()
-  create(@Body() dto: CreateKnowledgeBaseDto) {
-    return this.kbService.create(dto);
-  }
-
-  @Get(':kbId')
-  findOne(@Param('kbId', ParseUUIDPipe) kbId: string) {
-    return this.kbService.findOne(kbId);
-  }
-
-  @Patch(':kbId')
-  update(
-    @Param('kbId', ParseUUIDPipe) kbId: string,
-    @Body() dto: UpdateKnowledgeBaseDto,
-  ) {
-    return this.kbService.update(kbId, dto);
-  }
-
-  @Delete(':kbId')
-  @ApiOperation({ summary: '删除知识库（级联文档 + chunks）' })
-  remove(@Param('kbId', ParseUUIDPipe) kbId: string) {
-    return this.kbService.remove(kbId);
-  }
-
-  // -------- KB 下的文档管理 --------
 
   @Get(':kbId/documents')
   listDocuments(@Param('kbId', ParseUUIDPipe) kbId: string) {
-    return this.knowledgeService.listDocumentsByKb(kbId);
+    return this.knowledgeContentService.listDocumentsByKb(kbId);
   }
 
   @Post(':kbId/documents')
@@ -78,7 +41,7 @@ export class KnowledgeBaseController {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
     const content = await this.extractDocumentText(file);
-    return this.knowledgeService.ingestDocument(
+    return this.knowledgeContentService.ingestDocument(
       kbId,
       file.originalname,
       content,
@@ -95,7 +58,7 @@ export class KnowledgeBaseController {
     @Param('kbId', ParseUUIDPipe) _kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.knowledgeService.deleteDocument(docId);
+    return this.knowledgeContentService.deleteDocument(docId);
   }
 
   @Get(':kbId/documents/:docId/chunks')
@@ -103,10 +66,8 @@ export class KnowledgeBaseController {
     @Param('kbId', ParseUUIDPipe) _kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.knowledgeService.listChunksByDocumentId(docId);
+    return this.knowledgeContentService.listChunksByDocumentId(docId);
   }
-
-  // -------- Chunk 启用/禁用 --------
 
   @Patch(':kbId/chunks/:chunkId')
   @ApiOperation({ summary: '启用或禁用单个 chunk' })
@@ -115,11 +76,12 @@ export class KnowledgeBaseController {
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Body() dto: UpdateChunkDto,
   ) {
-    await this.knowledgeService.updateChunkEnabled(chunkId, dto.enabled);
+    await this.knowledgeContentService.updateChunkEnabled(
+      chunkId,
+      dto.enabled,
+    );
     return { chunkId, enabled: dto.enabled };
   }
-
-  // -------- 单 KB 命中测试 --------
 
   @Post(':kbId/search')
   @ApiOperation({ summary: '命中测试（stage1 + stage2，单 KB）' })
@@ -127,15 +89,13 @@ export class KnowledgeBaseController {
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Body() body: KnowledgeSearchDto,
   ) {
-    return this.knowledgeService.retrieveWithStages(kbId, body.query, {
+    return this.knowledgeContentService.retrieveWithStages(kbId, body.query, {
       rerank: body.rerank,
       threshold: body.threshold,
       stage1TopK: body.stage1TopK,
       finalTopK: body.finalTopK,
     });
   }
-
-  // -------- 文档文本抽取 --------
 
   private async extractDocumentText(
     file: Express.Multer.File,

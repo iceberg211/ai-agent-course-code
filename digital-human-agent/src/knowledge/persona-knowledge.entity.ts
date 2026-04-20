@@ -5,7 +5,7 @@ import {
 } from 'typeorm';
 
 @Entity('persona_knowledge_base')
-export class PersonaKnowledgeBase {
+export class PersonaKnowledge {
   @PrimaryColumn({ name: 'persona_id', type: 'uuid' })
   personaId: string;
 

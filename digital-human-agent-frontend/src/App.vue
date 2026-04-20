@@ -6,7 +6,7 @@
 </template>
 
 <script setup lang="ts">
-import AppNav from './components/kb/AppNav.vue'
+import AppNav from './components/knowledge-base/AppNav.vue'
 </script>
 
 <style>

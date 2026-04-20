@@ -21,9 +21,9 @@
     <main class="chat-main">
       <ChatHeader
         :persona="personaStore.selectedPersona"
-        :docs-open="docsOpen"
+        :knowledge-drawer-open="knowledgeDrawerOpen"
         :mode="mode"
-        @toggle-docs="docsOpen = !docsOpen"
+        @toggle-knowledge-drawer="knowledgeDrawerOpen = !knowledgeDrawerOpen"
         @change-mode="onChangeMode"
         @new-conversation="onNewConversation"
       />
@@ -65,10 +65,10 @@
 
     <!-- 右侧知识库抽屉：展示当前角色已挂载的知识库 -->
     <Transition name="slide-drawer">
-      <DocsDrawer
-        v-if="docsOpen"
+      <MountedKnowledgeBaseDrawer
+        v-if="knowledgeDrawerOpen"
         :persona-id="personaStore.selectedId"
-        @close="docsOpen = false"
+        @close="knowledgeDrawerOpen = false"
       />
     </Transition>
 
@@ -94,7 +94,7 @@ import ChatHeader from '../components/chat/ChatHeader.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import ChatComposer from '../components/chat/ChatComposer.vue'
 import ChatControls from '../components/chat/ChatControls.vue'
-import DocsDrawer from '../components/knowledge/DocsDrawer.vue'
+import MountedKnowledgeBaseDrawer from '../components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
 import ToastAlert from '../components/common/ToastAlert.vue'
 import PersonaCreateModal from '../components/persona/PersonaCreateModal.vue'
 import type { Persona } from '../types'
@@ -133,7 +133,7 @@ const voiceCloneUploading = computed(() => voiceClone.uploading.value)
 // ── Template refs ─────────────────────────────────────────────────────────────
 const audioEl = ref<HTMLAudioElement | null>(null)
 const digitalVideoEl = ref<HTMLVideoElement | null>(null)
-const docsOpen = ref(false)
+const knowledgeDrawerOpen = ref(false)
 const createModalOpen = ref(false)
 
 function onPersonaCreated(persona: Persona) {

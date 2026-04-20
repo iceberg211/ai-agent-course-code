@@ -15,7 +15,7 @@ import { useTextChat } from './useTextChat'
  * - 切换对话模式（`onChangeMode`）
  *
  * historyLoading 改为直接操作 sessionStore，无需外部注入。
- * docsOpen 移到 App.vue 本地 ref，与 Persona 操作无关。
+ * knowledgeDrawerOpen 移到 App.vue 本地 ref，与 Persona 操作无关。
  */
 export function usePersonaActions(
   conversation: ReturnType<typeof useConversation>,

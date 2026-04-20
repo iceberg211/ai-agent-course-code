@@ -1,22 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KnowledgeDocument } from './knowledge-document.entity';
-import { KnowledgeChunk } from './knowledge-chunk.entity';
-import { KnowledgeBase } from '../knowledge-base/knowledge-base.entity';
-import { PersonaKnowledgeBase } from '../knowledge-base/persona-knowledge-base.entity';
-import { KnowledgeService } from './knowledge.service';
-import { RerankerService } from './reranker.service';
+import { KnowledgeController } from '@/knowledge/knowledge.controller';
+import { Knowledge } from '@/knowledge/knowledge.entity';
+import { KnowledgeService } from '@/knowledge/knowledge.service';
+import { PersonaKnowledgeController } from '@/knowledge/persona-knowledge.controller';
+import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([
-      KnowledgeDocument,
-      KnowledgeChunk,
-      KnowledgeBase,
-      PersonaKnowledgeBase,
-    ]),
-  ],
-  providers: [KnowledgeService, RerankerService],
-  exports: [KnowledgeService, TypeOrmModule],
+  imports: [TypeOrmModule.forFeature([Knowledge, PersonaKnowledge])],
+  providers: [KnowledgeService],
+  controllers: [KnowledgeController, PersonaKnowledgeController],
+  exports: [KnowledgeService],
 })
 export class KnowledgeModule {}

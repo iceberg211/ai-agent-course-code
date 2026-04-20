@@ -1,7 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { KnowledgeService } from '../src/knowledge/knowledge.service';
+import { KnowledgeContentController } from '../src/knowledge-content/knowledge-content.controller';
+import { PersonaKnowledgeSearchController } from '../src/knowledge-content/persona-knowledge-search.controller';
+import { KnowledgeContentService } from '../src/knowledge-content/knowledge-content.service';
 import { KnowledgeBaseController } from '../src/knowledge-base/knowledge-base.controller';
 import { PersonaKnowledgeBaseController } from '../src/knowledge-base/persona-knowledge-base.controller';
 import { KnowledgeBaseService } from '../src/knowledge-base/knowledge-base.service';
@@ -14,7 +16,7 @@ describe('KnowledgeBase API (e2e)', () => {
   const chunkId = '33333333-3333-4333-8333-333333333333';
   const personaId = '44444444-4444-4444-8444-444444444444';
 
-  const knowledgeService = {
+  const knowledgeContentService = {
     ingestDocument: jest.fn(),
     listDocumentsByKb: jest.fn(),
     deleteDocument: jest.fn(),
@@ -38,11 +40,16 @@ describe('KnowledgeBase API (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [KnowledgeBaseController, PersonaKnowledgeBaseController],
+      controllers: [
+        KnowledgeBaseController,
+        PersonaKnowledgeBaseController,
+        KnowledgeContentController,
+        PersonaKnowledgeSearchController,
+      ],
       providers: [
         {
-          provide: KnowledgeService,
-          useValue: knowledgeService,
+          provide: KnowledgeContentService,
+          useValue: knowledgeContentService,
         },
         {
           provide: KnowledgeBaseService,
@@ -87,7 +94,7 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('POST /knowledge-bases/:kbId/documents 上传文档成功', async () => {
-    knowledgeService.ingestDocument.mockResolvedValue({
+    knowledgeContentService.ingestDocument.mockResolvedValue({
       id: docId,
       knowledgeBaseId: kbId,
       filename: 'readme.txt',
@@ -103,7 +110,7 @@ describe('KnowledgeBase API (e2e)', () => {
       })
       .expect(201);
 
-    expect(knowledgeService.ingestDocument).toHaveBeenCalledWith(
+    expect(knowledgeContentService.ingestDocument).toHaveBeenCalledWith(
       kbId,
       'readme.txt',
       '这是测试文档内容',
@@ -127,12 +134,12 @@ describe('KnowledgeBase API (e2e)', () => {
       .field('category', 'faq')
       .expect(400);
 
-    expect(knowledgeService.ingestDocument).not.toHaveBeenCalled();
+    expect(knowledgeContentService.ingestDocument).not.toHaveBeenCalled();
     expect(res.body.message).toContain('缺少上传文件');
   });
 
   it('GET /knowledge-bases/:kbId/documents 返回文档列表', async () => {
-    knowledgeService.listDocumentsByKb.mockResolvedValue([
+    knowledgeContentService.listDocumentsByKb.mockResolvedValue([
       {
         id: docId,
         knowledgeBaseId: kbId,
@@ -145,7 +152,9 @@ describe('KnowledgeBase API (e2e)', () => {
       .get(`/knowledge-bases/${kbId}/documents`)
       .expect(200);
 
-    expect(knowledgeService.listDocumentsByKb).toHaveBeenCalledWith(kbId);
+    expect(knowledgeContentService.listDocumentsByKb).toHaveBeenCalledWith(
+      kbId,
+    );
     expect(res.body).toEqual([
       {
         id: docId,
@@ -157,17 +166,17 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('DELETE /knowledge-bases/:kbId/documents/:docId 删除文档', async () => {
-    knowledgeService.deleteDocument.mockResolvedValue(undefined);
+    knowledgeContentService.deleteDocument.mockResolvedValue(undefined);
 
     await request(app.getHttpServer())
       .delete(`/knowledge-bases/${kbId}/documents/${docId}`)
       .expect(200);
 
-    expect(knowledgeService.deleteDocument).toHaveBeenCalledWith(docId);
+    expect(knowledgeContentService.deleteDocument).toHaveBeenCalledWith(docId);
   });
 
   it('GET /knowledge-bases/:kbId/documents/:docId/chunks 返回 chunk 列表', async () => {
-    knowledgeService.listChunksByDocumentId.mockResolvedValue([
+    knowledgeContentService.listChunksByDocumentId.mockResolvedValue([
       {
         id: chunkId,
         documentId: docId,
@@ -181,7 +190,9 @@ describe('KnowledgeBase API (e2e)', () => {
       .get(`/knowledge-bases/${kbId}/documents/${docId}/chunks`)
       .expect(200);
 
-    expect(knowledgeService.listChunksByDocumentId).toHaveBeenCalledWith(docId);
+    expect(
+      knowledgeContentService.listChunksByDocumentId,
+    ).toHaveBeenCalledWith(docId);
     expect(res.body).toEqual([
       {
         id: chunkId,
@@ -194,14 +205,17 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('PATCH /knowledge-bases/:kbId/chunks/:chunkId 切换 chunk 状态', async () => {
-    knowledgeService.updateChunkEnabled.mockResolvedValue(undefined);
+    knowledgeContentService.updateChunkEnabled.mockResolvedValue(undefined);
 
     const res = await request(app.getHttpServer())
       .patch(`/knowledge-bases/${kbId}/chunks/${chunkId}`)
       .send({ enabled: false })
       .expect(200);
 
-    expect(knowledgeService.updateChunkEnabled).toHaveBeenCalledWith(chunkId, false);
+    expect(knowledgeContentService.updateChunkEnabled).toHaveBeenCalledWith(
+      chunkId,
+      false,
+    );
     expect(res.body).toEqual({ chunkId, enabled: false });
   });
 
@@ -254,6 +268,40 @@ describe('KnowledgeBase API (e2e)', () => {
       personaId,
       knowledgeBaseId: kbId,
       attached: false,
+    });
+  });
+
+  it('POST /personas/:personaId/search 返回 persona 聚合检索结果', async () => {
+    knowledgeContentService.retrieveForPersona.mockResolvedValue([
+      {
+        id: chunkId,
+        source: '产品 FAQ',
+        chunk_index: 1,
+        content: '这里是命中的知识片段',
+        similarity: 0.92,
+      },
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .post(`/personas/${personaId}/search`)
+      .send({ query: '产品如何部署？' })
+      .expect(201);
+
+    expect(knowledgeContentService.retrieveForPersona).toHaveBeenCalledWith(
+      personaId,
+      '产品如何部署？',
+    );
+    expect(res.body).toEqual({
+      query: '产品如何部署？',
+      results: [
+        {
+          id: chunkId,
+          source: '产品 FAQ',
+          chunk_index: 1,
+          content: '这里是命中的知识片段',
+          similarity: 0.92,
+        },
+      ],
     });
   });
 });

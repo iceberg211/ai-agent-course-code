@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export interface KnowledgeBaseRetrievalConfig {
+export interface KnowledgeRetrievalConfig {
   threshold: number;
   stage1TopK: number;
   finalTopK: number;
@@ -14,7 +14,7 @@ export interface KnowledgeBaseRetrievalConfig {
 }
 
 @Entity('knowledge_base')
-export class KnowledgeBase {
+export class Knowledge {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -28,7 +28,7 @@ export class KnowledgeBase {
   ownerPersonaId: string | null;
 
   @Column({ name: 'retrieval_config', type: 'jsonb' })
-  retrievalConfig: KnowledgeBaseRetrievalConfig;
+  retrievalConfig: KnowledgeRetrievalConfig;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

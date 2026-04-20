@@ -33,7 +33,7 @@ export class RetrievalConfigDto {
   rerank?: boolean;
 }
 
-export class CreateKnowledgeBaseDto {
+export class CreateKnowledgeDto {
   @ApiProperty({ description: '知识库名称', example: '产品 FAQ' })
   @IsString() @IsNotEmpty() @MaxLength(120)
   name: string;

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { AgentService } from './agent.service';
-import { KnowledgeModule } from '../knowledge/knowledge.module';
-import { PersonaModule } from '../persona/persona.module';
-import { ConversationModule } from '../conversation/conversation.module';
+import { AgentService } from '@/agent/agent.service';
+import { ConversationModule } from '@/conversation/conversation.module';
+import { KnowledgeContentModule } from '@/knowledge-content/knowledge-content.module';
+import { PersonaModule } from '@/persona/persona.module';
 
 @Module({
-  imports: [KnowledgeModule, PersonaModule, ConversationModule],
+  imports: [KnowledgeContentModule, PersonaModule, ConversationModule],
   providers: [AgentService],
   exports: [AgentService],
 })

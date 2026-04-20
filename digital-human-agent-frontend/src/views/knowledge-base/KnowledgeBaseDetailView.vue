@@ -38,9 +38,9 @@ import { ChevronLeftIcon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '../../hooks/useKnowledgeBase'
 import { useKnowledgeBaseStore } from '../../stores/knowledgeBase'
 import type { KnowledgeBase } from '../../types'
-import DocumentsTab from '../../components/kb/tabs/DocumentsTab.vue'
-import HitTestTab from '../../components/kb/tabs/HitTestTab.vue'
-import SettingsTab from '../../components/kb/tabs/SettingsTab.vue'
+import DocumentsTab from '../../components/knowledge-base/tabs/DocumentsTab.vue'
+import HitTestTab from '../../components/knowledge-base/tabs/HitTestTab.vue'
+import SettingsTab from '../../components/knowledge-base/tabs/SettingsTab.vue'
 
 const props = defineProps<{ kbId: string }>()
 const router = useRouter()

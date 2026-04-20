@@ -1,20 +1,20 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { DatabaseModule } from './database/database.module';
-import { PersonaModule } from './persona/persona.module';
-import { ConversationModule } from './conversation/conversation.module';
-import { KnowledgeModule } from './knowledge/knowledge.module';
-import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
-import { AsrModule } from './asr/asr.module';
-import { TtsModule } from './tts/tts.module';
-import { RealtimeSessionModule } from './realtime-session/realtime-session.module';
-import { AgentModule } from './agent/agent.module';
-import { GatewayModule } from './gateway/gateway.module';
-import { ChatModule } from './chat/chat.module';
-import { VoiceCloneModule } from './voice-clone/voice-clone.module';
-import { DigitalHumanModule } from './digital-human/digital-human.module';
-import { validateEnv } from './config/env.validation';
-import { HealthModule } from './health/health.module';
+import { AgentModule } from '@/agent/agent.module';
+import { AsrModule } from '@/asr/asr.module';
+import { ChatModule } from '@/chat/chat.module';
+import { validateEnv } from '@/config/env.validation';
+import { ConversationModule } from '@/conversation/conversation.module';
+import { DatabaseModule } from '@/database/database.module';
+import { DigitalHumanModule } from '@/digital-human/digital-human.module';
+import { GatewayModule } from '@/gateway/gateway.module';
+import { HealthModule } from '@/health/health.module';
+import { KnowledgeContentModule } from '@/knowledge-content/knowledge-content.module';
+import { KnowledgeModule } from '@/knowledge/knowledge.module';
+import { PersonaModule } from '@/persona/persona.module';
+import { RealtimeSessionModule } from '@/realtime-session/realtime-session.module';
+import { TtsModule } from '@/tts/tts.module';
+import { VoiceCloneModule } from '@/voice-clone/voice-clone.module';
 
 @Module({
   imports: [
@@ -23,7 +23,7 @@ import { HealthModule } from './health/health.module';
     PersonaModule,
     ConversationModule,
     KnowledgeModule,
-    KnowledgeBaseModule,
+    KnowledgeContentModule,
     AsrModule,
     TtsModule,
     RealtimeSessionModule,

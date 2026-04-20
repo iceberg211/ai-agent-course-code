@@ -6,13 +6,13 @@ import {
   AIMessage,
 } from '@langchain/core/messages';
 import {
-  KnowledgeService,
-  KnowledgeChunk,
-} from '../knowledge/knowledge.service';
-import { PersonaService } from '../persona/persona.service';
-import { ConversationService } from '../conversation/conversation.service';
-import { Persona } from '../persona/persona.entity';
-import { ConversationMessage } from '../conversation/conversation-message.entity';
+  KnowledgeContentService,
+  KnowledgeChunk as RetrievedKnowledgeChunk,
+} from '@/knowledge-content/knowledge-content.service';
+import { ConversationMessage } from '@/conversation/conversation-message.entity';
+import { ConversationService } from '@/conversation/conversation.service';
+import { Persona } from '@/persona/persona.entity';
+import { PersonaService } from '@/persona/persona.service';
 
 export interface RunAgentParams {
   conversationId: string;
@@ -21,7 +21,7 @@ export interface RunAgentParams {
   turnId: string;
   signal: AbortSignal;
   onToken: (token: string) => void;
-  onCitations: (citations: KnowledgeChunk[]) => void;
+  onCitations: (citations: RetrievedKnowledgeChunk[]) => void;
 }
 
 @Injectable()
@@ -37,7 +37,7 @@ export class AgentService {
   });
 
   constructor(
-    private readonly knowledgeService: KnowledgeService,
+    private readonly knowledgeContentService: KnowledgeContentService,
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
   ) {}
@@ -53,8 +53,11 @@ export class AgentService {
     } = params;
 
     // 1. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
-    const chunks: KnowledgeChunk[] =
-      await this.knowledgeService.retrieveForPersona(personaId, userMessage);
+    const chunks: RetrievedKnowledgeChunk[] =
+      await this.knowledgeContentService.retrieveForPersona(
+        personaId,
+        userMessage,
+      );
 
     // 2. 推送引用来源
     if (chunks.length > 0) onCitations(chunks);
@@ -80,7 +83,7 @@ export class AgentService {
 
   private buildMessages(
     persona: Persona,
-    chunks: KnowledgeChunk[],
+    chunks: RetrievedKnowledgeChunk[],
     history: ConversationMessage[],
     userMessage: string,
   ) {
