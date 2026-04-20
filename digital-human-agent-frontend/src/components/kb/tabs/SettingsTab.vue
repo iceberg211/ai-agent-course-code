@@ -25,12 +25,23 @@
         </label>
         <label class="field">
           <span>描述</span>
-          <textarea v-model="draft.description" rows="4" maxlength="500" placeholder="说明这个知识库适合回答哪些问题" />
+          <textarea
+            v-model="draft.description"
+            rows="4"
+            maxlength="500"
+            placeholder="说明这个知识库适合回答哪些问题"
+          />
         </label>
 
         <div class="actions">
-          <button class="btn-ghost" :disabled="!dirty || saving" @click="reset">恢复</button>
-          <button class="btn-primary" :disabled="!dirty || saving" @click="save">
+          <button class="btn-ghost" :disabled="!dirty || saving" @click="reset">
+            恢复
+          </button>
+          <button
+            class="btn-primary"
+            :disabled="!dirty || saving"
+            @click="save"
+          >
             {{ saving ? '保存中' : '保存配置' }}
           </button>
         </div>
@@ -49,26 +60,100 @@
           </label>
         </div>
 
+        <label class="field">
+          <span>检索模式</span>
+          <select v-model="draft.retrievalConfig.retrievalMode">
+            <option value="vector">向量</option>
+            <option value="keyword">关键词</option>
+            <option value="hybrid">混合</option>
+          </select>
+          <small>关键词和混合模式会在 ES 检索阶段启用。</small>
+        </label>
+
         <label class="range-field">
           <span>
             <strong>相似度阈值</strong>
             <small>低阈值会召回更多片段，高阈值更严格。</small>
           </span>
           <b>{{ draft.retrievalConfig.threshold.toFixed(2) }}</b>
-          <input v-model.number="draft.retrievalConfig.threshold" type="range" min="0" max="1" step="0.05" />
+          <input
+            v-model.number="draft.retrievalConfig.threshold"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+          />
         </label>
 
         <div class="number-grid">
           <label class="field">
-            <span>候选片段数</span>
-            <input v-model.number="draft.retrievalConfig.stage1TopK" type="number" min="1" max="50" />
+            <span>向量候选数</span>
+            <input
+              v-model.number="draft.retrievalConfig.vectorTopK"
+              type="number"
+              min="1"
+              max="50"
+            />
             <small>向量召回进入重排前的候选数量。</small>
           </label>
           <label class="field">
+            <span>关键词候选数</span>
+            <input
+              v-model.number="draft.retrievalConfig.keywordTopK"
+              type="number"
+              min="1"
+              max="50"
+            />
+            <small>关键词召回进入融合前的候选数量。</small>
+          </label>
+          <label class="field">
             <span>最终片段数</span>
-            <input v-model.number="draft.retrievalConfig.finalTopK" type="number" min="1" max="20" />
+            <input
+              v-model.number="draft.retrievalConfig.finalTopK"
+              type="number"
+              min="1"
+              max="20"
+            />
             <small>最终注入对话上下文的片段数量。</small>
           </label>
+        </div>
+
+        <div class="fusion-box">
+          <div>
+            <p class="eyebrow">融合</p>
+            <h4>RRF 参数</h4>
+          </div>
+          <div class="number-grid">
+            <label class="field">
+              <span>RRF K</span>
+              <input
+                v-model.number="draft.retrievalConfig.fusion.rrfK"
+                type="number"
+                min="1"
+                max="200"
+              />
+            </label>
+            <label class="field">
+              <span>向量权重</span>
+              <input
+                v-model.number="draft.retrievalConfig.fusion.vectorWeight"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+              />
+            </label>
+            <label class="field">
+              <span>关键词权重</span>
+              <input
+                v-model.number="draft.retrievalConfig.fusion.keywordWeight"
+                type="number"
+                min="0"
+                max="10"
+                step="0.1"
+              />
+            </label>
+          </div>
         </div>
       </section>
     </div>
@@ -77,7 +162,9 @@
       <div>
         <p class="eyebrow">危险区</p>
         <h4>删除知识库</h4>
-        <p class="danger__hint">会级联移除所有文档与 chunks，已挂载的角色也会失去这部分知识。</p>
+        <p class="danger__hint">
+          会级联移除所有文档与 chunks，已挂载的角色也会失去这部分知识。
+        </p>
       </div>
       <button class="btn-danger" :disabled="deleting" @click="onDelete">
         {{ deleting ? '删除中' : '删除此知识库' }}
@@ -89,7 +176,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useKnowledgeBase } from '../../../hooks/useKnowledgeBase'
-import type { KnowledgeBase } from '../../../types'
+import type { KnowledgeBase, RetrievalConfig } from '../../../types'
 
 const props = defineProps<{ kb: KnowledgeBase }>()
 const emit = defineEmits<{
@@ -102,17 +189,56 @@ const saving = ref(false)
 const deleting = ref(false)
 const saveError = ref('')
 
+const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
+  retrievalMode: 'vector',
+  threshold: 0.6,
+  stage1TopK: 20,
+  vectorTopK: 20,
+  keywordTopK: 20,
+  finalTopK: 5,
+  rerank: true,
+  fusion: {
+    method: 'rrf',
+    rrfK: 60,
+    vectorWeight: 1,
+    keywordWeight: 1,
+  },
+}
+
+function normalizeRetrievalConfig(
+  config: Partial<RetrievalConfig>,
+): RetrievalConfig {
+  const vectorTopK = Number(
+    config.vectorTopK ??
+      config.stage1TopK ??
+      DEFAULT_RETRIEVAL_CONFIG.vectorTopK,
+  )
+  return {
+    ...DEFAULT_RETRIEVAL_CONFIG,
+    ...config,
+    retrievalMode:
+      config.retrievalMode ?? DEFAULT_RETRIEVAL_CONFIG.retrievalMode,
+    vectorTopK,
+    stage1TopK: vectorTopK,
+    fusion: {
+      ...DEFAULT_RETRIEVAL_CONFIG.fusion,
+      ...(config.fusion ?? {}),
+      method: 'rrf',
+    },
+  }
+}
+
 const draft = reactive({
   name: props.kb.name,
   description: props.kb.description ?? '',
-  retrievalConfig: { ...props.kb.retrievalConfig },
+  retrievalConfig: normalizeRetrievalConfig(props.kb.retrievalConfig),
 })
 
 function snapshot() {
   return JSON.stringify({
     name: props.kb.name,
     description: props.kb.description ?? '',
-    retrievalConfig: props.kb.retrievalConfig,
+    retrievalConfig: normalizeRetrievalConfig(props.kb.retrievalConfig),
   })
 }
 
@@ -134,7 +260,7 @@ watch(
 function reset() {
   draft.name = props.kb.name
   draft.description = props.kb.description ?? ''
-  draft.retrievalConfig = { ...props.kb.retrievalConfig }
+  draft.retrievalConfig = normalizeRetrievalConfig(props.kb.retrievalConfig)
   saveError.value = ''
 }
 
@@ -145,7 +271,7 @@ async function save() {
     const updated = await hook.update(props.kb.id, {
       name: draft.name.trim(),
       description: draft.description.trim() || undefined,
-      retrievalConfig: { ...draft.retrievalConfig },
+      retrievalConfig: normalizeRetrievalConfig(draft.retrievalConfig),
     })
     if (!updated) {
       saveError.value = '保存失败，请稍后重试'
@@ -211,9 +337,13 @@ async function onDelete() {
   letter-spacing: 0;
 }
 
-.settings-hero h3 { font-size: 17px; }
+.settings-hero h3 {
+  font-size: 17px;
+}
 .block h4,
-.danger h4 { font-size: 15px; }
+.danger h4 {
+  font-size: 15px;
+}
 
 .settings-hero p:not(.eyebrow),
 .danger__hint {
@@ -274,7 +404,10 @@ async function onDelete() {
   font-weight: 700;
 }
 
-.field input[type='text'], .field textarea, .field input[type='number'] {
+.field input[type='text'],
+.field textarea,
+.field input[type='number'],
+.field select {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
@@ -292,7 +425,8 @@ async function onDelete() {
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
@@ -352,8 +486,16 @@ async function onDelete() {
 
 .number-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.fusion-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-muted);
 }
 
 .actions {
@@ -373,18 +515,51 @@ async function onDelete() {
   font-weight: 700;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
 }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border); }
-.btn-ghost:hover:not(:disabled) { background: var(--primary-bg); color: var(--primary); }
-.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-danger { background: var(--error); color: #fff; }
-.btn-danger:hover:not(:disabled) { filter: brightness(1.06); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-.error { margin: 0; color: var(--error); font-size: 12px; }
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-danger {
+  background: var(--error);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.error {
+  margin: 0;
+  color: var(--error);
+  font-size: 12px;
+}
 
 .danger {
   display: flex;

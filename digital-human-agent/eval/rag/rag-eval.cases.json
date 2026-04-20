@@ -20,5 +20,36 @@
     ],
     "shouldTriggerFallback": false,
     "expectedLowConfidence": false
+  },
+  {
+    "id": "kb-dialog-ellipsis-001",
+    "category": "rewrite",
+    "query": "这个怎么配置？",
+    "personaKey": "persona-dev-assistant",
+    "knowledgeBaseKeys": ["kb-rag-course"],
+    "history": [
+      {
+        "role": "user",
+        "content": "我遇到 batch size is invalid，提示不能超过 10。"
+      },
+      {
+        "role": "assistant",
+        "content": "这通常和 Embedding 批量大小限制有关。"
+      }
+    ],
+    "expectedHitSelectors": [
+      {
+        "sourceName": "embedding-batch-limit.md",
+        "chunkIndex": 0,
+        "contentIncludes": "OpenAIEmbeddings 的 batchSize 需要小于等于 10"
+      }
+    ],
+    "expectedAnswerPoints": [
+      "OpenAIEmbeddings 的 batchSize 需要小于等于 10",
+      "EMBEDDINGS_BATCH_SIZE 环境变量",
+      "重新上传同一份知识库文档"
+    ],
+    "shouldTriggerFallback": false,
+    "expectedLowConfidence": false
   }
 ]

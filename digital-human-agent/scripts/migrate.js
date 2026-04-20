@@ -22,6 +22,7 @@ const MIGRATIONS = [
   '005_knowledge_chunk.sql',
   '006_rpc_rewrite.sql',
   '007_drop_legacy_shim.sql',
+  '008_retrieval_config_hybrid.sql',
 ];
 
 async function migrate() {
@@ -31,7 +32,10 @@ async function migrate() {
     process.exit(1);
   }
 
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const client = new Client({
+    connectionString: url,
+    ssl: { rejectUnauthorized: false },
+  });
 
   try {
     await client.connect();
@@ -50,7 +54,11 @@ async function migrate() {
         //   42P07 = duplicate_table (表已存在)
         //   42P13 = invalid_function_definition (函数签名已变更，无法 CREATE OR REPLACE)
         //   42723 = duplicate_function (函数已存在)
-        if (err.code === '42P07' || err.code === '42P13' || err.code === '42723') {
+        if (
+          err.code === '42P07' ||
+          err.code === '42P13' ||
+          err.code === '42723'
+        ) {
           console.log(`⚠️  ${file} skipped (already applied)\n`);
           continue;
         }

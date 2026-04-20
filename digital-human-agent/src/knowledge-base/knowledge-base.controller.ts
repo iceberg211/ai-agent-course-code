@@ -128,10 +128,16 @@ export class KnowledgeBaseController {
     @Body() body: KnowledgeSearchDto,
   ) {
     return this.knowledgeService.retrieveWithStages(kbId, body.query, {
+      retrievalMode: body.retrievalMode,
       rerank: body.rerank,
       threshold: body.threshold,
       stage1TopK: body.stage1TopK,
+      vectorTopK: body.vectorTopK,
+      keywordTopK: body.keywordTopK,
       finalTopK: body.finalTopK,
+      fusion: body.fusion,
+      rewrite: body.rewrite,
+      history: body.history,
     });
   }
 

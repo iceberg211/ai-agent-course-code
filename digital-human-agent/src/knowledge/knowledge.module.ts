@@ -6,6 +6,7 @@ import { KnowledgeBase } from '../knowledge-base/knowledge-base.entity';
 import { PersonaKnowledgeBase } from '../knowledge-base/persona-knowledge-base.entity';
 import { KnowledgeService } from './knowledge.service';
 import { RerankerService } from './reranker.service';
+import { QueryRewriteService } from './query-rewrite.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { RerankerService } from './reranker.service';
       PersonaKnowledgeBase,
     ]),
   ],
-  providers: [KnowledgeService, RerankerService],
+  providers: [KnowledgeService, RerankerService, QueryRewriteService],
   exports: [KnowledgeService, TypeOrmModule],
 })
 export class KnowledgeModule {}

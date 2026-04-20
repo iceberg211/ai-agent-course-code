@@ -52,18 +52,24 @@ export class AgentService {
       onCitations,
     } = params;
 
-    // 1. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
-    const chunks: KnowledgeChunk[] =
-      await this.knowledgeService.retrieveForPersona(personaId, userMessage);
-
-    // 2. 推送引用来源
-    if (chunks.length > 0) onCitations(chunks);
-
-    // 3. 加载 persona 和历史
+    // 1. 加载 persona 和历史；历史也可用于检索前 query rewrite
     const [persona, history] = await Promise.all([
       this.personaService.findOne(personaId),
       this.conversationService.getCompletedMessages(conversationId, 10),
     ]);
+
+    // 2. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
+    const chunks: KnowledgeChunk[] =
+      await this.knowledgeService.retrieveForPersona(personaId, userMessage, {
+        rewrite: process.env.QUERY_REWRITE_ENABLED === 'true',
+        history: history.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      });
+
+    // 3. 推送引用来源
+    if (chunks.length > 0) onCitations(chunks);
 
     // 4. 构建 messages
     const messages = this.buildMessages(persona, chunks, history, userMessage);

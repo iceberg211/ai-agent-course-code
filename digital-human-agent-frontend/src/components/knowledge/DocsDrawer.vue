@@ -26,9 +26,13 @@
         </div>
         <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
         <div class="kb-card__meta">
+          <span>{{ modeLabel(kb.retrievalConfig.retrievalMode) }}</span>
           <span>threshold {{ kb.retrievalConfig.threshold }}</span>
-          <span>topK {{ kb.retrievalConfig.finalTopK }}</span>
-          <span v-if="kb.retrievalConfig.rerank" class="tag-rerank">rerank</span>
+          <span>vector {{ kb.retrievalConfig.vectorTopK }}</span>
+          <span>final {{ kb.retrievalConfig.finalTopK }}</span>
+          <span v-if="kb.retrievalConfig.rerank" class="tag-rerank"
+            >rerank</span
+          >
         </div>
       </li>
     </ul>
@@ -45,7 +49,12 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { BookOpenIcon, DatabaseIcon, SettingsIcon, XIcon } from 'lucide-vue-next'
+import {
+  BookOpenIcon,
+  DatabaseIcon,
+  SettingsIcon,
+  XIcon,
+} from 'lucide-vue-next'
 import { useKnowledgeBase } from '../../hooks/useKnowledgeBase'
 import type { KnowledgeBase } from '../../types'
 
@@ -74,6 +83,15 @@ async function load(personaId: string) {
 
 onMounted(() => load(props.personaId))
 watch(() => props.personaId, load)
+
+function modeLabel(mode: KnowledgeBase['retrievalConfig']['retrievalMode']) {
+  const labels = {
+    vector: '向量',
+    keyword: '关键词',
+    hybrid: '混合',
+  }
+  return labels[mode] ?? labels.vector
+}
 </script>
 
 <style scoped>
@@ -116,7 +134,9 @@ watch(() => props.personaId, load)
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 150ms ease-out, color 150ms ease-out;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
 }
 .close-btn:hover {
   background: var(--primary-bg);

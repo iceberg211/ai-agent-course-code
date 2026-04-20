@@ -7,10 +7,19 @@ import {
 } from 'typeorm';
 
 export interface KnowledgeBaseRetrievalConfig {
+  retrievalMode: 'vector' | 'keyword' | 'hybrid';
   threshold: number;
   stage1TopK: number;
+  vectorTopK: number;
+  keywordTopK: number;
   finalTopK: number;
   rerank: boolean;
+  fusion: {
+    method: 'rrf';
+    rrfK: number;
+    vectorWeight: number;
+    keywordWeight: number;
+  };
 }
 
 @Entity('knowledge_base')

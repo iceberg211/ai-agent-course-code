@@ -156,10 +156,14 @@ export interface RagDebugTrace {
 export interface KnowledgeSearchResult {
   query: string
   options?: {
+    retrievalMode: RetrievalMode
     rerank: boolean
     threshold: number
     stage1TopK: number
+    vectorTopK: number
+    keywordTopK: number
     finalTopK: number
+    fusion: RetrievalFusionConfig
   }
   stage1: KnowledgeSearchChunk[]
   stage2: KnowledgeSearchChunk[]
@@ -185,11 +189,24 @@ export interface WsEnvelope<T = Record<string, unknown>> {
 
 // ── Knowledge Base ─────────────────────────────────────────────────────────
 
+export type RetrievalMode = 'vector' | 'keyword' | 'hybrid'
+
+export interface RetrievalFusionConfig {
+  method: 'rrf'
+  rrfK: number
+  vectorWeight: number
+  keywordWeight: number
+}
+
 export interface RetrievalConfig {
+  retrievalMode: RetrievalMode
   threshold: number
   stage1TopK: number
+  vectorTopK: number
+  keywordTopK: number
   finalTopK: number
   rerank: boolean
+  fusion: RetrievalFusionConfig
 }
 
 export interface KnowledgeBase {

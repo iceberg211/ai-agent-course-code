@@ -4,6 +4,8 @@ import type {
   KnowledgeChunk,
   KnowledgeDocumentDetail,
   KnowledgeSearchResult,
+  RetrievalFusionConfig,
+  RetrievalMode,
   RetrievalConfig,
 } from '../types'
 
@@ -14,14 +16,18 @@ export interface CreateKnowledgeBasePayload {
   retrievalConfig?: Partial<RetrievalConfig>
 }
 
-export interface UpdateKnowledgeBasePayload
-  extends Partial<CreateKnowledgeBasePayload> {}
+export interface UpdateKnowledgeBasePayload extends Partial<CreateKnowledgeBasePayload> {}
 
-async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null> {
+async function fetchJson<T>(
+  input: string,
+  init?: RequestInit,
+): Promise<T | null> {
   try {
     const res = await fetch(input, init)
     if (!res.ok) {
-      console.error(`[useKnowledgeBase] ${init?.method ?? 'GET'} ${input} -> HTTP ${res.status}`)
+      console.error(
+        `[useKnowledgeBase] ${init?.method ?? 'GET'} ${input} -> HTTP ${res.status}`,
+      )
       return null
     }
     return (await res.json()) as T
@@ -86,7 +92,9 @@ export function useKnowledgeBase() {
     return !!res?.deleted
   }
 
-  async function listDocuments(kbId: string): Promise<KnowledgeDocumentDetail[]> {
+  async function listDocuments(
+    kbId: string,
+  ): Promise<KnowledgeDocumentDetail[]> {
     documentsLoading.value = true
     try {
       return (
@@ -121,10 +129,9 @@ export function useKnowledgeBase() {
   }
 
   async function deleteDocument(kbId: string, docId: string): Promise<boolean> {
-    const res = await fetch(
-      `/api/knowledge-bases/${kbId}/documents/${docId}`,
-      { method: 'DELETE' },
-    ).catch(() => null)
+    const res = await fetch(`/api/knowledge-bases/${kbId}/documents/${docId}`, {
+      method: 'DELETE',
+    }).catch(() => null)
     return !!res?.ok
   }
 
@@ -165,9 +172,15 @@ export function useKnowledgeBase() {
     query: string,
     options: Partial<{
       rerank: boolean
+      retrievalMode: RetrievalMode
       threshold: number
       stage1TopK: number
+      vectorTopK: number
+      keywordTopK: number
       finalTopK: number
+      fusion: Partial<RetrievalFusionConfig>
+      rewrite: boolean
+      history: Array<{ role: 'user' | 'assistant'; content: string }>
     }> = {},
   ): Promise<KnowledgeSearchResult | null> {
     const q = query.trim()
@@ -187,7 +200,9 @@ export function useKnowledgeBase() {
     }
   }
 
-  async function listKbsForPersona(personaId: string): Promise<KnowledgeBase[]> {
+  async function listKbsForPersona(
+    personaId: string,
+  ): Promise<KnowledgeBase[]> {
     return (
       (await fetchJson<KnowledgeBase[]>(
         `/api/personas/${personaId}/knowledge-bases`,

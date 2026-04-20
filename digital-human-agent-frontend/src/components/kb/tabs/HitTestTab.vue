@@ -4,7 +4,9 @@
       <div class="search-panel__copy">
         <p class="eyebrow">命中测试</p>
         <h3>验证问题会命中哪些片段</h3>
-        <p>用于检查召回阈值、候选数量和重排结果，调整后不会自动保存到知识库配置。</p>
+        <p>
+          用于检查召回阈值、候选数量和重排结果，调整后不会自动保存到知识库配置。
+        </p>
       </div>
 
       <div class="query-row">
@@ -27,22 +29,54 @@
       <div class="params" aria-label="临时检索参数">
         <label class="param param--threshold">
           <span class="param__label">阈值</span>
-          <input v-model.number="threshold" type="range" min="0" max="1" step="0.05" />
+          <input
+            v-model.number="threshold"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+          />
           <strong>{{ threshold.toFixed(2) }}</strong>
         </label>
         <label class="param">
-          <span class="param__label">候选数</span>
-          <input v-model.number="stage1TopK" type="number" min="1" max="50" step="1" />
+          <span class="param__label">模式</span>
+          <select v-model="retrievalMode">
+            <option value="vector">向量</option>
+            <option value="keyword">关键词</option>
+            <option value="hybrid">混合</option>
+          </select>
+        </label>
+        <label class="param">
+          <span class="param__label">向量数</span>
+          <input
+            v-model.number="stage1TopK"
+            type="number"
+            min="1"
+            max="50"
+            step="1"
+          />
         </label>
         <label class="param">
           <span class="param__label">最终数</span>
-          <input v-model.number="finalTopK" type="number" min="1" max="20" step="1" />
+          <input
+            v-model.number="finalTopK"
+            type="number"
+            min="1"
+            max="20"
+            step="1"
+          />
         </label>
         <label class="switch">
           <input v-model="rerank" type="checkbox" />
           <span>重排</span>
         </label>
-        <button class="btn-ghost" type="button" @click="resetParams">恢复默认</button>
+        <label class="switch">
+          <input v-model="rewrite" type="checkbox" />
+          <span>改写</span>
+        </label>
+        <button class="btn-ghost" type="button" @click="resetParams">
+          恢复默认
+        </button>
       </div>
       <p v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</p>
     </section>
@@ -73,11 +107,20 @@
         </dl>
       </div>
 
-      <section v-if="result.debugTrace" class="trace-panel" aria-label="检索过程">
+      <section
+        v-if="result.debugTrace"
+        class="trace-panel"
+        aria-label="检索过程"
+      >
         <header class="trace-panel__head">
           <div>
             <p class="eyebrow">检索过程</p>
-            <h4>{{ result.debugTrace.rewrittenQuery || result.debugTrace.originalQuery }}</h4>
+            <h4>
+              {{
+                result.debugTrace.rewrittenQuery ||
+                result.debugTrace.originalQuery
+              }}
+            </h4>
           </div>
           <span>{{ result.debugTrace.retrievalMode }}</span>
         </header>
@@ -92,11 +135,16 @@
         </div>
         <ol class="stage-list">
           <li v-for="stage in result.debugTrace.stages" :key="stage.name">
-            <span class="stage-dot" :class="{ 'stage-dot--skip': stage.skipped }"></span>
+            <span
+              class="stage-dot"
+              :class="{ 'stage-dot--skip': stage.skipped }"
+            ></span>
             <strong>{{ stageNameLabel(stage.name) }}</strong>
             <small>
               {{ stage.skipped ? stage.skipReason || '已跳过' : '已执行' }}
-              <template v-if="stage.latencyMs != null"> · {{ Math.round(stage.latencyMs) }}ms</template>
+              <template v-if="stage.latencyMs != null">
+                · {{ Math.round(stage.latencyMs) }}ms</template
+              >
             </small>
           </li>
         </ol>
@@ -118,7 +166,10 @@
                 <span class="rank">{{ index + 1 }}</span>
                 <span class="hit-copy">
                   <strong>{{ c.source }}</strong>
-                  <small>第 {{ c.chunk_index + 1 }} 段 · 相似度 {{ fmt(c.similarity) }}</small>
+                  <small
+                    >第 {{ c.chunk_index + 1 }} 段 · 相似度
+                    {{ fmt(c.similarity) }}</small
+                  >
                 </span>
               </button>
             </li>
@@ -128,7 +179,9 @@
         <article class="result-list result-list--final">
           <header class="result-list__head">
             <span>Stage 2</span>
-            <strong>{{ result.options?.rerank ? '重排结果' : '最终结果' }}</strong>
+            <strong>{{
+              result.options?.rerank ? '重排结果' : '最终结果'
+            }}</strong>
           </header>
           <ol v-if="result.stage2.length" class="hit-list">
             <li
@@ -142,7 +195,9 @@
                   <strong>{{ c.source }}</strong>
                   <small>
                     第 {{ c.chunk_index + 1 }} 段
-                    <template v-if="c.rerank_score != null"> · 重排 {{ fmt(c.rerank_score) }}</template>
+                    <template v-if="c.rerank_score != null">
+                      · 重排 {{ fmt(c.rerank_score) }}</template
+                    >
                     · 相似度 {{ fmt(c.similarity) }}
                   </small>
                 </span>
@@ -186,10 +241,14 @@ const props = defineProps<{ kb: KnowledgeBase }>()
 const hook = useKnowledgeBase()
 
 const query = ref('')
+const retrievalMode = ref(props.kb.retrievalConfig.retrievalMode)
 const threshold = ref(props.kb.retrievalConfig.threshold)
-const stage1TopK = ref(props.kb.retrievalConfig.stage1TopK)
+const stage1TopK = ref(
+  props.kb.retrievalConfig.vectorTopK ?? props.kb.retrievalConfig.stage1TopK,
+)
 const finalTopK = ref(props.kb.retrievalConfig.finalTopK)
 const rerank = ref(props.kb.retrievalConfig.rerank)
+const rewrite = ref(false)
 
 const result = ref<KnowledgeSearchResult | null>(null)
 const selected = ref<KnowledgeSearchChunk | null>(null)
@@ -210,10 +269,13 @@ watch(
 )
 
 function resetParams() {
+  retrievalMode.value = props.kb.retrievalConfig.retrievalMode
   threshold.value = props.kb.retrievalConfig.threshold
-  stage1TopK.value = props.kb.retrievalConfig.stage1TopK
+  stage1TopK.value =
+    props.kb.retrievalConfig.vectorTopK ?? props.kb.retrievalConfig.stage1TopK
   finalTopK.value = props.kb.retrievalConfig.finalTopK
   rerank.value = props.kb.retrievalConfig.rerank
+  rewrite.value = false
 }
 
 async function runSearch() {
@@ -221,10 +283,15 @@ async function runSearch() {
   selected.value = null
   errorMsg.value = ''
   const r = await hook.searchInKb(props.kb.id, query.value, {
+    retrievalMode: retrievalMode.value,
     threshold: threshold.value,
     stage1TopK: stage1TopK.value,
+    vectorTopK: stage1TopK.value,
+    keywordTopK: props.kb.retrievalConfig.keywordTopK,
     finalTopK: finalTopK.value,
+    fusion: props.kb.retrievalConfig.fusion,
     rerank: rerank.value,
+    rewrite: rewrite.value,
   })
   if (!r) {
     result.value = null
@@ -303,7 +370,9 @@ function stageNameLabel(name: string): string {
   letter-spacing: 0;
 }
 
-.search-panel h3 { font-size: 17px; }
+.search-panel h3 {
+  font-size: 17px;
+}
 .search-panel p:not(.eyebrow) {
   margin: 0;
   font-size: 13px;
@@ -354,17 +423,24 @@ function stageNameLabel(name: string): string {
   border-radius: 8px;
   font-weight: 700;
   cursor: pointer;
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
   box-shadow: var(--shadow-btn);
 }
-.btn-primary:disabled { opacity: 0.48; cursor: not-allowed; }
+.btn-primary:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
 
 .params {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(2, 112px) auto auto;
+  grid-template-columns:
+    minmax(180px, 1fr) 112px repeat(2, 112px)
+    auto auto auto;
   gap: 10px;
   align-items: end;
 }
@@ -381,7 +457,8 @@ function stageNameLabel(name: string): string {
   color: var(--text-muted);
 }
 
-.param input[type='number'] {
+.param input[type='number'],
+.param select {
   width: 100%;
   height: 34px;
   padding: 0 9px;
@@ -443,7 +520,10 @@ function stageNameLabel(name: string): string {
   font-weight: 600;
   cursor: pointer;
 }
-.btn-ghost:hover { background: var(--primary-bg); color: var(--primary); }
+.btn-ghost:hover {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
 
 .error {
   margin: 0;

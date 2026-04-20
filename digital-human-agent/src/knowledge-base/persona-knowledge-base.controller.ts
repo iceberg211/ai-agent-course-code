@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { KnowledgeSearchDto } from '../knowledge/dto/knowledge-search.dto';
 import { KnowledgeBaseService } from './knowledge-base.service';
 import { AttachKnowledgeBaseDto } from './dto/attach-knowledge-base.dto';
 
@@ -52,11 +53,16 @@ export class PersonaKnowledgeBaseController {
   })
   async search(
     @Param('personaId', ParseUUIDPipe) personaId: string,
-    @Body('query') query: string,
+    @Body() body: KnowledgeSearchDto,
   ) {
     const result = await this.knowledgeService.retrieveForPersonaWithTrace(
       personaId,
-      String(query ?? ''),
+      String(body.query ?? ''),
+      {
+        retrievalMode: body.retrievalMode,
+        rewrite: body.rewrite,
+        history: body.history,
+      },
     );
     return result;
   }

@@ -1,13 +1,29 @@
 <template>
-  <article class="kb-card" @click="$emit('open', kb.id)" role="button" tabindex="0" @keydown.enter="$emit('open', kb.id)">
+  <article
+    class="kb-card"
+    @click="$emit('open', kb.id)"
+    role="button"
+    tabindex="0"
+    @keydown.enter="$emit('open', kb.id)"
+  >
     <div class="kb-card__head">
       <BookOpenIcon :size="18" color="var(--primary)" aria-hidden="true" />
       <h3 class="kb-card__name">{{ kb.name }}</h3>
     </div>
     <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
     <footer class="kb-card__footer">
-      <span class="kb-card__meta">threshold {{ kb.retrievalConfig.threshold }}</span>
-      <span class="kb-card__meta">topK {{ kb.retrievalConfig.finalTopK }}</span>
+      <span class="kb-card__meta">{{
+        modeLabel(kb.retrievalConfig.retrievalMode)
+      }}</span>
+      <span class="kb-card__meta"
+        >threshold {{ kb.retrievalConfig.threshold }}</span
+      >
+      <span class="kb-card__meta"
+        >vector {{ kb.retrievalConfig.vectorTopK }}</span
+      >
+      <span class="kb-card__meta"
+        >final {{ kb.retrievalConfig.finalTopK }}</span
+      >
       <span v-if="kb.retrievalConfig.rerank" class="kb-card__tag">rerank</span>
     </footer>
   </article>
@@ -19,6 +35,15 @@ import type { KnowledgeBase } from '../../types'
 
 defineProps<{ kb: KnowledgeBase }>()
 defineEmits<{ (e: 'open', kbId: string): void }>()
+
+function modeLabel(mode: KnowledgeBase['retrievalConfig']['retrievalMode']) {
+  const labels = {
+    vector: '向量',
+    keyword: '关键词',
+    hybrid: '混合',
+  }
+  return labels[mode] ?? labels.vector
+}
 </script>
 
 <style scoped>
@@ -31,7 +56,10 @@ defineEmits<{ (e: 'open', kbId: string): void }>()
   border-radius: 12px;
   background: var(--surface);
   cursor: pointer;
-  transition: border-color 150ms, transform 150ms, box-shadow 150ms;
+  transition:
+    border-color 150ms,
+    transform 150ms,
+    box-shadow 150ms;
 }
 .kb-card:hover {
   border-color: var(--primary);
@@ -65,7 +93,9 @@ defineEmits<{ (e: 'open', kbId: string): void }>()
   font-size: 11px;
   color: var(--text-muted);
 }
-.kb-card__meta { font-variant-numeric: tabular-nums; }
+.kb-card__meta {
+  font-variant-numeric: tabular-nums;
+}
 .kb-card__tag {
   padding: 2px 8px;
   border-radius: 999px;

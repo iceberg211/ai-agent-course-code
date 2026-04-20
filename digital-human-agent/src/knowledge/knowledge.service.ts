@@ -17,6 +17,11 @@ import type {
   RetrievalHit,
   RetrievalRankStage,
 } from './rag-debug.types';
+import {
+  QueryRewriteService,
+  type QueryRewriteMessage,
+  type QueryRewriteResult,
+} from './query-rewrite.service';
 
 export interface KnowledgeChunk {
   id: string;
@@ -30,15 +35,33 @@ export interface KnowledgeChunk {
 }
 
 export interface RetrieveKnowledgeOptions {
+  retrievalMode?: KnowledgeBaseRetrievalConfig['retrievalMode'];
   threshold?: number;
   rerank?: boolean;
   stage1TopK?: number;
+  vectorTopK?: number;
+  keywordTopK?: number;
   finalTopK?: number;
+  fusion?: Partial<KnowledgeBaseRetrievalConfig['fusion']>;
+  rewrite?: boolean;
+  history?: QueryRewriteMessage[];
+}
+
+interface NormalizedRetrieveOptions {
+  retrievalMode: KnowledgeBaseRetrievalConfig['retrievalMode'];
+  threshold: number;
+  rerank: boolean;
+  stage1TopK: number;
+  vectorTopK: number;
+  keywordTopK: number;
+  finalTopK: number;
+  fusion: KnowledgeBaseRetrievalConfig['fusion'];
+  rewrite: boolean;
 }
 
 export interface RetrieveKnowledgeDebugResult {
   query: string;
-  options: Required<RetrieveKnowledgeOptions>;
+  options: NormalizedRetrieveOptions;
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
   debugTrace: RagDebugTrace;
@@ -81,6 +104,7 @@ export class KnowledgeService {
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: SupabaseClient,
     private readonly rerankerService: RerankerService,
+    private readonly queryRewriteService: QueryRewriteService,
   ) {}
 
   async deleteDocument(documentId: string): Promise<void> {
@@ -127,24 +151,42 @@ export class KnowledgeService {
 
   private normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,
-  ): Required<RetrieveKnowledgeOptions> {
+  ): NormalizedRetrieveOptions {
     const finalTopK = this.toNumber(options.finalTopK, 5, 1, 20);
     const rerank = options.rerank !== false;
     const stage1Default = rerank ? Math.max(20, finalTopK) : finalTopK;
-    const stage1TopK = this.toNumber(
-      options.stage1TopK,
+    const vectorTopK = this.toNumber(
+      options.vectorTopK ?? options.stage1TopK,
       stage1Default,
       finalTopK,
       50,
     );
+    const keywordTopK = this.toNumber(options.keywordTopK, 20, 1, 50);
     const threshold = this.toNumber(options.threshold, 0.6, 0, 1);
 
     return {
+      retrievalMode: this.normalizeRetrievalMode(options.retrievalMode),
       threshold,
       rerank,
-      stage1TopK,
+      stage1TopK: vectorTopK,
+      vectorTopK,
+      keywordTopK,
       finalTopK,
+      fusion: {
+        method: 'rrf',
+        rrfK: this.toNumber(options.fusion?.rrfK, 60, 1, 200),
+        vectorWeight: this.toNumber(options.fusion?.vectorWeight, 1, 0, 10),
+        keywordWeight: this.toNumber(options.fusion?.keywordWeight, 1, 0, 10),
+      },
+      rewrite: options.rewrite === true,
     };
+  }
+
+  private normalizeRetrievalMode(
+    value: RetrieveKnowledgeOptions['retrievalMode'],
+  ): KnowledgeBaseRetrievalConfig['retrievalMode'] {
+    if (value === 'keyword' || value === 'hybrid') return value;
+    return 'vector';
   }
 
   private toNumber(
@@ -220,11 +262,17 @@ export class KnowledgeService {
     }
 
     const timingsMs: Record<string, number> = {};
+    const rewrite = await this.rewriteQuery(normalizedQuery, options);
+    const retrievalQuery = rewrite.query;
+    if (rewrite.latencyMs !== undefined) {
+      timingsMs.queryRewrite = rewrite.latencyMs;
+    }
+
     const queryEmbedding = await this.withTransientRetry(
       'embed query',
       async () => {
         const embedStartedAt = Date.now();
-        const embedding = await this.embeddings.embedQuery(normalizedQuery);
+        const embedding = await this.embeddings.embedQuery(retrievalQuery);
         timingsMs.embedQuery = Date.now() - embedStartedAt;
         return embedding;
       },
@@ -255,7 +303,7 @@ export class KnowledgeService {
       const rerankStartedAt = Date.now();
       try {
         stage2 = await this.rerankerService.rerank(
-          normalizedQuery,
+          retrievalQuery,
           stage1,
           normalizedOptions.finalTopK,
         );
@@ -313,25 +361,25 @@ export class KnowledgeService {
       chainType: 'kb_hit_test',
       knowledgeBaseIds: [kbId],
       originalQuery: normalizedQuery,
+      rewrittenQuery: retrievalQuery,
+      retrievalMode: 'vector',
       hits: finalHits,
       rerank: rerankTrace,
       timingsMs,
       lowConfidence: confidence.lowConfidence,
       lowConfidenceReason: confidence.reason,
       stages: [
-        {
-          name: 'query_rewrite',
-          skipped: true,
-          skipReason: 'not_implemented_in_p0',
-          input: { originalQuery: normalizedQuery },
-          output: { rewrittenQuery: normalizedQuery },
-        },
+        rewrite.stage,
         {
           name: 'vector_retrieval',
           input: {
             knowledgeBaseId: kbId,
             threshold: normalizedOptions.threshold,
-            topK: normalizedOptions.stage1TopK,
+            requestedMode: normalizedOptions.retrievalMode,
+            vectorTopK: normalizedOptions.vectorTopK,
+            keywordTopK: normalizedOptions.keywordTopK,
+            fusion: normalizedOptions.fusion,
+            topK: normalizedOptions.vectorTopK,
           },
           output: {
             hitCount: stage1.length,
@@ -368,14 +416,20 @@ export class KnowledgeService {
   async retrieveForPersona(
     personaId: string,
     query: string,
+    options: RetrieveKnowledgeOptions = {},
   ): Promise<KnowledgeChunk[]> {
-    const result = await this.retrieveForPersonaWithTrace(personaId, query);
+    const result = await this.retrieveForPersonaWithTrace(
+      personaId,
+      query,
+      options,
+    );
     return result.results;
   }
 
   async retrieveForPersonaWithTrace(
     personaId: string,
     query: string,
+    options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrievePersonaDebugResult> {
     const startedAt = Date.now();
     const normalizedQuery = query.trim();
@@ -396,7 +450,10 @@ export class KnowledgeService {
               skipped: true,
               skipReason: 'empty_query',
             },
-            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage(
+              'keyword_retrieval',
+              'not_implemented_in_p0',
+            ),
             this.createSkippedStage('fusion', 'not_implemented_in_p0'),
             this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
             this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
@@ -407,6 +464,11 @@ export class KnowledgeService {
       };
     }
     const timingsMs: Record<string, number> = {};
+    const rewrite = await this.rewriteQuery(normalizedQuery, options);
+    const retrievalQuery = rewrite.query;
+    if (rewrite.latencyMs !== undefined) {
+      timingsMs.queryRewrite = rewrite.latencyMs;
+    }
 
     // 1. 两步查 persona 挂载的 KB + 各自的 retrieval_config
     //    （不用 PostgREST 内联 join，避免 FK 元数据依赖，更稳）
@@ -436,7 +498,10 @@ export class KnowledgeService {
               skipReason: 'mount_query_failed',
               output: { error: mountErr.message },
             },
-            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage(
+              'keyword_retrieval',
+              'not_implemented_in_p0',
+            ),
             this.createSkippedStage('fusion', 'not_implemented_in_p0'),
             this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
             this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
@@ -464,7 +529,10 @@ export class KnowledgeService {
               skipped: true,
               skipReason: 'no_mounted_knowledge_bases',
             },
-            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage(
+              'keyword_retrieval',
+              'not_implemented_in_p0',
+            ),
             this.createSkippedStage('fusion', 'not_implemented_in_p0'),
             this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
             this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
@@ -502,7 +570,10 @@ export class KnowledgeService {
               skipReason: 'knowledge_base_config_query_failed',
               output: { error: kbErr?.message },
             },
-            this.createSkippedStage('keyword_retrieval', 'not_implemented_in_p0'),
+            this.createSkippedStage(
+              'keyword_retrieval',
+              'not_implemented_in_p0',
+            ),
             this.createSkippedStage('fusion', 'not_implemented_in_p0'),
             this.createSkippedStage('multi_hop', 'not_implemented_in_p0'),
             this.createSkippedStage('web_fallback', 'not_implemented_in_p0'),
@@ -518,21 +589,29 @@ export class KnowledgeService {
       'embed query',
       async () => {
         const embedStartedAt = Date.now();
-        const embedding = await this.embeddings.embedQuery(normalizedQuery);
+        const embedding = await this.embeddings.embedQuery(retrievalQuery);
         timingsMs.embedQuery = Date.now() - embedStartedAt;
         return embedding;
       },
       3,
     );
 
-    // 3. 并发 stage1，每个 KB 用自己的 threshold / stage1TopK
+    // 3. 并发 stage1，每个 KB 用自己的 threshold / vectorTopK
     const perKbOptions = kbRows.map((kb) => {
       const cfg =
         (kb.retrieval_config as Partial<KnowledgeBaseRetrievalConfig>) ?? {};
       return {
         kbId: kb.id as string,
         threshold: this.toNumber(cfg.threshold, 0.6, 0, 1),
-        stage1TopK: this.toNumber(cfg.stage1TopK, 20, 1, 50),
+        retrievalMode: this.normalizeRetrievalMode(cfg.retrievalMode),
+        vectorTopK: this.toNumber(cfg.vectorTopK ?? cfg.stage1TopK, 20, 1, 50),
+        keywordTopK: this.toNumber(cfg.keywordTopK, 20, 1, 50),
+        fusion: {
+          method: 'rrf' as const,
+          rrfK: this.toNumber(cfg.fusion?.rrfK, 60, 1, 200),
+          vectorWeight: this.toNumber(cfg.fusion?.vectorWeight, 1, 0, 10),
+          keywordWeight: this.toNumber(cfg.fusion?.keywordWeight, 1, 0, 10),
+        },
       };
     });
 
@@ -544,7 +623,7 @@ export class KnowledgeService {
             o.kbId,
             queryEmbedding,
             o.threshold,
-            o.stage1TopK,
+            o.vectorTopK,
           );
         } catch (e) {
           this.logger.warn(
@@ -573,10 +652,10 @@ export class KnowledgeService {
       (a, b) => (b.similarity ?? 0) - (a.similarity ?? 0),
     );
 
-    // 5. 截断 stage1TopK：取各 KB 里最大的那个（但不少于 20）
+    // 5. 截断 vectorTopK：取各 KB 里最大的那个（但不少于 20）
     const globalStage1TopK = Math.max(
       20,
-      ...perKbOptions.map((o) => o.stage1TopK),
+      ...perKbOptions.map((o) => o.vectorTopK),
     );
     const stage1Final = merged.slice(0, globalStage1TopK);
 
@@ -599,7 +678,7 @@ export class KnowledgeService {
       const rerankStartedAt = Date.now();
       try {
         results = await this.rerankerService.rerank(
-          normalizedQuery,
+          retrievalQuery,
           stage1Final,
           GLOBAL_FINAL_TOPK,
         );
@@ -652,19 +731,14 @@ export class KnowledgeService {
         personaId,
         knowledgeBaseIds: kbIds,
         originalQuery: normalizedQuery,
+        rewrittenQuery: retrievalQuery,
         hits: finalHits,
         rerank: rerankTrace,
         timingsMs,
         lowConfidence: confidence.lowConfidence,
         lowConfidenceReason: confidence.reason,
         stages: [
-          {
-            name: 'query_rewrite',
-            skipped: true,
-            skipReason: 'not_implemented_in_p0',
-            input: { originalQuery: normalizedQuery },
-            output: { rewrittenQuery: normalizedQuery },
-          },
+          rewrite.stage,
           {
             name: 'vector_retrieval',
             input: {
@@ -709,6 +783,8 @@ export class KnowledgeService {
     personaId?: string;
     knowledgeBaseIds: string[];
     originalQuery: string;
+    rewrittenQuery?: string;
+    retrievalMode?: KnowledgeBaseRetrievalConfig['retrievalMode'];
     hits: RetrievalHit[];
     stages: RagStageTrace[];
     timingsMs: Record<string, number>;
@@ -722,8 +798,8 @@ export class KnowledgeService {
       personaId: params.personaId,
       knowledgeBaseIds: params.knowledgeBaseIds,
       originalQuery: params.originalQuery,
-      rewrittenQuery: params.originalQuery,
-      retrievalMode: 'vector',
+      rewrittenQuery: params.rewrittenQuery ?? params.originalQuery,
+      retrievalMode: params.retrievalMode ?? 'vector',
       lowConfidence: params.lowConfidence,
       lowConfidenceReason: params.lowConfidenceReason,
       stages: params.stages,
@@ -737,6 +813,50 @@ export class KnowledgeService {
       },
       timingsMs: params.timingsMs,
       createdAt: new Date().toISOString(),
+    };
+  }
+
+  private async rewriteQuery(
+    originalQuery: string,
+    options: RetrieveKnowledgeOptions,
+  ): Promise<{ query: string; stage: RagStageTrace; latencyMs?: number }> {
+    if (options.rewrite !== true) {
+      return {
+        query: originalQuery,
+        stage: {
+          name: 'query_rewrite',
+          skipped: true,
+          skipReason: 'disabled',
+          input: { originalQuery },
+          output: { rewrittenQuery: originalQuery, usedHistory: false },
+        },
+      };
+    }
+
+    const startedAt = Date.now();
+    const result: QueryRewriteResult = await this.queryRewriteService.rewrite(
+      originalQuery,
+      options.history ?? [],
+    );
+    const latencyMs = Date.now() - startedAt;
+
+    return {
+      query: result.rewrittenQuery,
+      latencyMs,
+      stage: {
+        name: 'query_rewrite',
+        skipped: Boolean(result.skippedReason),
+        skipReason: result.skippedReason,
+        input: {
+          originalQuery,
+          historyTurns: options.history?.length ?? 0,
+        },
+        output: {
+          rewrittenQuery: result.rewrittenQuery,
+          usedHistory: result.usedHistory,
+        },
+        latencyMs,
+      },
     };
   }
 
@@ -779,7 +899,9 @@ export class KnowledgeService {
     return {
       enabled,
       model:
-        process.env.RERANKER_MODEL_NAME ?? process.env.MODEL_NAME ?? 'qwen-plus',
+        process.env.RERANKER_MODEL_NAME ??
+        process.env.MODEL_NAME ??
+        'qwen-plus',
       before: before.map((chunk, index) => ({
         id: chunk.id,
         rank: index + 1,

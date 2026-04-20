@@ -16,6 +16,7 @@ interface EvalCase {
   query: string;
   personaKey?: string;
   knowledgeBaseKeys?: string[];
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   expectedHitSelectors: HitSelector[];
   expectedAnswerPoints: string[];
   shouldTriggerFallback?: boolean;
@@ -55,12 +56,20 @@ function argValue(name: string): string | undefined {
   const inline = args.find((item) => item.startsWith(prefix));
   if (inline) return inline.slice(prefix.length);
   const index = args.indexOf(name);
-  if (index >= 0) return args[index + 1];
+  if (index >= 0 && args[index + 1] && !args[index + 1].startsWith('--')) {
+    return args[index + 1];
+  }
   return undefined;
 }
 
 function hasArg(name: string): boolean {
   return process.argv.includes(name);
+}
+
+function boolArg(name: string, defaultValue = false): boolean {
+  const raw = argValue(name);
+  if (raw === undefined) return hasArg(name) ? true : defaultValue;
+  return raw === 'true' || raw === '1' || raw === 'yes';
 }
 
 function sha256(content: string): string {
@@ -75,7 +84,10 @@ function hitMatchesSelector(hit: RetrievalHit, selector: HitSelector): boolean {
   ) {
     return false;
   }
-  if (selector.contentIncludes && !hit.content.includes(selector.contentIncludes)) {
+  if (
+    selector.contentIncludes &&
+    !hit.content.includes(selector.contentIncludes)
+  ) {
     return false;
   }
   if (
@@ -166,13 +178,17 @@ function summarize(results: CaseResult[]) {
 async function evaluateCase(
   app: INestApplicationContext,
   item: EvalCase,
+  options: { rewrite: boolean },
 ): Promise<CaseResult> {
   const knowledgeService = app.get(KnowledgeService);
   let trace: RagDebugTrace;
   if (item.personaKey) {
     const personaId = await resolvePersonaId(app, item.personaKey);
     trace = (
-      await knowledgeService.retrieveForPersonaWithTrace(personaId, item.query)
+      await knowledgeService.retrieveForPersonaWithTrace(personaId, item.query, {
+        rewrite: options.rewrite,
+        history: item.history,
+      })
     ).debugTrace;
   } else {
     const [kbId] = await resolveKnowledgeBaseIds(
@@ -180,15 +196,23 @@ async function evaluateCase(
       item.knowledgeBaseKeys ?? [],
     );
     if (!kbId) throw new Error(`case ${item.id} 缺少 knowledgeBaseKeys`);
-    trace = (await knowledgeService.retrieveWithStages(kbId, item.query))
-      .debugTrace;
+    trace = (
+      await knowledgeService.retrieveWithStages(kbId, item.query, {
+        rewrite: options.rewrite,
+        history: item.history,
+      })
+    ).debugTrace;
   }
 
   const match = firstMatchingHit(trace.hits, item.expectedHitSelectors);
   const firstMatchRank = match?.rank ?? null;
   const reciprocalRank = firstMatchRank ? 1 / firstMatchRank : 0;
-  const beforeRank = trace.rerank?.before.find((row) => row.id === match?.id)?.rank;
-  const afterRank = trace.rerank?.after.find((row) => row.id === match?.id)?.rank;
+  const beforeRank = trace.rerank?.before.find(
+    (row) => row.id === match?.id,
+  )?.rank;
+  const afterRank = trace.rerank?.after.find(
+    (row) => row.id === match?.id,
+  )?.rank;
 
   return {
     id: item.id,
@@ -225,6 +249,7 @@ async function main() {
     if (hasArg('--seed')) {
       await seedEvalDataset(app);
     }
+    const rewrite = boolArg('--rewrite', false);
 
     const cases = readJson<EvalCase[]>(
       resolve(process.cwd(), 'eval/rag/rag-eval.cases.json'),
@@ -239,13 +264,14 @@ async function main() {
 
     const results: CaseResult[] = [];
     for (const item of selectedCases) {
-      results.push(await evaluateCase(app, item));
+      results.push(await evaluateCase(app, item, { rewrite }));
     }
 
     console.log(
       JSON.stringify(
         {
           mode: argValue('--mode') ?? 'vector',
+          rewrite,
           summary: summarize(results),
           cases: results,
         },

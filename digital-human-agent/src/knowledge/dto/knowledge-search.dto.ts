@@ -2,15 +2,61 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsArray,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+
+export class KnowledgeSearchFusionDto {
+  @ApiPropertyOptional({ enum: ['rrf'], default: 'rrf' })
+  @IsOptional()
+  @IsIn(['rrf'])
+  method?: 'rrf';
+
+  @ApiPropertyOptional({ default: 60, minimum: 1, maximum: 200 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  rrfK?: number;
+
+  @ApiPropertyOptional({ default: 1, minimum: 0, maximum: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  vectorWeight?: number;
+
+  @ApiPropertyOptional({ default: 1, minimum: 0, maximum: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  keywordWeight?: number;
+}
+
+export class KnowledgeSearchHistoryMessageDto {
+  @ApiProperty({ enum: ['user', 'assistant'] })
+  @IsIn(['user', 'assistant'])
+  role: 'user' | 'assistant';
+
+  @ApiProperty({ maxLength: 2000 })
+  @IsString()
+  @MaxLength(2000)
+  content: string;
+}
 
 export class KnowledgeSearchDto {
   @ApiProperty({
@@ -21,6 +67,16 @@ export class KnowledgeSearchDto {
   @IsNotEmpty()
   @MaxLength(500)
   query: string;
+
+  @ApiPropertyOptional({
+    description:
+      '检索模式。keyword/hybrid 会在后续 ES 阶段接入，当前仍保留 vector 执行路径',
+    enum: ['vector', 'keyword', 'hybrid'],
+    default: 'vector',
+  })
+  @IsOptional()
+  @IsIn(['vector', 'keyword', 'hybrid'])
+  retrievalMode?: 'vector' | 'keyword' | 'hybrid';
 
   @ApiPropertyOptional({
     description: '是否启用第二阶段 Rerank',
@@ -43,6 +99,32 @@ export class KnowledgeSearchDto {
   @Min(1)
   @Max(50)
   stage1TopK?: number;
+
+  @ApiPropertyOptional({
+    description: '向量召回条数；未传时兼容 stage1TopK',
+    default: 20,
+    minimum: 1,
+    maximum: 50,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  vectorTopK?: number;
+
+  @ApiPropertyOptional({
+    description: '关键词召回条数；为 P3 keyword/hybrid 检索预留',
+    default: 20,
+    minimum: 1,
+    maximum: 50,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  keywordTopK?: number;
 
   @ApiPropertyOptional({
     description: '最终返回条数',
@@ -69,4 +151,34 @@ export class KnowledgeSearchDto {
   @Min(0)
   @Max(1)
   threshold?: number;
+
+  @ApiPropertyOptional({
+    description:
+      '融合配置；当前仅保存到 trace 输入，后续 keyword/hybrid 阶段使用',
+    type: KnowledgeSearchFusionDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => KnowledgeSearchFusionDto)
+  fusion?: KnowledgeSearchFusionDto;
+
+  @ApiPropertyOptional({
+    description: '是否启用检索前 Query Rewrite',
+    default: false,
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  rewrite?: boolean;
+
+  @ApiPropertyOptional({
+    description: '用于 Query Rewrite 的最近对话',
+    type: [KnowledgeSearchHistoryMessageDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => KnowledgeSearchHistoryMessageDto)
+  history?: KnowledgeSearchHistoryMessageDto[];
 }
