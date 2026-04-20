@@ -7,6 +7,7 @@
       :selected-persona="personaStore.selectedPersona"
       :connected="sessionStore.connected"
       :loading="personaStore.loading"
+      :mode="mode"
       :voice-clone-state="voiceCloneState"
       :voice-clone-loading="voiceCloneLoading"
       :voice-clone-uploading="voiceCloneUploading"
@@ -23,6 +24,8 @@
         :persona="personaStore.selectedPersona"
         :knowledge-drawer-open="knowledgeDrawerOpen"
         :mode="mode"
+        :knowledge-summary="knowledgeSummary"
+        :knowledge-summary-tone="knowledgeSummaryTone"
         @toggle-knowledge-drawer="knowledgeDrawerOpen = !knowledgeDrawerOpen"
         @change-mode="onChangeMode"
         @new-conversation="onNewConversation"
@@ -68,6 +71,9 @@
       <MountedKnowledgeBaseDrawer
         v-if="knowledgeDrawerOpen"
         :persona-id="personaStore.selectedId"
+        :persona-name="personaStore.selectedPersona?.name"
+        :focus-knowledge-base-id="focusKnowledgeBaseId"
+        @changed="refreshMountedKnowledgeBases(personaStore.selectedId)"
         @close="knowledgeDrawerOpen = false"
       />
     </Transition>
@@ -86,8 +92,11 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { DIGITAL_HUMAN_STATUS_LABELS } from '@/common/constants'
 import { useAppController } from '@/hooks/useAppController'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import PersonaPanel from '@/components/persona/PersonaPanel.vue'
@@ -101,6 +110,9 @@ import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
 import type { Persona } from '@/types'
 
 // ── Stores（子组件直接消费，无需透传）────────────────────────────────────────
+const route = useRoute()
+const knowledgeBaseHook = useKnowledgeBase()
+const knowledgeBaseStore = useKnowledgeBaseStore()
 const personaStore = usePersonaStore()
 const sessionStore = useSessionStore()
 
@@ -136,14 +148,85 @@ const audioEl = ref<HTMLAudioElement | null>(null)
 const digitalVideoEl = ref<HTMLVideoElement | null>(null)
 const knowledgeDrawerOpen = ref(false)
 const createModalOpen = ref(false)
+const mountedKnowledgeBases = ref<Array<{ id: string; name: string }>>([])
+const loadingMountedKnowledgeBases = ref(false)
+
+const focusKnowledgeBaseId = computed(() => {
+  const value = route.query.knowledgeBaseId
+  return typeof value === 'string' ? value : ''
+})
+
+const focusKnowledgeBaseName = computed(() => {
+  const knowledgeId = focusKnowledgeBaseId.value
+  if (!knowledgeId) return ''
+  return knowledgeBaseStore.byId.get(knowledgeId)?.name
+    ?? (knowledgeBaseStore.current?.id === knowledgeId ? knowledgeBaseStore.current.name : '')
+})
+
+const knowledgeSummary = computed(() => {
+  if (!personaStore.selectedId) return '选择知识助手后开始问答'
+  if (loadingMountedKnowledgeBases.value) return '正在读取知识范围…'
+
+  const focusKnowledgeId = focusKnowledgeBaseId.value
+  const mounted = mountedKnowledgeBases.value
+
+  if (focusKnowledgeId) {
+    const mountedTarget = mounted.find((kb) => kb.id === focusKnowledgeId)
+    if (mountedTarget) return `当前正在验证：${mountedTarget.name}`
+    if (focusKnowledgeBaseName.value) return `待挂载验证：${focusKnowledgeBaseName.value}`
+    return '已从知识库工作区进入问答验证'
+  }
+
+  if (mounted.length === 0) return '当前未挂载知识库'
+  if (mounted.length === 1) return `当前回答基于 1 个知识库：${mounted[0].name}`
+  return `当前回答基于 ${mounted.length} 个知识库：${mounted[0].name} 等`
+})
+
+const knowledgeSummaryTone = computed(() => {
+  if (!personaStore.selectedId || loadingMountedKnowledgeBases.value) return 'default'
+  if (focusKnowledgeBaseId.value) {
+    return mountedKnowledgeBases.value.some((kb) => kb.id === focusKnowledgeBaseId.value)
+      ? 'active'
+      : 'warning'
+  }
+  return mountedKnowledgeBases.value.length > 0 ? 'active' : 'warning'
+})
 
 function onPersonaCreated(persona: Persona) {
   createModalOpen.value = false
   onSelectPersona(persona.id)
 }
 
+async function refreshMountedKnowledgeBases(personaId: string) {
+  if (!personaId) {
+    mountedKnowledgeBases.value = []
+    return
+  }
+  loadingMountedKnowledgeBases.value = true
+  try {
+    const list = await knowledgeBaseHook.listKbsForPersona(personaId)
+    mountedKnowledgeBases.value = list.map((kb) => ({ id: kb.id, name: kb.name }))
+  } finally {
+    loadingMountedKnowledgeBases.value = false
+  }
+}
+
 watch(audioEl, (el) => audio.initAudioElement(el))
 watch(digitalVideoEl, (el) => digitalHuman.bindVideo(el))
+watch(
+  () => personaStore.selectedId,
+  (personaId) => {
+    void refreshMountedKnowledgeBases(personaId)
+  },
+  { immediate: true },
+)
+watch(
+  () => route.query.openKnowledgeDrawer,
+  (flag) => {
+    if (flag === '1') knowledgeDrawerOpen.value = true
+  },
+  { immediate: true },
+)
 
 const digitalHumanStatus = computed(() => digitalHuman.status.value)
 const digitalHumanError = computed(() => digitalHuman.lastError.value)

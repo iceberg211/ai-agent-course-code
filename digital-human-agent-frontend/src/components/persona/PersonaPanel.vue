@@ -2,11 +2,11 @@
   <nav class="persona-panel" aria-label="角色列表">
     <div class="panel-header">
       <BotIcon :size="16" color="var(--primary)" aria-hidden="true" />
-      <span class="logo">数字人 Agent</span>
+      <span class="logo">企业知识助手</span>
     </div>
 
     <div class="section-row">
-      <div class="section-label">角色</div>
+      <div class="section-label">知识助手</div>
       <button class="add-btn" type="button" @click="$emit('create')" aria-label="新建角色" title="新建角色">
         <PlusIcon :size="13" />
       </button>
@@ -30,7 +30,6 @@
           :active="selectedId === p.id"
           @select="$emit('select', $event)"
           @delete="$emit('delete', $event)"
-          @manage-kb="openKbModal"
         />
       </template>
       <li v-if="!loading && !personas.length" class="empty-hint" role="status">
@@ -39,8 +38,12 @@
       </li>
     </ul>
 
-    <section v-if="selectedPersona" class="clone-card" aria-label="语音克隆">
-      <div class="clone-title">语音克隆</div>
+    <section
+      v-if="selectedPersona && mode === 'digital-human'"
+      class="clone-card"
+      aria-label="数字人扩展能力"
+    >
+      <div class="clone-title">数字人扩展能力</div>
       <div class="clone-row">
         <span class="clone-label">状态</span>
         <span class="clone-status" :class="cloneStatusClass">
@@ -82,13 +85,6 @@
     <div class="panel-footer">
       <ConnectionStatus :connected="connected" />
     </div>
-
-    <PersonaKbModal
-      v-if="kbModalPersona"
-      :persona-id="kbModalPersona.id"
-      :persona-name="kbModalPersona.name"
-      @close="kbModalPersona = null"
-    />
   </nav>
 </template>
 
@@ -100,7 +96,6 @@ import {
   VOICE_CLONE_STATUS_LABELS,
 } from '@/common/constants'
 import PersonaItem from '@/components/persona/PersonaItem.vue'
-import PersonaKbModal from '@/components/persona/PersonaKbModal.vue'
 import ConnectionStatus from '@/components/persona/ConnectionStatus.vue'
 import type { Persona, VoiceCloneState } from '@/types'
 
@@ -115,6 +110,7 @@ const emit = defineEmits<{
 const props = defineProps<{
   personas: Persona[]
   selectedId: string
+  mode: string
   selectedPersona?: Persona
   connected: boolean
   loading: boolean
@@ -124,7 +120,6 @@ const props = defineProps<{
 }>()
 
 const voiceInputEl = ref<HTMLInputElement | null>(null)
-const kbModalPersona = ref<Persona | null>(null)
 
 const cloneStatusLabel = computed(() => {
   const status = props.voiceCloneState?.status ?? 'not_started'
@@ -146,10 +141,6 @@ function onVoiceFileChange(event: Event) {
   if (!file) return
   emit('upload-voice-sample', file)
   target.value = ''
-}
-
-function openKbModal(persona: Persona) {
-  kbModalPersona.value = persona
 }
 </script>
 

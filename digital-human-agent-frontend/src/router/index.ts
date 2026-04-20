@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/chat' },
+  { path: '/', redirect: '/kb' },
   {
     path: '/chat',
     name: 'chat',
@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
       import('@/views/knowledge-base/KnowledgeBaseDetailView.vue'),
     props: true,
   },
-  { path: '/:pathMatch(.*)*', redirect: '/chat' },
+  { path: '/:pathMatch(.*)*', redirect: '/kb' },
 ]
 
 export const router = createRouter({

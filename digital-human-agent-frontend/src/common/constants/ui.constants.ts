@@ -75,11 +75,11 @@ export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
   label: string;
 }> = [
   { key: 'documents', label: '文档' },
-  { key: 'hit-test', label: '命中测试' },
   { key: 'settings', label: '配置' },
+  { key: 'hit-test', label: '命中测试' },
 ];
 
 export const APP_NAV_ITEMS = [
-  { to: '/chat', label: '对话', icon: 'chat' },
+  { to: '/chat', label: '知识问答', icon: 'chat' },
   { to: '/kb', label: '知识库', icon: 'knowledge' },
 ] as const;

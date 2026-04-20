@@ -19,7 +19,7 @@
         </div>
       </div>
       <p class="empty-title">开始对话</p>
-      <p class="empty-desc">支持语音和文字输入<br>按住麦克风按钮开始说话</p>
+      <p class="empty-desc">先确认角色已挂载知识库，再直接提问<br>也支持语音和文字输入</p>
     </div>
 
     <template v-else>
@@ -139,4 +139,3 @@ defineExpose({ listEl })
   text-align: center; line-height: 1.6;
 }
 </style>
-

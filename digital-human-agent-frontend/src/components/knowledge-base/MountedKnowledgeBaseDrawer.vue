@@ -1,49 +1,115 @@
 <template>
-  <aside class="docs-drawer" aria-label="已挂载知识库">
+  <aside class="docs-drawer" aria-label="知识库挂载">
     <div class="drawer-header">
       <div class="title">
         <DatabaseIcon :size="15" color="var(--primary)" aria-hidden="true" />
-        <span>已挂载知识库</span>
+        <div>
+          <span>知识库挂载</span>
+          <p class="subtitle">{{ personaName ? `当前角色：${personaName}` : '请选择角色后再挂载知识库' }}</p>
+        </div>
       </div>
       <button class="close-btn" @click="$emit('close')" aria-label="关闭面板">
         <XIcon :size="15" aria-hidden="true" />
       </button>
     </div>
 
-    <div v-if="loading" class="state-msg">加载中…</div>
-    <div v-else-if="!personaId" class="state-msg">请先选择角色</div>
-    <div v-else-if="kbs.length === 0" class="state-empty">
-      <BookOpenIcon :size="32" color="var(--border)" />
-      <p>此角色尚未挂载知识库</p>
-      <RouterLink to="/kb" class="link-manage">去知识库工作区管理</RouterLink>
+    <div class="drawer-body">
+      <div v-if="loading" class="state-msg">加载中…</div>
+      <div v-else-if="!personaId" class="state-empty">
+        <BookOpenIcon :size="32" color="var(--border)" />
+        <p>先选择一个角色，再为它挂载知识库</p>
+      </div>
+      <template v-else>
+        <section class="drawer-section">
+          <div class="section-head">
+            <div class="section-title">
+              <BookOpenIcon :size="14" color="var(--primary)" aria-hidden="true" />
+              <span>已挂载</span>
+              <strong class="count">{{ mounted.length }}</strong>
+            </div>
+          </div>
+
+          <div v-if="mounted.length === 0" class="state-msg state-msg--section">
+            当前角色还没有挂载知识库
+          </div>
+          <ul v-else class="kb-list" role="list">
+            <li v-for="kb in mountedDisplay" :key="kb.id" class="kb-card">
+              <div class="kb-card__content">
+                <div class="kb-card__head">
+                  <span class="kb-card__name">{{ kb.name }}</span>
+                  <span
+                    v-if="kb.id === props.focusKnowledgeBaseId"
+                    class="kb-badge"
+                  >
+                    当前验证
+                  </span>
+                </div>
+                <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
+                <div class="kb-card__meta">
+                  <span>threshold {{ kb.retrievalConfig.threshold }}</span>
+                  <span>topK {{ kb.retrievalConfig.finalTopK }}</span>
+                  <span v-if="kb.retrievalConfig.rerank" class="tag-rerank">rerank</span>
+                </div>
+              </div>
+              <button
+                class="kb-action kb-action--detach"
+                type="button"
+                :disabled="actingKbId === kb.id"
+                @click="detach(kb.id)"
+              >
+                {{ actingKbId === kb.id ? '处理中…' : '解除' }}
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <section class="drawer-section">
+          <div class="section-head">
+            <div class="section-title">
+              <SettingsIcon :size="14" color="var(--text-muted)" aria-hidden="true" />
+              <span>可挂载知识库</span>
+              <strong class="count">{{ attachable.length }}</strong>
+            </div>
+            <RouterLink to="/kb" class="link-manage">进入工作区</RouterLink>
+          </div>
+
+          <div v-if="attachable.length === 0" class="state-msg state-msg--section">
+            {{ allKbs.length === 0 ? '还没有知识库，先去工作区创建' : '当前没有可新增挂载的知识库' }}
+          </div>
+          <ul v-else class="kb-list" role="list">
+            <li v-for="kb in attachable" :key="kb.id" class="kb-card">
+              <div class="kb-card__content">
+                <div class="kb-card__head">
+                  <span class="kb-card__name">{{ kb.name }}</span>
+                  <span
+                    v-if="kb.id === props.focusKnowledgeBaseId"
+                    class="kb-badge kb-badge--warning"
+                  >
+                    待验证
+                  </span>
+                </div>
+                <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
+              </div>
+              <button
+                class="kb-action kb-action--attach"
+                type="button"
+                :disabled="actingKbId === kb.id"
+                @click="attach(kb.id)"
+              >
+                {{ actingKbId === kb.id ? '处理中…' : '挂载' }}
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <p v-if="errorMsg" class="error-msg" role="alert">{{ errorMsg }}</p>
+      </template>
     </div>
-
-    <ul v-else class="kb-list" role="list">
-      <li v-for="kb in kbs" :key="kb.id" class="kb-card">
-        <div class="kb-card__head">
-          <BookOpenIcon :size="14" color="var(--primary)" aria-hidden="true" />
-          <span class="kb-card__name">{{ kb.name }}</span>
-        </div>
-        <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
-        <div class="kb-card__meta">
-          <span>threshold {{ kb.retrievalConfig.threshold }}</span>
-          <span>topK {{ kb.retrievalConfig.finalTopK }}</span>
-          <span v-if="kb.retrievalConfig.rerank" class="tag-rerank">rerank</span>
-        </div>
-      </li>
-    </ul>
-
-    <footer v-if="kbs.length > 0" class="drawer-footer">
-      <RouterLink to="/kb" class="link-manage">
-        <SettingsIcon :size="12" />
-        管理知识库
-      </RouterLink>
-    </footer>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { BookOpenIcon, DatabaseIcon, SettingsIcon, XIcon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
@@ -51,25 +117,87 @@ import type { KnowledgeBase } from '@/types'
 
 const props = defineProps<{
   personaId: string
+  personaName?: string
+  focusKnowledgeBaseId?: string
 }>()
 
-defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'changed'): void
+}>()
 
 const hook = useKnowledgeBase()
-const kbs = ref<KnowledgeBase[]>([])
+const mounted = ref<KnowledgeBase[]>([])
+const allKbs = ref<KnowledgeBase[]>([])
 const loading = ref(false)
+const actingKbId = ref<string | null>(null)
+const errorMsg = ref('')
+
+const attachable = computed(() => {
+  const mountedIds = new Set(mounted.value.map((kb) => kb.id))
+  return sortKnowledgeBases(allKbs.value.filter((kb) => !mountedIds.has(kb.id)))
+})
+
+const mountedDisplay = computed(() => sortKnowledgeBases(mounted.value))
 
 async function load(personaId: string) {
+  errorMsg.value = ''
   if (!personaId) {
-    kbs.value = []
+    mounted.value = []
+    allKbs.value = []
     return
   }
   loading.value = true
   try {
-    kbs.value = await hook.listKbsForPersona(personaId)
+    const [mountedList, allList] = await Promise.all([
+      hook.listKbsForPersona(personaId),
+      hook.listAll(),
+    ])
+    mounted.value = mountedList
+    allKbs.value = allList
   } finally {
     loading.value = false
   }
+}
+
+async function attach(kbId: string) {
+  if (!props.personaId) return
+  actingKbId.value = kbId
+  errorMsg.value = ''
+  try {
+    const ok = await hook.attachToPersona(props.personaId, kbId)
+    if (!ok) {
+      errorMsg.value = '挂载失败，请稍后重试'
+      return
+    }
+    await load(props.personaId)
+    emit('changed')
+  } finally {
+    actingKbId.value = null
+  }
+}
+
+async function detach(kbId: string) {
+  if (!props.personaId) return
+  actingKbId.value = kbId
+  errorMsg.value = ''
+  try {
+    const ok = await hook.detachFromPersona(props.personaId, kbId)
+    if (!ok) {
+      errorMsg.value = '解除挂载失败，请稍后重试'
+      return
+    }
+    await load(props.personaId)
+    emit('changed')
+  } finally {
+    actingKbId.value = null
+  }
+}
+
+function sortKnowledgeBases(items: KnowledgeBase[]) {
+  const focusId = props.focusKnowledgeBaseId
+  if (!focusId) return items
+  return [...items].sort((a, b) => Number(b.id === focusId) - Number(a.id === focusId))
 }
 
 onMounted(() => load(props.personaId))
@@ -78,7 +206,7 @@ watch(() => props.personaId, load)
 
 <style scoped>
 .docs-drawer {
-  width: 260px;
+  width: 320px;
   flex-shrink: 0;
   background: linear-gradient(180deg, #ffffff, #f9fbff);
   border-left: 1px solid var(--border);
@@ -96,13 +224,30 @@ watch(() => props.personaId, load)
   flex-shrink: 0;
 }
 
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
+  color: var(--text);
+}
+.title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title span {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text);
+}
+.subtitle {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .close-btn {
@@ -129,6 +274,9 @@ watch(() => props.personaId, load)
   color: var(--text-muted);
   text-align: center;
 }
+.state-msg--section {
+  padding: 12px 4px 6px;
+}
 
 .state-empty {
   flex: 1;
@@ -146,12 +294,39 @@ watch(() => props.personaId, load)
   font-size: 12px;
 }
 
+.drawer-section {
+  padding: 14px 16px 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-size: 11px;
+}
+
 .kb-list {
-  flex: 1;
-  overflow-y: auto;
   list-style: none;
   margin: 0;
-  padding: 8px 10px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -163,6 +338,14 @@ watch(() => props.personaId, load)
   border-radius: 10px;
   background: var(--surface);
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kb-card__content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
   flex-direction: column;
   gap: 4px;
 }
@@ -171,6 +354,7 @@ watch(() => props.personaId, load)
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .kb-card__name {
@@ -180,6 +364,7 @@ watch(() => props.personaId, load)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .kb-card__desc {
@@ -208,10 +393,54 @@ watch(() => props.personaId, load)
   font-size: 10px;
 }
 
-.drawer-footer {
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
+.kb-badge {
   flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.kb-badge--warning {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.kb-action {
+  flex-shrink: 0;
+  min-width: 52px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kb-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.kb-action--attach {
+  background: var(--primary-bg);
+  color: var(--primary);
+  border-color: var(--primary-muted);
+}
+.kb-action--attach:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+}
+.kb-action--detach {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.kb-action--detach:hover:not(:disabled) {
+  background: #fef2f2;
+  color: var(--error);
+  border-color: var(--error);
 }
 
 .link-manage {
@@ -227,13 +456,19 @@ watch(() => props.personaId, load)
   text-decoration: underline;
 }
 
+.error-msg {
+  margin: 14px 16px 16px;
+  font-size: 12px;
+  color: var(--error);
+}
+
 @media (max-width: 960px) {
   .docs-drawer {
     position: absolute;
     right: 0;
     top: 0;
     bottom: 0;
-    width: min(86vw, 280px);
+    width: min(88vw, 320px);
     z-index: 20;
     box-shadow: -12px 0 24px rgba(26, 48, 79, 0.14);
   }

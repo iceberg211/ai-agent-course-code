@@ -47,22 +47,17 @@ export class SimliProvider implements DigitalHumanProvider {
   }
 
   async createSession(
-    personaId: string,
-    voiceId?: string,
+    _personaId: string,
+    _voiceId?: string,
   ): Promise<DigitalHumanSessionInfo> {
     this.ensureConfig();
 
-    const url = `${this.baseUrl}/startAudioToVideoSession`;
+    const url = `${this.baseUrl}/compose/token`;
     const body = {
       faceId: this.faceId,
-      apiKey: this.apiKey,
-      isJPG: false,
-      syncAudio: true,
       handleSilence: true,
       maxIdleTime: 300,
       maxSessionLength: 3600,
-      personaId,
-      voiceId: voiceId || undefined,
     };
     const startedAt = Date.now();
 
@@ -113,7 +108,7 @@ export class SimliProvider implements DigitalHumanProvider {
           credentials: {
             provider: this.name,
             sessionToken: token,
-            wsUrl: this.buildWsUrl('/startWebRTCSession'),
+            wsUrl: this.buildWsUrl('/compose/webrtc/p2p'),
             faceId: this.faceId,
           },
         };

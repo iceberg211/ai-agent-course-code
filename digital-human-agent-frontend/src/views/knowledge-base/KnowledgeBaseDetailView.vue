@@ -1,9 +1,14 @@
 <template>
   <main class="kb-detail" v-if="kb">
     <header class="kb-detail__head">
-      <RouterLink to="/kb" class="back"><ChevronLeftIcon :size="14" /> 知识库</RouterLink>
-      <h2>{{ kb.name }}</h2>
-      <p v-if="kb.description" class="kb-detail__desc">{{ kb.description }}</p>
+      <div>
+        <RouterLink to="/kb" class="back"><ChevronLeftIcon :size="14" /> 知识库</RouterLink>
+        <h2>{{ kb.name }}</h2>
+        <p v-if="kb.description" class="kb-detail__desc">{{ kb.description }}</p>
+      </div>
+      <button class="btn-primary" type="button" @click="goToChatValidation">
+        去问答验证
+      </button>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -81,12 +86,28 @@ function onKbDeleted() {
   store.removeById(props.kbId)
   router.push('/kb')
 }
+
+function goToChatValidation() {
+  router.push({
+    path: '/chat',
+    query: {
+      knowledgeBaseId: props.kbId,
+      openKnowledgeDrawer: '1',
+    },
+  })
+}
 </script>
 
 <style scoped>
 .kb-detail { padding: 24px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .kb-detail--empty { align-items: center; justify-content: center; color: var(--text-muted); }
-.kb-detail__head { margin-bottom: 16px; }
+.kb-detail__head {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 .back {
   display: inline-flex;
   align-items: center;
@@ -99,6 +120,27 @@ function onKbDeleted() {
 .back:hover { color: var(--text); }
 .kb-detail__head h2 { margin: 0 0 4px; font-size: 20px; }
 .kb-detail__desc { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-btn);
+}
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
 .tab {
   padding: 8px 14px;
@@ -117,4 +159,13 @@ function onKbDeleted() {
   font-weight: 600;
 }
 .tab-body { flex: 1; overflow-y: auto; min-height: 0; }
+
+@media (max-width: 720px) {
+  .kb-detail__head {
+    flex-direction: column;
+  }
+  .btn-primary {
+    width: 100%;
+  }
+}
 </style>

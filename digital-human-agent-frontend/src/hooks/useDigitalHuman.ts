@@ -178,8 +178,8 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
    *   1. 创建 RTCPeerConnection + data channel（用于发 PCM 给 Simli）
    *   2. addTransceiver recvonly（接收 Simli 返回的视频/音频）
    *   3. createOffer → setLocalDescription → 等待 ICE 收集
-   *   4. 打开 WebSocket 到 Simli
-   *   5. WS onopen：① 先发 sessionToken 认证  ② 再发 SDP offer JSON
+   *   4. 打开 WebSocket 到 Simli（session_token 放在 query string）
+   *   5. WS onopen：发送 SDP offer JSON
    *   6. WS onmessage：
    *      - JSON { type: 'answer', sdp: ... } → setRemoteDescription
    *      - 字符串 'START' → 标记 simliStarted，触发 maybeStartAudio()
@@ -231,14 +231,10 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
       await localPc.setLocalDescription(offer)
       await waitIceGathering(localPc)
 
-      const socket = new WebSocket(wsUrl)
+      const socket = new WebSocket(buildSimliSocketUrl(wsUrl, sessionToken))
       wsConnection = socket
 
       socket.onopen = () => {
-        // ① 认证：session token 必须是 WebSocket 的第一条消息
-        socket.send(sessionToken)
-
-        // ② SDP offer
         const sdp = localPc.localDescription?.sdp
         const type = localPc.localDescription?.type
         if (sdp && type) {
@@ -330,6 +326,14 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     if (!dataChannel || dataChannel.readyState !== 'open') return
     // new Uint8Array(chunk) 复制数据并返回 Uint8Array<ArrayBuffer>，满足 RTCDataChannel.send 类型要求
     dataChannel.send(new Uint8Array(chunk))
+  }
+
+  function buildSimliSocketUrl(rawUrl: string, token: string) {
+    const url = new URL(rawUrl)
+    if (!url.searchParams.has('session_token')) {
+      url.searchParams.set('session_token', token)
+    }
+    return url.toString()
   }
 
   async function waitIceGathering(localPc: RTCPeerConnection) {

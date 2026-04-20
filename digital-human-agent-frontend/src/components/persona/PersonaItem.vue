@@ -15,15 +15,6 @@
       <div class="desc">{{ persona.description || '暂无简介' }}</div>
     </div>
     <button
-      class="kb-btn"
-      type="button"
-      :aria-label="`管理 ${persona.name} 的知识库`"
-      title="管理知识库"
-      @click.stop="emit('manage-kb', persona)"
-    >
-      <LibraryIcon :size="13" aria-hidden="true" />
-    </button>
-    <button
       class="delete-btn"
       type="button"
       :aria-label="`删除角色 ${persona.name}`"
@@ -36,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, LibraryIcon, Trash2Icon } from 'lucide-vue-next'
+import { CheckIcon, Trash2Icon } from 'lucide-vue-next'
 import type { Persona } from '@/types'
 
 withDefaults(defineProps<{
@@ -49,7 +40,6 @@ withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'delete', id: string): void
-  (e: 'manage-kb', persona: Persona): void
 }>()
 </script>
 
@@ -88,7 +78,6 @@ const emit = defineEmits<{
 .active-mark {
   flex-shrink: 0;
 }
-.kb-btn,
 .delete-btn {
   width: 22px;
   height: 22px;
@@ -103,18 +92,9 @@ const emit = defineEmits<{
   opacity: 0;
   transition: opacity 150ms ease-out, color 150ms ease-out, background-color 150ms ease-out;
 }
-.kb-btn {
-  color: var(--text-muted);
-}
 .persona-item:hover .delete-btn,
-.persona-item:hover .kb-btn,
-.persona-item:focus-within .kb-btn,
 .persona-item:focus-within .delete-btn {
   opacity: 1;
-}
-.kb-btn:hover {
-  color: var(--primary);
-  background: var(--primary-bg);
 }
 .delete-btn:hover {
   color: var(--error);
@@ -129,7 +109,6 @@ const emit = defineEmits<{
   }
   .info,
   .active-mark,
-  .kb-btn,
   .delete-btn {
     display: none;
   }

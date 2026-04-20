@@ -3,9 +3,9 @@
     <div class="persona-info">
       <template v-if="persona">
         <div class="avatar" aria-hidden="true">{{ persona.name[0] }}</div>
-        <div>
+        <div class="persona-copy">
           <div class="name">{{ persona.name }}</div>
-          <div class="sub">AI 对话助手</div>
+          <div class="sub" :class="subClass">{{ knowledgeSummary || '企业知识问答助手' }}</div>
         </div>
       </template>
       <span v-else class="hint">请从左侧选择角色</span>
@@ -47,23 +47,31 @@
         :class="{ active: knowledgeDrawerOpen }"
         @click="$emit('toggle-knowledge-drawer')"
         :aria-pressed="knowledgeDrawerOpen"
-        aria-label="打开知识库管理"
+        aria-label="打开知识库挂载"
       >
         <BookOpenIcon :size="15" aria-hidden="true" />
-        <span>知识库</span>
+        <span>挂载知识库</span>
       </button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { BookOpenIcon, PlusSquareIcon } from 'lucide-vue-next'
-defineProps({
+const props = defineProps({
   persona: { type: Object, default: null },
   knowledgeDrawerOpen: { type: Boolean, default: false },
   mode: { type: String, default: 'voice' },
+  knowledgeSummary: { type: String, default: '' },
+  knowledgeSummaryTone: { type: String, default: 'default' },
 })
 defineEmits(['toggle-knowledge-drawer', 'change-mode', 'new-conversation'])
+
+const subClass = computed(() => ({
+  'sub--warning': props.knowledgeSummaryTone === 'warning',
+  'sub--active': props.knowledgeSummaryTone === 'active',
+}))
 </script>
 
 <style scoped>
@@ -78,6 +86,7 @@ defineEmits(['toggle-knowledge-drawer', 'change-mode', 'new-conversation'])
   min-height: 56px;
 }
 .persona-info { display: flex; align-items: center; gap: 10px; }
+.persona-copy { min-width: 0; }
 .hint { font-size: 13px; color: var(--text-muted); }
 
 .avatar {
@@ -87,8 +96,25 @@ defineEmits(['toggle-knowledge-drawer', 'change-mode', 'new-conversation'])
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; color: #fff;
 }
-.name { font-size: 14px; font-weight: 600; color: var(--text); }
-.sub  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sub  {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(44vw, 420px);
+}
+.sub--warning { color: #b45309; }
+.sub--active { color: var(--primary); }
 
 .header-btn {
   display: flex;
