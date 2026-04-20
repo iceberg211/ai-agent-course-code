@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/knowledge-chunk.entity';
-import { KnowledgeDocument } from '@/knowledge-content/knowledge-document.entity';
-import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/knowledge-content.types';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/knowledge-content-runtime.service';
+import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
+import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
 
 @Injectable()
 export class KnowledgeDocumentService {

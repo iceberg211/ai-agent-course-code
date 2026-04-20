@@ -51,6 +51,13 @@
 - 导入路径统一使用根别名 `@/`，不要继续新增 `../../` 形式的相对导入。
 - 单文件目标长度 `<= 300` 行，硬上限 `400` 行；超过必须拆分服务、控制器或辅助模块。
 - 新接口必须补充 Swagger 注解与 DTO 校验。
+- 常量管理统一收口到 `src/common/constants`，但只放两类内容：
+  - 跨模块复用的系统级常量，例如 DI token、Provider 名称、默认模型名、共享文件类型、共享默认配置。
+  - 被多个模块共同依赖、需要单点维护的映射或默认值。
+- 不要把单文件内的局部数字阈值、一次性边界值硬抽到 `common/constants`；这类值应就近放在所属文件，保证可读性。
+- 提示词统一放在 `src/common/prompts`，并且必须使用 LangChain 的 `ChatPromptTemplate` / `PromptTemplate` 管理。
+- Service / Controller 中不要再直接内联大段 `SystemMessage`、`HumanMessage` 提示词字符串；统一从 `@/common/prompts` 引入。
+- `knowledge-content` 模块目录保持 `controllers / dto / entities / services / types / knowledge-content.module.ts` 结构，不要再回到平铺写法。
 - 网关改动优先保证打断语义：`interrupt -> LLM 停止 -> 播报停止 -> 状态回收`。
 - 检索链路默认 fail-open：外部依赖失败不阻断对话主流程。
 - 会话结构字段变更时，同步更新：

@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 
 export class KnowledgeSearchDto {
   @ApiProperty({
@@ -24,7 +25,7 @@ export class KnowledgeSearchDto {
 
   @ApiPropertyOptional({
     description: '是否启用第二阶段 Rerank',
-    default: true,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerank,
   })
   @IsOptional()
   @Type(() => Boolean)
@@ -33,7 +34,7 @@ export class KnowledgeSearchDto {
 
   @ApiPropertyOptional({
     description: '第一阶段向量召回条数',
-    default: 20,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.stage1TopK,
     minimum: 1,
     maximum: 50,
   })
@@ -46,7 +47,7 @@ export class KnowledgeSearchDto {
 
   @ApiPropertyOptional({
     description: '最终返回条数',
-    default: 5,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
     minimum: 1,
     maximum: 20,
   })
@@ -59,7 +60,7 @@ export class KnowledgeSearchDto {
 
   @ApiPropertyOptional({
     description: '向量匹配阈值',
-    default: 0.6,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.threshold,
     minimum: 0,
     maximum: 1,
   })

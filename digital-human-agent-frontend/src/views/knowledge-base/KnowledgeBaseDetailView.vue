@@ -35,6 +35,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeftIcon } from 'lucide-vue-next'
+import { KNOWLEDGE_BASE_DETAIL_TABS } from '@/common/constants'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { KnowledgeBase } from '@/types'
@@ -48,11 +49,7 @@ const hook = useKnowledgeBase()
 const store = useKnowledgeBaseStore()
 
 type TabKey = 'documents' | 'hit-test' | 'settings'
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'documents', label: '文档' },
-  { key: 'hit-test', label: '命中测试' },
-  { key: 'settings', label: '配置' },
-]
+const tabs: { key: TabKey; label: string }[] = KNOWLEDGE_BASE_DETAIL_TABS
 const active = ref<TabKey>('documents')
 
 const kb = ref<KnowledgeBase | null>(null)

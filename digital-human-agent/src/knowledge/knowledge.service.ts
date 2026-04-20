@@ -12,13 +12,7 @@ import {
 import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
-
-const DEFAULT_RETRIEVAL_CONFIG: KnowledgeRetrievalConfig = {
-  threshold: 0.6,
-  stage1TopK: 20,
-  finalTopK: 5,
-  rerank: true,
-};
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 
 @Injectable()
 export class KnowledgeService {
@@ -43,7 +37,7 @@ export class KnowledgeService {
 
   async create(dto: CreateKnowledgeDto): Promise<Knowledge> {
     const retrievalConfig: KnowledgeRetrievalConfig = {
-      ...DEFAULT_RETRIEVAL_CONFIG,
+      ...DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
       ...(dto.retrievalConfig ?? {}),
     };
 

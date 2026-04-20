@@ -1,7 +1,14 @@
 import {
-  Injectable, InternalServerErrorException, Logger,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  DEFAULT_OPENAI_COMPAT_BASE_URL,
+  DEFAULT_TTS_MODEL_NAME,
+  DEFAULT_TTS_VOICE_ID,
+} from '@/common/constants';
 
 @Injectable()
 export class TtsService {
@@ -18,12 +25,13 @@ export class TtsService {
       '';
     this.baseUrl = (
       this.configService.get<string>('OPENAI_BASE_URL') ??
-      'https://dashscope.aliyuncs.com/compatible-mode/v1'
+      DEFAULT_OPENAI_COMPAT_BASE_URL
     ).replace(/\/$/, '');
     this.modelName =
-      this.configService.get<string>('TTS_MODEL') ?? 'cosyvoice-v1';
+      this.configService.get<string>('TTS_MODEL') ?? DEFAULT_TTS_MODEL_NAME;
     this.defaultVoice =
-      this.configService.get<string>('TTS_DEFAULT_VOICE') ?? 'longxiaochun';
+      this.configService.get<string>('TTS_DEFAULT_VOICE') ??
+      DEFAULT_TTS_VOICE_ID;
   }
 
   /**

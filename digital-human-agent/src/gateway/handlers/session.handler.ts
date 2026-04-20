@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { PersonaService } from '@/persona/persona.service';
 import { ConversationService } from '@/conversation/conversation.service';
-import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
 import { SessionMode } from '@/realtime-session/realtime-session.interface';

@@ -7,7 +7,7 @@
         <span v-else>选择文档（PDF / Markdown / TXT），点击或拖拽</span>
         <input
           type="file"
-          accept=".pdf,.txt,.md,.markdown,.csv,.json,.log"
+          :accept="KNOWLEDGE_DOCUMENT_ACCEPT"
           :disabled="hook.uploading.value"
           @change="onFileSelected"
         />
@@ -68,6 +68,10 @@ import {
   Trash2Icon,
   UploadCloudIcon,
 } from 'lucide-vue-next'
+import {
+  KNOWLEDGE_DOCUMENT_ACCEPT,
+  KNOWLEDGE_DOCUMENT_STATUS_LABELS,
+} from '@/common/constants'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type {
   KnowledgeChunk,
@@ -128,7 +132,7 @@ async function toggleChunk(c: KnowledgeChunk) {
 }
 
 function statusLabel(s: string) {
-  return { pending: '排队中', processing: '处理中', completed: '就绪', failed: '失败' }[s] ?? s
+  return KNOWLEDGE_DOCUMENT_STATUS_LABELS[s] ?? s
 }
 </script>
 

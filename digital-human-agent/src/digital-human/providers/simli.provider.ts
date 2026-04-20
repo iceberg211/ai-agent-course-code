@@ -33,8 +33,12 @@ export class SimliProvider implements DigitalHumanProvider {
   private readonly baseUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.apiKey = (this.configService.get<string>('SIMLI_API_KEY') ?? '').trim();
-    this.faceId = (this.configService.get<string>('SIMLI_FACE_ID') ?? '').trim();
+    this.apiKey = (
+      this.configService.get<string>('SIMLI_API_KEY') ?? ''
+    ).trim();
+    this.faceId = (
+      this.configService.get<string>('SIMLI_FACE_ID') ?? ''
+    ).trim();
     this.baseUrl = (
       this.configService.get<string>('SIMLI_BASE_URL') ?? 'https://api.simli.ai'
     )
@@ -80,8 +84,9 @@ export class SimliProvider implements DigitalHumanProvider {
           );
         }
 
-        const payload =
-          (await res.json().catch(() => ({}))) as SimliCreateSessionResponse;
+        const payload = (await res
+          .json()
+          .catch(() => ({}))) as SimliCreateSessionResponse;
         const token =
           payload.session_token ??
           payload.sessionToken ??

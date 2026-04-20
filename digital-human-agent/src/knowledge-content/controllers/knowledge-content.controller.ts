@@ -14,8 +14,12 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { extname } from 'node:path';
+import {
+  KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
+  KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
+} from '@/common/constants';
 import { KnowledgeSearchDto } from '@/knowledge-content/dto/knowledge-search.dto';
-import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
+import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 @ApiTags('knowledge-content')
@@ -103,7 +107,7 @@ export class KnowledgeContentController {
     const ext = extname(file.originalname ?? '').toLowerCase();
     const mime = String(file.mimetype ?? '').toLowerCase();
 
-    if (ext === '.pdf' || mime === 'application/pdf') {
+    if (ext === '.pdf' || mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE) {
       const mod = await import('pdf-parse');
       const parser = new mod.PDFParse({ data: file.buffer });
       let parsedText = '';
@@ -119,15 +123,7 @@ export class KnowledgeContentController {
       return parsedText;
     }
 
-    const textExtensions = new Set([
-      '.txt',
-      '.md',
-      '.markdown',
-      '.csv',
-      '.json',
-      '.log',
-    ]);
-    if (mime.startsWith('text/') || textExtensions.has(ext)) {
+    if (mime.startsWith('text/') || KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)) {
       const text = file.buffer.toString('utf-8').trim();
       if (!text) {
         throw new BadRequestException('文档内容为空');

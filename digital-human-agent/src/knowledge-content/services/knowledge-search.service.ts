@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/knowledge-content-runtime.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
-} from '@/knowledge-content/knowledge-content.types';
-import { RerankerService } from '@/knowledge-content/reranker.service';
+} from '@/knowledge-content/types/knowledge-content.types';
+import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 
 @Injectable()
@@ -135,7 +135,11 @@ export class KnowledgeSearchService {
     }
 
     try {
-      return await this.rerankerService.rerank(normalizedQuery, mergedStage1, 5);
+      return await this.rerankerService.rerank(
+        normalizedQuery,
+        mergedStage1,
+        5,
+      );
     } catch (error) {
       this.logger.warn(
         `全局 rerank 失败，回退向量排序：${
@@ -146,7 +150,9 @@ export class KnowledgeSearchService {
     }
   }
 
-  private async listMountedKnowledgeConfigs(personaId: string): Promise<
+  private async listMountedKnowledgeConfigs(
+    personaId: string,
+  ): Promise<
     Array<{ knowledgeId: string; threshold: number; stage1TopK: number }>
   > {
     const { data: mounts, error: mountError } = await this.runtime.supabase
@@ -155,7 +161,9 @@ export class KnowledgeSearchService {
       .eq('persona_id', personaId);
 
     if (mountError) {
-      this.logger.warn(`查询 persona ${personaId} 挂载失败：${mountError.message}`);
+      this.logger.warn(
+        `查询 persona ${personaId} 挂载失败：${mountError.message}`,
+      );
       return [];
     }
 
@@ -165,10 +173,11 @@ export class KnowledgeSearchService {
     }
 
     const knowledgeIds = mounts.map((item) => item.knowledge_base_id as string);
-    const { data: knowledgeRows, error: knowledgeError } = await this.runtime.supabase
-      .from('knowledge_base')
-      .select('id, retrieval_config')
-      .in('id', knowledgeIds);
+    const { data: knowledgeRows, error: knowledgeError } =
+      await this.runtime.supabase
+        .from('knowledge_base')
+        .select('id, retrieval_config')
+        .in('id', knowledgeIds);
 
     if (knowledgeError || !knowledgeRows || knowledgeRows.length === 0) {
       if (knowledgeError) {

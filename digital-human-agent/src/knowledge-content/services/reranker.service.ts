@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { KnowledgeChunk } from '@/knowledge-content/knowledge-content.types';
+import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import {
+  buildKnowledgeRerankPromptInput,
+  KNOWLEDGE_RERANK_PROMPT,
+} from '@/common/prompts';
+import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 interface RerankItem {
   index: number;
@@ -16,7 +20,7 @@ export class RerankerService {
     model:
       process.env.RERANKER_MODEL_NAME ??
       process.env.MODEL_NAME ??
-      'qwen-plus',
+      DEFAULT_LLM_MODEL_NAME,
     temperature: 0,
     configuration: {
       baseURL: process.env.OPENAI_BASE_URL,
@@ -34,31 +38,11 @@ export class RerankerService {
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), candidates.length);
-    const promptCandidates = candidates.map((chunk, index) => ({
-      index,
-      source: chunk.source,
-      chunkIndex: chunk.chunk_index,
-      similarity: chunk.similarity,
-      content: chunk.content.slice(0, 1200),
-    }));
-
-    const response = await this.llm.invoke([
-      new SystemMessage(
-        '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。' +
-          '只返回 JSON 数组，不要 Markdown，不要额外解释。' +
-          '格式必须是 [{"index":0,"score":8.6}]，score 范围 0-10。',
+    const response = await this.llm.invoke(
+      await KNOWLEDGE_RERANK_PROMPT.formatMessages(
+        buildKnowledgeRerankPromptInput(query, candidates),
       ),
-      new HumanMessage(
-        JSON.stringify(
-          {
-            query,
-            candidates: promptCandidates,
-          },
-          null,
-          2,
-        ),
-      ),
-    ]);
+    );
 
     const raw = this.extractText(response.content);
     const parsed = this.parseRerankItems(raw);

@@ -1,12 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-
-export const SUPABASE_CLIENT = 'SUPABASE_CLIENT';
+import { SUPABASE_CLIENT } from '@/common/constants';
 
 function normalizeEnvValue(value: string | undefined): string {
   const raw = (value ?? '').trim();
   if (
     (raw.startsWith('"') && raw.endsWith('"')) ||
-    (raw.startsWith('\'') && raw.endsWith('\''))
+    (raw.startsWith("'") && raw.endsWith("'"))
   ) {
     return raw.slice(1, -1).trim();
   }

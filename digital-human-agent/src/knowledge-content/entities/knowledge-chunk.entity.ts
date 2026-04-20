@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { KnowledgeDocument } from '@/knowledge-content/knowledge-document.entity';
+import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
 
 @Entity('knowledge_chunk')
 export class KnowledgeChunk {

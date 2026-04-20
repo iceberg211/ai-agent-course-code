@@ -1,7 +1,7 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeSearchDto } from '@/knowledge-content/dto/knowledge-search.dto';
-import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
+import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 
 @ApiTags('knowledge-content')
 @Controller('personas/:personaId')

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { DIGITAL_HUMAN_DEFAULT_WS_URL } from '@/common/constants'
 
 interface RTCSessionDescriptionInit {
   type: 'answer' | 'offer' | 'pranswer' | 'rollback'
@@ -36,7 +37,7 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
   let dataChannel: RTCDataChannel | null = null
   let activeSessionId = ''
   let sessionToken = ''
-  let wsUrl = 'wss://api.simli.ai/startWebRTCSession'
+  let wsUrl = DIGITAL_HUMAN_DEFAULT_WS_URL
 
   // 双条件门控：Simli 发 START + data channel 已 open 才开始推音频
   let simliStarted = false
@@ -126,7 +127,7 @@ export function useDigitalHuman(send: (msg: Record<string, unknown>) => void) {
     const provider = String(payload.provider ?? credentials.provider ?? '').toLowerCase()
     const speakMode = String(payload.speakMode ?? '')
     sessionToken = String(credentials.sessionToken ?? '')
-    wsUrl = String(credentials.wsUrl ?? 'wss://api.simli.ai/startWebRTCSession')
+    wsUrl = String(credentials.wsUrl ?? DIGITAL_HUMAN_DEFAULT_WS_URL)
 
     if (provider !== 'simli' || speakMode !== 'pcm-stream' || !sessionToken) {
       status.value = 'mock'

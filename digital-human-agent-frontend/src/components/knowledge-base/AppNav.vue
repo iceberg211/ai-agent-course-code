@@ -15,11 +15,17 @@
 
 <script setup lang="ts">
 import { MessageSquareIcon, LibraryIcon } from 'lucide-vue-next'
+import { APP_NAV_ITEMS } from '@/common/constants'
 
-const items = [
-  { to: '/chat', label: '对话', icon: MessageSquareIcon },
-  { to: '/kb', label: '知识库', icon: LibraryIcon },
-]
+const iconMap = {
+  chat: MessageSquareIcon,
+  knowledge: LibraryIcon,
+} as const
+
+const items = APP_NAV_ITEMS.map((item) => ({
+  ...item,
+  icon: iconMap[item.icon],
+}))
 </script>
 
 <style scoped>

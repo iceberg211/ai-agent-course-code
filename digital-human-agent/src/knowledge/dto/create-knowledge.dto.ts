@@ -14,21 +14,34 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 
 export class RetrievalConfigDto {
-  @ApiPropertyOptional({ default: 0.6, minimum: 0, maximum: 1 })
+  @ApiPropertyOptional({
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.threshold,
+    minimum: 0,
+    maximum: 1,
+  })
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(1)
   threshold?: number;
 
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
+  @ApiPropertyOptional({
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.stage1TopK,
+    minimum: 1,
+    maximum: 50,
+  })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50)
   stage1TopK?: number;
 
-  @ApiPropertyOptional({ default: 5, minimum: 1, maximum: 20 })
+  @ApiPropertyOptional({
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+    minimum: 1,
+    maximum: 20,
+  })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(20)
   finalTopK?: number;
 
-  @ApiPropertyOptional({ default: true })
+  @ApiPropertyOptional({ default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerank })
   @IsOptional() @Type(() => Boolean) @IsBoolean()
   rerank?: boolean;
 }

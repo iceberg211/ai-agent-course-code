@@ -1,21 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/knowledge-chunk.entity';
-import { KnowledgeDocument } from '@/knowledge-content/knowledge-document.entity';
-import { KnowledgeDocumentService } from '@/knowledge-content/knowledge-document.service';
-import { KnowledgeSearchService } from '@/knowledge-content/knowledge-search.service';
+import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
+import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
+import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import type {
   IngestKnowledgeDocumentOptions,
   KnowledgeChunk,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
-} from '@/knowledge-content/knowledge-content.types';
+} from '@/knowledge-content/types/knowledge-content.types';
 
 export type {
   IngestKnowledgeDocumentOptions,
   KnowledgeChunk,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
-} from '@/knowledge-content/knowledge-content.types';
+} from '@/knowledge-content/types/knowledge-content.types';
 
 @Injectable()
 export class KnowledgeContentService {

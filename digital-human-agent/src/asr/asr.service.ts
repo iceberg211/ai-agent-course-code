@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  DEFAULT_ASR_FALLBACK_MODEL_NAME,
+  DEFAULT_ASR_MODEL_NAME,
+  DEFAULT_OPENAI_COMPAT_BASE_URL,
+} from '@/common/constants';
 
 @Injectable()
 export class AsrService {
@@ -17,18 +22,20 @@ export class AsrService {
       '';
     this.baseUrl = (
       this.configService.get<string>('OPENAI_BASE_URL') ??
-      'https://dashscope.aliyuncs.com/compatible-mode/v1'
+      DEFAULT_OPENAI_COMPAT_BASE_URL
     ).replace(/\/$/, '');
     this.modelName =
-      this.configService.get<string>('ASR_MODEL') ?? 'paraformer-realtime-v2';
+      this.configService.get<string>('ASR_MODEL') ?? DEFAULT_ASR_MODEL_NAME;
     this.fallbackModelName =
       this.configService.get<string>('ASR_FALLBACK_MODEL') ??
-      'qwen3-asr-flash';
+      DEFAULT_ASR_FALLBACK_MODEL_NAME;
   }
 
   async recognize(audioBuffer: Buffer): Promise<string> {
     if (!this.apiKey) {
-      throw new Error('ASR 配置缺失：请设置 OPENAI_API_KEY 或 DASHSCOPE_API_KEY');
+      throw new Error(
+        'ASR 配置缺失：请设置 OPENAI_API_KEY 或 DASHSCOPE_API_KEY',
+      );
     }
 
     try {
@@ -96,9 +103,7 @@ export class AsrService {
     return text.trim();
   }
 
-  private extractTextFromCompatibleResponse(
-    json: Record<string, any>,
-  ): string {
+  private extractTextFromCompatibleResponse(json: Record<string, any>): string {
     const messageContent = json?.choices?.[0]?.message?.content;
 
     if (typeof messageContent === 'string') {
@@ -125,7 +130,8 @@ export class AsrService {
   }
 
   private shouldFallbackToCompatibleModel(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error ?? '');
+    const message =
+      error instanceof Error ? error.message : String(error ?? '');
     return (
       /ASR HTTP 404/i.test(message) ||
       /Unsupported model/i.test(message) ||

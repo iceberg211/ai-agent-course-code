@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KnowledgeChunk } from '@/knowledge-content/knowledge-chunk.entity';
-import { KnowledgeContentController } from '@/knowledge-content/knowledge-content.controller';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/knowledge-content-runtime.service';
-import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
-import { KnowledgeDocumentService } from '@/knowledge-content/knowledge-document.service';
-import { KnowledgeDocument } from '@/knowledge-content/knowledge-document.entity';
-import { KnowledgeSearchService } from '@/knowledge-content/knowledge-search.service';
-import { PersonaKnowledgeSearchController } from '@/knowledge-content/persona-knowledge-search.controller';
-import { RerankerService } from '@/knowledge-content/reranker.service';
+import { KnowledgeContentController } from '@/knowledge-content/controllers/knowledge-content.controller';
+import { PersonaKnowledgeSearchController } from '@/knowledge-content/controllers/persona-knowledge-search.controller';
+import { KnowledgeChunk } from '@/knowledge-content/entities/knowledge-chunk.entity';
+import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
+import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { Knowledge } from '@/knowledge/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
 

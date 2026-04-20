@@ -5,7 +5,7 @@
       <div class="status-pill" :class="state">
         <span class="pulse-ring" v-if="state === 'recording'" aria-hidden="true" />
         <span class="status-dot" aria-hidden="true" />
-        <span class="status-label">{{ labelMap[state] ?? state }}</span>
+        <span class="status-label">{{ stateLabel }}</span>
       </div>
     </div>
 
@@ -26,7 +26,7 @@
         <StopCircleIcon v-else-if="state === 'recording'" :size="20" aria-hidden="true" />
         <PauseIcon      v-else                        :size="20" aria-hidden="true" />
       </button>
-      <div class="mic-hint-bubble" aria-hidden="true">{{ hintMap[state] ?? '' }}</div>
+      <div class="mic-hint-bubble" aria-hidden="true">{{ hintLabel }}</div>
     </div>
 
     <!-- 右：快捷键提示 -->
@@ -39,6 +39,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { MicIcon, StopCircleIcon, PauseIcon } from 'lucide-vue-next'
+import {
+  CHAT_CONTROL_ARIA_LABELS,
+  CHAT_CONTROL_HINT_LABELS,
+  CHAT_CONTROL_STATE_LABELS,
+} from '@/common/constants'
 
 const props = defineProps({
   state:    { type: String,  default: 'idle' },
@@ -46,16 +51,24 @@ const props = defineProps({
 })
 const emit = defineEmits(['mic-down', 'mic-up'])
 
-const labelMap: Record<string, string> = {
-  idle: '待命', recording: '录音中', thinking: '思考中', speaking: '播报中', closed: '已结束',
-}
-const hintMap: Record<string, string> = {
-  idle: '按住说话', recording: '松开 · 1 秒后发送', thinking: '点击打断', speaking: '点击打断',
-}
-const ariaMap: Record<string, string> = {
-  idle: '按住开始录音', recording: '松开发送语音', thinking: '点击打断 AI', speaking: '点击打断 AI',
-}
-const ariaLabel = computed(() => ariaMap[props.state] ?? '麦克风')
+const stateLabel = computed(
+  () =>
+    CHAT_CONTROL_STATE_LABELS[
+      props.state as keyof typeof CHAT_CONTROL_STATE_LABELS
+    ] ?? props.state,
+)
+const hintLabel = computed(
+  () =>
+    CHAT_CONTROL_HINT_LABELS[
+      props.state as keyof typeof CHAT_CONTROL_HINT_LABELS
+    ] ?? '',
+)
+const ariaLabel = computed(
+  () =>
+    CHAT_CONTROL_ARIA_LABELS[
+      props.state as keyof typeof CHAT_CONTROL_ARIA_LABELS
+    ] ?? '麦克风',
+)
 const pointerPressed = ref(false)
 
 function onPointerDown(event: PointerEvent) {

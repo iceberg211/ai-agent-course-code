@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { WS_CONVERSATION_PATH } from '@/common/constants'
 import type { WsEnvelope } from '@/types'
 
 interface AudioFrameMeta {
@@ -30,7 +31,7 @@ export function useWebSocket() {
     }
 
     manualClose = false
-    ws.value = new WebSocket(`ws://${location.host}/ws/conversation`)
+    ws.value = new WebSocket(`ws://${location.host}${WS_CONVERSATION_PATH}`)
 
     ws.value.onopen = () => {
       connected.value = true

@@ -73,7 +73,7 @@
       <input
         ref="voiceInputEl"
         type="file"
-        accept=".wav,.mp3,.m4a,.aac,audio/*"
+        :accept="VOICE_CLONE_FILE_ACCEPT"
         style="display:none"
         @change="onVoiceFileChange"
       />
@@ -95,6 +95,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { BotIcon, UserIcon, PlusIcon } from 'lucide-vue-next'
+import {
+  VOICE_CLONE_FILE_ACCEPT,
+  VOICE_CLONE_STATUS_LABELS,
+} from '@/common/constants'
 import PersonaItem from '@/components/persona/PersonaItem.vue'
 import PersonaKbModal from '@/components/persona/PersonaKbModal.vue'
 import ConnectionStatus from '@/components/persona/ConnectionStatus.vue'
@@ -124,13 +128,7 @@ const kbModalPersona = ref<Persona | null>(null)
 
 const cloneStatusLabel = computed(() => {
   const status = props.voiceCloneState?.status ?? 'not_started'
-  return {
-    not_started: '未开始',
-    pending: '排队中',
-    training: '训练中',
-    ready: '已就绪',
-    failed: '失败',
-  }[status] ?? status
+  return VOICE_CLONE_STATUS_LABELS[status] ?? status
 })
 
 const cloneStatusClass = computed(() => {

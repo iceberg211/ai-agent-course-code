@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { DIGITAL_HUMAN_STATUS_LABELS } from '@/common/constants'
 import { useAppController } from '@/hooks/useAppController'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
@@ -148,11 +149,8 @@ const digitalHumanStatus = computed(() => digitalHuman.status.value)
 const digitalHumanError = computed(() => digitalHuman.lastError.value)
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────────
-const statusMap: Record<string, string> = {
-  idle: '待命', connecting: '连接中', connected: '已连接', mock: 'Mock', error: '异常',
-}
 function formatDigitalStatus(status: string) {
-  return statusMap[status] ?? status
+  return DIGITAL_HUMAN_STATUS_LABELS[status as keyof typeof DIGITAL_HUMAN_STATUS_LABELS] ?? status
 }
 </script>
 

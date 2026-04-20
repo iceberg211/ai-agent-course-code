@@ -2,8 +2,8 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
-import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';
@@ -111,11 +111,8 @@ export class ConversationGateway implements OnModuleInit {
         break;
 
       case 'session:start':
-        await this.sessionHandler.handle(
-          client,
-          clientId,
-          msg,
-          (sessionId) => this.cleanupSession(sessionId),
+        await this.sessionHandler.handle(client, clientId, msg, (sessionId) =>
+          this.cleanupSession(sessionId),
         );
         break;
 
@@ -128,7 +125,9 @@ export class ConversationGateway implements OnModuleInit {
         break;
 
       default:
-        this.logger.warn(`Unknown message type: ${(msg as WsInboundMessage).type}`);
+        this.logger.warn(
+          `Unknown message type: ${(msg as WsInboundMessage).type}`,
+        );
     }
   }
 
@@ -148,7 +147,9 @@ export class ConversationGateway implements OnModuleInit {
     if (!session) return;
     session.abortController?.abort();
     if (session.digitalHumanSessionId) {
-      await this.digitalHumanProvider.closeSession(session.digitalHumanSessionId);
+      await this.digitalHumanProvider.closeSession(
+        session.digitalHumanSessionId,
+      );
     }
     this.sessionRegistry.delete(sessionId);
   }

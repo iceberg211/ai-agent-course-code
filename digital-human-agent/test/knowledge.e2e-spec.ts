@@ -1,9 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { KnowledgeContentController } from '@/knowledge-content/knowledge-content.controller';
-import { PersonaKnowledgeSearchController } from '@/knowledge-content/persona-knowledge-search.controller';
-import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
+import { KnowledgeContentController } from '@/knowledge-content/controllers/knowledge-content.controller';
+import { PersonaKnowledgeSearchController } from '@/knowledge-content/controllers/persona-knowledge-search.controller';
+import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 import { KnowledgeController } from '@/knowledge/knowledge.controller';
 import { KnowledgeService } from '@/knowledge/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/persona-knowledge.controller';

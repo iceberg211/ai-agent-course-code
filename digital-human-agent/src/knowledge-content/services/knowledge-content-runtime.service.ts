@@ -2,8 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { SUPABASE_CLIENT } from '@/database/supabase.provider';
-import type { RetrieveKnowledgeOptions } from '@/knowledge-content/knowledge-content.types';
+import {
+  DEFAULT_EMBEDDINGS_MODEL_NAME,
+  DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
+  SUPABASE_CLIENT,
+} from '@/common/constants';
+import type { RetrieveKnowledgeOptions } from '@/knowledge-content/types/knowledge-content.types';
 
 @Injectable()
 export class KnowledgeContentRuntimeService {
@@ -17,7 +21,7 @@ export class KnowledgeContentRuntimeService {
   );
 
   readonly embeddings = new OpenAIEmbeddings({
-    model: process.env.EMBEDDINGS_MODEL_NAME ?? 'text-embedding-v3',
+    model: process.env.EMBEDDINGS_MODEL_NAME ?? DEFAULT_EMBEDDINGS_MODEL_NAME,
     batchSize: this.embeddingBatchSize,
     configuration: {
       baseURL: process.env.OPENAI_BASE_URL,
@@ -39,7 +43,12 @@ export class KnowledgeContentRuntimeService {
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,
   ): Required<RetrieveKnowledgeOptions> {
-    const finalTopK = this.toBoundedNumber(options.finalTopK, 5, 1, 20);
+    const finalTopK = this.toBoundedNumber(
+      options.finalTopK,
+      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+      1,
+      20,
+    );
     const rerank = options.rerank !== false;
     const stage1Default = rerank ? Math.max(20, finalTopK) : finalTopK;
     const stage1TopK = this.toBoundedNumber(
@@ -48,7 +57,12 @@ export class KnowledgeContentRuntimeService {
       finalTopK,
       50,
     );
-    const threshold = this.toBoundedNumber(options.threshold, 0.6, 0, 1);
+    const threshold = this.toBoundedNumber(
+      options.threshold,
+      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.threshold,
+      0,
+      1,
+    );
 
     return {
       threshold,

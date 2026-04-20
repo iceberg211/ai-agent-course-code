@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
+import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { RealtimeSession } from '@/realtime-session/realtime-session.interface';
 

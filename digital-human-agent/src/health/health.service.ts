@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
-import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
+import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { HealthProbeResult, HealthResponse } from '@/health/health.types';
 
@@ -72,10 +72,16 @@ export class HealthService {
   }
 
   private checkLlm(): HealthProbeResult {
-    const modelName = (this.configService.get<string>('MODEL_NAME') ?? '').trim();
+    const modelName = (
+      this.configService.get<string>('MODEL_NAME') ?? ''
+    ).trim();
     const hasApiKey =
-      Boolean((this.configService.get<string>('OPENAI_API_KEY') ?? '').trim()) ||
-      Boolean((this.configService.get<string>('DASHSCOPE_API_KEY') ?? '').trim());
+      Boolean(
+        (this.configService.get<string>('OPENAI_API_KEY') ?? '').trim(),
+      ) ||
+      Boolean(
+        (this.configService.get<string>('DASHSCOPE_API_KEY') ?? '').trim(),
+      );
     if (!modelName || !hasApiKey) {
       return {
         status: 'error',
@@ -87,4 +93,3 @@ export class HealthService {
     };
   }
 }
-

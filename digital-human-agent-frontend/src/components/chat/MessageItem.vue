@@ -37,6 +37,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import { BotIcon, UserIcon, AlertCircleIcon, MinusCircleIcon } from 'lucide-vue-next'
+import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
 import CitationChips from '@/components/chat/CitationChips.vue'
 
@@ -48,9 +49,7 @@ defineProps({
 })
 
 function statusLabel(status: string) {
-  if (status === 'interrupted') return '回复已中断'
-  if (status === 'failed') return '回复失败'
-  return ''
+  return MESSAGE_STATUS_LABELS[status as keyof typeof MESSAGE_STATUS_LABELS] ?? ''
 }
 
 // 将 markdown 文本转为 HTML；内容来自受控后端，不需要额外 sanitize
