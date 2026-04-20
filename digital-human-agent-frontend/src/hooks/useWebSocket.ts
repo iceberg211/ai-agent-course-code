@@ -1,5 +1,5 @@
 import { ref, onUnmounted } from 'vue'
-import type { WsEnvelope } from '../types'
+import type { WsEnvelope } from '@/types'
 
 interface AudioFrameMeta {
   sessionId?: string

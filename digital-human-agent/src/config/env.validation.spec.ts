@@ -1,4 +1,4 @@
-import { validateEnv } from './env.validation';
+import { validateEnv } from '@/config/env.validation';
 
 describe('validateEnv', () => {
   const baseEnv = {

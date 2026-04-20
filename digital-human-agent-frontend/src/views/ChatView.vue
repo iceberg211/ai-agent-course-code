@@ -86,18 +86,18 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useAppController } from '../hooks/useAppController'
-import { usePersonaStore } from '../stores/persona'
-import { useSessionStore } from '../stores/session'
-import PersonaPanel from '../components/persona/PersonaPanel.vue'
-import ChatHeader from '../components/chat/ChatHeader.vue'
-import MessageList from '../components/chat/MessageList.vue'
-import ChatComposer from '../components/chat/ChatComposer.vue'
-import ChatControls from '../components/chat/ChatControls.vue'
-import MountedKnowledgeBaseDrawer from '../components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
-import ToastAlert from '../components/common/ToastAlert.vue'
-import PersonaCreateModal from '../components/persona/PersonaCreateModal.vue'
-import type { Persona } from '../types'
+import { useAppController } from '@/hooks/useAppController'
+import { usePersonaStore } from '@/stores/persona'
+import { useSessionStore } from '@/stores/session'
+import PersonaPanel from '@/components/persona/PersonaPanel.vue'
+import ChatHeader from '@/components/chat/ChatHeader.vue'
+import MessageList from '@/components/chat/MessageList.vue'
+import ChatComposer from '@/components/chat/ChatComposer.vue'
+import ChatControls from '@/components/chat/ChatControls.vue'
+import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
+import ToastAlert from '@/components/common/ToastAlert.vue'
+import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
+import type { Persona } from '@/types'
 
 // ── Stores（子组件直接消费，无需透传）────────────────────────────────────────
 const personaStore = usePersonaStore()

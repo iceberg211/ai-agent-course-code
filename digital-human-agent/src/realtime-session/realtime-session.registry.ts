@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RealtimeSession } from './realtime-session.interface';
+import { RealtimeSession } from '@/realtime-session/realtime-session.interface';
 
 @Injectable()
 export class RealtimeSessionRegistry {

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { TtsService } from './tts.service';
+import { TtsService } from '@/tts/tts.service';
 
 @Module({
   providers: [TtsService],

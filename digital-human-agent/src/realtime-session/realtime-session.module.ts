@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { RealtimeSessionRegistry } from './realtime-session.registry';
+import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
 
 @Global()
 @Module({

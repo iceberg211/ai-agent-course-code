@@ -5,19 +5,19 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/chat',
     name: 'chat',
-    component: () => import('../views/ChatView.vue'),
+    component: () => import('@/views/ChatView.vue'),
   },
   {
     path: '/kb',
     name: 'knowledge-base-list',
     component: () =>
-      import('../views/knowledge-base/KnowledgeBaseListView.vue'),
+      import('@/views/knowledge-base/KnowledgeBaseListView.vue'),
   },
   {
     path: '/kb/:kbId',
     name: 'knowledge-base-detail',
     component: () =>
-      import('../views/knowledge-base/KnowledgeBaseDetailView.vue'),
+      import('@/views/knowledge-base/KnowledgeBaseDetailView.vue'),
     props: true,
   },
   { path: '/:pathMatch(.*)*', redirect: '/chat' },

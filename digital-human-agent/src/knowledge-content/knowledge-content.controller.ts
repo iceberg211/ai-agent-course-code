@@ -14,9 +14,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { extname } from 'node:path';
-import { KnowledgeSearchDto } from './dto/knowledge-search.dto';
-import { KnowledgeContentService } from './knowledge-content.service';
-import { UpdateChunkDto } from '../knowledge-base/dto/update-chunk.dto';
+import { KnowledgeSearchDto } from '@/knowledge-content/dto/knowledge-search.dto';
+import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
+import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 @ApiTags('knowledge-content')
 @Controller('knowledge-bases')
@@ -27,7 +27,7 @@ export class KnowledgeContentController {
 
   @Get(':kbId/documents')
   listDocuments(@Param('kbId', ParseUUIDPipe) kbId: string) {
-    return this.knowledgeContentService.listDocumentsByKb(kbId);
+    return this.knowledgeContentService.listDocumentsByKnowledgeId(kbId);
   }
 
   @Post(':kbId/documents')

@@ -2,8 +2,8 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { PersonaService } from '../persona/persona.service';
-import { VoiceCloneState } from './voice-clone.types';
+import { PersonaService } from '@/persona/persona.service';
+import { VoiceCloneState } from '@/voice-clone/voice-clone.types';
 
 @Injectable()
 export class VoiceCloneService {

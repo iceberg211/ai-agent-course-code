@@ -6,8 +6,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { HealthService } from './health.service';
-import { HealthResponse } from './health.types';
+import { HealthService } from '@/health/health.service';
+import { HealthResponse } from '@/health/health.types';
 
 @ApiTags('health')
 @Controller('health')

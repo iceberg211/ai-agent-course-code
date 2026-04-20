@@ -2,14 +2,14 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { RealtimeSessionRegistry } from '../realtime-session/realtime-session.registry';
-import { DIGITAL_HUMAN_PROVIDER } from '../digital-human/digital-human.constants';
-import type { DigitalHumanProvider } from '../digital-human/digital-human.types';
-import { SessionHandler } from './handlers/session.handler';
-import { AudioHandler } from './handlers/audio.handler';
-import { TextHandler } from './handlers/text.handler';
-import { InterruptHandler } from './handlers/interrupt.handler';
-import { WsInboundMessage } from './gateway.types';
+import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
+import { SessionHandler } from '@/gateway/handlers/session.handler';
+import { AudioHandler } from '@/gateway/handlers/audio.handler';
+import { TextHandler } from '@/gateway/handlers/text.handler';
+import { InterruptHandler } from '@/gateway/handlers/interrupt.handler';
+import { WsInboundMessage } from '@/gateway/gateway.types';
 
 /**
  * ConversationGateway — WebSocket 入口与消息路由。

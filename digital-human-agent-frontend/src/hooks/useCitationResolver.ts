@@ -1,5 +1,5 @@
-import { useKnowledgeBase } from './useKnowledgeBase'
-import type { Citation } from '../types'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import type { Citation } from '@/types'
 
 const namesByPersona = new Map<string, Map<string, string>>()
 const loadingByPersona = new Map<string, Promise<Map<string, string>>>()

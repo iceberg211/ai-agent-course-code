@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { VoiceCloneService } from './voice-clone.service';
+import { VoiceCloneService } from '@/voice-clone/voice-clone.service';
 
 @ApiTags('voice-clone')
 @Controller('voice-clone')

@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { PersonaController } from '../src/persona/persona.controller';
-import { PersonaService } from '../src/persona/persona.service';
-import { RequestNormalizePipe } from '../src/common/pipes/request-normalize.pipe';
+import { PersonaController } from '@/persona/persona.controller';
+import { PersonaService } from '@/persona/persona.service';
+import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 
 describe('Persona API (e2e)', () => {
   let app: INestApplication;

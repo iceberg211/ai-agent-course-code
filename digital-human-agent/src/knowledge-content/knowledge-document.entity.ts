@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { KnowledgeBase } from '../knowledge-base/knowledge-base.entity';
+import { Knowledge } from '@/knowledge/knowledge.entity';
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type DocumentSourceType = 'upload';
@@ -19,9 +19,9 @@ export class KnowledgeDocument {
   @Column({ name: 'knowledge_base_id', type: 'uuid' })
   knowledgeBaseId: string;
 
-  @ManyToOne(() => KnowledgeBase, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Knowledge, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'knowledge_base_id' })
-  knowledgeBase: KnowledgeBase;
+  knowledge: Knowledge;
 
   @Column()
   filename: string;

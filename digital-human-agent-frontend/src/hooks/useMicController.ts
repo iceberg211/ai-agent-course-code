@@ -1,8 +1,8 @@
 import { ref } from 'vue'
-import { useSessionStore } from '../stores/session'
-import { usePersonaStore } from '../stores/persona'
-import { useConversation } from './useConversation'
-import { useAudio } from './useAudio'
+import { useSessionStore } from '@/stores/session'
+import { usePersonaStore } from '@/stores/persona'
+import { useConversation } from '@/hooks/useConversation'
+import { useAudio } from '@/hooks/useAudio'
 
 /** 按住时间少于此值视为误触 */
 const MIC_MIN_HOLD_MS = 180

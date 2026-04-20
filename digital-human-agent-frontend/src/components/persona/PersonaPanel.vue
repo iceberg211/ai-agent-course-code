@@ -95,10 +95,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { BotIcon, UserIcon, PlusIcon } from 'lucide-vue-next'
-import PersonaItem from './PersonaItem.vue'
-import PersonaKbModal from './PersonaKbModal.vue'
-import ConnectionStatus from './ConnectionStatus.vue'
-import type { Persona, VoiceCloneState } from '../../types'
+import PersonaItem from '@/components/persona/PersonaItem.vue'
+import PersonaKbModal from '@/components/persona/PersonaKbModal.vue'
+import ConnectionStatus from '@/components/persona/ConnectionStatus.vue'
+import type { Persona, VoiceCloneState } from '@/types'
 
 const emit = defineEmits<{
   (e: 'select', id: string): void

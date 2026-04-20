@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { BookOpenIcon } from 'lucide-vue-next'
-import type { KnowledgeBase } from '../../types'
+import type { KnowledgeBase } from '@/types'
 
 defineProps<{ kb: KnowledgeBase }>()
 defineEmits<{ (e: 'open', kbId: string): void }>()

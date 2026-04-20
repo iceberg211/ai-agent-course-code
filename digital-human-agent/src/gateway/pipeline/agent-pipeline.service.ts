@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { AgentService } from '../../agent/agent.service';
-import { ConversationService } from '../../conversation/conversation.service';
-import { RealtimeSessionRegistry } from '../../realtime-session/realtime-session.registry';
-import { RealtimeSession } from '../../realtime-session/realtime-session.interface';
-import { TtsPipelineService } from './tts-pipeline.service';
-import { SpeakPipelineService } from './speak-pipeline.service';
+import { AgentService } from '@/agent/agent.service';
+import { ConversationService } from '@/conversation/conversation.service';
+import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { RealtimeSession } from '@/realtime-session/realtime-session.interface';
+import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
+import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
 
 /**
  * Agent 执行 Pipeline。

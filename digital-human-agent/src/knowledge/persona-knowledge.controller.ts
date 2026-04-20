@@ -28,8 +28,12 @@ export class PersonaKnowledgeController {
     @Param('personaId', ParseUUIDPipe) personaId: string,
     @Body() dto: AttachKnowledgeDto,
   ) {
-    await this.knowledgeService.attachPersona(personaId, dto.knowledgeId);
-    return { personaId, knowledgeId: dto.knowledgeId, attached: true };
+    await this.knowledgeService.attachPersona(personaId, dto.knowledgeBaseId);
+    return {
+      personaId,
+      knowledgeBaseId: dto.knowledgeBaseId,
+      attached: true,
+    };
   }
 
   @Delete('knowledge-bases/:knowledgeId')
@@ -39,6 +43,6 @@ export class PersonaKnowledgeController {
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
   ) {
     await this.knowledgeService.detachPersona(personaId, knowledgeId);
-    return { personaId, knowledgeId, attached: false };
+    return { personaId, knowledgeBaseId: knowledgeId, attached: false };
   }
 }

@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { TtsService } from '../../tts/tts.service';
-import { PersonaService } from '../../persona/persona.service';
-import { RealtimeSessionRegistry } from '../../realtime-session/realtime-session.registry';
-import { RealtimeSession } from '../../realtime-session/realtime-session.interface';
-import { TtsAudioFrameMeta } from '../gateway.types';
+import { TtsService } from '@/tts/tts.service';
+import { PersonaService } from '@/persona/persona.service';
+import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { RealtimeSession } from '@/realtime-session/realtime-session.interface';
+import { TtsAudioFrameMeta } from '@/gateway/gateway.types';
 
 /**
  * TTS 推流 Pipeline。

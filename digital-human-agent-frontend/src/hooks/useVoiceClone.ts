@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { VoiceCloneState } from '../types'
+import type { VoiceCloneState } from '@/types'
 
 export function useVoiceClone() {
   const state = ref<VoiceCloneState | null>(null)

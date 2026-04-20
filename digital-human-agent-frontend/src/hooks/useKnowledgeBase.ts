@@ -5,7 +5,7 @@ import type {
   KnowledgeDocumentDetail,
   KnowledgeSearchResult,
   RetrievalConfig,
-} from '../types'
+} from '@/types'
 
 export interface CreateKnowledgeBasePayload {
   name: string

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { AsrService } from './asr.service';
+import { AsrService } from '@/asr/asr.service';
 
 @Module({
   providers: [AsrService],

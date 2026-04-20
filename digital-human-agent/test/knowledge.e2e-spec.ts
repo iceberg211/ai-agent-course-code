@@ -1,14 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { KnowledgeContentController } from '../src/knowledge-content/knowledge-content.controller';
-import { PersonaKnowledgeSearchController } from '../src/knowledge-content/persona-knowledge-search.controller';
-import { KnowledgeContentService } from '../src/knowledge-content/knowledge-content.service';
-import { KnowledgeBaseController } from '../src/knowledge-base/knowledge-base.controller';
-import { PersonaKnowledgeBaseController } from '../src/knowledge-base/persona-knowledge-base.controller';
-import { KnowledgeBaseService } from '../src/knowledge-base/knowledge-base.service';
+import { KnowledgeContentController } from '@/knowledge-content/knowledge-content.controller';
+import { PersonaKnowledgeSearchController } from '@/knowledge-content/persona-knowledge-search.controller';
+import { KnowledgeContentService } from '@/knowledge-content/knowledge-content.service';
+import { KnowledgeController } from '@/knowledge/knowledge.controller';
+import { KnowledgeService } from '@/knowledge/knowledge.service';
+import { PersonaKnowledgeController } from '@/knowledge/persona-knowledge.controller';
 
-describe('KnowledgeBase API (e2e)', () => {
+describe('Knowledge API (e2e)', () => {
   let app: INestApplication;
 
   const kbId = '11111111-1111-4111-8111-111111111111';
@@ -18,7 +18,7 @@ describe('KnowledgeBase API (e2e)', () => {
 
   const knowledgeContentService = {
     ingestDocument: jest.fn(),
-    listDocumentsByKb: jest.fn(),
+    listDocumentsByKnowledgeId: jest.fn(),
     deleteDocument: jest.fn(),
     listChunksByDocumentId: jest.fn(),
     updateChunkEnabled: jest.fn(),
@@ -26,14 +26,14 @@ describe('KnowledgeBase API (e2e)', () => {
     retrieveForPersona: jest.fn(),
   };
 
-  const kbService = {
+  const knowledgeCatalogService = {
     listAll: jest.fn(),
     create: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
-    listKbsForPersona: jest.fn(),
-    listPersonaIdsForKb: jest.fn(),
+    listForPersona: jest.fn(),
+    listPersonaIdsForKnowledge: jest.fn(),
     attachPersona: jest.fn(),
     detachPersona: jest.fn(),
   };
@@ -41,8 +41,8 @@ describe('KnowledgeBase API (e2e)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [
-        KnowledgeBaseController,
-        PersonaKnowledgeBaseController,
+        KnowledgeController,
+        PersonaKnowledgeController,
         KnowledgeContentController,
         PersonaKnowledgeSearchController,
       ],
@@ -52,8 +52,8 @@ describe('KnowledgeBase API (e2e)', () => {
           useValue: knowledgeContentService,
         },
         {
-          provide: KnowledgeBaseService,
-          useValue: kbService,
+          provide: KnowledgeService,
+          useValue: knowledgeCatalogService,
         },
       ],
     }).compile();
@@ -71,7 +71,7 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('GET /knowledge-bases 返回知识库列表', async () => {
-    kbService.listAll.mockResolvedValue([
+    knowledgeCatalogService.listAll.mockResolvedValue([
       {
         id: kbId,
         name: '产品 FAQ',
@@ -83,7 +83,7 @@ describe('KnowledgeBase API (e2e)', () => {
       .get('/knowledge-bases')
       .expect(200);
 
-    expect(kbService.listAll).toHaveBeenCalledTimes(1);
+    expect(knowledgeCatalogService.listAll).toHaveBeenCalledTimes(1);
     expect(res.body).toEqual([
       {
         id: kbId,
@@ -139,7 +139,7 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('GET /knowledge-bases/:kbId/documents 返回文档列表', async () => {
-    knowledgeContentService.listDocumentsByKb.mockResolvedValue([
+    knowledgeContentService.listDocumentsByKnowledgeId.mockResolvedValue([
       {
         id: docId,
         knowledgeBaseId: kbId,
@@ -152,7 +152,9 @@ describe('KnowledgeBase API (e2e)', () => {
       .get(`/knowledge-bases/${kbId}/documents`)
       .expect(200);
 
-    expect(knowledgeContentService.listDocumentsByKb).toHaveBeenCalledWith(
+    expect(
+      knowledgeContentService.listDocumentsByKnowledgeId,
+    ).toHaveBeenCalledWith(
       kbId,
     );
     expect(res.body).toEqual([
@@ -220,7 +222,7 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('GET /personas/:personaId/knowledge-bases 返回已挂载知识库', async () => {
-    kbService.listKbsForPersona.mockResolvedValue([
+    knowledgeCatalogService.listForPersona.mockResolvedValue([
       {
         id: kbId,
         name: '产品 FAQ',
@@ -231,7 +233,9 @@ describe('KnowledgeBase API (e2e)', () => {
       .get(`/personas/${personaId}/knowledge-bases`)
       .expect(200);
 
-    expect(kbService.listKbsForPersona).toHaveBeenCalledWith(personaId);
+    expect(knowledgeCatalogService.listForPersona).toHaveBeenCalledWith(
+      personaId,
+    );
     expect(res.body).toEqual([
       {
         id: kbId,
@@ -241,14 +245,17 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('POST /personas/:personaId/knowledge-bases 挂载知识库', async () => {
-    kbService.attachPersona.mockResolvedValue(undefined);
+    knowledgeCatalogService.attachPersona.mockResolvedValue(undefined);
 
     const res = await request(app.getHttpServer())
       .post(`/personas/${personaId}/knowledge-bases`)
       .send({ knowledgeBaseId: kbId })
       .expect(201);
 
-    expect(kbService.attachPersona).toHaveBeenCalledWith(personaId, kbId);
+    expect(knowledgeCatalogService.attachPersona).toHaveBeenCalledWith(
+      personaId,
+      kbId,
+    );
     expect(res.body).toEqual({
       personaId,
       knowledgeBaseId: kbId,
@@ -257,13 +264,16 @@ describe('KnowledgeBase API (e2e)', () => {
   });
 
   it('DELETE /personas/:personaId/knowledge-bases/:kbId 解除挂载', async () => {
-    kbService.detachPersona.mockResolvedValue(undefined);
+    knowledgeCatalogService.detachPersona.mockResolvedValue(undefined);
 
     const res = await request(app.getHttpServer())
       .delete(`/personas/${personaId}/knowledge-bases/${kbId}`)
       .expect(200);
 
-    expect(kbService.detachPersona).toHaveBeenCalledWith(personaId, kbId);
+    expect(knowledgeCatalogService.detachPersona).toHaveBeenCalledWith(
+      personaId,
+      kbId,
+    );
     expect(res.body).toEqual({
       personaId,
       knowledgeBaseId: kbId,

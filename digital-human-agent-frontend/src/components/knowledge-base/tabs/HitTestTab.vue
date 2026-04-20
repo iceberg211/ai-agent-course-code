@@ -142,12 +142,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { SearchIcon } from 'lucide-vue-next'
-import { useKnowledgeBase } from '../../../hooks/useKnowledgeBase'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type {
   KnowledgeBase,
   KnowledgeSearchChunk,
   KnowledgeSearchResult,
-} from '../../../types'
+} from '@/types'
 
 const props = defineProps<{ kb: KnowledgeBase }>()
 const hook = useKnowledgeBase()

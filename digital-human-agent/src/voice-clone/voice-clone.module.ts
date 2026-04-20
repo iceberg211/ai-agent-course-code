@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { VoiceCloneService } from './voice-clone.service';
-import { VoiceCloneController } from './voice-clone.controller';
-import { PersonaModule } from '../persona/persona.module';
+import { VoiceCloneService } from '@/voice-clone/voice-clone.service';
+import { VoiceCloneController } from '@/voice-clone/voice-clone.controller';
+import { PersonaModule } from '@/persona/persona.module';
 
 @Module({
   imports: [PersonaModule],

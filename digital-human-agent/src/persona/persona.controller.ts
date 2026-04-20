@@ -13,9 +13,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { PersonaService } from './persona.service';
-import { CreatePersonaDto } from './dto/create-persona.dto';
-import { UpdatePersonaDto } from './dto/update-persona.dto';
+import { PersonaService } from '@/persona/persona.service';
+import { CreatePersonaDto } from '@/persona/dto/create-persona.dto';
+import { UpdatePersonaDto } from '@/persona/dto/update-persona.dto';
 
 @ApiTags('personas')
 @Controller('personas')

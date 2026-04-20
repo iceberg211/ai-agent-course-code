@@ -1,11 +1,11 @@
 import { ref, watch, watchEffect } from 'vue'
 import { Chat } from '@ai-sdk/vue'
 import { DefaultChatTransport, type UIMessage } from 'ai'
-import { usePersonaStore } from '../stores/persona'
-import { useSessionStore } from '../stores/session'
-import { useConversation } from './useConversation'
-import { useCitationResolver } from './useCitationResolver'
-import type { ChatMessage, Citation, MessageStatus, StreamMetadata } from '../types'
+import { usePersonaStore } from '@/stores/persona'
+import { useSessionStore } from '@/stores/session'
+import { useConversation } from '@/hooks/useConversation'
+import { useCitationResolver } from '@/hooks/useCitationResolver'
+import type { ChatMessage, Citation, MessageStatus, StreamMetadata } from '@/types'
 
 
 type StreamUIMessage = UIMessage<StreamMetadata>

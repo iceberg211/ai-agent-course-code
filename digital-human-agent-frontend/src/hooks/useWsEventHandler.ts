@@ -1,12 +1,12 @@
-import { useSessionStore } from '../stores/session'
-import { usePersonaStore } from '../stores/persona'
-import { useConversation } from './useConversation'
-import { useAudio } from './useAudio'
-import { useVoiceClone } from './useVoiceClone'
-import { useDigitalHuman } from './useDigitalHuman'
-import { useTextChat } from './useTextChat'
-import { useCitationResolver } from './useCitationResolver'
-import type { Citation } from '../types'
+import { useSessionStore } from '@/stores/session'
+import { usePersonaStore } from '@/stores/persona'
+import { useConversation } from '@/hooks/useConversation'
+import { useAudio } from '@/hooks/useAudio'
+import { useVoiceClone } from '@/hooks/useVoiceClone'
+import { useDigitalHuman } from '@/hooks/useDigitalHuman'
+import { useTextChat } from '@/hooks/useTextChat'
+import { useCitationResolver } from '@/hooks/useCitationResolver'
+import type { Citation } from '@/types'
 
 type BaseWsMessage<T = Record<string, unknown>> = {
   type: string

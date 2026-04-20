@@ -46,8 +46,8 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { BookOpenIcon, DatabaseIcon, SettingsIcon, XIcon } from 'lucide-vue-next'
-import { useKnowledgeBase } from '../../hooks/useKnowledgeBase'
-import type { KnowledgeBase } from '../../types'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import type { KnowledgeBase } from '@/types'
 
 const props = defineProps<{
   personaId: string

@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { CheckIcon, LibraryIcon, Trash2Icon } from 'lucide-vue-next'
-import type { Persona } from '../../types'
+import type { Persona } from '@/types'
 
 withDefaults(defineProps<{
   persona: Persona

@@ -11,12 +11,12 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from 'ai';
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { AgentService } from '../agent/agent.service';
-import { ConversationService } from '../conversation/conversation.service';
-import type { MessageStatus } from '../conversation/conversation-message.entity';
-import type { Conversation } from '../conversation/conversation.entity';
-import { PersonaService } from '../persona/persona.service';
-import { ChatRequestDto } from './dto/chat-request.dto';
+import { AgentService } from '@/agent/agent.service';
+import { ConversationService } from '@/conversation/conversation.service';
+import type { MessageStatus } from '@/conversation/conversation-message.entity';
+import type { Conversation } from '@/conversation/conversation.entity';
+import { PersonaService } from '@/persona/persona.service';
+import { ChatRequestDto } from '@/chat/dto/chat-request.dto';
 
 interface MessagePartLike {
   type?: unknown;

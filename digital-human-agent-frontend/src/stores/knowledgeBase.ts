@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { KnowledgeBase } from '../types'
+import type { KnowledgeBase } from '@/types'
 
 export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
   const list = ref<KnowledgeBase[]>([])

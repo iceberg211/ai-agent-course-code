@@ -68,11 +68,11 @@ import {
   Trash2Icon,
   UploadCloudIcon,
 } from 'lucide-vue-next'
-import { useKnowledgeBase } from '../../../hooks/useKnowledgeBase'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type {
   KnowledgeChunk,
   KnowledgeDocumentDetail,
-} from '../../../types'
+} from '@/types'
 
 const props = defineProps<{ kbId: string }>()
 const hook = useKnowledgeBase()

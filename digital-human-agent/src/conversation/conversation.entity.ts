@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
   JoinColumn,
 } from 'typeorm';
-import { Persona } from '../persona/persona.entity';
+import { Persona } from '@/persona/persona.entity';
 
 @Entity('conversation')
 export class Conversation {

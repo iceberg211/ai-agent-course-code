@@ -6,14 +6,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
-  KnowledgeBase,
-  KnowledgeBaseRetrievalConfig,
-} from './knowledge-base.entity';
-import { PersonaKnowledgeBase } from './persona-knowledge-base.entity';
-import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
-import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
+  Knowledge,
+  KnowledgeRetrievalConfig,
+} from '@/knowledge/knowledge.entity';
+import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
+import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
+import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
 
-const DEFAULT_RETRIEVAL_CONFIG: KnowledgeBaseRetrievalConfig = {
+const DEFAULT_RETRIEVAL_CONFIG: KnowledgeRetrievalConfig = {
   threshold: 0.6,
   stage1TopK: 20,
   finalTopK: 5,
@@ -21,32 +21,34 @@ const DEFAULT_RETRIEVAL_CONFIG: KnowledgeBaseRetrievalConfig = {
 };
 
 @Injectable()
-export class KnowledgeBaseService {
+export class KnowledgeService {
   constructor(
-    @InjectRepository(KnowledgeBase)
-    private readonly kbRepo: Repository<KnowledgeBase>,
-    @InjectRepository(PersonaKnowledgeBase)
-    private readonly mountRepo: Repository<PersonaKnowledgeBase>,
+    @InjectRepository(Knowledge)
+    private readonly knowledgeRepo: Repository<Knowledge>,
+    @InjectRepository(PersonaKnowledge)
+    private readonly personaKnowledgeRepo: Repository<PersonaKnowledge>,
   ) {}
 
-  listAll(): Promise<KnowledgeBase[]> {
-    return this.kbRepo.find({ order: { createdAt: 'DESC' } });
+  listAll(): Promise<Knowledge[]> {
+    return this.knowledgeRepo.find({ order: { createdAt: 'DESC' } });
   }
 
-  async findOne(id: string): Promise<KnowledgeBase> {
-    const kb = await this.kbRepo.findOneBy({ id });
-    if (!kb) throw new NotFoundException(`知识库 ${id} 不存在`);
-    return kb;
+  async findOne(id: string): Promise<Knowledge> {
+    const knowledge = await this.knowledgeRepo.findOneBy({ id });
+    if (!knowledge) {
+      throw new NotFoundException(`知识库 ${id} 不存在`);
+    }
+    return knowledge;
   }
 
-  async create(dto: CreateKnowledgeBaseDto): Promise<KnowledgeBase> {
-    const retrievalConfig: KnowledgeBaseRetrievalConfig = {
+  async create(dto: CreateKnowledgeDto): Promise<Knowledge> {
+    const retrievalConfig: KnowledgeRetrievalConfig = {
       ...DEFAULT_RETRIEVAL_CONFIG,
       ...(dto.retrievalConfig ?? {}),
     };
 
-    return this.kbRepo.save(
-      this.kbRepo.create({
+    return this.knowledgeRepo.save(
+      this.knowledgeRepo.create({
         name: dto.name,
         description: dto.description ?? null,
         ownerPersonaId: dto.ownerPersonaId ?? null,
@@ -55,75 +57,80 @@ export class KnowledgeBaseService {
     );
   }
 
-  async update(
-    id: string,
-    dto: UpdateKnowledgeBaseDto,
-  ): Promise<KnowledgeBase> {
-    const kb = await this.findOne(id);
+  async update(id: string, dto: UpdateKnowledgeDto): Promise<Knowledge> {
+    const knowledge = await this.findOne(id);
 
-    if (dto.name !== undefined) kb.name = dto.name;
-    if (dto.description !== undefined) kb.description = dto.description ?? null;
+    if (dto.name !== undefined) knowledge.name = dto.name;
+    if (dto.description !== undefined) {
+      knowledge.description = dto.description ?? null;
+    }
     if (dto.ownerPersonaId !== undefined) {
-      kb.ownerPersonaId = dto.ownerPersonaId ?? null;
+      knowledge.ownerPersonaId = dto.ownerPersonaId ?? null;
     }
     if (dto.retrievalConfig !== undefined) {
-      kb.retrievalConfig = {
-        ...kb.retrievalConfig,
+      knowledge.retrievalConfig = {
+        ...knowledge.retrievalConfig,
         ...dto.retrievalConfig,
       };
     }
 
-    return this.kbRepo.save(kb);
+    return this.knowledgeRepo.save(knowledge);
   }
 
   async remove(id: string): Promise<{ id: string; deleted: true }> {
-    const result = await this.kbRepo.delete(id);
+    const result = await this.knowledgeRepo.delete(id);
     if (result.affected === 0) {
       throw new NotFoundException(`知识库 ${id} 不存在`);
     }
     return { id, deleted: true };
   }
 
-  async listKbsForPersona(personaId: string): Promise<KnowledgeBase[]> {
-    return this.kbRepo
-      .createQueryBuilder('kb')
+  async listForPersona(personaId: string): Promise<Knowledge[]> {
+    return this.knowledgeRepo
+      .createQueryBuilder('knowledge')
       .innerJoin(
         'persona_knowledge_base',
-        'pkb',
-        'pkb.knowledge_base_id = kb.id',
+        'personaKnowledge',
+        'personaKnowledge.knowledge_base_id = knowledge.id',
       )
-      .where('pkb.persona_id = :personaId', { personaId })
-      .orderBy('kb.created_at', 'DESC')
+      .where('personaKnowledge.persona_id = :personaId', { personaId })
+      .orderBy('knowledge.created_at', 'DESC')
       .getMany();
   }
 
-  async listPersonaIdsForKb(kbId: string): Promise<string[]> {
-    const rows = await this.mountRepo.find({
-      where: { knowledgeBaseId: kbId },
+  async listPersonaIdsForKnowledge(knowledgeId: string): Promise<string[]> {
+    const rows = await this.personaKnowledgeRepo.find({
+      where: { knowledgeBaseId: knowledgeId },
       select: ['personaId'],
     });
-    return rows.map((r) => r.personaId);
+    return rows.map((row) => row.personaId);
   }
 
-  async attachPersona(personaId: string, kbId: string): Promise<void> {
-    await this.findOne(kbId); // 404 if missing
-    const existing = await this.mountRepo.findOneBy({
+  async attachPersona(personaId: string, knowledgeId: string): Promise<void> {
+    await this.findOne(knowledgeId);
+    const existing = await this.personaKnowledgeRepo.findOneBy({
       personaId,
-      knowledgeBaseId: kbId,
+      knowledgeBaseId: knowledgeId,
     });
+
     if (existing) {
       throw new BadRequestException('该知识库已挂载到此 persona');
     }
-    await this.mountRepo.save(
-      this.mountRepo.create({ personaId, knowledgeBaseId: kbId }),
+
+    await this.personaKnowledgeRepo.save(
+      this.personaKnowledgeRepo.create({
+        personaId,
+        knowledgeBaseId: knowledgeId,
+      }),
     );
   }
 
-  async detachPersona(personaId: string, kbId: string): Promise<void> {
-    const result = await this.mountRepo.delete({
+  async detachPersona(personaId: string, knowledgeId: string): Promise<void> {
+    const result = await this.personaKnowledgeRepo.delete({
       personaId,
-      knowledgeBaseId: kbId,
+      knowledgeBaseId: knowledgeId,
     });
+
     if (result.affected === 0) {
       throw new NotFoundException('挂载关系不存在');
     }

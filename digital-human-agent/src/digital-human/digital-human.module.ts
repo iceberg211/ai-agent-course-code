@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DIGITAL_HUMAN_PROVIDER } from './digital-human.constants';
-import { MockDigitalHumanProvider } from './providers/mock-digital-human.provider';
-import { SimliProvider } from './providers/simli.provider';
+import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
+import { MockDigitalHumanProvider } from '@/digital-human/providers/mock-digital-human.provider';
+import { SimliProvider } from '@/digital-human/providers/simli.provider';
 
 @Module({
   providers: [

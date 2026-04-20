@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { LinkIcon } from 'lucide-vue-next'
-import type { Citation } from '../../types'
+import type { Citation } from '@/types'
 
 defineProps<{
   citations: Citation[]

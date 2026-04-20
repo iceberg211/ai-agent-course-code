@@ -69,8 +69,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { BookOpenIcon, LinkIcon, PlusCircleIcon, XIcon } from 'lucide-vue-next'
-import { useKnowledgeBase } from '../../hooks/useKnowledgeBase'
-import type { KnowledgeBase } from '../../types'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import type { KnowledgeBase } from '@/types'
 
 const props = defineProps<{
   personaId: string

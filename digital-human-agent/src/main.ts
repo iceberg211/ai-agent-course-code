@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { AppModule } from '@/app.module';
 import { WsAdapter } from '@nestjs/platform-ws';
 import {
   BadRequestException,
@@ -8,9 +8,9 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { RequestNormalizePipe } from './common/pipes/request-normalize.pipe';
+import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
+import { HttpExceptionFilter } from '@/common/filters/http-exception.filter';
+import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {

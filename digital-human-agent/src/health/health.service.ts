@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
-import { DIGITAL_HUMAN_PROVIDER } from '../digital-human/digital-human.constants';
-import type { DigitalHumanProvider } from '../digital-human/digital-human.types';
-import { HealthProbeResult, HealthResponse } from './health.types';
+import { DIGITAL_HUMAN_PROVIDER } from '@/digital-human/digital-human.constants';
+import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
+import { HealthProbeResult, HealthResponse } from '@/health/health.types';
 
 @Injectable()
 export class HealthService {

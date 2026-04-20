@@ -37,8 +37,8 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import { BotIcon, UserIcon, AlertCircleIcon, MinusCircleIcon } from 'lucide-vue-next'
-import TypingIndicator from './TypingIndicator.vue'
-import CitationChips from './CitationChips.vue'
+import TypingIndicator from '@/components/chat/TypingIndicator.vue'
+import CitationChips from '@/components/chat/CitationChips.vue'
 
 // marked 配置：开启 gfm（GitHub Flavored Markdown），关闭 pedantic
 marked.setOptions({ gfm: true })

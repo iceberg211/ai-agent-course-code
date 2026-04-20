@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Persona } from '../types'
+import type { Persona } from '@/types'
 
 export interface CreatePersonaPayload {
   name: string

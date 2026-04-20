@@ -2,9 +2,9 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
-import { Persona } from './persona.entity';
-import { CreatePersonaDto } from './dto/create-persona.dto';
-import { UpdatePersonaDto } from './dto/update-persona.dto';
+import { Persona } from '@/persona/persona.entity';
+import { CreatePersonaDto } from '@/persona/dto/create-persona.dto';
+import { UpdatePersonaDto } from '@/persona/dto/update-persona.dto';
 
 export interface DeletePersonaResult {
   id: string;

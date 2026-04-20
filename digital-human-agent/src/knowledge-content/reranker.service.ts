@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { KnowledgeChunk } from './knowledge-content.service';
+import type { KnowledgeChunk } from '@/knowledge-content/knowledge-content.types';
 
 interface RerankItem {
   index: number;

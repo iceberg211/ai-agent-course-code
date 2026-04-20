@@ -88,8 +88,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { useKnowledgeBase } from '../../../hooks/useKnowledgeBase'
-import type { KnowledgeBase } from '../../../types'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import type { KnowledgeBase } from '@/types'
 
 const props = defineProps<{ kb: KnowledgeBase }>()
 const emit = defineEmits<{

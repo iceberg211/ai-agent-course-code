@@ -90,8 +90,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { XIcon } from 'lucide-vue-next'
-import { usePersonaStore } from '../../stores/persona'
-import type { Persona } from '../../types'
+import { usePersonaStore } from '@/stores/persona'
+import type { Persona } from '@/types'
 
 const emit = defineEmits<{
   (e: 'created', persona: Persona): void

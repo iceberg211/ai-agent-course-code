@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Conversation } from './conversation.entity';
-import { ConversationMessage, MessageRole, MessageStatus } from './conversation-message.entity';
+import { Conversation } from '@/conversation/conversation.entity';
+import { ConversationMessage, MessageRole, MessageStatus } from '@/conversation/conversation-message.entity';
 
 @Injectable()
 export class ConversationService {

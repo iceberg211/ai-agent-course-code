@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { ConversationService } from '../../conversation/conversation.service';
-import { RealtimeSessionRegistry } from '../../realtime-session/realtime-session.registry';
-import { AgentPipelineService } from '../pipeline/agent-pipeline.service';
-import { WsTextInputMessage } from '../gateway.types';
+import { ConversationService } from '@/conversation/conversation.service';
+import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
+import { WsTextInputMessage } from '@/gateway/gateway.types';
 
 /**
  * 处理文字输入消息（`conversation:text`）。

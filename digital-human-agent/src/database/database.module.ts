@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { supabaseProvider, SUPABASE_CLIENT } from './supabase.provider';
+import { supabaseProvider, SUPABASE_CLIENT } from '@/database/supabase.provider';
 
 function normalizeEnvValue(value: string | undefined): string {
   const raw = (value ?? '').trim();

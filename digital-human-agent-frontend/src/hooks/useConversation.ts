@@ -1,5 +1,5 @@
 import { ref, nextTick } from 'vue'
-import type { ChatMessage, Citation, ConversationState, MessageRole, MessageStatus } from '../types'
+import type { ChatMessage, Citation, ConversationState, MessageRole, MessageStatus } from '@/types'
 
 interface HistoryMessage {
   id?: string

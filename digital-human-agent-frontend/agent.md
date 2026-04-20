@@ -17,7 +17,7 @@
 - `src/hooks/useAppController.ts`：主控制器（状态机、WS 事件、文本/语音/数字人协作）
 - `src/hooks/useWebSocket.ts`：WebSocket 封装（文本消息 + 二进制音频帧）
 - `src/hooks/useAudio.ts`：录音与流式音频播放
-- `src/hooks/useKnowledge.ts`：知识库文档管理与检索测试
+- `src/hooks/useKnowledgeBase.ts`：知识库文档管理、挂载与检索测试
 - `src/hooks/useVoiceClone.ts`：语音克隆上传与状态轮询
 - `src/hooks/useDigitalHuman.ts`：WebRTC 信令与视频流处理
 - `src/components/*`：分区 UI 组件
@@ -30,8 +30,11 @@
 - 关键接口：
   - `/api/personas`
   - `/api/chat`
-  - `/api/knowledge/:personaId/documents`
-  - `/api/knowledge/:personaId/search`
+  - `/api/knowledge-bases`
+  - `/api/knowledge-bases/:kbId/documents`
+  - `/api/knowledge-bases/:kbId/search`
+  - `/api/personas/:personaId/knowledge-bases`
+  - `/api/personas/:personaId/search`
   - `/api/voice-clone/:personaId`
   - `/api/voice-clone/:personaId/status`
 
@@ -42,6 +45,8 @@
 - 文本链路：`@ai-sdk/vue Chat` -> `/api/chat` UIMessage stream
 
 ## 6. 研发约定
+- 导入路径统一使用根别名 `@/`，不要继续新增 `../../` 形式的相对导入。
+- 单文件目标长度 `<= 300` 行，硬上限 `400` 行；超过必须拆分 Hook、组件或辅助模块。
 - 组件尽量无业务副作用，业务逻辑集中在 hooks。
 - 新增 WS 消息类型时，必须同步更新：
   - `useAppController.ts` 事件处理

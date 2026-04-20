@@ -10,7 +10,7 @@ import {
   DigitalHumanHealthStatus,
   DigitalHumanProvider,
   DigitalHumanSessionInfo,
-} from '../digital-human.types';
+} from '@/digital-human/digital-human.types';
 
 interface SimliCreateSessionResponse {
   sessionId?: string;

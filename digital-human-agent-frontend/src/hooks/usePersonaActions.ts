@@ -1,10 +1,10 @@
 import { ref } from 'vue'
-import { usePersonaStore } from '../stores/persona'
-import { useSessionStore } from '../stores/session'
-import { useConversation } from './useConversation'
-import { useVoiceClone } from './useVoiceClone'
-import { useDigitalHuman } from './useDigitalHuman'
-import { useTextChat } from './useTextChat'
+import { usePersonaStore } from '@/stores/persona'
+import { useSessionStore } from '@/stores/session'
+import { useConversation } from '@/hooks/useConversation'
+import { useVoiceClone } from '@/hooks/useVoiceClone'
+import { useDigitalHuman } from '@/hooks/useDigitalHuman'
+import { useTextChat } from '@/hooks/useTextChat'
 
 /**
  * Persona 相关操作 Hook。

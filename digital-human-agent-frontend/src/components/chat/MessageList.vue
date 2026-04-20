@@ -35,8 +35,8 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { MessageCircleIcon } from 'lucide-vue-next'
-import MessageItem from './MessageItem.vue'
-import type { ChatMessage } from '../../types'
+import MessageItem from '@/components/chat/MessageItem.vue'
+import type { ChatMessage } from '@/types'
 
 const props = withDefaults(defineProps<{
   messages: ChatMessage[]

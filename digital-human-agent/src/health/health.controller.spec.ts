@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { HealthController } from './health.controller';
-import { HealthService } from './health.service';
+import { HealthController } from '@/health/health.controller';
+import { HealthService } from '@/health/health.service';
 
 describe('HealthController', () => {
   const service = {

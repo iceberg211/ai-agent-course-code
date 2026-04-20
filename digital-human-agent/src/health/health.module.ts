@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { DigitalHumanModule } from '../digital-human/digital-human.module';
-import { HealthController } from './health.controller';
-import { HealthService } from './health.service';
+import { DigitalHumanModule } from '@/digital-human/digital-human.module';
+import { HealthController } from '@/health/health.controller';
+import { HealthService } from '@/health/health.service';
 
 @Module({
   imports: [DigitalHumanModule],

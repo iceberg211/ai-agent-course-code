@@ -1,4 +1,4 @@
-import { DigitalHumanSpeakMode } from '../digital-human/digital-human.types';
+import { DigitalHumanSpeakMode } from '@/digital-human/digital-human.types';
 
 export type SessionMode = 'voice' | 'digital-human';
 
