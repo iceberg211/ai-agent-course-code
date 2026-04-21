@@ -55,9 +55,12 @@ export class SimliProvider implements DigitalHumanProvider {
     const url = `${this.baseUrl}/compose/token`;
     const body = {
       faceId: this.faceId,
+      apiVersion: 'v2',
       handleSilence: true,
       maxIdleTime: 300,
       maxSessionLength: 3600,
+      startFrame: 0,
+      audioInputFormat: 'pcm16',
     };
     const startedAt = Date.now();
 

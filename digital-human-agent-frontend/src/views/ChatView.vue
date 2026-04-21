@@ -4,18 +4,11 @@
     <PersonaPanel
       :personas="personaStore.personas"
       :selected-id="personaStore.selectedId"
-      :selected-persona="personaStore.selectedPersona"
       :connected="sessionStore.connected"
       :loading="personaStore.loading"
-      :mode="mode"
-      :voice-clone-state="voiceCloneState"
-      :voice-clone-loading="voiceCloneLoading"
-      :voice-clone-uploading="voiceCloneUploading"
       @select="onSelectPersona"
       @delete="onDeletePersona"
       @create="createModalOpen = true"
-      @upload-voice-sample="onUploadVoiceSample"
-      @refresh-voice-clone="onRefreshVoiceCloneStatus"
     />
 
     <!-- 中间对话区 -->
@@ -31,17 +24,17 @@
         @new-conversation="onNewConversation"
       />
 
-      <!-- 数字人视频区 -->
-      <section v-if="mode === 'digital-human'" class="digital-stage" aria-label="数字人视频区">
-        <video ref="digitalVideoEl" class="digital-video" autoplay playsinline />
-        <div class="digital-mask">
-          <div class="digital-badge" :class="digitalHumanStatus">
-            <span class="badge-dot" />
-            {{ formatDigitalStatus(digitalHumanStatus) }}
-          </div>
-          <div v-if="digitalHumanError" class="digital-error">{{ digitalHumanError }}</div>
-        </div>
-      </section>
+      <DigitalHumanWorkspace
+        v-if="mode === 'digital-human'"
+        :bind-video="digitalHuman.bindVideo"
+        :status="digitalHumanStatus"
+        :error="digitalHumanError"
+        :voice-clone-state="voiceCloneState"
+        :voice-clone-loading="voiceCloneLoading"
+        :voice-clone-uploading="voiceCloneUploading"
+        @upload-voice-sample="onUploadVoiceSample"
+        @refresh-voice-clone="onRefreshVoiceCloneStatus"
+      />
 
       <!-- 消息列表：直接从 conversation 取 -->
       <MessageList :messages="conversationMessages" :loading="sessionStore.historyLoading" />
@@ -63,7 +56,7 @@
         @mic-up="onMicUp"
       />
 
-      <audio ref="audioEl" style="display:none" aria-hidden="true" />
+      <audio ref="audioEl" autoplay style="display:none" aria-hidden="true" />
     </main>
 
     <!-- 右侧知识库抽屉：展示当前角色已挂载的知识库 -->
@@ -93,7 +86,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { DIGITAL_HUMAN_STATUS_LABELS } from '@/common/constants'
 import { useAppController } from '@/hooks/useAppController'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
@@ -101,6 +93,7 @@ import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import PersonaPanel from '@/components/persona/PersonaPanel.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
+import DigitalHumanWorkspace from '@/components/chat/DigitalHumanWorkspace.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
 import ChatControls from '@/components/chat/ChatControls.vue'
@@ -145,7 +138,6 @@ const voiceCloneUploading = computed(() => voiceClone.uploading.value)
 
 // ── Template refs ─────────────────────────────────────────────────────────────
 const audioEl = ref<HTMLAudioElement | null>(null)
-const digitalVideoEl = ref<HTMLVideoElement | null>(null)
 const knowledgeDrawerOpen = ref(false)
 const createModalOpen = ref(false)
 const mountedKnowledgeBases = ref<Array<{ id: string; name: string }>>([])
@@ -211,8 +203,10 @@ async function refreshMountedKnowledgeBases(personaId: string) {
   }
 }
 
-watch(audioEl, (el) => audio.initAudioElement(el))
-watch(digitalVideoEl, (el) => digitalHuman.bindVideo(el))
+watch(audioEl, (el) => {
+  audio.initAudioElement(el)
+  digitalHuman.bindAudio(el)
+})
 watch(
   () => personaStore.selectedId,
   (personaId) => {
@@ -227,14 +221,17 @@ watch(
   },
   { immediate: true },
 )
+watch(
+  mode,
+  (nextMode) => {
+    if (nextMode === 'digital-human' && personaStore.selectedId) {
+      void onRefreshVoiceCloneStatus()
+    }
+  },
+)
 
 const digitalHumanStatus = computed(() => digitalHuman.status.value)
 const digitalHumanError = computed(() => digitalHuman.lastError.value)
-
-// ── 工具函数 ──────────────────────────────────────────────────────────────────
-function formatDigitalStatus(status: string) {
-  return DIGITAL_HUMAN_STATUS_LABELS[status as keyof typeof DIGITAL_HUMAN_STATUS_LABELS] ?? status
-}
 </script>
 
 <style scoped>
@@ -255,74 +252,6 @@ function formatDigitalStatus(status: string) {
   flex-direction: column;
   overflow: hidden;
   background: var(--surface);
-}
-
-/* ── 数字人视频区 ─────────────────────────────────────────────────────────── */
-.digital-stage {
-  position: relative;
-  margin: 12px 16px 0;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: radial-gradient(120% 140% at 20% 10%, #f0f6ff, #e5efff);
-  min-height: 180px;
-  flex-shrink: 0;
-}
-
-.digital-video {
-  width: 100%;
-  height: 220px;
-  display: block;
-  object-fit: cover;
-  background: #dde8f8;
-}
-
-.digital-mask {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, transparent, rgba(10, 20, 40, 0.65));
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.digital-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(255,255,255,0.15);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,0.2);
-}
-
-.badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fff;
-  opacity: 0.8;
-  flex-shrink: 0;
-}
-.digital-badge.connected .badge-dot { background: #4ade80; opacity: 1; }
-.digital-badge.connecting .badge-dot { background: #facc15; animation: blink 1s infinite; }
-.digital-badge.error .badge-dot { background: #f87171; }
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-.digital-error {
-  font-size: 11px;
-  color: rgba(255,200,200,0.9);
 }
 
 /* ── 知识库抽屉滑入动画 ─────────────────────────────────────────────────────── */

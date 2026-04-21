@@ -12,26 +12,6 @@
     </div>
 
     <div class="header-actions">
-      <div class="mode-switch" role="tablist" aria-label="会话模式">
-        <button
-          class="mode-btn"
-          :class="{ active: mode === 'voice' }"
-          role="tab"
-          :aria-selected="mode === 'voice'"
-          @click="$emit('change-mode', 'voice')"
-        >
-          语音
-        </button>
-        <button
-          class="mode-btn"
-          :class="{ active: mode === 'digital-human' }"
-          role="tab"
-          :aria-selected="mode === 'digital-human'"
-          @click="$emit('change-mode', 'digital-human')"
-        >
-          数字人
-        </button>
-      </div>
       <button
         v-if="persona"
         class="header-btn"
@@ -52,13 +32,25 @@
         <BookOpenIcon :size="15" aria-hidden="true" />
         <span>挂载知识库</span>
       </button>
+      <button
+        v-if="persona"
+        class="header-btn header-btn--feature"
+        :class="{ active: mode === 'digital-human' }"
+        :aria-pressed="mode === 'digital-human'"
+        :aria-label="mode === 'digital-human' ? '关闭数字人播报' : '开启数字人播报'"
+        :title="mode === 'digital-human' ? '关闭数字人播报，回到标准问答' : '开启数字人播报，以数字人方式展示回答'"
+        @click="$emit('change-mode', mode === 'digital-human' ? 'voice' : 'digital-human')"
+      >
+        <BotIcon :size="15" aria-hidden="true" />
+        <span>{{ mode === 'digital-human' ? '退出数字人' : '数字人播报' }}</span>
+      </button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { BookOpenIcon, PlusSquareIcon } from 'lucide-vue-next'
+import { BookOpenIcon, BotIcon, PlusSquareIcon } from 'lucide-vue-next'
 const props = defineProps({
   persona: { type: Object, default: null },
   knowledgeDrawerOpen: { type: Boolean, default: false },
@@ -138,27 +130,9 @@ const subClass = computed(() => ({
   align-items: center;
   gap: 10px;
 }
-.mode-switch {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px;
-  background: #fff;
-}
-.mode-btn {
-  border: none;
-  border-radius: 999px;
-  padding: 4px 10px;
-  background: transparent;
+.header-btn--feature {
   color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 150ms ease-out;
-}
-.mode-btn.active {
-  background: var(--primary-bg);
-  color: var(--primary);
-  font-weight: 600;
+  border-style: dashed;
 }
 
 @media (max-width: 960px) {
@@ -170,9 +144,6 @@ const subClass = computed(() => ({
   }
   .header-btn {
     padding: 6px 10px;
-  }
-  .mode-btn {
-    padding: 4px 8px;
   }
 }
 </style>
