@@ -42,6 +42,10 @@
 - `VOICE_CLONE_MOCK_DELAY_MS`（语音克隆 mock 训练时长，毫秒）
 - `SESSION_HISTORY_LIMIT`（会话恢复历史条数）
 - `TYPEORM_LOGGING=true`（联调排障时打开）
+- `LANGSMITH_TRACING=true`（开启 LangSmith trace）
+- `LANGSMITH_API_KEY`（LangSmith API Key）
+- `LANGSMITH_PROJECT`（可选，LangSmith 项目名）
+- `LANGCHAIN_CALLBACKS_BACKGROUND=true`（本地常驻服务建议开启，减少 trace 上传阻塞）
 
 ## 5. 联调入口
 

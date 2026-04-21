@@ -32,5 +32,14 @@ describe('validateEnv', () => {
     });
     expect(result.DIGITAL_HUMAN_PROVIDER).toBe('simli');
   });
-});
 
+  it('启用 LangSmith tracing 但缺少 API Key 时会报错', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        LANGSMITH_TRACING: 'true',
+        LANGSMITH_API_KEY: '',
+      }),
+    ).toThrow('LANGSMITH_API_KEY');
+  });
+});

@@ -1,21 +1,19 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { usePersonaStore } from '@/stores/persona'
 import { useConversation } from '@/hooks/useConversation'
 import { useAudio } from '@/hooks/useAudio'
 
-/** 按住时间少于此值视为误触 */
-const MIC_MIN_HOLD_MS = 180
-/** 松开后延迟此时长再发送（给用户取消机会） */
-const MIC_SEND_DELAY_MS = 1000
+/** 录音时间少于此值视为误触 */
+const MIC_MIN_DURATION_MS = 300
 
 /**
  * 麦克风控制 Hook。
  *
  * 职责：
- * - 处理「按下麦克风 / 松开麦克风」的完整状态转换
- * - 松开后缓冲 1 秒（可取消）再通过 sendBinary 发送语音
- * - 管理待发送状态（pendingVoiceSend）
+ * - 处理「点击开始录音 / 再次点击结束发送」的完整状态转换
+ * - 在首次进入语音时自动建立会话，并在会话就绪后开始收音
+ * - 管理待开始录音状态（preparing）
  *
  * 所有 WebSocket 发送通过依赖注入的 send/sendBinary 回调完成，保持解耦。
  */
@@ -29,38 +27,40 @@ export function useMicController(
   const sessionStore = useSessionStore()
   const personaStore = usePersonaStore()
 
-  const pendingVoiceSend = ref(false)
-  const micPressedAt = ref(0)
-  let voiceSendTimer: ReturnType<typeof setTimeout> | null = null
+  const preparing = ref(false)
+  const autoStartRecording = ref(false)
+  const recordingStartedAt = ref(0)
+
+  watch(
+    () => sessionStore.sessionId,
+    (sessionId) => {
+      if (!sessionId || !autoStartRecording.value) return
+      autoStartRecording.value = false
+      void startRecording()
+    },
+  )
+
+  watch(
+    () => sessionStore.connected,
+    (connected) => {
+      if (connected) return
+      clearPending()
+    },
+  )
 
   // ── 公开操作 ───────────────────────────────────────────────────────────────
 
-  async function onMicDown(mode: string) {
-    // 如有待发送语音，取消
-    if (pendingVoiceSend.value) {
+  async function onMicToggle(mode: string) {
+    if (preparing.value) {
       clearPending(true)
-      conversation.state.value = 'idle'
-    }
-
-    // 会话未建立时先初始化
-    if (!sessionStore.sessionId) {
-      if (!personaStore.selectedId) return
-      if (!sessionStore.connected) {
-        showToast('连接中，请稍后再试')
-        return
-      }
-      send({
-        type: 'session:start',
-        sessionId: '',
-        payload: { personaId: personaStore.selectedId, mode },
-      })
-      showToast('会话建立中，请再按一次开始说话')
       return
     }
 
-    clearPending()
+    if (conversation.state.value === 'recording') {
+      await stopRecordingAndSend()
+      return
+    }
 
-    // 打断当前播报
     if (
       conversation.state.value === 'thinking' ||
       conversation.state.value === 'speaking'
@@ -70,34 +70,71 @@ export function useMicController(
         sessionId: sessionStore.sessionId,
       })
       audio.stopPlayback()
-      conversation.state.value = 'recording'
-      micPressedAt.value = Date.now()
-      try {
-        await audio.startRecording()
-      } catch {
-        conversation.state.value = 'idle'
-        showToast('无法开启麦克风，请检查浏览器权限')
-      }
-      return
+      conversation.state.value = 'idle'
     }
 
     if (conversation.state.value !== 'idle') return
 
+    if (!(await ensureSession(mode))) return
+    await startRecording()
+  }
+
+  function clearPending(showNotice = false) {
+    preparing.value = false
+    autoStartRecording.value = false
+    if (showNotice) {
+      showToast('已取消开始录音')
+    }
+  }
+
+  function dispose() {
+    clearPending()
+    if (conversation.state.value === 'recording') {
+      conversation.state.value = 'idle'
+      void audio.stopRecording().catch(() => undefined)
+    }
+  }
+
+  async function ensureSession(mode: string) {
+    if (sessionStore.sessionId) return true
+    if (!personaStore.selectedId) {
+      showToast('请先选择知识助手')
+      return false
+    }
+    if (!sessionStore.connected) {
+      showToast('连接中，请稍后再试')
+      return false
+    }
+    preparing.value = true
+    autoStartRecording.value = true
+    sessionStore.setHistoryLoading(true)
+    send({
+      type: 'session:start',
+      sessionId: '',
+      payload: { personaId: personaStore.selectedId, mode },
+    })
+    showToast('正在准备语音会话')
+    return false
+  }
+
+  async function startRecording() {
+    clearPending()
     conversation.state.value = 'recording'
-    micPressedAt.value = Date.now()
+    recordingStartedAt.value = Date.now()
     try {
       await audio.startRecording()
     } catch {
       conversation.state.value = 'idle'
+      recordingStartedAt.value = 0
       showToast('无法开启麦克风，请检查浏览器权限')
     }
   }
 
-  async function onMicUp() {
+  async function stopRecordingAndSend() {
     if (conversation.state.value !== 'recording') return
 
-    const holdMs = Date.now() - micPressedAt.value
-    micPressedAt.value = 0
+    const durationMs = Date.now() - recordingStartedAt.value
+    recordingStartedAt.value = 0
 
     let buffer: ArrayBuffer
     try {
@@ -114,42 +151,20 @@ export function useMicController(
       return
     }
 
-    if (holdMs < MIC_MIN_HOLD_MS) {
+    if (durationMs < MIC_MIN_DURATION_MS) {
       conversation.state.value = 'idle'
-      showToast('按住时间太短，已取消发送')
+      showToast('录音时间太短，已取消发送')
       return
     }
 
     conversation.state.value = 'thinking'
-    pendingVoiceSend.value = true
-    showToast(`录音已结束，${MIC_SEND_DELAY_MS / 1000} 秒后发送`)
-
-    voiceSendTimer = setTimeout(() => {
-      voiceSendTimer = null
-      pendingVoiceSend.value = false
-      sendBinary(buffer)
-    }, MIC_SEND_DELAY_MS)
-  }
-
-  function clearPending(showNotice = false) {
-    if (voiceSendTimer) {
-      clearTimeout(voiceSendTimer)
-      voiceSendTimer = null
-    }
-    if (pendingVoiceSend.value && showNotice) {
-      showToast('已取消待发送语音')
-    }
-    pendingVoiceSend.value = false
-  }
-
-  function dispose() {
-    clearPending()
+    sendBinary(buffer)
+    showToast('语音已发送')
   }
 
   return {
-    pendingVoiceSend,
-    onMicDown,
-    onMicUp,
+    preparing,
+    onMicToggle,
     clearPending,
     dispose,
   }

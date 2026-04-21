@@ -11,15 +11,12 @@
     <!-- 空态 -->
     <div v-else-if="!messages.length" class="empty-state" role="status">
       <div class="empty-illustration">
-        <div class="empty-ring ring-3" />
-        <div class="empty-ring ring-2" />
-        <div class="empty-ring ring-1" />
         <div class="empty-icon-wrap">
-          <MessageCircleIcon :size="26" aria-hidden="true" />
+          <BookOpenTextIcon :size="22" aria-hidden="true" />
         </div>
       </div>
-      <p class="empty-title">开始对话</p>
-      <p class="empty-desc">先确认角色已挂载知识库，再直接提问<br>也支持语音和文字输入</p>
+      <p class="empty-title">开始知识问答</p>
+      <p class="empty-desc">选择角色后，可以直接输入问题，也可以使用语音提问。</p>
     </div>
 
     <template v-else>
@@ -34,7 +31,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { MessageCircleIcon } from 'lucide-vue-next'
+import { BookOpenTextIcon } from 'lucide-vue-next'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import type { ChatMessage } from '@/types'
 
@@ -93,49 +90,48 @@ defineExpose({ listEl })
 /* ── 空态 ─────────────────────────────────────────────────────────── */
 .empty-state {
   flex: 1;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 14px;
-  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 16px 24px;
 }
 
 .empty-illustration {
-  position: relative;
-  width: 80px; height: 80px;
-  display: flex; align-items: center; justify-content: center;
-}
-
-.empty-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1.5px solid var(--primary-muted, #bfdbfe);
-  animation: breathe-ring 3s ease-in-out infinite;
-}
-.ring-1 { width: 48px; height: 48px; animation-delay: 0s; }
-.ring-2 { width: 64px; height: 64px; animation-delay: 0.3s; opacity: 0.6; }
-.ring-3 { width: 80px; height: 80px; animation-delay: 0.6s; opacity: 0.3; }
-
-@keyframes breathe-ring {
-  0%, 100% { transform: scale(1);    opacity: inherit; }
-  50%       { transform: scale(1.05); opacity: 0.4; }
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-icon-wrap {
-  width: 40px; height: 40px; border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background: var(--primary-bg, #eff6ff);
   border: 1.5px solid var(--primary-muted, #bfdbfe);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--primary, #2563eb);
-  position: relative;
-  z-index: 1;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.06);
 }
 
 .empty-title {
-  font-size: 16px; font-weight: 700; color: var(--text, #0f172a);
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
   letter-spacing: -0.02em;
 }
 .empty-desc {
-  font-size: 13px; color: var(--text-muted, #64748b);
-  text-align: center; line-height: 1.6;
+  max-width: 380px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #64748b);
+  text-align: center;
+  line-height: 1.7;
 }
 </style>

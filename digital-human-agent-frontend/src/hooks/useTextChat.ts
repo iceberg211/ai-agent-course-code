@@ -35,6 +35,25 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
         personaId: personaStore.selectedId,
         conversationId: sessionStore.conversationId || undefined,
       }),
+      prepareSendMessagesRequest: ({
+        api,
+        body,
+        headers,
+        credentials,
+        trigger,
+        messages,
+      }) => ({
+        api,
+        headers,
+        credentials,
+        body: {
+          personaId: body.personaId,
+          conversationId: body.conversationId,
+          trigger,
+          message: extractLatestUserText(messages),
+          messages,
+        },
+      }),
     }),
     onFinish: ({ message }) => {
       textRequestActive.value = false
@@ -174,6 +193,22 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
     if (status === 'interrupted') return 'interrupted'
     if (status === 'failed') return 'failed'
     return 'completed'
+  }
+
+  function extractLatestUserText(messages: StreamUIMessage[]): string {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i]
+      if (message.role !== 'user') continue
+      const text = (message.parts ?? [])
+        .map((part) =>
+          part.type === 'text' && typeof part.text === 'string' ? part.text : '',
+        )
+        .join('')
+        .trim()
+      if (text) return text
+    }
+
+    return ''
   }
 
   // ── 公开操作 ───────────────────────────────────────────────────────────────

@@ -1,6 +1,22 @@
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
+export const KNOWLEDGE_QUERY_REWRITE_PROMPT = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    [
+      '你是知识库检索的 Query Rewrite 助手。',
+      '你的任务是把用户问题改写成更适合检索的一条中文查询句。',
+      '要求：',
+      '1. 保留原问题里的核心实体、时间、版本、约束条件。',
+      '2. 去掉寒暄、口语赘述和生成式表达，但不要补充原问题没有的事实。',
+      '3. 如果原问题已经适合检索，可以原样返回。',
+      '4. 只针对检索改写，不负责回答问题。',
+    ].join('\n'),
+  ],
+  ['human', '原始问题：{query}'],
+]);
+
 export const KNOWLEDGE_RERANK_PROMPT = ChatPromptTemplate.fromMessages([
   [
     'system',
@@ -8,6 +24,12 @@ export const KNOWLEDGE_RERANK_PROMPT = ChatPromptTemplate.fromMessages([
   ],
   ['human', '{inputJson}'],
 ]);
+
+export function buildKnowledgeQueryRewritePromptInput(query: string) {
+  return {
+    query,
+  };
+}
 
 export function buildKnowledgeRerankPromptInput(
   query: string,

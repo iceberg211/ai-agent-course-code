@@ -44,8 +44,16 @@ export class KnowledgeContentService {
     );
   }
 
-  retrieveForPersona(personaId: string, query: string): Promise<KnowledgeChunk[]> {
-    return this.knowledgeSearchService.retrieveForPersona(personaId, query);
+  retrieveForPersona(
+    personaId: string,
+    query: string,
+    options?: RetrieveKnowledgeOptions,
+  ): Promise<KnowledgeChunk[]> {
+    return this.knowledgeSearchService.retrieveForPersona(
+      personaId,
+      query,
+      options,
+    );
   }
 
   ingestDocument(

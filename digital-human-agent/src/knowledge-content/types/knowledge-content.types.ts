@@ -16,8 +16,17 @@ export interface RetrieveKnowledgeOptions {
   finalTopK?: number;
 }
 
+export interface KnowledgeQueryRewriteResult {
+  originalQuery: string;
+  rewrittenQuery: string;
+  changed: boolean;
+  reason: string;
+}
+
 export interface RetrieveKnowledgeDebugResult {
   query: string;
+  retrievalQuery: string;
+  rewrite: KnowledgeQueryRewriteResult;
   options: Required<RetrieveKnowledgeOptions>;
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];

@@ -44,16 +44,12 @@
         :disabled="!personaStore.selectedId"
         :busy="sessionStore.historyLoading || conversationState === 'thinking' || conversationState === 'speaking' || conversationState === 'recording'"
         :can-stop="conversationState === 'thinking'"
+        :voice-state="conversationState"
+        :voice-preparing="micPreparing"
+        :voice-disabled="!personaStore.selectedId || !sessionStore.connected"
         @send="onSendText"
         @stop="onStopText"
-      />
-
-      <!-- 控制栏 -->
-      <ChatControls
-        :state="conversationState"
-        :disabled="!personaStore.selectedId || !sessionStore.connected"
-        @mic-down="() => onMicDown(mode)"
-        @mic-up="onMicUp"
+        @mic-toggle="() => onMicToggle(mode)"
       />
 
       <audio ref="audioEl" autoplay style="display:none" aria-hidden="true" />
@@ -96,7 +92,6 @@ import ChatHeader from '@/components/chat/ChatHeader.vue'
 import DigitalHumanWorkspace from '@/components/chat/DigitalHumanWorkspace.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
-import ChatControls from '@/components/chat/ChatControls.vue'
 import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
@@ -121,12 +116,12 @@ const {
   onDeletePersona,
   onChangeMode,
   onNewConversation,
-  onMicDown,
-  onMicUp,
+  onMicToggle,
   onSendText,
   onStopText,
   onUploadVoiceSample,
   onRefreshVoiceCloneStatus,
+  micPreparing,
 } = useAppController()
 
 // 从 useAppController 返回的同一套 Hook 派生模板绑定的 computed

@@ -22,6 +22,12 @@ export class PersonaKnowledgeSearchController {
     const results = await this.knowledgeContentService.retrieveForPersona(
       personaId,
       normalizedQuery,
+      {
+        rerank: body.rerank,
+        threshold: body.threshold,
+        stage1TopK: body.stage1TopK,
+        finalTopK: body.finalTopK,
+      },
     );
     return { query: normalizedQuery, results };
   }

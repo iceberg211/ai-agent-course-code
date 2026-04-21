@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
 import {
   buildKnowledgeRerankPromptInput,
   KNOWLEDGE_RERANK_PROMPT,
@@ -42,6 +43,15 @@ export class RerankerService {
       await KNOWLEDGE_RERANK_PROMPT.formatMessages(
         buildKnowledgeRerankPromptInput(query, candidates),
       ),
+      buildLangSmithRunnableConfig({
+        runName: 'knowledge_rerank_llm',
+        tags: ['knowledge', 'rag', 'rerank', 'llm'],
+        metadata: {
+          query,
+          candidateCount: candidates.length,
+          topK: safeTopK,
+        },
+      }),
     );
 
     const raw = this.extractText(response.content);

@@ -97,8 +97,7 @@ export function useAppController() {
     onDeletePersona,
     onChangeMode,
     onNewConversation,
-    onMicDown: (mode_: string) => mic.onMicDown(mode_),
-    onMicUp: mic.onMicUp,
+    onMicToggle: (mode_: string) => mic.onMicToggle(mode_),
     onSendText: async (text: string) => {
       const normalized = String(text ?? '').trim()
       if (!normalized || !personaStore.selectedId) return
@@ -137,5 +136,6 @@ export function useAppController() {
     audio,
     digitalHuman,
     mode,
+    micPreparing: mic.preparing,
   }
 }

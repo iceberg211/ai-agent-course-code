@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type {
   KnowledgeChunk,
+  KnowledgeQueryRewriteResult,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
 } from '@/knowledge-content/types/knowledge-content.types';
+import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 
@@ -15,6 +18,7 @@ export class KnowledgeSearchService {
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
     private readonly rerankerService: RerankerService,
+    private readonly queryRewriteService: QueryRewriteService,
   ) {}
 
   async retrieve(
@@ -40,21 +44,62 @@ export class KnowledgeSearchService {
     query: string,
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
+    return runInTracedScope(
+      {
+        name: 'knowledge_retrieve_with_stages',
+        runType: 'chain',
+        tags: ['knowledge', 'rag', 'retrieve', 'single-kb'],
+        metadata: {
+          knowledgeId,
+        },
+        input: {
+          knowledgeId,
+          query,
+          rerank: options.rerank,
+          stage1TopK: options.stage1TopK,
+          finalTopK: options.finalTopK,
+          threshold: options.threshold,
+        },
+        outputProcessor: (output) => ({
+          query: output.query,
+          retrievalQuery: output.retrievalQuery,
+          stage1Count: output.stage1.length,
+          stage2Count: output.stage2.length,
+        }),
+      },
+      () => this.retrieveWithStagesInternal(knowledgeId, query, options),
+    );
+  }
+
+  private async retrieveWithStagesInternal(
+    knowledgeId: string,
+    query: string,
+    options: RetrieveKnowledgeOptions = {},
+  ): Promise<RetrieveKnowledgeDebugResult> {
     const normalizedQuery = query.trim();
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
 
     if (!normalizedQuery) {
+      const fallbackRewrite = this.buildFallbackRewrite(
+        normalizedQuery,
+        '原始问题为空，跳过改写',
+      );
       return {
         query: normalizedQuery,
+        retrievalQuery: normalizedQuery,
+        rewrite: fallbackRewrite,
         options: normalizedOptions,
         stage1: [],
         stage2: [],
       };
     }
 
+    const rewrite = await this.resolveRetrievalQuery(normalizedQuery);
+    const retrievalQuery = rewrite.rewrittenQuery;
+
     const queryEmbedding = await this.runtime.withTransientRetry(
       'embed query',
-      () => this.runtime.embeddings.embedQuery(normalizedQuery),
+      () => this.runtime.embeddings.embedQuery(retrievalQuery),
       3,
     );
 
@@ -84,6 +129,8 @@ export class KnowledgeSearchService {
 
     return {
       query: normalizedQuery,
+      retrievalQuery,
+      rewrite,
       options: normalizedOptions,
       stage1,
       stage2,
@@ -93,27 +140,68 @@ export class KnowledgeSearchService {
   async retrieveForPersona(
     personaId: string,
     query: string,
+    options: RetrieveKnowledgeOptions = {},
+  ): Promise<KnowledgeChunk[]> {
+    return runInTracedScope(
+      {
+        name: 'persona_knowledge_retrieve',
+        runType: 'chain',
+        tags: ['knowledge', 'rag', 'retrieve', 'persona'],
+        metadata: {
+          personaId,
+        },
+        input: {
+          personaId,
+          query,
+          rerank: options.rerank,
+          stage1TopK: options.stage1TopK,
+          finalTopK: options.finalTopK,
+          threshold: options.threshold,
+        },
+        outputProcessor: (output) => ({
+          resultCount: output.length,
+        }),
+      },
+      () => this.retrieveForPersonaInternal(personaId, query, options),
+    );
+  }
+
+  private async retrieveForPersonaInternal(
+    personaId: string,
+    query: string,
+    options: RetrieveKnowledgeOptions = {},
   ): Promise<KnowledgeChunk[]> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return [];
 
+    const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
     const knowledgeConfigs = await this.listMountedKnowledgeConfigs(personaId);
     if (knowledgeConfigs.length === 0) return [];
 
+    const rewrite = await this.resolveRetrievalQuery(normalizedQuery);
+
     const queryEmbedding = await this.runtime.withTransientRetry(
       'embed query',
-      () => this.runtime.embeddings.embedQuery(normalizedQuery),
+      () => this.runtime.embeddings.embedQuery(rewrite.rewrittenQuery),
       3,
     );
 
     const stage1Results = await Promise.all(
       knowledgeConfigs.map(async (config) => {
         try {
+          const effectiveThreshold =
+            options.threshold === undefined
+              ? config.threshold
+              : normalizedOptions.threshold;
+          const effectiveStage1TopK =
+            options.stage1TopK === undefined
+              ? config.stage1TopK
+              : normalizedOptions.stage1TopK;
           return await this.retrieveStage1(
             config.knowledgeId,
             queryEmbedding,
-            config.threshold,
-            config.stage1TopK,
+            effectiveThreshold,
+            effectiveStage1TopK,
           );
         } catch (error) {
           this.logger.warn(
@@ -128,17 +216,19 @@ export class KnowledgeSearchService {
 
     const mergedStage1 = this.mergeStage1Results(
       stage1Results,
-      knowledgeConfigs,
+      options.stage1TopK === undefined
+        ? Math.max(20, ...knowledgeConfigs.map((config) => config.stage1TopK))
+        : normalizedOptions.stage1TopK,
     );
-    if (mergedStage1.length <= 1) {
-      return mergedStage1;
+    if (mergedStage1.length <= 1 || !normalizedOptions.rerank) {
+      return mergedStage1.slice(0, normalizedOptions.finalTopK);
     }
 
     try {
       return await this.rerankerService.rerank(
         normalizedQuery,
         mergedStage1,
-        5,
+        normalizedOptions.finalTopK,
       );
     } catch (error) {
       this.logger.warn(
@@ -146,7 +236,7 @@ export class KnowledgeSearchService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return mergedStage1.slice(0, 5);
+      return mergedStage1.slice(0, normalizedOptions.finalTopK);
     }
   }
 
@@ -200,7 +290,7 @@ export class KnowledgeSearchService {
 
   private mergeStage1Results(
     stage1Results: KnowledgeChunk[][],
-    knowledgeConfigs: Array<{ stage1TopK: number }>,
+    globalStage1TopK: number,
   ): KnowledgeChunk[] {
     const dedupedChunks = new Map<string, KnowledgeChunk>();
 
@@ -217,12 +307,25 @@ export class KnowledgeSearchService {
       (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
     );
 
-    const globalStage1TopK = Math.max(
-      20,
-      ...knowledgeConfigs.map((config) => config.stage1TopK),
-    );
-
     return sortedChunks.slice(0, globalStage1TopK);
+  }
+
+  private async resolveRetrievalQuery(
+    query: string,
+  ): Promise<KnowledgeQueryRewriteResult> {
+    return this.queryRewriteService.rewrite(query);
+  }
+
+  private buildFallbackRewrite(
+    query: string,
+    reason: string,
+  ): KnowledgeQueryRewriteResult {
+    return {
+      originalQuery: query,
+      rewrittenQuery: query,
+      changed: false,
+      reason,
+    };
   }
 
   private async retrieveStage1(

@@ -63,7 +63,6 @@ export class KnowledgeContentRuntimeService {
       0,
       1,
     );
-
     return {
       threshold,
       rerank,

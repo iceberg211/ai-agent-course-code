@@ -8,6 +8,7 @@ import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/kno
 import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { Knowledge } from '@/knowledge/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
@@ -26,6 +27,7 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeDocumentService,
     KnowledgeSearchService,
     KnowledgeContentService,
+    QueryRewriteService,
     RerankerService,
   ],
   controllers: [KnowledgeContentController, PersonaKnowledgeSearchController],

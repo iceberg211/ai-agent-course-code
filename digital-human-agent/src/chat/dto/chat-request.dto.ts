@@ -2,6 +2,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ChatRequestDto {
+  @ApiPropertyOptional({
+    description: 'AI SDK 生成的聊天 ID（兼容字段，服务端忽略）',
+    example: 'chat_123',
+  })
+  @IsOptional()
+  @IsString()
+  id?: string;
+
   @ApiProperty({
     description: '角色 ID',
     example: '491a6f8f-739a-47ff-94fa-6382ed79baf9',
@@ -40,5 +48,12 @@ export class ChatRequestDto {
   @IsOptional()
   @IsString()
   trigger?: string;
-}
 
+  @ApiPropertyOptional({
+    description: 'AI SDK 当前提交消息 ID（兼容字段，服务端忽略）',
+    example: 'msg_123',
+  })
+  @IsOptional()
+  @IsString()
+  messageId?: string;
+}

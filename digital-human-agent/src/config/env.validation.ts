@@ -5,6 +5,12 @@ function asNonEmptyString(value: unknown): string {
   return value.trim();
 }
 
+function asBooleanFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 export function validateEnv(config: EnvMap): EnvMap {
   const requiredKeys = [
     'DATABASE_URL',
@@ -27,6 +33,15 @@ export function validateEnv(config: EnvMap): EnvMap {
     errors.push('OPENAI_API_KEY 或 DASHSCOPE_API_KEY 至少配置一个');
   }
 
+  if (
+    asBooleanFlag(config.LANGSMITH_TRACING) &&
+    !asNonEmptyString(config.LANGSMITH_API_KEY)
+  ) {
+    errors.push(
+      'LANGSMITH_TRACING=true 时，LANGSMITH_API_KEY 不能为空',
+    );
+  }
+
   const provider =
     asNonEmptyString(config.DIGITAL_HUMAN_PROVIDER).toLowerCase() || 'mock';
   if (provider === 'simli') {
@@ -47,4 +62,3 @@ export function validateEnv(config: EnvMap): EnvMap {
     DIGITAL_HUMAN_PROVIDER: provider,
   };
 }
-

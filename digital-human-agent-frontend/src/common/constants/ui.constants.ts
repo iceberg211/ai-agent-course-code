@@ -24,19 +24,19 @@ export const CHAT_CONTROL_STATE_LABELS: Record<ConversationState, string> = {
 export const CHAT_CONTROL_HINT_LABELS: Partial<
   Record<ConversationState, string>
 > = {
-  idle: '按住说话',
-  recording: '松开 · 1 秒后发送',
-  thinking: '点击打断',
-  speaking: '点击打断',
+  idle: '点击开始收音',
+  recording: '再次点击，结束并发送',
+  thinking: '点击打断当前回答，并开始收音',
+  speaking: '点击打断当前播报，并开始收音',
 };
 
 export const CHAT_CONTROL_ARIA_LABELS: Partial<
   Record<ConversationState, string>
 > = {
-  idle: '按住开始录音',
-  recording: '松开发送语音',
-  thinking: '点击打断 AI',
-  speaking: '点击打断 AI',
+  idle: '点击开始录音',
+  recording: '点击结束录音并发送',
+  thinking: '点击打断当前回答并开始录音',
+  speaking: '点击打断当前播报并开始录音',
 };
 
 export const MESSAGE_STATUS_LABELS: Partial<Record<MessageStatus, string>> = {

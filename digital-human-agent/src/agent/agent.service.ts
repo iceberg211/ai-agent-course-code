@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
+import {
+  buildLangSmithRunnableConfig,
+  runInTracedScope,
+} from '@/common/langsmith/langsmith.utils';
 import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
@@ -38,6 +42,31 @@ export class AgentService {
   ) {}
 
   async run(params: RunAgentParams): Promise<void> {
+    return runInTracedScope(
+      {
+        name: 'agent_turn',
+        runType: 'chain',
+        tags: ['agent', 'rag', 'chat'],
+        metadata: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+        },
+        input: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+          userMessage: params.userMessage,
+        },
+        outputProcessor: () => ({
+          status: 'completed',
+        }),
+      },
+      () => this.runInternal(params),
+    );
+  }
+
+  private async runInternal(params: RunAgentParams): Promise<void> {
     const {
       conversationId,
       personaId,
@@ -69,7 +98,19 @@ export class AgentService {
     );
 
     // 5. 流式生成
-    const stream = await this.llm.stream(messages, { signal });
+    const stream = await this.llm.stream(messages, {
+      ...buildLangSmithRunnableConfig({
+        runName: 'agent_generate',
+        tags: ['agent', 'rag', 'generate', 'llm'],
+        metadata: {
+          conversationId,
+          personaId,
+          turnId: params.turnId,
+          citationCount: chunks.length,
+        },
+      }),
+      signal,
+    });
 
     for await (const chunk of stream) {
       if (signal.aborted) break;
