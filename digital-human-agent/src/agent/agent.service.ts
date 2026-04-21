@@ -1,17 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
-import {
-  buildLangSmithRunnableConfig,
-  runInTracedScope,
-} from '@/common/langsmith/langsmith.utils';
-import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
-import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
-import {
-  KnowledgeContentService,
-  KnowledgeChunk as RetrievedKnowledgeChunk,
-} from '@/knowledge-content/services/knowledge-content.service';
-import { ConversationService } from '@/conversation/conversation.service';
-import { PersonaService } from '@/persona/persona.service';
+import { Inject, Injectable } from '@nestjs/common';
+import { RAG_ORCHESTRATOR } from '@/agent/agent.constants';
+import type {
+  RagOrchestrator,
+  RagWorkflowResult,
+} from '@/agent/rag-workflow.types';
+import { throwIfAborted } from '@/agent/agent.utils';
+import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
+import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 export interface RunAgentParams {
   conversationId: string;
@@ -25,24 +20,15 @@ export interface RunAgentParams {
 
 @Injectable()
 export class AgentService {
-  private readonly llm = new ChatOpenAI({
-    model: process.env.MODEL_NAME ?? DEFAULT_LLM_MODEL_NAME,
-    streaming: true,
-    temperature: 0.7,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
-
   constructor(
-    private readonly knowledgeContentService: KnowledgeContentService,
-    private readonly personaService: PersonaService,
-    private readonly conversationService: ConversationService,
+    @Inject(RAG_ORCHESTRATOR)
+    private readonly ragOrchestrator: RagOrchestrator,
   ) {}
 
   async run(params: RunAgentParams): Promise<void> {
-    return runInTracedScope(
+    throwIfAborted(params.signal);
+
+    await runInTracedScope(
       {
         name: 'agent_turn',
         runType: 'chain',
@@ -58,64 +44,28 @@ export class AgentService {
           turnId: params.turnId,
           userMessage: params.userMessage,
         },
-        outputProcessor: () => ({
+        outputProcessor: (output: RagWorkflowResult) => ({
           status: 'completed',
+          strategy: output.state.strategy,
+          routeReason: output.state.routeReason,
+          subQuestionCount: output.state.subQuestions.length,
+          orchestrator: output.state.orchestrator,
+          citationCount: output.citations.length,
         }),
       },
-      () => this.runInternal(params),
+      () => this.ragOrchestrator.run(this.toWorkflowInput(params)),
     );
   }
 
-  private async runInternal(params: RunAgentParams): Promise<void> {
-    const {
-      conversationId,
-      personaId,
-      userMessage,
-      signal,
-      onToken,
-      onCitations,
-    } = params;
-
-    // 1. retrieve (persona 聚合：挂载的所有 KB 并查 + 合并 + 全局 rerank)
-    const chunks: RetrievedKnowledgeChunk[] =
-      await this.knowledgeContentService.retrieveForPersona(
-        personaId,
-        userMessage,
-      );
-
-    // 2. 推送引用来源
-    if (chunks.length > 0) onCitations(chunks);
-
-    // 3. 加载 persona 和历史
-    const [persona, history] = await Promise.all([
-      this.personaService.findOne(personaId),
-      this.conversationService.getCompletedMessages(conversationId, 10),
-    ]);
-
-    // 4. 构建 messages
-    const messages = await AGENT_CHAT_PROMPT.formatMessages(
-      buildAgentPromptInput(persona, chunks, userMessage, history),
-    );
-
-    // 5. 流式生成
-    const stream = await this.llm.stream(messages, {
-      ...buildLangSmithRunnableConfig({
-        runName: 'agent_generate',
-        tags: ['agent', 'rag', 'generate', 'llm'],
-        metadata: {
-          conversationId,
-          personaId,
-          turnId: params.turnId,
-          citationCount: chunks.length,
-        },
-      }),
-      signal,
-    });
-
-    for await (const chunk of stream) {
-      if (signal.aborted) break;
-      const token = typeof chunk.content === 'string' ? chunk.content : '';
-      if (token) onToken(token);
-    }
+  private toWorkflowInput(params: RunAgentParams) {
+    return {
+      conversationId: params.conversationId,
+      personaId: params.personaId,
+      question: params.userMessage,
+      turnId: params.turnId,
+      signal: params.signal,
+      onToken: params.onToken,
+      onCitations: params.onCitations,
+    };
   }
 }

@@ -51,6 +51,6 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     RerankerService,
   ],
   controllers: [KnowledgeContentController, PersonaKnowledgeSearchController],
-  exports: [KnowledgeContentService],
+  exports: [KnowledgeContentService, KnowledgeSearchService],
 })
 export class KnowledgeContentModule {}

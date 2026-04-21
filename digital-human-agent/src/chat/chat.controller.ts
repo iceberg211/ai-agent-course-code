@@ -127,11 +127,18 @@ export class ChatController {
           });
           status = abortController.signal.aborted ? 'interrupted' : 'completed';
         } catch (error) {
-          status = abortController.signal.aborted ? 'interrupted' : 'failed';
+          const isAbortError =
+            (error as { name?: string })?.name === 'AbortError';
+          status =
+            abortController.signal.aborted || isAbortError
+              ? 'interrupted'
+              : 'failed';
           if (status === 'failed') {
             this.logger.error(
               `HTTP chat 执行失败: ${
-                error instanceof Error ? error.stack ?? error.message : String(error)
+                error instanceof Error
+                  ? (error.stack ?? error.message)
+                  : String(error)
               }`,
             );
             writer.write({
@@ -166,7 +173,9 @@ export class ChatController {
       onError: (error) => {
         this.logger.error(
           `UIMessage stream 失败: ${
-            error instanceof Error ? error.stack ?? error.message : String(error)
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : String(error)
           }`,
         );
         return 'stream error';
@@ -230,4 +239,3 @@ export class ChatController {
     return '';
   }
 }
-

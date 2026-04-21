@@ -1,0 +1,2 @@
+export const RAG_ORCHESTRATOR = 'RAG_ORCHESTRATOR';
+export const DEFAULT_RAG_MAX_HOPS = 3;

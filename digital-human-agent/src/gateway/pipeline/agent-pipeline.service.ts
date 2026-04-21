@@ -57,6 +57,8 @@ export class AgentPipelineService {
     });
 
     let fullReply = '';
+    let status: 'completed' | 'interrupted' | 'failed' = 'completed';
+    let shouldSendError = false;
 
     try {
       await this.agentService.run({
@@ -88,14 +90,23 @@ export class AgentPipelineService {
           });
         },
       });
-
-      // 刷出剩余缓冲 & 标记结束
+      status = abortController.signal.aborted ? 'interrupted' : 'completed';
+    } catch (err: unknown) {
+      const isAbortError = (err as { name?: string })?.name === 'AbortError';
+      status =
+        abortController.signal.aborted || isAbortError
+          ? 'interrupted'
+          : 'failed';
+      if (!isAbortError) {
+        shouldSendError = true;
+        this.logger.error('Agent run failed', err);
+      }
+    } finally {
       this.flushBuffer(client, session, turnId, '', true);
-      this.markFinalize(client, session, turnId);
 
-      const status = abortController.signal.aborted
-        ? 'interrupted'
-        : 'completed';
+      // 确保无论如何都完成 TTS turn（防止前端等待）
+      this.markFinalize(client, session, turnId);
+      this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
 
       await this.conversationService.addMessage({
         conversationId: session.conversationId,
@@ -106,25 +117,20 @@ export class AgentPipelineService {
         status,
       });
 
-      this.sendJson(client, {
-        type: 'conversation:done',
-        sessionId: session.sessionId,
-        turnId,
-        payload: { status },
-      });
-    } catch (err: unknown) {
-      if ((err as { name?: string })?.name !== 'AbortError') {
-        this.logger.error('Agent run failed', err);
+      if (shouldSendError) {
         this.sendJson(client, {
           type: 'error',
           sessionId: session.sessionId,
           payload: { message: 'Agent error' },
         });
       }
-    } finally {
-      // 确保无论如何都完成 TTS turn（防止前端等待）
-      this.markFinalize(client, session, turnId);
-      this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
+
+      this.sendJson(client, {
+        type: 'conversation:done',
+        sessionId: session.sessionId,
+        turnId,
+        payload: { status },
+      });
     }
   }
 

@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Conversation } from '@/conversation/conversation.entity';
-import { ConversationMessage, MessageRole, MessageStatus } from '@/conversation/conversation-message.entity';
+import {
+  ConversationMessage,
+  MessageRole,
+  MessageStatus,
+} from '@/conversation/conversation-message.entity';
 
 @Injectable()
 export class ConversationService {
@@ -23,7 +27,9 @@ export class ConversationService {
     });
   }
 
-  getLatestConversationByPersona(personaId: string): Promise<Conversation | null> {
+  getLatestConversationByPersona(
+    personaId: string,
+  ): Promise<Conversation | null> {
     return this.convRepo.findOne({
       where: { personaId },
       order: { createdAt: 'DESC' },
@@ -41,13 +47,18 @@ export class ConversationService {
     return this.msgRepo.save(this.msgRepo.create(params));
   }
 
-  // 只取 status=completed 的消息用于 Prompt（打断/失败的不回灌给模型）
-  getCompletedMessages(conversationId: string, limit = 10): Promise<ConversationMessage[]> {
-    return this.msgRepo.find({
+  // 只取最近的 status=completed 消息用于 Prompt（打断/失败的不回灌给模型）
+  async getCompletedMessages(
+    conversationId: string,
+    limit = 10,
+  ): Promise<ConversationMessage[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 500);
+    const recentDesc = await this.msgRepo.find({
       where: { conversationId, status: 'completed' },
-      order: { createdAt: 'ASC' },
-      take: limit,
+      order: { createdAt: 'DESC' },
+      take: safeLimit,
     });
+    return recentDesc.reverse();
   }
 
   // UI 历史显示用，包含所有状态
