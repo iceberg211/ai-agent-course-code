@@ -11,7 +11,10 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import type { RagRouteDecision, RagStrategy } from '@/agent/rag-workflow.types';
+import type {
+  RagRouteDecision,
+  RagStrategy,
+} from '@/agent/types/rag-workflow.types';
 
 const RagRouteSchema = z.object({
   strategy: z.enum(['simple', 'complex']),

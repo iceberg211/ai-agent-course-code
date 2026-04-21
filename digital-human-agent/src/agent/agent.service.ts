@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RAG_ORCHESTRATOR } from '@/agent/agent.constants';
 import type {
+  RagCitation,
   RagOrchestrator,
   RagWorkflowResult,
-} from '@/agent/rag-workflow.types';
+} from '@/agent/types/rag-workflow.types';
 import { throwIfAborted } from '@/agent/agent.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 export interface RunAgentParams {
   conversationId: string;
@@ -15,7 +15,7 @@ export interface RunAgentParams {
   turnId: string;
   signal: AbortSignal;
   onToken: (token: string) => void;
-  onCitations: (citations: RetrievedKnowledgeChunk[]) => void;
+  onCitations: (citations: RagCitation[]) => void;
 }
 
 @Injectable()

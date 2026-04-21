@@ -1,3 +1,4 @@
+import type { RagWorkflowState } from '@/agent/types/rag-workflow.types';
 import { AgentService } from '@/agent/agent.service';
 
 describe('AgentService', () => {
@@ -12,12 +13,23 @@ describe('AgentService', () => {
           strategy: 'simple',
           routeReason: '直接问题',
           subQuestions: [],
+          currentQuery: '你好',
           currentHop: 1,
           maxHops: 3,
           evidenceChunks: [],
+          localCitations: [],
+          webCitations: [],
           citations: [],
+          retrievalHistory: [],
+          enough: true,
+          missingFacts: [],
+          evaluationReason: '证据足够',
+          webQuery: '',
+          webSearchAttempted: false,
+          webSearchUsed: false,
+          stopReason: 'single_hop_enough',
           orchestrator: 'default',
-        },
+        } satisfies RagWorkflowState,
         citations: [],
         answerText: '你好',
       }),

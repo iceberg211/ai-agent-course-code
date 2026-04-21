@@ -1,4 +1,4 @@
-import { AnswerGenerationService } from '@/agent/answer-generation.service';
+import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
 
 async function* createStream(parts: string[]) {
   for (const part of parts) {
@@ -33,7 +33,7 @@ describe('AnswerGenerationService', () => {
         systemPromptExtra: null,
       } as never,
       history: [],
-      chunks: [
+      localChunks: [
         {
           id: 'chunk-1',
           content: '乔峰是丐帮帮主。',
@@ -41,6 +41,16 @@ describe('AnswerGenerationService', () => {
           chunk_index: 0,
           category: null,
           similarity: 0.9,
+        },
+      ],
+      webCitations: [
+        {
+          kind: 'web',
+          title: '雁门关事件资料',
+          url: 'https://example.com',
+          snippet: '网页摘要',
+          siteName: '示例站点',
+          publishedAt: '2026-04-21',
         },
       ],
       onToken: (token) => tokens.push(token),

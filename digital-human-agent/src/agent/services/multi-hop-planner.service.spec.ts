@@ -1,4 +1,4 @@
-import { MultiHopPlannerService } from '@/agent/multi-hop-planner.service';
+import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
 
 describe('MultiHopPlannerService', () => {
   it('复杂问题会规划出有序子问题', async () => {

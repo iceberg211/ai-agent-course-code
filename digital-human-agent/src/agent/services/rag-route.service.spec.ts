@@ -1,4 +1,4 @@
-import { RagRouteService } from '@/agent/rag-route.service';
+import { RagRouteService } from '@/agent/services/rag-route.service';
 
 describe('RagRouteService', () => {
   it('简单问题会被判定为 simple', async () => {

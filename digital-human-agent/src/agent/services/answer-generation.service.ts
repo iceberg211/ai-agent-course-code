@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { throwIfAborted } from '@/agent/agent.utils';
+import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
@@ -19,7 +20,8 @@ export interface GenerateAnswerParams {
   signal: AbortSignal;
   persona: Persona;
   history: ConversationMessage[];
-  chunks: RetrievedKnowledgeChunk[];
+  localChunks: RetrievedKnowledgeChunk[];
+  webCitations?: RagWebCitation[];
   onToken: (token: string) => void;
 }
 
@@ -45,14 +47,16 @@ export class AnswerGenerationService {
           conversationId: params.conversationId,
           personaId: params.personaId,
           turnId: params.turnId,
-          citationCount: params.chunks.length,
+          citationCount:
+            params.localChunks.length + (params.webCitations?.length ?? 0),
         },
         input: {
           conversationId: params.conversationId,
           personaId: params.personaId,
           turnId: params.turnId,
           userMessage: params.userMessage,
-          citationCount: params.chunks.length,
+          citationCount:
+            params.localChunks.length + (params.webCitations?.length ?? 0),
         },
         outputProcessor: (output) => ({
           answerLength: output.length,
@@ -68,9 +72,14 @@ export class AnswerGenerationService {
     const messages = await AGENT_CHAT_PROMPT.formatMessages(
       buildAgentPromptInput(
         params.persona,
-        params.chunks,
+        params.localChunks,
         params.userMessage,
         params.history,
+        {
+          webContextBlock: this.formatWebContextBlock(
+            params.webCitations ?? [],
+          ),
+        },
       ),
     );
 
@@ -84,7 +93,8 @@ export class AnswerGenerationService {
           conversationId: params.conversationId,
           personaId: params.personaId,
           turnId: params.turnId,
-          citationCount: params.chunks.length,
+          citationCount:
+            params.localChunks.length + (params.webCitations?.length ?? 0),
         },
       }),
       signal: params.signal,
@@ -100,5 +110,23 @@ export class AnswerGenerationService {
     }
 
     return answerText;
+  }
+
+  private formatWebContextBlock(webCitations: RagWebCitation[]): string {
+    if (webCitations.length === 0) {
+      return '';
+    }
+
+    return webCitations
+      .map(
+        (item, index) =>
+          `[网页 ${index + 1}]
+标题：${item.title}
+URL：${item.url}
+网站：${item.siteName ?? '未知'}
+时间：${item.publishedAt ?? '未知'}
+摘要：${item.snippet}`,
+      )
+      .join('\n\n');
   }
 }

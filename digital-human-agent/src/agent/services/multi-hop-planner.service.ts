@@ -11,7 +11,7 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import type { RagMultiHopPlan } from '@/agent/rag-workflow.types';
+import type { RagMultiHopPlan } from '@/agent/types/rag-workflow.types';
 
 const MultiHopPlanSchema = z.object({
   subQuestions: z.array(z.string().min(1).max(300)).min(1).max(6),

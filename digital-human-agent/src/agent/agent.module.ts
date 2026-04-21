@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
-import { AnswerGenerationService } from '@/agent/answer-generation.service';
+import { LangGraphRagOrchestratorService } from '@/agent/orchestrators/langgraph-rag-orchestrator.service';
+import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
 import { RAG_ORCHESTRATOR } from '@/agent/agent.constants';
-import { DefaultRagOrchestratorService } from '@/agent/default-rag-orchestrator.service';
+import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import { AgentService } from '@/agent/agent.service';
-import { MultiHopPlannerService } from '@/agent/multi-hop-planner.service';
-import { RagRouteService } from '@/agent/rag-route.service';
+import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
+import { RagRouteService } from '@/agent/services/rag-route.service';
+import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import { ConversationModule } from '@/conversation/conversation.module';
 import { KnowledgeContentModule } from '@/knowledge-content/knowledge-content.module';
 import { PersonaModule } from '@/persona/persona.module';
@@ -15,10 +17,12 @@ import { PersonaModule } from '@/persona/persona.module';
     AnswerGenerationService,
     RagRouteService,
     MultiHopPlannerService,
-    DefaultRagOrchestratorService,
+    EvidenceEvaluatorService,
+    WebFallbackService,
+    LangGraphRagOrchestratorService,
     {
       provide: RAG_ORCHESTRATOR,
-      useExisting: DefaultRagOrchestratorService,
+      useExisting: LangGraphRagOrchestratorService,
     },
     AgentService,
   ],
