@@ -1,3 +1,6 @@
+export type KnowledgeRetrievalSource = 'vector' | 'keyword';
+export type KeywordBackend = 'pg' | 'elastic';
+
 export interface KnowledgeChunk {
   id: string;
   content: string;
@@ -7,6 +10,9 @@ export interface KnowledgeChunk {
   similarity: number;
   knowledge_base_id?: string;
   rerank_score?: number;
+  keyword_score?: number;
+  hybrid_score?: number;
+  retrieval_sources?: KnowledgeRetrievalSource[];
 }
 
 export interface RetrieveKnowledgeOptions {
@@ -19,6 +25,7 @@ export interface RetrieveKnowledgeOptions {
 export interface KnowledgeQueryRewriteResult {
   originalQuery: string;
   rewrittenQuery: string;
+  keywords: string[];
   changed: boolean;
   reason: string;
 }

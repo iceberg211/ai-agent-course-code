@@ -1,38 +1,14 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import {
-  DEFAULT_OPENAI_COMPAT_BASE_URL,
-  DEFAULT_TTS_MODEL_NAME,
-  DEFAULT_TTS_VOICE_ID,
-} from '@/common/constants';
+import { Inject, Injectable } from '@nestjs/common';
+import { TTS_PROVIDER_TOKEN } from '@/tts/tts.constants';
+import { TtsOutputFormat } from '@/tts/tts.types';
+import type { TtsProvider } from '@/tts/tts.types';
 
 @Injectable()
 export class TtsService {
-  private readonly logger = new Logger(TtsService.name);
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
-  private readonly modelName: string;
-  private readonly defaultVoice: string;
-
-  constructor(private readonly configService: ConfigService) {
-    this.apiKey =
-      this.configService.get<string>('OPENAI_API_KEY') ??
-      this.configService.get<string>('DASHSCOPE_API_KEY') ??
-      '';
-    this.baseUrl = (
-      this.configService.get<string>('OPENAI_BASE_URL') ??
-      DEFAULT_OPENAI_COMPAT_BASE_URL
-    ).replace(/\/$/, '');
-    this.modelName =
-      this.configService.get<string>('TTS_MODEL') ?? DEFAULT_TTS_MODEL_NAME;
-    this.defaultVoice =
-      this.configService.get<string>('TTS_DEFAULT_VOICE') ??
-      DEFAULT_TTS_VOICE_ID;
-  }
+  constructor(
+    @Inject(TTS_PROVIDER_TOKEN)
+    private readonly provider: TtsProvider,
+  ) {}
 
   /**
    * 流式合成语音。
@@ -46,82 +22,14 @@ export class TtsService {
     voiceId: string | null,
     signal: AbortSignal,
     onChunk: (chunk: Buffer) => void,
-    outputFormat: 'mp3' | 'pcm' = 'mp3',
+    outputFormat: TtsOutputFormat = 'mp3',
   ): Promise<void> {
-    if (signal.aborted || !text.trim()) return;
-    this.ensureConfigReady();
-
-    const voice = this.resolveVoice(voiceId);
-    this.logger.log(
-      `[TTS] synthesize start model=${this.modelName}, voice=${voice}, text="${text.slice(0, 30)}..."`,
-    );
-
-    const res = await fetch(`${this.baseUrl}/audio/speech`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-        Accept: outputFormat === 'pcm' ? 'audio/pcm' : 'audio/mpeg',
-      },
-      body: JSON.stringify({
-        model: this.modelName,
-        input: text,
-        voice,
-        response_format: outputFormat,
-      }),
+    await this.provider.synthesizeStream({
+      text,
+      voiceId,
       signal,
+      onChunk,
+      outputFormat,
     });
-
-    if (!res.ok) {
-      const bodyText = await res.text();
-      throw new Error(`TTS HTTP ${res.status}: ${bodyText}`);
-    }
-
-    const contentType = res.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
-      const data = (await res.json()) as Record<string, any>;
-      const base64Audio =
-        (typeof data.audio === 'string' && data.audio) ||
-        (typeof data?.output?.audio === 'string' && data.output.audio) ||
-        (typeof data?.data?.audio === 'string' && data.data.audio) ||
-        '';
-      if (base64Audio) {
-        onChunk(Buffer.from(base64Audio, 'base64'));
-      }
-      return;
-    }
-
-    if (!res.body) {
-      const whole = Buffer.from(await res.arrayBuffer());
-      if (whole.length > 0) onChunk(whole);
-      return;
-    }
-
-    const reader = res.body.getReader();
-    try {
-      while (true) {
-        if (signal.aborted) break;
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value && value.length > 0) {
-          onChunk(Buffer.from(value));
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-
-  private resolveVoice(voiceId: string | null): string {
-    if (!voiceId) return this.defaultVoice;
-    return voiceId.trim() || this.defaultVoice;
-  }
-
-  private ensureConfigReady() {
-    if (!this.apiKey || !this.baseUrl) {
-      throw new InternalServerErrorException(
-        'TTS 配置缺失：请设置 OPENAI_API_KEY（或 DASHSCOPE_API_KEY）和 OPENAI_BASE_URL',
-      );
-    }
   }
 }

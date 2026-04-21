@@ -11,79 +11,87 @@
         </span>
       </div>
 
-      <textarea
-        ref="inputEl"
-        v-model="draft"
-        class="composer-input"
-        :placeholder="resolvedPlaceholder"
-        :disabled="disabled || busy"
-        rows="1"
-        @keydown="onKeydown"
-        @input="resize"
-      />
+      <div
+        class="composer-panel"
+        :class="{
+          'has-draft': canSend,
+          'panel-disabled': inputDisabled,
+        }"
+      >
+        <textarea
+          ref="inputEl"
+          v-model="draft"
+          class="composer-input"
+          :placeholder="resolvedPlaceholder"
+          :disabled="inputDisabled"
+          rows="1"
+          @keydown="onKeydown"
+          @input="resize"
+        />
 
-      <div class="composer-toolbar">
-        <p v-if="helperText" class="composer-hint">{{ helperText }}</p>
+        <div class="composer-toolbar">
+          <p v-if="helperText" class="composer-hint">{{ helperText }}</p>
 
-        <div class="composer-actions">
-          <button
-            class="voice-btn"
-            :class="[voiceButtonClass, { disabled: voiceDisabled }]"
-            type="button"
-            :disabled="voiceDisabled"
-            :aria-label="resolvedVoiceAriaLabel"
-            :aria-pressed="voiceState === 'recording'"
-            :aria-busy="voicePreparing || voiceState === 'thinking'"
-            @click="$emit('mic-toggle')"
-          >
-            <LoaderCircleIcon
-              v-if="voicePreparing || voiceState === 'thinking'"
-              :size="18"
-              class="spin"
-              aria-hidden="true"
-            />
-            <SendHorizonalIcon
-              v-else-if="voiceState === 'recording'"
-              :size="18"
-              aria-hidden="true"
-            />
-            <Volume2Icon
-              v-else-if="voiceState === 'speaking'"
-              :size="18"
-              aria-hidden="true"
-            />
-            <MicIcon v-else :size="18" aria-hidden="true" />
-          </button>
+          <div class="composer-actions">
+            <button
+              class="voice-btn"
+              :class="[voiceButtonClass, { disabled: voiceDisabled }]"
+              type="button"
+              :disabled="voiceDisabled"
+              :aria-label="resolvedVoiceAriaLabel"
+              :aria-pressed="voiceState === 'recording'"
+              :aria-busy="voicePreparing || voiceState === 'thinking'"
+              @click="$emit('mic-toggle')"
+            >
+              <LoaderCircleIcon
+                v-if="voicePreparing || voiceState === 'thinking'"
+                :size="18"
+                class="spin"
+                aria-hidden="true"
+              />
+              <SendHorizonalIcon
+                v-else-if="voiceState === 'recording'"
+                :size="18"
+                aria-hidden="true"
+              />
+              <Volume2Icon
+                v-else-if="voiceState === 'speaking'"
+                :size="18"
+                aria-hidden="true"
+              />
+              <MicIcon v-else :size="18" aria-hidden="true" />
+            </button>
 
-          <button
-            v-if="canStop"
-            class="action-btn stop-btn"
-            type="button"
-            @mousedown.stop
-            @mouseup.stop
-            @touchstart.stop.prevent
-            @touchend.stop.prevent
-            @click.stop.prevent="$emit('stop')"
-            aria-label="停止生成"
-          >
-            <StopCircleIcon :size="16" aria-hidden="true" />
-            <span>停止</span>
-          </button>
-          <button
-            v-else
-            class="action-btn send-btn"
-            type="button"
-            :disabled="sendDisabled"
-            @mousedown.stop
-            @mouseup.stop
-            @touchstart.stop.prevent
-            @touchend.stop.prevent
-            @click.stop.prevent="submit"
-            aria-label="发送文本消息"
-          >
-            <SendHorizonalIcon :size="16" aria-hidden="true" />
-            <span>{{ busy ? '处理中' : '发送' }}</span>
-          </button>
+            <button
+              v-if="canStop"
+              class="action-btn stop-btn"
+              type="button"
+              @mousedown.stop
+              @mouseup.stop
+              @touchstart.stop.prevent
+              @touchend.stop.prevent
+              @click.stop.prevent="$emit('stop')"
+              aria-label="停止生成"
+            >
+              <StopCircleIcon :size="16" aria-hidden="true" />
+              <span>停止</span>
+            </button>
+            <button
+              v-else
+              class="action-btn send-btn"
+              type="button"
+              :disabled="sendDisabled"
+              @mousedown.stop
+              @mouseup.stop
+              @touchstart.stop.prevent
+              @touchend.stop.prevent
+              @click.stop.prevent="submit"
+              aria-label="发送文本消息"
+            >
+              <SendHorizonalIcon :size="16" aria-hidden="true" />
+              <span>{{ sendLabel }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -114,7 +122,7 @@ const props = withDefaults(defineProps<{
   disabled: false,
   busy: false,
   canStop: false,
-  placeholder: '输入文字后按 Enter 发送，Shift+Enter 换行',
+  placeholder: '输入问题，补充上下文，或继续下一轮对话',
   voiceState: 'idle',
   voiceDisabled: false,
   voicePreparing: false,
@@ -131,6 +139,9 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 
 const canSend = computed(() => draft.value.trim().length > 0)
 const sendDisabled = computed(() => props.disabled || props.busy || !canSend.value)
+const inputDisabled = computed(
+  () => props.disabled || props.voicePreparing || props.voiceState === 'recording',
+)
 
 const shellState = computed(() => {
   if (props.disabled) return 'disabled'
@@ -151,7 +162,11 @@ const stateLabel = computed(() => {
 
 const resolvedPlaceholder = computed(() => {
   if (props.disabled) return '请先选择角色并连接会话'
-  if (props.busy && props.voiceState !== 'recording') return '正在处理中，请稍候...'
+  if (props.voicePreparing) return '正在建立语音链路，请稍候...'
+  if (props.voiceState === 'recording') return '正在录音，再次点击麦克风即可结束并发送'
+  if (props.canStop) return '当前回答仍在生成中，可先写下下一条问题'
+  if (props.voiceState === 'speaking') return '正在语音播报，可继续输入下一条问题'
+  if (props.busy) return '正在处理中，请稍候...'
   return props.placeholder
 })
 
@@ -159,14 +174,22 @@ const helperText = computed(() => {
   if (props.disabled) return '选择角色并连接后即可开始输入。'
   if (props.voicePreparing) return '正在建立语音链路。'
   if (props.voiceState === 'recording') return '再次点击麦克风即可结束并发送。'
-  if (props.voiceState === 'speaking') return '正在语音播报，可点击麦克风打断。'
-  if (props.canStop) return '当前回答仍在生成中，可直接停止。'
+  if (props.voiceState === 'speaking') return '正在语音播报，可继续输入下一条问题。'
+  if (props.canStop) return '当前回答仍在生成中，可先写草稿，或直接停止。'
   return ''
 })
 
-const shortcutText = computed(() => (
-  props.disabled || props.busy || props.voicePreparing ? '' : 'Enter 发送 · Shift+Enter 换行'
-))
+const shortcutText = computed(() => {
+  if (inputDisabled.value) return ''
+  if (props.canStop) return '可先输入草稿，结束后发送'
+  if (props.voiceState === 'speaking') return '可先输入，播报结束后发送'
+  return 'Enter 发送 · Shift+Enter 换行'
+})
+
+const sendLabel = computed(() => {
+  if (props.busy) return '等待中'
+  return '发送'
+})
 
 const voiceButtonClass = computed(() => {
   if (props.voicePreparing) return 'preparing'
@@ -188,6 +211,7 @@ function resize() {
 }
 
 function submit() {
+  if (sendDisabled.value) return
   const text = draft.value.trim()
   if (!text) return
   emit('send', text)
@@ -218,12 +242,14 @@ onMounted(() => nextTick(resize))
 .composer-shell {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.88);
-  background: rgba(255,255,255,0.94);
-  box-shadow: 0 2px 8px rgba(148, 163, 184, 0.05);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,255,0.96) 100%);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
   transition:
     border-color 180ms ease,
     box-shadow 180ms ease,
@@ -231,19 +257,19 @@ onMounted(() => nextTick(resize))
 }
 
 .composer-shell:focus-within {
-  border-color: rgba(37, 99, 235, 0.22);
+  border-color: rgba(37, 99, 235, 0.24);
   box-shadow:
-    0 0 0 3px rgba(37, 99, 235, 0.07),
-    0 8px 20px rgba(37, 99, 235, 0.06);
+    0 0 0 4px rgba(37, 99, 235, 0.08),
+    0 18px 38px rgba(37, 99, 235, 0.08);
 }
 
 .composer-shell.busy,
 .composer-shell.stoppable {
-  background: rgba(248, 251, 255, 0.98);
+  background: linear-gradient(180deg, rgba(250,252,255,0.99) 0%, rgba(246,249,255,0.98) 100%);
 }
 
 .composer-shell.disabled {
-  background: rgba(249, 251, 254, 0.98);
+  background: linear-gradient(180deg, rgba(250,251,253,0.98) 0%, rgba(247,249,252,0.98) 100%);
 }
 
 .composer-meta {
@@ -258,30 +284,66 @@ onMounted(() => nextTick(resize))
   align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid rgba(226, 232, 240, 0.84);
+  background: rgba(248, 250, 252, 0.78);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary, #334155);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
 }
 
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #94a3b8;
   flex-shrink: 0;
   transition: background 180ms ease, box-shadow 180ms ease;
 }
 
+.composer-status.ready {
+  color: var(--primary, #2563eb);
+  border-color: rgba(191, 219, 254, 0.9);
+  background: rgba(239, 246, 255, 0.9);
+}
+
 .composer-status.ready .status-dot {
   background: var(--primary, #2563eb);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.composer-status.busy {
+  color: var(--warning, #b45309);
+  border-color: rgba(251, 191, 36, 0.26);
+  background: rgba(255, 251, 235, 0.94);
 }
 
 .composer-status.busy .status-dot {
   background: var(--warning, #d97706);
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.12);
+}
+
+.composer-status.stoppable {
+  color: var(--error, #dc2626);
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(254, 242, 242, 0.94);
 }
 
 .composer-status.stoppable .status-dot {
   background: var(--error, #dc2626);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+}
+
+.composer-status.disabled {
+  color: var(--text-muted, #94a3b8);
+  border-color: rgba(226, 232, 240, 0.86);
+  background: rgba(248, 250, 252, 0.9);
 }
 
 .composer-status.disabled .status-dot {
@@ -299,38 +361,66 @@ onMounted(() => nextTick(resize))
   white-space: nowrap;
 }
 
+.composer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.76);
+  background: linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(248,251,255,0.96) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.composer-panel:focus-within {
+  border-color: rgba(37, 99, 235, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 10px 24px rgba(37, 99, 235, 0.06);
+}
+
+.composer-panel.has-draft {
+  border-color: rgba(191, 219, 254, 0.9);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(243,248,255,0.98) 100%);
+}
+
+.composer-panel.panel-disabled {
+  background: linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(245,247,250,0.96) 100%);
+}
+
 .composer-input {
   width: 100%;
-  min-height: 88px;
-  max-height: 144px;
+  min-height: 84px;
+  max-height: 160px;
   resize: none;
-  border: 1px solid rgba(226, 232, 240, 0.84);
-  border-radius: 14px;
-  padding: 12px 14px;
+  border: none;
+  border-radius: 0;
+  padding: 2px 0 0;
   outline: none;
   font-size: 14px;
   line-height: 1.65;
   color: var(--text, #0f172a);
-  background: rgba(255,255,255,0.96);
+  background: transparent;
   font-family: inherit;
   overflow-y: auto;
-  transition:
-    border-color 180ms ease,
-    background 180ms ease;
+  transition: color 180ms ease;
 }
 
 .composer-input::placeholder {
-  color: var(--text-muted, #94a3b8);
+  color: rgba(100, 116, 139, 0.78);
 }
 
 .composer-input:focus {
-  border-color: rgba(37, 99, 235, 0.18);
-  background: #fff;
+  background: transparent;
 }
 
 .composer-input:disabled {
-  background: rgba(248, 250, 252, 0.92);
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--text-secondary, #64748b);
   cursor: not-allowed;
 }
 
@@ -339,6 +429,8 @@ onMounted(() => nextTick(resize))
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(226, 232, 240, 0.78);
 }
 
 .composer-hint {
@@ -347,22 +439,21 @@ onMounted(() => nextTick(resize))
   font-size: 12px;
   color: var(--text-muted, #64748b);
   line-height: 1.55;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .composer-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
 .voice-btn,
 .action-btn {
-  min-height: 40px;
-  border-radius: 12px;
+  min-height: 42px;
+  border-radius: var(--radius-full, 9999px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -381,30 +472,36 @@ onMounted(() => nextTick(resize))
 }
 
 .voice-btn {
-  width: 40px;
-  border: 1px solid rgba(226, 232, 240, 0.92);
-  background: rgba(248, 251, 255, 0.92);
+  width: 42px;
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  background: rgba(255, 255, 255, 0.84);
   color: var(--primary, #2563eb);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.voice-btn:hover:not(:disabled),
+.action-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .voice-btn.idle,
 .voice-btn.closed {
   color: var(--primary, #2563eb);
   border-color: rgba(191, 219, 254, 0.92);
-  background: rgba(239, 246, 255, 0.92);
+  background: rgba(239, 246, 255, 0.94);
 }
 
 .voice-btn.preparing,
 .voice-btn.thinking {
   color: var(--warning, #d97706);
   border-color: rgba(251, 191, 36, 0.28);
-  background: rgba(255, 251, 235, 0.94);
+  background: rgba(255, 251, 235, 0.96);
 }
 
 .voice-btn.recording {
   color: var(--error, #dc2626);
   border-color: rgba(248, 113, 113, 0.34);
-  background: rgba(254, 242, 242, 0.98);
+  background: rgba(254, 242, 242, 1);
   box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.24);
   animation: voice-record-pulse 1.2s ease-out infinite;
 }
@@ -425,8 +522,8 @@ onMounted(() => nextTick(resize))
 }
 
 .action-btn {
-  min-width: 88px;
-  padding: 0 14px;
+  min-width: 96px;
+  padding: 0 16px;
   border: none;
   gap: 6px;
   font-size: 13px;
@@ -435,32 +532,34 @@ onMounted(() => nextTick(resize))
 }
 
 .send-btn {
-  background: var(--primary, #2563eb);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: var(--primary-hover, #1d4ed8);
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.24);
 }
 
 .send-btn:disabled {
-  background: var(--border, #e2e8f0);
+  background: rgba(226, 232, 240, 0.9);
   color: var(--text-muted, #94a3b8);
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .stop-btn {
-  background: linear-gradient(180deg, #fff 0%, #fff5f5 100%);
+  background: linear-gradient(180deg, #fff 0%, #fff6f6 100%);
   color: var(--error, #dc2626);
   border: 1px solid rgba(248, 113, 113, 0.38);
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.08);
 }
 
 .stop-btn:hover {
   background: linear-gradient(180deg, #fff 0%, #fee2e2 100%);
   border-color: rgba(220, 38, 38, 0.4);
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.12);
 }
 
 .spin {
@@ -483,10 +582,20 @@ onMounted(() => nextTick(resize))
     padding: 12px 12px 8px;
   }
 
+  .composer-shell {
+    padding: 12px;
+    border-radius: 18px;
+  }
+
   .composer-meta,
   .composer-toolbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .composer-panel {
+    padding: 12px;
+    border-radius: 16px;
   }
 
   .composer-shortcut {
@@ -499,10 +608,12 @@ onMounted(() => nextTick(resize))
 
   .composer-actions {
     width: 100%;
+    justify-content: flex-end;
   }
 
   .action-btn {
     flex: 1;
+    min-width: 0;
   }
 }
 </style>

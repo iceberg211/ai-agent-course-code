@@ -1,0 +1,1 @@
+export const TTS_PROVIDER_TOKEN = Symbol('TTS_PROVIDER_TOKEN');

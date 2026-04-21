@@ -7,7 +7,10 @@ import { ConversationService } from '@/conversation/conversation.service';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
 import { SessionMode } from '@/realtime-session/realtime-session.interface';
-import { SessionHistoryMessage, WsSessionStartMessage } from '@/gateway/gateway.types';
+import {
+  SessionHistoryMessage,
+  WsSessionStartMessage,
+} from '@/gateway/gateway.types';
 
 /**
  * 处理 `session:start` 消息。

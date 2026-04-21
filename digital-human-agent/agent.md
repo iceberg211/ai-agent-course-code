@@ -14,13 +14,16 @@
 - 单测：`pnpm test`
 - E2E：`pnpm test:e2e`
 - 数据库迁移：`pnpm db:migrate`
+- 启动 ES/Kibana：`pnpm es:up`
+- 关闭 ES/Kibana：`pnpm es:down`
+- ES 回填：`pnpm es:backfill`
 
 ## 3. 关键目录
 
 - `src/gateway`：WebSocket 会话主链路（语音/数字人模式分流）
 - `src/chat`：`/chat` 文本流接口（AI SDK 协议）
 - `src/knowledge`：知识库定义、检索配置、persona 挂载关系
-- `src/knowledge-content`：文档摄入、chunk 管理、向量检索、rerank
+- `src/knowledge-content`：文档摄入、chunk 管理、向量检索、BM25、rerank
 - `src/asr` / `src/tts`：阿里兼容模式语音能力
 - `src/voice-clone`：语音样本上传与训练状态
 - `src/digital-human`：数字人会话与 WebRTC 信令抽象
@@ -34,11 +37,15 @@
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`（阿里兼容地址）
 - `ASR_MODEL=paraformer-realtime-v2`
-- `TTS_MODEL=cosyvoice-v1`
+- `TTS_MODEL=cosyvoice-v3.5-plus`
 - `TTS_DEFAULT_VOICE=longxiaochun`
 
 可选：
 
+- `ELASTICSEARCH_ENABLED=false`
+- `ELASTICSEARCH_URL=http://localhost:9200`
+- `ELASTICSEARCH_INDEX_PREFIX=digital-human`
+- `HYBRID_KEYWORD_BACKEND=pg`
 - `VOICE_CLONE_MOCK_DELAY_MS`（语音克隆 mock 训练时长，毫秒）
 - `SESSION_HISTORY_LIMIT`（会话恢复历史条数）
 - `TYPEORM_LOGGING=true`（联调排障时打开）
@@ -71,6 +78,15 @@
 - `knowledge-content` 模块目录保持 `controllers / dto / entities / services / types / knowledge-content.module.ts` 结构，不要再回到平铺写法。
 - 网关改动优先保证打断语义：`interrupt -> LLM 停止 -> 播报停止 -> 状态回收`。
 - 检索链路默认 fail-open：外部依赖失败不阻断对话主流程。
+- PostgreSQL / Supabase 仍是唯一主数据源；ElasticSearch 只是派生索引，ES 失败必须自动回退 PG。
+- ES 索引统一走 alias：
+  - 读：`${ELASTICSEARCH_INDEX_PREFIX}-knowledge-chunk-read`
+  - 写：`${ELASTICSEARCH_INDEX_PREFIX}-knowledge-chunk-write`
+- 本地验证 BM25 时，先执行：
+  - `pnpm es:up`
+  - `pnpm es:backfill`
+  - 再把 `HYBRID_KEYWORD_BACKEND=elastic`
+- Kibana 仅用于查看 mapping、文档和 Dev Tools 排障，不进入业务链路。
 - 会话结构字段变更时，同步更新：
   - `src/realtime-session/realtime-session.interface.ts`
   - `src/gateway/conversation.gateway.ts`

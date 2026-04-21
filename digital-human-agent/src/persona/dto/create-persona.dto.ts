@@ -9,7 +9,8 @@ export class CreatePersonaDto {
   name: string;
 
   @ApiPropertyOptional({ description: '角色简介', example: '资深前端讲师' })
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional({
@@ -17,7 +18,8 @@ export class CreatePersonaDto {
     example: '说话温和，喜欢举例子',
   })
   @Transform(({ value, obj }) => value ?? obj?.speaking_style)
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   speakingStyle?: string;
 
   @ApiPropertyOptional({
@@ -26,21 +28,31 @@ export class CreatePersonaDto {
     type: [String],
   })
   @Transform(({ value, obj }) => value ?? obj?.expertise_list)
-  @IsOptional() @IsArray()
+  @IsOptional()
+  @IsArray()
   expertise?: string[];
 
   @ApiPropertyOptional({ description: '音色 ID', example: 'longxiaochun' })
   @Transform(({ value, obj }) => value ?? obj?.voice_id)
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   voiceId?: string;
 
-  @ApiPropertyOptional({ description: '数字人形象 ID', example: 'avatar_teacher_01' })
+  @ApiPropertyOptional({
+    description: '数字人形象 ID',
+    example: 'avatar_teacher_01',
+  })
   @Transform(({ value, obj }) => value ?? obj?.avatar_id)
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   avatarId?: string;
 
-  @ApiPropertyOptional({ description: '系统提示补充', example: '回答尽量简洁。' })
+  @ApiPropertyOptional({
+    description: '系统提示补充',
+    example: '回答尽量简洁。',
+  })
   @Transform(({ value, obj }) => value ?? obj?.system_prompt_extra)
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   systemPromptExtra?: string;
 }

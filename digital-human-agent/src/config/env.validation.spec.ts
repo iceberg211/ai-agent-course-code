@@ -12,6 +12,9 @@ describe('validateEnv', () => {
   it('基础必填项满足时通过校验', () => {
     const result = validateEnv(baseEnv);
     expect(result.DIGITAL_HUMAN_PROVIDER).toBe('mock');
+    expect(result.TTS_PROVIDER).toBe('dashscope');
+    expect(result.TTS_TRANSPORT).toBe('ws');
+    expect(result.HYBRID_KEYWORD_BACKEND).toBe('pg');
   });
 
   it('DIGITAL_HUMAN_PROVIDER=simli 时缺失配置会报错', () => {
@@ -41,5 +44,41 @@ describe('validateEnv', () => {
         LANGSMITH_API_KEY: '',
       }),
     ).toThrow('LANGSMITH_API_KEY');
+  });
+
+  it('TTS_PROVIDER 非法时会报错', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        TTS_PROVIDER: 'tencent',
+      }),
+    ).toThrow('TTS_PROVIDER');
+  });
+
+  it('TTS_TRANSPORT 非法时会报错', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        TTS_TRANSPORT: 'grpc',
+      }),
+    ).toThrow('TTS_TRANSPORT');
+  });
+
+  it('HYBRID_KEYWORD_BACKEND=elastic 时会被规范化', () => {
+    const result = validateEnv({
+      ...baseEnv,
+      HYBRID_KEYWORD_BACKEND: 'ELASTIC',
+    });
+
+    expect(result.HYBRID_KEYWORD_BACKEND).toBe('elastic');
+  });
+
+  it('HYBRID_KEYWORD_BACKEND 非法时会报错', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        HYBRID_KEYWORD_BACKEND: 'redis',
+      }),
+    ).toThrow('HYBRID_KEYWORD_BACKEND');
   });
 });

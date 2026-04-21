@@ -93,7 +93,9 @@ export class AgentPipelineService {
       this.flushBuffer(client, session, turnId, '', true);
       this.markFinalize(client, session, turnId);
 
-      const status = abortController.signal.aborted ? 'interrupted' : 'completed';
+      const status = abortController.signal.aborted
+        ? 'interrupted'
+        : 'completed';
 
       await this.conversationService.addMessage({
         conversationId: session.conversationId,

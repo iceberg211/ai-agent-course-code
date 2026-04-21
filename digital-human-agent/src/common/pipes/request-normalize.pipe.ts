@@ -19,7 +19,7 @@ export class RequestNormalizePipe implements PipeTransform {
     if (metadata.type !== 'body' || !this.isPlainObject(value)) {
       return value;
     }
-    const body = { ...(value as Record<string, unknown>) };
+    const body = { ...value };
     for (const [legacyKey, modernKey] of Object.entries(this.aliases)) {
       if (body[modernKey] === undefined && body[legacyKey] !== undefined) {
         body[modernKey] = body[legacyKey];

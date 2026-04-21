@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
+import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type {
   KnowledgeChunk,
@@ -10,6 +11,7 @@ import type {
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
+import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -17,6 +19,7 @@ export class KnowledgeSearchService {
 
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
+    private readonly hybridRetriever: KnowledgeHybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
   ) {}
@@ -103,12 +106,15 @@ export class KnowledgeSearchService {
       3,
     );
 
-    const stage1 = await this.retrieveStage1(
+    const stage1Result = await this.retrieveStage1(
       knowledgeId,
       queryEmbedding,
+      retrievalQuery,
+      rewrite.keywords,
       normalizedOptions.threshold,
       normalizedOptions.stage1TopK,
     );
+    const stage1 = stage1Result.chunks;
 
     let stage2 = stage1.slice(0, normalizedOptions.finalTopK);
     if (normalizedOptions.rerank && stage1.length > 1) {
@@ -197,12 +203,15 @@ export class KnowledgeSearchService {
             options.stage1TopK === undefined
               ? config.stage1TopK
               : normalizedOptions.stage1TopK;
-          return await this.retrieveStage1(
+          const stage1Result = await this.retrieveStage1(
             config.knowledgeId,
             queryEmbedding,
+            rewrite.rewrittenQuery,
+            rewrite.keywords,
             effectiveThreshold,
             effectiveStage1TopK,
           );
+          return stage1Result.chunks;
         } catch (error) {
           this.logger.warn(
             `stage1 失败（knowledge=${config.knowledgeId}）：${
@@ -297,14 +306,14 @@ export class KnowledgeSearchService {
     for (const chunks of stage1Results) {
       for (const chunk of chunks) {
         const current = dedupedChunks.get(chunk.id);
-        if (!current || (chunk.similarity ?? 0) > (current.similarity ?? 0)) {
+        if (!current || this.compareRetrievalChunks(chunk, current) > 0) {
           dedupedChunks.set(chunk.id, chunk);
         }
       }
     }
 
     const sortedChunks = Array.from(dedupedChunks.values()).sort(
-      (left, right) => (right.similarity ?? 0) - (left.similarity ?? 0),
+      (left, right) => this.compareRetrievalChunks(right, left),
     );
 
     return sortedChunks.slice(0, globalStage1TopK);
@@ -323,6 +332,7 @@ export class KnowledgeSearchService {
     return {
       originalQuery: query,
       rewrittenQuery: query,
+      keywords: [query],
       changed: false,
       reason,
     };
@@ -331,34 +341,29 @@ export class KnowledgeSearchService {
   private async retrieveStage1(
     knowledgeId: string,
     queryEmbedding: number[],
+    retrievalQuery: string,
+    keywordTerms: string[],
     threshold: number,
     matchCount: number,
-  ): Promise<KnowledgeChunk[]> {
-    const { data, error } = await this.runtime.withTransientRetry<{
-      data: KnowledgeChunk[] | null;
-      error: { message: string } | null;
-    }>(
-      'match_knowledge rpc',
-      async () => {
-        const result = await this.runtime.supabase.rpc('match_knowledge', {
-          query_embedding: queryEmbedding,
-          p_kb_id: knowledgeId,
-          match_threshold: threshold,
-          match_count: matchCount,
-        });
+  ): Promise<HybridRetrieveResult> {
+    return this.hybridRetriever.retrieve({
+      knowledgeId,
+      queryEmbedding,
+      retrievalQuery,
+      keywordTerms,
+      threshold,
+      matchCount,
+    });
+  }
 
-        return {
-          data: (result.data as KnowledgeChunk[] | null) ?? null,
-          error: result.error ? { message: result.error.message } : null,
-        };
-      },
-      3,
+  private compareRetrievalChunks(
+    left: KnowledgeChunk,
+    right: KnowledgeChunk,
+  ): number {
+    return (
+      (left.hybrid_score ?? 0) - (right.hybrid_score ?? 0) ||
+      (left.keyword_score ?? 0) - (right.keyword_score ?? 0) ||
+      (left.similarity ?? 0) - (right.similarity ?? 0)
     );
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data ?? [];
   }
 }

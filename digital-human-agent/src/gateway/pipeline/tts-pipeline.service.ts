@@ -115,12 +115,15 @@ export class TtsPipelineService {
         );
       }
     } catch (err) {
-      this.logger.error('TTS synthesize error', err);
-      this.sendJson(client, {
-        type: 'error',
-        sessionId: session.sessionId,
-        payload: { message: 'TTS failed' },
-      });
+      session.ttsQueue = [];
+      if ((err as { name?: string })?.name !== 'AbortError') {
+        this.logger.error('TTS synthesize error', err);
+        this.sendJson(client, {
+          type: 'error',
+          sessionId: session.sessionId,
+          payload: { message: 'TTS failed' },
+        });
+      }
     } finally {
       session.ttsProcessing = false;
       this.completeTurnIfNeeded(client, session, turnId);

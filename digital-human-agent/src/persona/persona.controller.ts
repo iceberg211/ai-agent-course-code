@@ -7,12 +7,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PersonaService } from '@/persona/persona.service';
 import { CreatePersonaDto } from '@/persona/dto/create-persona.dto';
 import { UpdatePersonaDto } from '@/persona/dto/update-persona.dto';

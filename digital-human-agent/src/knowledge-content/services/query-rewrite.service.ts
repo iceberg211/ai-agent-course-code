@@ -14,6 +14,7 @@ import type { KnowledgeQueryRewriteResult } from '@/knowledge-content/types/know
 
 const KnowledgeQueryRewriteSchema = z.object({
   rewrittenQuery: z.string().min(1).max(500),
+  keywords: z.array(z.string().min(1).max(50)).min(1).max(6),
   reason: z.string().min(1).max(200),
 });
 
@@ -52,6 +53,7 @@ export class QueryRewriteService {
         },
         outputProcessor: (output) => ({
           rewrittenQuery: output.rewrittenQuery,
+          keywordCount: output.keywords.length,
           changed: output.changed,
           reason: output.reason,
         }),
@@ -76,9 +78,14 @@ export class QueryRewriteService {
 
           const rewrittenQuery =
             result.rewrittenQuery.trim() || normalizedQuery;
+          const keywords = this.normalizeKeywords(
+            result.keywords,
+            normalizedQuery,
+          );
           return {
             originalQuery: normalizedQuery,
             rewrittenQuery,
+            keywords,
             changed: rewrittenQuery !== normalizedQuery,
             reason: result.reason.trim() || '改写完成',
           };
@@ -104,8 +111,34 @@ export class QueryRewriteService {
     return {
       originalQuery: query,
       rewrittenQuery: query,
+      keywords: this.normalizeKeywords([], query),
       changed: false,
       reason,
     };
+  }
+
+  private normalizeKeywords(keywords: string[], query: string): string[] {
+    const normalized = Array.from(
+      new Set(
+        keywords.map((item) => item.trim()).filter((item) => item.length >= 2),
+      ),
+    ).slice(0, 6);
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+
+    return this.extractFallbackKeywords(query);
+  }
+
+  private extractFallbackKeywords(query: string): string[] {
+    const normalized = query
+      .replace(/[，。！？；：、“”‘’（）()【】\[\],.!?;:]/g, ' ')
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 2);
+
+    const deduped = Array.from(new Set(normalized)).slice(0, 6);
+    return deduped.length > 0 ? deduped : [query];
   }
 }

@@ -1,8 +1,4 @@
-import {
-  CreateDateColumn,
-  Entity,
-  PrimaryColumn,
-} from 'typeorm';
+import { CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('persona_knowledge_base')
 export class PersonaKnowledge {

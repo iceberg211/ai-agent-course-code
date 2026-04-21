@@ -1,10 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
+import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
+import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
+import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
+
+interface InsertChunkRow {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  source: string;
+  category: string | null;
+  enabled: boolean;
+  embedding: string;
+}
 
 @Injectable()
 export class KnowledgeDocumentService {
@@ -16,10 +31,16 @@ export class KnowledgeDocumentService {
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
     private readonly runtime: KnowledgeContentRuntimeService,
+    private readonly elasticsearchSyncService: ElasticsearchSyncService,
+    private readonly knowledgeChunkIndexQueryService: KnowledgeChunkIndexQueryService,
   ) {}
 
   async deleteDocument(documentId: string): Promise<void> {
     await this.documentRepo.delete(documentId);
+    await this.elasticsearchSyncService.safeDeleteByDocumentId(
+      documentId,
+      `删除文档 ${documentId}`,
+    );
   }
 
   async ingestDocument(
@@ -39,7 +60,9 @@ export class KnowledgeDocumentService {
     );
 
     try {
-      const splitDocuments = await this.runtime.splitter.createDocuments([content]);
+      const splitDocuments = await this.runtime.splitter.createDocuments([
+        content,
+      ]);
       this.logger.log(
         `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
       );
@@ -52,15 +75,21 @@ export class KnowledgeDocumentService {
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
       const chunkRows = splitDocuments.map((item, index) => ({
+        id: uuidv4(),
         document_id: document.id,
         chunk_index: index,
         content: item.pageContent,
         source: filename,
         category: options.category ?? null,
+        enabled: true,
         embedding: JSON.stringify(embeddings[index]),
-      }));
+      })) satisfies InsertChunkRow[];
 
       await this.insertChunkRows(document.id, chunkRows);
+      await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
+        chunkRows.map((row) => this.toIndexDocument(row, knowledgeId)),
+        `写入文档 ${document.id}`,
+      );
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
@@ -75,7 +104,9 @@ export class KnowledgeDocumentService {
     }
   }
 
-  listDocumentsByKnowledgeId(knowledgeId: string): Promise<KnowledgeDocument[]> {
+  listDocumentsByKnowledgeId(
+    knowledgeId: string,
+  ): Promise<KnowledgeDocument[]> {
     return this.documentRepo.find({
       where: { knowledgeBaseId: knowledgeId },
       order: { createdAt: 'DESC' },
@@ -99,11 +130,22 @@ export class KnowledgeDocumentService {
     if (error) {
       throw new Error(error.message);
     }
+
+    const chunkDocument =
+      await this.knowledgeChunkIndexQueryService.findByChunkId(chunkId);
+    if (!chunkDocument) {
+      return;
+    }
+
+    await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
+      [chunkDocument],
+      `更新 chunk ${chunkId}`,
+    );
   }
 
   private async insertChunkRows(
     documentId: string,
-    rows: Array<Record<string, string | number | null>>,
+    rows: InsertChunkRow[],
   ): Promise<void> {
     this.logger.log(`[开始 Insert] doc=${documentId} rows=${rows.length}`);
 
@@ -134,5 +176,21 @@ export class KnowledgeDocumentService {
     this.logger.log(
       `[Insert 完成] doc=${documentId} batches=${Math.ceil(rows.length / batchSize)}`,
     );
+  }
+
+  private toIndexDocument(
+    row: InsertChunkRow,
+    knowledgeId: string,
+  ): KnowledgeChunkIndexDocument {
+    return {
+      id: row.id,
+      document_id: row.document_id,
+      knowledge_base_id: knowledgeId,
+      chunk_index: row.chunk_index,
+      content: row.content,
+      source: row.source,
+      category: row.category,
+      enabled: row.enabled,
+    };
   }
 }

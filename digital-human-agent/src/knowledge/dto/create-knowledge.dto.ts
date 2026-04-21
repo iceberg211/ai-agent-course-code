@@ -22,7 +22,11 @@ export class RetrievalConfigDto {
     minimum: 0,
     maximum: 1,
   })
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(1)
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
   threshold?: number;
 
   @ApiPropertyOptional({
@@ -30,7 +34,11 @@ export class RetrievalConfigDto {
     minimum: 1,
     maximum: 50,
   })
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
   stage1TopK?: number;
 
   @ApiPropertyOptional({
@@ -38,28 +46,44 @@ export class RetrievalConfigDto {
     minimum: 1,
     maximum: 20,
   })
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(20)
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
   finalTopK?: number;
 
   @ApiPropertyOptional({ default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerank })
-  @IsOptional() @Type(() => Boolean) @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
   rerank?: boolean;
 }
 
 export class CreateKnowledgeDto {
   @ApiProperty({ description: '知识库名称', example: '产品 FAQ' })
-  @IsString() @IsNotEmpty() @MaxLength(120)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
   name: string;
 
   @ApiPropertyOptional({ description: '知识库描述' })
-  @IsOptional() @IsString() @MaxLength(500)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
   description?: string;
 
-  @ApiPropertyOptional({ description: '所属 persona（可空，为空即为公共知识库）' })
-  @IsOptional() @IsUUID()
+  @ApiPropertyOptional({
+    description: '所属 persona（可空，为空即为公共知识库）',
+  })
+  @IsOptional()
+  @IsUUID()
   ownerPersonaId?: string;
 
   @ApiPropertyOptional({ type: RetrievalConfigDto })
-  @IsOptional() @IsObject() @ValidateNested() @Type(() => RetrievalConfigDto)
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RetrievalConfigDto)
   retrievalConfig?: RetrievalConfigDto;
 }
