@@ -61,14 +61,6 @@ export class ConversationService {
     return recentDesc.reverse();
   }
 
-  // UI 历史显示用，包含所有状态
-  getAllMessages(conversationId: string): Promise<ConversationMessage[]> {
-    return this.msgRepo.find({
-      where: { conversationId },
-      order: { createdAt: 'ASC' },
-    });
-  }
-
   // 仅返回最近 N 条历史，按时间正序（旧 -> 新）
   async getRecentMessages(
     conversationId: string,
@@ -81,9 +73,5 @@ export class ConversationService {
       take: safeLimit,
     });
     return recentDesc.reverse();
-  }
-
-  updateMessageStatus(id: string, status: MessageStatus): Promise<void> {
-    return this.msgRepo.update(id, { status }).then(() => undefined);
   }
 }

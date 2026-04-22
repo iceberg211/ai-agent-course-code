@@ -3,10 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
-import {
-  buildRagRoutePromptInput,
-  RAG_ROUTE_PROMPT,
-} from '@/common/prompts';
+import { buildRagRoutePromptInput, RAG_ROUTE_PROMPT } from '@/common/prompts';
 import {
   buildLangSmithRunnableConfig,
   runInTracedScope,

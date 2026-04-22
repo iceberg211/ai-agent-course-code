@@ -66,7 +66,9 @@ export class AnswerGenerationService {
     );
   }
 
-  private async generateInternal(params: GenerateAnswerParams): Promise<string> {
+  private async generateInternal(
+    params: GenerateAnswerParams,
+  ): Promise<string> {
     throwIfAborted(params.signal);
 
     const messages = await AGENT_CHAT_PROMPT.formatMessages(

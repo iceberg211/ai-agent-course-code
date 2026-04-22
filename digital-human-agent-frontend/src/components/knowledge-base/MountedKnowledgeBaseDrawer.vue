@@ -14,6 +14,22 @@
     </div>
 
     <div class="drawer-body">
+      <section
+        v-if="focusSummary"
+        class="focus-summary"
+        :class="`focus-summary--${focusSummary.tone}`"
+      >
+        <div class="focus-summary__icon" aria-hidden="true">
+          <SparklesIcon v-if="focusSummary.tone === 'active'" :size="16" />
+          <TriangleAlertIcon v-else :size="16" />
+        </div>
+        <div class="focus-summary__copy">
+          <p class="focus-summary__eyebrow">本次验证</p>
+          <h3>{{ focusSummary.title }}</h3>
+          <p>{{ focusSummary.description }}</p>
+        </div>
+      </section>
+
       <div v-if="loading" class="state-msg">加载中…</div>
       <div v-else-if="!personaId" class="state-empty">
         <BookOpenIcon :size="32" color="var(--border)" />
@@ -111,7 +127,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { BookOpenIcon, DatabaseIcon, SettingsIcon, XIcon } from 'lucide-vue-next'
+import {
+  BookOpenIcon,
+  DatabaseIcon,
+  SettingsIcon,
+  SparklesIcon,
+  TriangleAlertIcon,
+  XIcon,
+} from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type { KnowledgeBase } from '@/types'
 
@@ -139,6 +162,27 @@ const attachable = computed(() => {
 })
 
 const mountedDisplay = computed(() => sortKnowledgeBases(mounted.value))
+
+const focusSummary = computed(() => {
+  const focusId = props.focusKnowledgeBaseId
+  if (!focusId) return null
+
+  const mountedTarget = mounted.value.find((kb) => kb.id === focusId)
+  if (mountedTarget) {
+    return {
+      tone: 'active' as const,
+      title: `当前正在验证：${mountedTarget.name}`,
+      description: '这份知识库已经参与当前会话检索。现在回到对话区提问，就能直接观察回答与引用效果。',
+    }
+  }
+
+  const pendingTarget = allKbs.value.find((kb) => kb.id === focusId)
+  return {
+    tone: 'warning' as const,
+    title: `待挂载验证：${pendingTarget?.name ?? '目标知识库'}`,
+    description: '目标知识库还没有参与当前会话。先在下方点击“挂载”，再回到对话中提问，验证结果才会准确。',
+  }
+})
 
 async function load(personaId: string) {
   errorMsg.value = ''
@@ -227,6 +271,72 @@ watch(() => props.personaId, load)
 .drawer-body {
   flex: 1;
   overflow-y: auto;
+}
+
+.focus-summary {
+  margin: 14px 16px 0;
+  padding: 12px 12px 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(191, 219, 254, 0.92);
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.14), transparent 32%),
+    linear-gradient(180deg, #ffffff, #f7fbff);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.focus-summary--warning {
+  border-color: rgba(251, 191, 36, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 32%),
+    linear-gradient(180deg, #fffef7, #fff9ef);
+}
+
+.focus-summary__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+
+.focus-summary--warning .focus-summary__icon {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.focus-summary__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.focus-summary__eyebrow {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.focus-summary__copy h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.focus-summary__copy p:last-child {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
 }
 
 .title {

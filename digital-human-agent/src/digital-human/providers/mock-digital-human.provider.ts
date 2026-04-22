@@ -82,4 +82,3 @@ export class MockDigitalHumanProvider implements DigitalHumanProvider {
     return state;
   }
 }
-

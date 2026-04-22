@@ -80,10 +80,7 @@ export class KnowledgeContentController {
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Body() dto: UpdateChunkDto,
   ) {
-    await this.knowledgeContentService.updateChunkEnabled(
-      chunkId,
-      dto.enabled,
-    );
+    await this.knowledgeContentService.updateChunkEnabled(chunkId, dto.enabled);
     return { chunkId, enabled: dto.enabled };
   }
 
@@ -123,7 +120,10 @@ export class KnowledgeContentController {
       return parsedText;
     }
 
-    if (mime.startsWith('text/') || KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)) {
+    if (
+      mime.startsWith('text/') ||
+      KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)
+    ) {
       const text = file.buffer.toString('utf-8').trim();
       if (!text) {
         throw new BadRequestException('文档内容为空');

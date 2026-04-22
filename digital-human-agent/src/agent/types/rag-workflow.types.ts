@@ -1,7 +1,7 @@
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 export type RagStrategy = 'simple' | 'complex';
-export type RagOrchestratorName = 'default' | 'langgraph';
+export type RagOrchestratorName = 'langgraph';
 
 export interface RagKnowledgeCitation extends RetrievedKnowledgeChunk {
   kind: 'knowledge';

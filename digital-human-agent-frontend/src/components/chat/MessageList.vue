@@ -1,22 +1,18 @@
 <template>
-  <div class="message-list" ref="listEl" role="log" aria-live="polite" aria-label="对话记录">
+  <div
+    ref="listEl"
+    class="message-list"
+    role="log"
+    aria-live="polite"
+    aria-label="对话记录"
+    @scroll="onScroll"
+  >
     <!-- 骨架屏 -->
     <div v-if="loading" class="loading-list" role="status" aria-label="正在加载对话">
       <div v-for="i in 4" :key="i" class="loading-row" :class="{ right: i % 2 === 0 }">
         <span class="loading-avatar" />
         <span class="loading-bubble" :style="{ width: `${45 + (i * 7) % 20}%` }" />
       </div>
-    </div>
-
-    <!-- 空态 -->
-    <div v-else-if="!messages.length" class="empty-state" role="status">
-      <div class="empty-illustration">
-        <div class="empty-icon-wrap">
-          <BookOpenTextIcon :size="22" aria-hidden="true" />
-        </div>
-      </div>
-      <p class="empty-title">开始知识问答</p>
-      <p class="empty-desc">选择角色后，可以直接输入问题，也可以使用语音提问。</p>
     </div>
 
     <template v-else>
@@ -26,12 +22,20 @@
         :message="msg"
       />
     </template>
+
+    <button
+      v-if="showJumpButton"
+      class="message-list__jump"
+      type="button"
+      @click="scrollToLatest('smooth')"
+    >
+      回到最新
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { BookOpenTextIcon } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import type { ChatMessage } from '@/types'
 
@@ -44,9 +48,64 @@ const props = withDefaults(defineProps<{
 })
 
 const listEl = ref<HTMLElement | null>(null)
+const pinnedToBottom = ref(true)
+const BOTTOM_THRESHOLD = 96
 
-watch(() => props.messages.length, () => {
-  if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
+const messageTail = computed(() => {
+  const lastMessage = props.messages[props.messages.length - 1]
+  if (!lastMessage) return 'empty'
+  return [
+    props.messages.length,
+    lastMessage.id,
+    lastMessage.content.length,
+    lastMessage.streaming ? 'streaming' : 'steady',
+  ].join(':')
+})
+
+const showJumpButton = computed(
+  () => props.messages.length > 0 && !props.loading && !pinnedToBottom.value,
+)
+
+function updatePinnedState() {
+  const el = listEl.value
+  if (!el) return
+  const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  pinnedToBottom.value = distanceToBottom <= BOTTOM_THRESHOLD
+}
+
+function onScroll() {
+  updatePinnedState()
+}
+
+function scrollToLatest(behavior: ScrollBehavior = 'auto') {
+  const el = listEl.value
+  if (!el) return
+  el.scrollTo({
+    top: el.scrollHeight,
+    behavior,
+  })
+  pinnedToBottom.value = true
+}
+
+watch(messageTail, async () => {
+  await nextTick()
+  if (pinnedToBottom.value) {
+    scrollToLatest('auto')
+  } else {
+    updatePinnedState()
+  }
+})
+
+watch(() => props.loading, async (loading) => {
+  if (!loading) {
+    await nextTick()
+    scrollToLatest('auto')
+  }
+})
+
+onMounted(async () => {
+  await nextTick()
+  scrollToLatest('auto')
 })
 
 defineExpose({ listEl })
@@ -55,6 +114,7 @@ defineExpose({ listEl })
 <style scoped>
 .message-list {
   flex: 1;
+  position: relative;
   overflow-y: auto;
   padding: 20px 24px 16px;
   display: flex;
@@ -87,51 +147,35 @@ defineExpose({ listEl })
   100% { background-position: 0% 50%; }
 }
 
-/* ── 空态 ─────────────────────────────────────────────────────────── */
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px 16px 24px;
-}
-
-.empty-illustration {
-  width: 46px;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-icon-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--primary-bg, #eff6ff);
-  border: 1.5px solid var(--primary-muted, #bfdbfe);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary, #2563eb);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.06);
-}
-
-.empty-title {
-  margin: 0;
-  font-size: 16px;
+.message-list__jump {
+  position: absolute;
+  right: 24px;
+  bottom: 18px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--primary);
+  font-size: 12px;
   font-weight: 700;
-  color: var(--text, #0f172a);
-  letter-spacing: -0.02em;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(8px);
 }
-.empty-desc {
-  max-width: 380px;
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-muted, #64748b);
-  text-align: center;
-  line-height: 1.7;
+
+.message-list__jump:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .message-list {
+    padding: 16px 14px 12px;
+  }
+
+  .message-list__jump {
+    right: 14px;
+    bottom: 14px;
+  }
 }
 </style>

@@ -117,9 +117,7 @@ export function mapConversationHistoryToPromptMessages(
   );
 }
 
-export function formatWebKnowledgeBlock(
-  webContextBlock?: string,
-): string {
+export function formatWebKnowledgeBlock(webContextBlock?: string): string {
   const normalized = String(webContextBlock ?? '').trim();
   if (!normalized) {
     return '（当前未使用联网补充）';

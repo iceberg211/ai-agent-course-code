@@ -25,9 +25,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const isHttpException = exception instanceof HttpException;
     const errorMessage =
       exception instanceof Error ? exception.message : String(exception ?? '');
-    const isTransientDbError = /Connection terminated unexpectedly|ECONNRESET|too many clients|terminating connection/i.test(
-      errorMessage,
-    );
+    const isTransientDbError =
+      /Connection terminated unexpectedly|ECONNRESET|too many clients|terminating connection/i.test(
+        errorMessage,
+      );
     const status = isTransientDbError
       ? HttpStatus.SERVICE_UNAVAILABLE
       : isHttpException
@@ -38,13 +39,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ? exception.getResponse()
       : isTransientDbError
         ? '数据库连接暂不可用，请稍后重试'
-      : exception instanceof Error
-        ? exception.message
-        : 'Internal server error';
+        : exception instanceof Error
+          ? exception.message
+          : 'Internal server error';
 
     this.logger.error(
       `${request.method} ${request.originalUrl ?? request.url} -> ${status} ${
-        exception instanceof Error ? exception.stack ?? exception.message : JSON.stringify(exception)
+        exception instanceof Error
+          ? (exception.stack ?? exception.message)
+          : JSON.stringify(exception)
       }`,
     );
 

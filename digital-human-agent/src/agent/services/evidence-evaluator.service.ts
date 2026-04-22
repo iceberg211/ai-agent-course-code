@@ -100,7 +100,9 @@ export class EvidenceEvaluatorService {
                 currentHop: params.currentHop,
                 maxHops: params.maxHops,
                 remainingSubQuestionCount: params.remainingSubQuestionCount,
-                localEvidenceBlock: this.formatLocalEvidence(params.localChunks),
+                localEvidenceBlock: this.formatLocalEvidence(
+                  params.localChunks,
+                ),
                 webEvidenceBlock: this.formatWebEvidence(
                   params.webCitations ?? [],
                 ),
@@ -171,7 +173,9 @@ export class EvidenceEvaluatorService {
   private normalizeMissingFacts(missingFacts: string[]): string[] {
     return Array.from(
       new Set(
-        missingFacts.map((item) => item.trim()).filter((item) => item.length > 0),
+        missingFacts
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
       ),
     ).slice(0, 6);
   }
@@ -180,8 +184,7 @@ export class EvidenceEvaluatorService {
     params: EvaluateEvidenceParams,
   ): RagEvidenceEvaluation {
     const enough =
-      params.localChunks.length >= 3 ||
-      (params.webCitations?.length ?? 0) >= 1;
+      params.localChunks.length >= 3 || (params.webCitations?.length ?? 0) >= 1;
 
     return {
       enough,

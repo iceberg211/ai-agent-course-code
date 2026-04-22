@@ -74,8 +74,12 @@ export class KnowledgeContentService {
     return this.knowledgeDocumentService.deleteDocument(documentId);
   }
 
-  listDocumentsByKnowledgeId(knowledgeId: string): Promise<KnowledgeDocument[]> {
-    return this.knowledgeDocumentService.listDocumentsByKnowledgeId(knowledgeId);
+  listDocumentsByKnowledgeId(
+    knowledgeId: string,
+  ): Promise<KnowledgeDocument[]> {
+    return this.knowledgeDocumentService.listDocumentsByKnowledgeId(
+      knowledgeId,
+    );
   }
 
   listChunksByDocumentId(documentId: string): Promise<KnowledgeChunkEntity[]> {

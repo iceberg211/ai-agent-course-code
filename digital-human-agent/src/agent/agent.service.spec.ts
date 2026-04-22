@@ -28,7 +28,7 @@ describe('AgentService', () => {
           webSearchAttempted: false,
           webSearchUsed: false,
           stopReason: 'single_hop_enough',
-          orchestrator: 'default',
+          orchestrator: 'langgraph',
         } satisfies RagWorkflowState,
         citations: [],
         answerText: '你好',

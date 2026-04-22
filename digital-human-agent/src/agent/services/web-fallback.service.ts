@@ -63,24 +63,6 @@ export class WebFallbackService {
     );
   }
 
-  formatContextBlock(citations: RagWebCitation[]): string {
-    if (citations.length === 0) {
-      return '';
-    }
-
-    return citations
-      .map(
-        (item, index) =>
-          `[网页 ${index + 1}]
-标题：${item.title}
-URL：${item.url}
-网站：${item.siteName ?? '未知'}
-时间：${item.publishedAt ?? '未知'}
-摘要：${item.snippet}`,
-      )
-      .join('\n\n');
-  }
-
   private async searchInternal(
     query: string,
     signal?: AbortSignal,

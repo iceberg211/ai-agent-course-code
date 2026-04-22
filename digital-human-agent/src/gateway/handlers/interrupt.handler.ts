@@ -34,7 +34,7 @@ export class InterruptHandler {
     const session = this.sessionRegistry.get(sessionId);
     if (!session) return;
 
-    const turnId = (msg?.turnId) ?? session.ttsTurnId ?? undefined;
+    const turnId = msg?.turnId ?? session.ttsTurnId ?? undefined;
 
     // 中止 Agent
     session.abortController?.abort();

@@ -1,5 +1,5 @@
 <template>
-  <article class="kb-card" @click="$emit('open', kb.id)" role="button" tabindex="0" @keydown.enter="$emit('open', kb.id)">
+  <button class="kb-card" type="button" @click="$emit('open', kb.id)">
     <div class="kb-card__head">
       <BookOpenIcon :size="18" color="var(--primary)" aria-hidden="true" />
       <h3 class="kb-card__name">{{ kb.name }}</h3>
@@ -10,7 +10,7 @@
       <span class="kb-card__meta">topK {{ kb.retrievalConfig.finalTopK }}</span>
       <span v-if="kb.retrievalConfig.rerank" class="kb-card__tag">rerank</span>
     </footer>
-  </article>
+  </button>
 </template>
 
 <script setup lang="ts">
@@ -26,17 +26,27 @@ defineEmits<{ (e: 'open', kbId: string): void }>()
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   cursor: pointer;
+  text-align: left;
+  font: inherit;
+  appearance: none;
   transition: border-color 150ms, transform 150ms, box-shadow 150ms;
 }
 .kb-card:hover {
   border-color: var(--primary);
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(124, 58, 237, 0.08);
+}
+.kb-card:focus-visible {
+  border-color: var(--primary);
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.12),
+    0 8px 24px rgba(124, 58, 237, 0.08);
 }
 .kb-card__head {
   display: flex;
