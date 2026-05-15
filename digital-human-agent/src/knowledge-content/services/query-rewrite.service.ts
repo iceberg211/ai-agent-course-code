@@ -13,11 +13,14 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryAngle,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
+
+const DEFAULT_EXPANDED_QUERY_COUNT = 3;
 
 const KnowledgeQueryRewriteSchema = z.object({
   rewrittenQuery: z.string().min(1).max(500),
@@ -237,7 +240,7 @@ export class QueryRewriteService {
       ...expandedQueries,
     ];
 
-    return items
+    const normalizedItems = items
       .map((item) => ({
         query: item.query.trim(),
         keywords: this.normalizeKeywords(item.keywords ?? [], item.query),
@@ -250,11 +253,86 @@ export class QueryRewriteService {
         seen.add(key);
         return true;
       })
+      .slice(0, 5);
+
+    return this.padExpandedQueries(
+      normalizedItems,
+      rewrittenQuery,
+      keywords,
+      DEFAULT_EXPANDED_QUERY_COUNT,
+    )
       .slice(0, 5)
       .map((item, index) => ({
         index,
         ...item,
       }));
+  }
+
+  private padExpandedQueries(
+    items: Array<{
+      query: string;
+      keywords: string[];
+      angle: RetrievalQueryAngle;
+    }>,
+    rewrittenQuery: string,
+    keywords: string[],
+    targetCount: number,
+  ): Array<{
+    query: string;
+    keywords: string[];
+    angle: RetrievalQueryAngle;
+  }> {
+    const padded = [...items];
+    if (!rewrittenQuery.trim() || padded.length >= targetCount) {
+      return padded;
+    }
+
+    const seen = new Set(padded.map((item) => item.query.toLowerCase()));
+    const normalizedKeywords = this.normalizeKeywords(keywords, rewrittenQuery);
+    const keywordQuery = normalizedKeywords.join(' ').trim();
+    const compactKeywords = normalizedKeywords.slice(0, 4).join(' ').trim();
+    const headKeywords = normalizedKeywords.slice(0, 2).join(' ').trim();
+
+    const candidates = [
+      {
+        query: keywordQuery,
+        keywords: normalizedKeywords,
+        angle: 'entity' as RetrievalQueryAngle,
+      },
+      {
+        query: [rewrittenQuery, compactKeywords].filter(Boolean).join(' '),
+        keywords: normalizedKeywords,
+        angle: 'semantic' as RetrievalQueryAngle,
+      },
+      {
+        query: [headKeywords, rewrittenQuery].filter(Boolean).join(' '),
+        keywords: normalizedKeywords,
+        angle: 'detail' as RetrievalQueryAngle,
+      },
+      {
+        query: `${rewrittenQuery} 相关信息`,
+        keywords: normalizedKeywords,
+        angle: 'semantic' as RetrievalQueryAngle,
+      },
+      {
+        query: `${rewrittenQuery} 具体说明`,
+        keywords: normalizedKeywords,
+        angle: 'detail' as RetrievalQueryAngle,
+      },
+    ];
+
+    for (const candidate of candidates) {
+      const query = candidate.query.trim();
+      if (!query) continue;
+      const key = query.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      padded.push(candidate);
+      if (padded.length >= targetCount) return padded;
+    }
+
+    return padded;
   }
 
   private normalizeKeywords(keywords: string[], query: string): string[] {
@@ -268,18 +346,7 @@ export class QueryRewriteService {
       return normalized;
     }
 
-    return this.extractFallbackKeywords(query);
-  }
-
-  private extractFallbackKeywords(query: string): string[] {
-    const normalized = query
-      .replace(/[，。！？；：、“”‘’（）()【】\[\],.!?;:]/g, ' ')
-      .split(/\s+/)
-      .map((item) => item.trim())
-      .filter((item) => item.length >= 2);
-
-    const deduped = Array.from(new Set(normalized)).slice(0, 6);
-    return deduped.length > 0 ? deduped : [query];
+    return extractFallbackKeywordTerms(query).slice(0, 6);
   }
 
   private extractText(content: unknown): string {

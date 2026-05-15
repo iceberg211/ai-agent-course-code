@@ -19,6 +19,7 @@ import {
   type RagSemanticCachePayload,
   type RagSemanticCacheScope,
 } from '@/knowledge-content/cache/rag-semantic-cache-store.service';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type {
@@ -963,15 +964,16 @@ export class KnowledgeSearchService {
     query: string,
     reason: string,
   ): KnowledgeQueryRewriteResult {
+    const keywords = extractFallbackKeywordTerms(query).slice(0, 6);
     return {
       originalQuery: query,
       rewrittenQuery: query,
-      keywords: [query],
+      keywords,
       expandedQueries: [
         {
           index: 0,
           query,
-          keywords: [query],
+          keywords,
           angle: 'original',
         },
       ],

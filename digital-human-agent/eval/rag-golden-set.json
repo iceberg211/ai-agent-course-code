@@ -1,16 +1,16 @@
 [
   {
     "id": "legal_case_001",
-    "personaId": "local-persona-after-import",
-    "query": "示例服务协议里试用数据删除时限是什么？",
+    "personaId": "a4309a37-b408-4e65-ac11-f7b4c38b635b",
+    "query": "示例服务协议里协议终止后的试用数据应如何处理？",
     "expected_evidence_spans": [
       {
         "source": "mock-legal-service-agreement.md",
-        "quote": "试用期结束后，乙方应在七日内删除甲方试用数据",
-        "answerPoint": "七日内删除甲方试用数据"
+        "quote": "协议终止后，乙方应根据甲方要求导出、删除或清理相关试用数据",
+        "answerPoint": "根据甲方要求导出、删除或清理相关试用数据"
       }
     ],
-    "expected_answer_points": ["七日内删除甲方试用数据"],
+    "expected_answer_points": ["根据甲方要求导出、删除或清理相关试用数据"],
     "retrieval_config": {
       "threshold": 0.6,
       "stage1TopK": 20,

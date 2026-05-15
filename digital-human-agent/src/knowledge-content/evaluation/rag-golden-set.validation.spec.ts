@@ -7,15 +7,15 @@ describe('validateRagGoldenSet', () => {
         {
           id: 'legal_case_001',
           personaId: 'local-persona-after-import',
-          query: '试用数据什么时候删除？',
+          query: '协议终止后的试用数据应如何处理？',
           expected_evidence_spans: [
             {
               source: 'mock-legal-service-agreement.md',
-              quote: '试用期结束后，乙方应在七日内删除甲方试用数据',
-              answerPoint: '试用结束后七日内删除试用数据',
+              quote: '协议终止后，乙方应根据甲方要求导出、删除或清理相关试用数据',
+              answerPoint: '根据甲方要求导出、删除或清理相关试用数据',
             },
           ],
-          expected_answer_points: ['试用结束后七日内删除试用数据'],
+          expected_answer_points: ['根据甲方要求导出、删除或清理相关试用数据'],
         },
       ]),
     ).toEqual([]);
@@ -60,15 +60,15 @@ describe('validateRagGoldenSet', () => {
           {
             id: 'legal_case_001',
             personaId: 'local-persona-after-import',
-            query: '试用数据什么时候删除？',
+            query: '协议终止后的试用数据应如何处理？',
             expected_evidence_spans: [
               {
                 source: 'mock-legal-service-agreement.md',
-                quote: '试用期结束后，乙方应在七日内删除甲方试用数据',
-                answerPoint: '试用结束后七日内删除试用数据',
+                quote: '协议终止后，乙方应根据甲方要求导出、删除或清理相关试用数据',
+                answerPoint: '根据甲方要求导出、删除或清理相关试用数据',
               },
             ],
-            expected_answer_points: ['试用结束后七日内删除试用数据'],
+            expected_answer_points: ['根据甲方要求导出、删除或清理相关试用数据'],
           },
         ],
         {
@@ -88,10 +88,10 @@ describe('validateRagGoldenSet', () => {
               {
                 source: 'mock-legal-service-agreement.md',
                 quote: '这段证据并不存在',
-                answerPoint: '试用结束后七日内删除试用数据',
+                answerPoint: '根据甲方要求导出、删除或清理相关试用数据',
               },
             ],
-            expected_answer_points: ['试用结束后七日内删除试用数据'],
+            expected_answer_points: ['根据甲方要求导出、删除或清理相关试用数据'],
           },
         ],
         {

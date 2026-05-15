@@ -3245,3 +3245,77 @@ P0 第 6 条要求 ES alias migration 必须由显式 switch/rollback 脚本表�
 3. 数据库通过后再执行 `pnpm db:migrate`、`pnpm parent-child:backfill`、`pnpm graph:backfill`，以及必要的 ES backfill。
 4. 启动或确认本机 ES 可用后，先跑 `pnpm es:index:ensure`、`pnpm es:backfill -- --dry-run`、`pnpm es:backfill`，再跑 `pnpm es:alias:switch -- --from=v1 --to=v2 --dry-run` 和正式切换。
 5. 明确允许真实知识库候选内容进入当前模型服务后，再跑 `pnpm eval:rag -- --allow-model-calls`。
+
+## P1 收尾验证与数据库恢复复核（2026-05-16 00:10）
+
+本轮按当前目标只做 P1 收尾验证和必要小修；P0 只做回归验证，P2 只整理评估清单，未主动实现 P2。
+
+### P1 剩余项盘点
+
+| 项目 | 当前状态 | 本轮处理 |
+|------|----------|----------|
+| HyDE、多查询增强、Lost-in-the-Middle、上下文压缩 | 已有代码和测试，仍由 strategy/config 控制 | 本轮未扩功能，只通过完整测试回归 |
+| Contextual Retrieval、上下文窗口、Parent-Child 派生索引 | 本地实现和 dry-run 入口已存在，`parent-child:backfill -- --dry-run` 通过 | 继续保持默认关闭或策略控制；未执行真实 backfill |
+| Semantic cache | key、store、migration、rollback 已存在，默认关闭 | 本轮只保留为 P1 已实现项；未开启真实缓存 |
+| DB 连通性与 P1 dry-run | 数据库 runtime pooler 可连，Supabase REST 可达；`DIRECT_URL` 仍指向 pooler，推导 direct host 连接失败 | 已记录为配置警告，不阻塞本轮 runtime keyword 验证 |
+| live keyword 评估 | 已可连真实 DB，但原 golden set 的 personaId 和 quote 与当前 DB 快照不一致 | 已把 golden set 与 fixture 对齐到真实法务顾问 persona 和当前合同条款 |
+| 跳过 Query Rewrite 的关键词召回 | 原逻辑把中文整句作为唯一关键词，导致 live keyword 无法命中真实条款 | 已新增本地中文短语提取，仍不调用 LLM、embedding 或 rerank |
+| ES 派生索引 | 当前只做已有脚本验证，不启动或替换 ES | live keyword 仍走 PG keyword；ES alias 警告仅作为现状记录 |
+| 完整 live eval | 需要显式允许真实知识库候选内容进入模型服务 | 本轮不执行 |
+
+### 本轮代码与数据修正
+
+1. `eval/rag-golden-set.json` 与 `eval/fixtures/mock-legal-service-agreement.md`
+   - 将 golden case 从旧的“七日内删除”样例改为当前真实 DB 中存在的条款：协议终止后按甲方要求导出、删除或清理相关试用数据。
+   - `personaId` 改为当前数据库中的 `法务顾问（Mock）` persona。
+2. `src/knowledge-content/keyword-retrievers/keyword-retriever.utils.ts`
+   - 新增本地 fallback 关键词提取，中文长问题会拆出 `服务协议`、`协议终止`、`试用数据` 这类短语。
+3. `src/knowledge-content/services/query-rewrite.service.ts`
+   - LLM rewrite 失败时复用本地关键词提取。
+4. `src/knowledge-content/services/knowledge-search.service.ts`
+   - `skipQueryRewrite=true` 时不再把整句问题作为唯一关键词，避免 keyword-only 评估在中文问题上失真。
+5. 测试同步更新
+   - 新增/更新 Query Rewrite fallback、KnowledgeSearch skipQueryRewrite、golden set validation、fixture eval 断言。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates` | 0 | env 与 runtime DB 通过；runtime pooler 为 `aws-1-ap-southeast-1.pooler.supabase.com:6543`；`DIRECT_URL` 仍是 pooler；推导 direct host 连接终止；`aws-0` pooler 候选返回 tenant/user 不匹配 |
+| `pnpm db:migrate -- --dry-run` | 0 | migration ready=true；001-010、012、013 文件存在；提示 `DIRECT_URL` 仍指向 pooler |
+| `pnpm parent-child:backfill -- --dry-run --page-size=50` | 0 | 输出 Parent-Child 回填预演，未写入数据库 |
+| `pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest` | 0 | Supabase REST 返回 200 OK |
+| `pnpm eval:rag:live-keyword`（修正前） | 0 | 命令未调用模型，但指标为 0；原因是 golden set 的 personaId/quote 与当前 DB 快照不一致，随后已修正 |
+| `pnpm test --runInBand src/knowledge-content/services/query-rewrite.service.spec.ts src/knowledge-content/services/knowledge-search.service.spec.ts` | 0 | 2 个测试文件、17 个测试通过 |
+| `pnpm eval:rag:validate` | 0 | golden set 与 fixture 校验通过，caseCount=1 |
+| `pnpm eval:rag:fixture` | 0 | fixture-only 指标均为 1，并写入 `reports/rag-eval-20260515.json` |
+| `pnpm eval:rag:live-keyword`（修正后） | 0 | 真实 DB keyword-only 指标均为 1；未调用 embedding、LLM rewrite 或 rerank |
+| `pnpm test --runInBand`（修正测试前） | 1 | 旧 fixture/golden set 断言仍指向“七日内删除”，已按当前证据更新测试 |
+| `pnpm test --runInBand` | 0 | 67 个测试文件、222 个测试通过 |
+| `pnpm build` | 0 | 构建通过 |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+
+### 当前完成度判断
+
+| 阶段 | 当前判断 | 说明 |
+|------|----------|------|
+| P0 | 约 95% | 本轮未扩 P0；回归测试、构建、fixture eval、live keyword 均通过。完整 live eval 仍需模型调用授权，ES v2 正式回填和 alias 切换仍未执行。 |
+| P1 | 约 92% | 可本地验证和 DB keyword 验证的 P1 项已通过；真实 migration/backfill 仍停在 dry-run，原因是当前 `db:migrate` 会覆盖 P2 编号 migration，且本目标不主动推进 P2。 |
+| P2 | 仅评估，不实施 | 当前仓库保留 Graph/RAPTOR 部分服务和 migration，但 `graph:backfill`、`raptor:backfill` 命令已清理；不能把 P2 视为完成。 |
+
+### 仍然阻塞或未执行
+
+1. `DIRECT_URL` 仍不是 true direct host；长任务 migration/backfill 前建议改成 Supabase Dashboard 的 Direct connection。
+2. 未执行真实 `pnpm db:migrate`，因为 migration 列表包含 P2 图谱/RAPTOR 编号，本轮只验证 dry-run。
+3. 未执行真实 `pnpm parent-child:backfill`，因为真实写入前应先确认 migration 执行范围。
+4. 未启动或替换 ES；本轮只记录 live keyword 启动时的 alias 警告，不做 ES 切换。
+5. 未执行完整 `pnpm eval:rag -- --allow-model-calls`，因为目标明确禁止未经确认把真实知识库内容发送到模型服务。
+6. 未运行前端 type-check/build，因为本轮没有修改后端 RAG API、响应字段、LangGraph state 字段或前端类型合同。
+
+### P2 评估清单
+
+1. Graph RAG：当前有 PostgreSQL 图谱服务、抽取器、检索器、migration/rollback 和测试；进入 P2 前需要重新确认是否恢复独立 backfill 命令，或改为新的可回退执行入口。
+2. RAPTOR：当前有 schema、rollback、tree plan 和 options；进入 P2 前需要补摘要生成、embedding 写入、检索接入、真实 backfill 与回退演练。
+3. Neo4j：当前没有仓库内可直接验证的 Neo4j 服务配置；进入 P2 前需要明确外部服务、同步模型、删除/重建策略和 chunk-backed GraphRetriever。
+4. ES v2：进入 P2 前仍应先完成现有 ES backfill、alias dry-run、正式切换和 rollback 演练，避免把 ensure index 当作迁移。
+5. 完整 live eval：需要在 DB/ES 状态稳定后，由人工确认模型调用授权，再执行 `pnpm eval:rag -- --allow-model-calls`。

@@ -49,4 +49,51 @@ describe('QueryRewriteService', () => {
     expect(mockWithStructuredOutput).not.toHaveBeenCalled();
     expect(mockInvoke).not.toHaveBeenCalled();
   });
+
+  it('LLM 改写失败时会从中文长问题中提取本地关键词', async () => {
+    const service = new QueryRewriteService();
+    mockInvoke.mockRejectedValue(new Error('模型不可用'));
+
+    const result = await service.rewrite(
+      '示例服务协议里协议终止后的试用数据应如何处理？',
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.keywords).toEqual(
+      expect.arrayContaining(['服务协议', '协议终止', '试用数据']),
+    );
+    expect(result.expandedQueries[0].keywords).toEqual(
+      expect.arrayContaining(['协议终止', '试用数据']),
+    );
+  });
+
+  it('LLM 只返回 1 条扩展 query 时会补齐为 3 条检索 query', async () => {
+    const service = new QueryRewriteService();
+    mockInvoke.mockResolvedValue({
+      rewrittenQuery: '示例服务协议中协议终止后的试用数据处理方式',
+      keywords: ['示例服务协议', '协议终止', '试用数据'],
+      expandedQueries: [
+        {
+          query: '示例服务协议中协议终止后的试用数据处理方式',
+          keywords: ['示例服务协议', '协议终止', '试用数据'],
+          angle: 'original',
+        },
+      ],
+      reason: '原问题已经清晰',
+    });
+
+    const result = await service.rewrite(
+      '示例服务协议里协议终止后的试用数据应如何处理？',
+    );
+
+    expect(result.expandedQueries).toHaveLength(3);
+    expect(result.expandedQueries.map((item) => item.index)).toEqual([0, 1, 2]);
+    expect(result.expandedQueries.map((item) => item.angle)).toEqual([
+      'original',
+      'entity',
+      'semantic',
+    ]);
+    expect(result.expandedQueries[1].query).toContain('协议终止');
+    expect(result.expandedQueries[2].query).toContain('试用数据');
+  });
 });

@@ -93,7 +93,7 @@ function runtimeEnv(
 async function resolveLiveEvalModule(liveKeywordOnly: boolean) {
   if (liveKeywordOnly) return RagLiveKeywordEvalModule;
 
-  const { AppModule } = await import('@/app.module');
+  const { AppModule } = await import('../src/app.module');
   return AppModule;
 }
 

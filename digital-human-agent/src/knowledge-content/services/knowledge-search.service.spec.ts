@@ -572,6 +572,51 @@ describe('KnowledgeSearchService', () => {
     expect(result.stage1[0].vector_backend).toBeUndefined();
   });
 
+  it('skipQueryRewrite=true 时会为中文长问题生成本地关键词', async () => {
+    const { service, runtime, hybridRetriever, queryRewriteService } =
+      createService();
+    hybridRetriever.retrieve.mockResolvedValue({
+      chunks: [stage1Chunk],
+      keywordBackend: 'pg',
+      vectorResultCount: 0,
+      hydeVectorResultCount: 0,
+      keywordResultCount: 1,
+      fallbackToPg: false,
+      skippedChannels: ['vector', 'hyde'],
+    });
+
+    await service.retrieveWithStages(
+      'kb-1',
+      '示例服务协议里协议终止后的试用数据应如何处理？',
+      {
+        rerank: false,
+        strategy: {
+          needRetrieval: true,
+          useVector: false,
+          useKeyword: true,
+          useGraph: false,
+          useExactPhrase: true,
+          useMultiQuery: false,
+          useHyDE: false,
+          allowWeb: false,
+          reason: '安全关键词评估',
+        },
+        skipQueryRewrite: true,
+      },
+    );
+
+    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
+    expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retrievalQuery: '示例服务协议里协议终止后的试用数据应如何处理？',
+        keywordTerms: expect.arrayContaining(['协议终止', '试用数据']),
+        useVector: false,
+        useKeyword: true,
+      }),
+    );
+  });
+
   it('useKeyword=false 时 trace 标记 keyword disabled，但 chunk 元数据不写入 disabled backend', async () => {
     const { service, hybridRetriever } = createService();
     hybridRetriever.retrieve.mockResolvedValue({
