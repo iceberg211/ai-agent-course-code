@@ -141,7 +141,10 @@ export class KnowledgeSearchService {
 
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
     const strategy = normalizeRetrievalStrategy(options.strategy);
+    const skipQueryRewrite =
+      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
     normalizedOptions.strategy = strategy;
+    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
 
     if (!normalizedQuery) {
       const fallbackRewrite = this.buildFallbackRewrite(
@@ -179,7 +182,7 @@ export class KnowledgeSearchService {
 
     const rewrite = await this.resolveRetrievalQuery(
       normalizedQuery,
-      options.skipQueryRewrite,
+      skipQueryRewrite,
       options.signal,
     );
     throwIfAborted(options.signal);
@@ -312,7 +315,10 @@ export class KnowledgeSearchService {
 
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
     const strategy = normalizeRetrievalStrategy(options.strategy);
+    const skipQueryRewrite =
+      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
     normalizedOptions.strategy = strategy;
+    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
 
     if (!normalizedQuery) {
       const fallbackRewrite = this.buildFallbackRewrite(
@@ -383,7 +389,7 @@ export class KnowledgeSearchService {
 
     const rewrite = await this.resolveRetrievalQuery(
       normalizedQuery,
-      options.skipQueryRewrite,
+      skipQueryRewrite,
       options.signal,
     );
     throwIfAborted(options.signal);

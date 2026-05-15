@@ -3386,3 +3386,102 @@ Neo4j 属于 P2 的长期目标，但本轮目标明确不主动接入 Neo4j，�
 1. 先继续把 PostgreSQL Graph RAG 的 `graph:backfill -- --dry-run` 纳入常规回归，并在 DB direct 连接确认后执行真实 Graph backfill。
 2. RAPTOR 下一步应先实现摘要生成与 embedding 写入的可替换接口，再实现 status 写入和检索接入；在此之前不开放非 dry-run。
 3. Neo4j 作为 P2-2 单独开目标，不与当前 PostgreSQL 派生图谱阶段混在同一次实施里。
+
+## PostgreSQL Graph RAG 基础版正式接入（2026-05-16）
+
+本轮按“先基础能力跑通，再逐步完善”的方式接入 PostgreSQL 派生 Graph RAG。范围只包括当前仓库内已有 PostgreSQL 图谱派生索引，不接入 Neo4j，不启动 ES/Docker，不调用模型。
+
+### 接入内容
+
+1. 数据库 schema
+   - 已执行 `pnpm db:migrate`，包括 `010_rag_graph_index.sql`。
+   - Graph 派生索引表已存在：`rag_graph_index_status`、`rag_graph_node`、`rag_graph_edge`。
+2. 真实 Graph 回填
+   - 已执行 `pnpm graph:backfill -- --page-size=50`。
+   - 回填结果：`pageCount=1`、`documentCount=11`、`chunkCount=24`、`staleDocumentCount=2`。
+   - 当前 Graph 表统计：`rag_graph_index_status=11`、`rag_graph_node=71`、`rag_graph_edge=52`，状态均为 `indexed`。
+3. 策略接入
+   - `ENABLE_GRAPH_RETRIEVAL=false` 时默认行为不变，不走 Graph。
+   - `ENABLE_GRAPH_RETRIEVAL=true` 时，合同、条款、主体关系、事件关系这类 fallback 策略会把 Graph 作为补充召回通道，并使用 `graphMode='path'`、`graphMaxHops=2`。
+4. 检索链路验证
+   - 已用 `KnowledgeSearchService.retrieveForPersonaWithStages()` 在 `ENABLE_GRAPH_RETRIEVAL=true` 下执行 graph-only 验证。
+   - 验证结果：`stage1Count=5`、`stage2Count=3`，trace 中 `graphResultCount=5`，`vectorBackend=disabled`、`keywordBackend=disabled`，返回 chunk 的 `retrieval_sources=['graph']`。
+
+### 本轮代码变更
+
+1. `src/agent/services/retrieval-strategy.service.ts`
+   - fallback 策略在显式开启 Graph 后，会对关系型问题启用 PostgreSQL GraphRetriever。
+   - 默认环境仍关闭 Graph，不影响 P0/P1 主链路。
+2. `src/agent/services/retrieval-strategy.service.spec.ts`
+   - 新增测试覆盖 `ENABLE_GRAPH_RETRIEVAL=true` 时，关系型问题 fallback 策略启用 `useGraph=true`、`graphMode='path'`、`graphMaxHops=2`。
+3. `.env.example`
+   - 明确 Graph 开关应在完成 010 migration 与 `graph:backfill` 后再打开。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates` | 0 | runtime DB 可用；`DIRECT_URL` 仍指向 pooler；同区域 `aws-1` pooler 5432/6543 可用 |
+| `pnpm db:migrate -- --dry-run` | 0 | migration 文件齐全；仍提示 `DIRECT_URL` 指向 pooler |
+| Graph 表只读检查 | 0 | migration 前仅有 `knowledge_document=11`、`knowledge_chunk=24`，Graph 表不存在 |
+| `pnpm db:migrate` | 0 | 001-010、012、013 执行完成或幂等跳过；Graph/RAPTOR/Parent-Child 表已建 |
+| `pnpm graph:backfill -- --page-size=50` | 0 | 回填 11 个文档、24 个 chunk，`staleDocumentCount=2` |
+| Graph 表统计查询 | 0 | `rag_graph_index_status=11`、`rag_graph_node=71`、`rag_graph_edge=52`，全部 status 为 `indexed` |
+| Graph-only KnowledgeSearchService 验证 | 0 | `stage1Count=5`、`stage2Count=3`、`graphResultCount=5`，未调用 embedding/LLM/rerank |
+| `pnpm test --runInBand src/agent/services/retrieval-strategy.service.spec.ts`（红灯） | 1 | 预期失败：fallback 策略尚未启用 Graph |
+| `pnpm test --runInBand src/agent/services/retrieval-strategy.service.spec.ts src/agent/retrieval-strategy.utils.spec.ts src/knowledge-content/services/knowledge-search.service.spec.ts` | 0 | 3 个测试文件、21 个测试通过 |
+
+### 当前边界
+
+1. Graph RAG 基础版已经正式接入 PostgreSQL 派生索引与检索策略，但默认仍由 `ENABLE_GRAPH_RETRIEVAL` 控制。
+2. 当前 Graph 抽取器仍是规则版，主要覆盖 Markdown Topic、参与方提及和层级关系；检索质量需要后续补 graph eval case。
+3. `DIRECT_URL` 仍建议改为 Supabase Direct connection，当前真实 migration/backfill 是在 pooler 可用的情况下完成。
+4. RAPTOR 仍保持 dry-run 边界，未正式接入。
+5. Neo4j 仍未实现，后续作为独立阶段处理。
+
+## Graph RAG 基础功能 smoke 接入（2026-05-16 01:09）
+
+本轮继续按“先让基础功能跑通，再迭代质量”的方向推进。目标不是补一套完整评测体系，而是给 PostgreSQL Graph RAG 增加一个可重复执行的真实链路 smoke：连接当前 Supabase/PostgreSQL，经过 `retrieve_evidence` 节点进入 `KnowledgeSearchService` 和 `KnowledgeGraphRetriever`，但不调用 Query Rewrite、Rerank 或 Answer Generation 模型。
+
+### 本轮变更
+
+1. `package.json`
+   - 新增 `rag:smoke:graph`。
+2. `scripts/smoke-rag-graph.ts`
+   - 在当前进程内打开 `ENABLE_GRAPH_RETRIEVAL=true`，不修改真实 `.env`。
+   - 自动选择已有 indexed graph 边的 persona，并优先选择非 `HAS_CHUNK` 关系边生成 smoke query。
+   - 通过 `createRetrieveEvidenceNode()` 调用真实 `retrieve_evidence` 节点。
+   - 给检索服务加薄包装，强制 `skipQueryRewrite=true`、`rerank=false`，确保 smoke 不把真实知识库内容发送给模型。
+   - 输出 `modelCalls=false`、persona、query、retrievalHistory、Graph 证据数量和 chunk 元数据。
+3. `KnowledgeSearchService`
+   - `strategy.useMultiQuery=false` 时现在会跳过 Query Rewrite，直接使用原始 query 和本地关键词。
+   - 这个修复避免 graph-only、keyword-only 或 live keyword 这类明确禁用 multi-query 的路径误触发模型调用。
+4. `KnowledgeGraphRetriever`
+   - 图谱检索现在同时匹配 `normalized_name` 和用户可见的 `display_name`。
+   - 这修复了真实 DB 中 chunk/document 节点 `normalized_name` 是 id、但用户问题里出现文件名或标题时召回失败的问题。
+5. 测试
+   - `knowledge-graph-and-raptor-script-inventory.spec.ts` 固化 `rag:smoke:graph` 命令和“不调用模型”的脚本边界。
+   - `knowledge-search.service.spec.ts` 覆盖 `useMultiQuery=false` 不调用 Query Rewrite。
+   - `knowledge-graph-retriever.service.spec.ts` 覆盖 GraphRetriever 匹配 `display_name`。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts`（红灯） | 1 | 预期失败：`rag:smoke:graph` 和脚本不存在 |
+| `pnpm test --runInBand -- knowledge-content/services/knowledge-search.service.spec.ts`（红灯） | 1 | 预期失败：`useMultiQuery=false` 仍会调用 Query Rewrite |
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-retriever.service.spec.ts`（红灯） | 1 | 预期失败：GraphRetriever SQL 尚未匹配 `display_name` |
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts knowledge-content/graph/knowledge-graph-retriever.service.spec.ts knowledge-content/services/knowledge-search.service.spec.ts` | 0 | 3 个测试文件、21 个测试通过 |
+| `pnpm rag:smoke:graph` | 0 | 自动选择 persona `a4309a37-b408-4e65-ac11-f7b4c38b635b`；query 为“面向法务角色的系统讲解提纲和一、系统定位的包含子主题关系是什么？”；`resultCount=2`、`graphEvidenceCount=2`、`citationCount=2`、`modelCalls=false` |
+| `pnpm test --runInBand` | 0 | 68 个测试文件、228 个测试通过 |
+| `pnpm build` | 0 | 构建通过 |
+| `pnpm eval:rag:validate` | 0 | golden set 与 fixture 校验通过，`caseCount=1` |
+| `pnpm eval:rag:fixture` | 0 | fixture-only 指标均为 1，并写入 `reports/rag-eval-20260515.json` |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+
+### 当前边界
+
+1. 这一步只证明 PostgreSQL Graph RAG 基础链路可跑：`retrieve_evidence -> KnowledgeSearchService -> GraphRetriever`。
+2. smoke 不生成最终回答，也不调用模型；真实回答链路需要单独授权模型调用后再验证。
+3. ES alias 仍有只读警告：`digital-human-knowledge-chunk-read/write` 未指向 v2，本轮不处理 ES。
+4. Graph 质量仍受规则抽取器限制；后续再补 graph eval case、证据排序和更稳的实体抽取。

@@ -20,6 +20,8 @@
     "parent-child:backfill": "node -r ts-node/register -r tsconfig-paths/register ./scripts/backfill-parent-child-index.ts",
     "raptor:backfill": "node -r ts-node/register -r tsconfig-paths/register ./scripts/backfill-raptor-index.ts",
     "rag:preflight": "node -r ts-node/register -r tsconfig-paths/register ./scripts/rag-runtime-preflight.ts",
+    "rag:smoke:graph": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-graph.ts",
+    "rag:smoke:graph-flow": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-graph-flow.ts",
     "eval:rag": "node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts",
     "eval:rag:validate": "pnpm eval:rag -- --validate-only --fixtureDir=eval/fixtures",
     "eval:rag:fixture": "pnpm eval:rag -- --mode=fixture-only --fixtureDir=eval/fixtures",

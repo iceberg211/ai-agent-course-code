@@ -43,6 +43,12 @@ describe('KnowledgeGraphRetrieverService', () => {
         5,
       ]),
     );
+    expect(dataSource.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining('sn.display_name ILIKE ANY($2::text[])'),
+    );
+    expect(dataSource.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining('tn.display_name ILIKE ANY($2::text[])'),
+    );
     expect(result).toEqual([
       expect.objectContaining({
         id: 'chunk-1',

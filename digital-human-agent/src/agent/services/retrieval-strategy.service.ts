@@ -157,12 +157,16 @@ export class RetrievalStrategyService {
 
     const exactLike =
       /《|》|"|'|\.md|\.txt|编号|订单|合同|条款|第.+章|第.+条/u.test(query);
+    const graphLike =
+      exactLike || /关系|关联|参与方|甲方|乙方|主体|事件|流程|上下游/u.test(query);
 
     return normalizeRetrievalStrategy({
       needRetrieval: true,
       useVector: true,
       useKeyword: true,
-      useGraph: false,
+      useGraph: graphLike,
+      graphMode: graphLike ? 'path' : undefined,
+      graphMaxHops: graphLike ? 2 : undefined,
       useExactPhrase: exactLike,
       useMultiQuery: true,
       useHyDE: false,

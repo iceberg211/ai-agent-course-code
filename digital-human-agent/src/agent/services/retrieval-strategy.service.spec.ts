@@ -59,6 +59,36 @@ describe('RetrievalStrategyService', () => {
     });
   });
 
+  it('显式开启 Graph 后，关系型问题 fallback 策略会把图谱作为补充召回通道', async () => {
+    const originalGraphFlag = process.env.ENABLE_GRAPH_RETRIEVAL;
+    process.env.ENABLE_GRAPH_RETRIEVAL = 'true';
+    const { service } = createServiceWithFailingLlm();
+
+    try {
+      await expect(
+        service.plan({
+          question: '合同第十一条里乙方和甲方的数据处理关系是什么？',
+          currentQuery: '合同第十一条里乙方和甲方的数据处理关系是什么？',
+          routeStrategy: 'complex',
+          remainingHops: 1,
+        }),
+      ).resolves.toMatchObject({
+        needRetrieval: true,
+        useVector: true,
+        useKeyword: true,
+        useGraph: true,
+        graphMode: 'path',
+        graphMaxHops: 2,
+      });
+    } finally {
+      if (originalGraphFlag === undefined) {
+        delete process.env.ENABLE_GRAPH_RETRIEVAL;
+      } else {
+        process.env.ENABLE_GRAPH_RETRIEVAL = originalGraphFlag;
+      }
+    }
+  });
+
   it('用户中断时不降级为 fallback 策略', async () => {
     const { service, invoke } = createServiceWithFailingLlm();
     const abortController = new AbortController();

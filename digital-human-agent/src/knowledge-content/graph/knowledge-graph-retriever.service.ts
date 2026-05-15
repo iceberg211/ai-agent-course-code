@@ -78,6 +78,8 @@ export class KnowledgeGraphRetrieverService {
               e.confidence
               + CASE WHEN sn.normalized_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
               + CASE WHEN tn.normalized_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
+              + CASE WHEN sn.display_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
+              + CASE WHEN tn.display_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
               + CASE WHEN e.relation_type ILIKE ANY($2::text[]) THEN 0.1 ELSE 0 END
               + CASE WHEN COALESCE(e.evidence_text, '') ILIKE ANY($2::text[]) THEN 0.1 ELSE 0 END
             ) AS score
@@ -97,6 +99,8 @@ export class KnowledgeGraphRetrieverService {
             AND (
               sn.normalized_name ILIKE ANY($2::text[])
               OR tn.normalized_name ILIKE ANY($2::text[])
+              OR sn.display_name ILIKE ANY($2::text[])
+              OR tn.display_name ILIKE ANY($2::text[])
               OR e.relation_type ILIKE ANY($2::text[])
               OR COALESCE(e.relation_label, '') ILIKE ANY($2::text[])
               OR COALESCE(e.evidence_text, '') ILIKE ANY($2::text[])
@@ -176,6 +180,8 @@ export class KnowledgeGraphRetrieverService {
               e.confidence
               + CASE WHEN sn.normalized_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
               + CASE WHEN tn.normalized_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
+              + CASE WHEN sn.display_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
+              + CASE WHEN tn.display_name ILIKE ANY($2::text[]) THEN 0.2 ELSE 0 END
               + CASE WHEN e.relation_type ILIKE ANY($2::text[]) THEN 0.1 ELSE 0 END
               + CASE WHEN COALESCE(e.evidence_text, '') ILIKE ANY($2::text[]) THEN 0.1 ELSE 0 END
             ) AS score
@@ -195,6 +201,8 @@ export class KnowledgeGraphRetrieverService {
             AND (
               sn.normalized_name ILIKE ANY($2::text[])
               OR tn.normalized_name ILIKE ANY($2::text[])
+              OR sn.display_name ILIKE ANY($2::text[])
+              OR tn.display_name ILIKE ANY($2::text[])
               OR e.relation_type ILIKE ANY($2::text[])
               OR COALESCE(e.relation_label, '') ILIKE ANY($2::text[])
               OR COALESCE(e.evidence_text, '') ILIKE ANY($2::text[])

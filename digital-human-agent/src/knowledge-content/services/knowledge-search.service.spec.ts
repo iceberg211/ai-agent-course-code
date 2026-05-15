@@ -229,10 +229,13 @@ describe('KnowledgeSearchService', () => {
     const graphRetriever = {
       retrieve: jest.fn().mockResolvedValue([graphChunk]),
     };
-    const { service, runtime, hybridRetriever, rerankerService } = createService(
-      undefined,
-      graphRetriever,
-    );
+    const {
+      service,
+      runtime,
+      hybridRetriever,
+      rerankerService,
+      queryRewriteService,
+    } = createService(undefined, graphRetriever);
 
     try {
       const result = await service.retrieveWithStages('kb-1', '甲方审计保留', {
@@ -251,10 +254,11 @@ describe('KnowledgeSearchService', () => {
 
       expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
       expect(hybridRetriever.retrieve).not.toHaveBeenCalled();
+      expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
       expect(graphRetriever.retrieve).toHaveBeenCalledWith({
         knowledgeId: 'kb-1',
-        retrievalQuery: '改写后的检索问题',
-        keywordTerms: ['原始问题'],
+        retrievalQuery: '甲方审计保留',
+        keywordTerms: ['甲方审计保留'],
         matchCount: 10,
         graphMaxHops: undefined,
         graphMode: undefined,
@@ -407,30 +411,9 @@ describe('KnowledgeSearchService', () => {
     expect(result.stage1Trace).toHaveLength(2);
   });
 
-  it('useMultiQuery=false 时即使 rewrite 返回 expandedQueries 也只执行单查询召回', async () => {
+  it('useMultiQuery=false 时不调用 Query Rewrite，只使用原始问题单查询召回', async () => {
     const { service, runtime, hybridRetriever, queryRewriteService } =
       createService();
-    queryRewriteService.rewrite.mockResolvedValue({
-      originalQuery: '原始问题',
-      rewrittenQuery: '改写后的检索问题',
-      keywords: ['原始问题'],
-      expandedQueries: [
-        {
-          index: 0,
-          query: '改写后的检索问题',
-          keywords: ['原始问题'],
-          angle: 'original',
-        },
-        {
-          index: 1,
-          query: '实体角度问题',
-          keywords: ['实体角度'],
-          angle: 'entity',
-        },
-      ],
-      changed: true,
-      reason: '生成多角度检索问题',
-    });
     hybridRetriever.retrieve.mockResolvedValue({
       chunks: [stage1Chunk],
       keywordBackend: 'pg',
@@ -457,21 +440,20 @@ describe('KnowledgeSearchService', () => {
       },
     });
 
+    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
     expect(runtime.embeddings.embedQuery).toHaveBeenCalledTimes(1);
-    expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith(
-      '改写后的检索问题',
-    );
+    expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith('原始问题');
     expect(hybridRetriever.retrieve).toHaveBeenCalledTimes(1);
     expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({
-        retrievalQuery: '改写后的检索问题',
+        retrievalQuery: '原始问题',
         keywordTerms: ['原始问题'],
       }),
     );
     expect(result.retrievalQueries).toEqual([
       {
         index: 0,
-        query: '改写后的检索问题',
+        query: '原始问题',
         keywords: ['原始问题'],
         angle: 'original',
       },
@@ -510,7 +492,7 @@ describe('KnowledgeSearchService', () => {
     );
     expect(runtime.embeddings.embedQuery).toHaveBeenNthCalledWith(
       2,
-      '改写后的检索问题',
+      '原始问题',
     );
     expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -863,10 +845,7 @@ describe('KnowledgeSearchService', () => {
         ],
       }),
     );
-    expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
-      '原始问题',
-      undefined,
-    );
+    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
     expect(hybridRetriever.retrieve).toHaveBeenCalled();
     expect(cacheStore?.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -878,7 +857,7 @@ describe('KnowledgeSearchService', () => {
           stage2ChunkIds: ['chunk-1', 'chunk-2'],
           result: expect.objectContaining({
             query: '原始问题',
-            retrievalQuery: '改写后的检索问题',
+            retrievalQuery: '原始问题',
           }),
         }),
       }),
