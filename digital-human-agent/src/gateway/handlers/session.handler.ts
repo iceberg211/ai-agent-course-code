@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { PersonaService } from '@/persona/persona.service';
 import { ConversationService } from '@/conversation/conversation.service';
@@ -82,7 +82,7 @@ export class SessionHandler {
       this.historyLimit,
     );
 
-    const sessionId = uuidv4();
+    const sessionId = randomUUID();
 
     this.sessionRegistry.create(sessionId, {
       conversationId: conversation.id,

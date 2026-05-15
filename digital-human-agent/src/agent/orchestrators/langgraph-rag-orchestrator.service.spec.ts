@@ -184,6 +184,9 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.knowledgeSearchService.retrieveForPersona).toHaveBeenCalledWith(
       'persona-1',
       '乔峰是谁？',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
     );
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
@@ -242,10 +245,24 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.multiHopPlannerService.planSubQuestions).toHaveBeenCalled();
     expect(
       deps.knowledgeSearchService.retrieveForPersona,
-    ).toHaveBeenNthCalledWith(1, 'persona-1', '雁门关事件主谋是谁？');
+    ).toHaveBeenNthCalledWith(
+      1,
+      'persona-1',
+      '雁门关事件主谋是谁？',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(
       deps.knowledgeSearchService.retrieveForPersona,
-    ).toHaveBeenNthCalledWith(2, 'persona-1', '慕容博的儿子结局是什么？');
+    ).toHaveBeenNthCalledWith(
+      2,
+      'persona-1',
+      '慕容博的儿子结局是什么？',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({

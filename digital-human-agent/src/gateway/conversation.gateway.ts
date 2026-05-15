@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
@@ -44,7 +44,7 @@ export class ConversationGateway implements OnModuleInit {
 
   onModuleInit(): void {
     this.server?.on('connection', (client: WebSocket) => {
-      const clientId = uuidv4();
+      const clientId = randomUUID();
       (client as WebSocket & { __clientId: string }).__clientId = clientId;
       this.clients.set(clientId, client);
       this.logger.log(`Client connected: ${clientId}`);

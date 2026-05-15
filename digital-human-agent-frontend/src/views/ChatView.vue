@@ -432,30 +432,31 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
 }
 
 .chat-body--digital {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px 16px;
+  position: relative;
+  display: flex;
   padding: 12px 16px 0;
-  align-items: start;
 }
 
 .chat-body--digital .chat-body__stage {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: start;
-}
-
-.chat-body--digital :deep(.message-list),
-.chat-body--digital :deep(.chat-empty) {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin: 0;
-  min-height: 0;
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  width: min(300px, calc(100% - 32px));
 }
 
 .chat-body--digital :deep(.message-list) {
+  flex: 1;
+  margin: 0;
+  min-height: 0;
   height: 100%;
+  padding-right: 348px;
+}
+
+.chat-body--digital :deep(.chat-empty) {
+  flex: 1;
+  min-height: 0;
+  margin: 0 348px 0 0;
 }
 
 /* ── 知识库抽屉滑入动画 ─────────────────────────────────────────────────────── */
@@ -479,20 +480,25 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   }
 
   .chat-body--digital {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
     padding: 10px 12px 0;
+    flex-direction: column;
   }
 
   .chat-body--digital .chat-body__stage {
-    grid-column: 1;
-    grid-row: 1;
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 100%;
+    margin-bottom: 12px;
   }
 
-  .chat-body--digital :deep(.message-list),
+  .chat-body--digital :deep(.message-list) {
+    padding-right: 24px;
+  }
+
   .chat-body--digital :deep(.chat-empty) {
-    grid-column: 1;
-    grid-row: 2;
+    margin-right: 0;
   }
 }
 </style>

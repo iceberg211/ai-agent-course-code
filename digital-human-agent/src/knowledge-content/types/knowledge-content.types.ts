@@ -20,7 +20,12 @@ export interface RetrieveKnowledgeOptions {
   rerank?: boolean;
   stage1TopK?: number;
   finalTopK?: number;
+  signal?: AbortSignal;
 }
+
+export type NormalizedRetrieveKnowledgeOptions = Required<
+  Omit<RetrieveKnowledgeOptions, 'signal'>
+>;
 
 export interface KnowledgeQueryRewriteResult {
   originalQuery: string;
@@ -34,7 +39,7 @@ export interface RetrieveKnowledgeDebugResult {
   query: string;
   retrievalQuery: string;
   rewrite: KnowledgeQueryRewriteResult;
-  options: Required<RetrieveKnowledgeOptions>;
+  options: NormalizedRetrieveKnowledgeOptions;
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
 }

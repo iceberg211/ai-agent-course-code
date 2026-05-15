@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
@@ -33,6 +34,10 @@ export class KnowledgeSearchService {
       const result = await this.retrieveWithStages(knowledgeId, query, options);
       return result.stage2;
     } catch (error) {
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+
       this.logger.warn(
         `知识检索失败（knowledge=${knowledgeId}），降级为空知识：${
           error instanceof Error ? error.message : String(error)
@@ -80,6 +85,8 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     const normalizedQuery = query.trim();
+    throwIfAborted(options.signal);
+
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
 
     if (!normalizedQuery) {
@@ -97,14 +104,23 @@ export class KnowledgeSearchService {
       };
     }
 
-    const rewrite = await this.resolveRetrievalQuery(normalizedQuery);
+    const rewrite = await this.resolveRetrievalQuery(
+      normalizedQuery,
+      options.signal,
+    );
+    throwIfAborted(options.signal);
+
     const retrievalQuery = rewrite.rewrittenQuery;
 
     const queryEmbedding = await this.runtime.withTransientRetry(
       'embed query',
-      () => this.runtime.embeddings.embedQuery(retrievalQuery),
+      () => {
+        throwIfAborted(options.signal);
+        return this.runtime.embeddings.embedQuery(retrievalQuery);
+      },
       3,
     );
+    throwIfAborted(options.signal);
 
     const stage1Result = await this.retrieveStage1(
       knowledgeId,
@@ -114,6 +130,8 @@ export class KnowledgeSearchService {
       normalizedOptions.threshold,
       normalizedOptions.stage1TopK,
     );
+    throwIfAborted(options.signal);
+
     const stage1 = stage1Result.chunks;
 
     let stage2 = stage1.slice(0, normalizedOptions.finalTopK);
@@ -123,8 +141,13 @@ export class KnowledgeSearchService {
           normalizedQuery,
           stage1,
           normalizedOptions.finalTopK,
+          options.signal,
         );
       } catch (error) {
+        if (this.isAbortError(error)) {
+          throw error;
+        }
+
         this.logger.warn(
           `Reranker 失败，回退为向量检索结果：${
             error instanceof Error ? error.message : String(error)
@@ -178,23 +201,37 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<KnowledgeChunk[]> {
     const normalizedQuery = query.trim();
+    throwIfAborted(options.signal);
+
     if (!normalizedQuery) return [];
 
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
     const knowledgeConfigs = await this.listMountedKnowledgeConfigs(personaId);
+    throwIfAborted(options.signal);
+
     if (knowledgeConfigs.length === 0) return [];
 
-    const rewrite = await this.resolveRetrievalQuery(normalizedQuery);
+    const rewrite = await this.resolveRetrievalQuery(
+      normalizedQuery,
+      options.signal,
+    );
+    throwIfAborted(options.signal);
 
     const queryEmbedding = await this.runtime.withTransientRetry(
       'embed query',
-      () => this.runtime.embeddings.embedQuery(rewrite.rewrittenQuery),
+      () => {
+        throwIfAborted(options.signal);
+        return this.runtime.embeddings.embedQuery(rewrite.rewrittenQuery);
+      },
       3,
     );
+    throwIfAborted(options.signal);
 
     const stage1Results = await Promise.all(
       knowledgeConfigs.map(async (config) => {
         try {
+          throwIfAborted(options.signal);
+
           const effectiveThreshold =
             options.threshold === undefined
               ? config.threshold
@@ -211,8 +248,14 @@ export class KnowledgeSearchService {
             effectiveThreshold,
             effectiveStage1TopK,
           );
+          throwIfAborted(options.signal);
+
           return stage1Result.chunks;
         } catch (error) {
+          if (this.isAbortError(error)) {
+            throw error;
+          }
+
           this.logger.warn(
             `stage1 失败（knowledge=${config.knowledgeId}）：${
               error instanceof Error ? error.message : String(error)
@@ -238,8 +281,13 @@ export class KnowledgeSearchService {
         normalizedQuery,
         mergedStage1,
         normalizedOptions.finalTopK,
+        options.signal,
       );
     } catch (error) {
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+
       this.logger.warn(
         `全局 rerank 失败，回退向量排序：${
           error instanceof Error ? error.message : String(error)
@@ -321,8 +369,9 @@ export class KnowledgeSearchService {
 
   private async resolveRetrievalQuery(
     query: string,
+    signal?: AbortSignal,
   ): Promise<KnowledgeQueryRewriteResult> {
-    return this.queryRewriteService.rewrite(query);
+    return this.queryRewriteService.rewrite(query, signal);
   }
 
   private buildFallbackRewrite(
@@ -365,5 +414,9 @@ export class KnowledgeSearchService {
       (left.keyword_score ?? 0) - (right.keyword_score ?? 0) ||
       (left.similarity ?? 0) - (right.similarity ?? 0)
     );
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return (error as { name?: string })?.name === 'AbortError';
   }
 }

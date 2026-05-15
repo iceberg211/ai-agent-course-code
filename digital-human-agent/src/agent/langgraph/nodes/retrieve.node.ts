@@ -92,6 +92,9 @@ export function createRetrieveEvidenceNode(
     const chunks = await knowledgeSearchService.retrieveForPersona(
       input.personaId,
       query,
+      {
+        signal: input.signal,
+      },
     );
 
     const evidenceChunks = mergeEvidenceChunks(state.evidenceChunks, chunks);

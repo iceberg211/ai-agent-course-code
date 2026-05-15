@@ -384,14 +384,14 @@ watch(
 
 <style scoped>
 .digital-workspace {
-  width: min(320px, 100%);
+  width: min(300px, 100%);
   max-width: 100%;
   flex-shrink: 0;
 }
 
 .stage-panel {
   position: relative;
-  padding: 16px 16px 14px;
+  padding: 14px 14px 12px;
   border: 1px solid rgba(226, 232, 240, 0.92);
   border-radius: 24px;
   background:
@@ -433,7 +433,7 @@ watch(
 
 .stage-copy h3 {
   margin: 0;
-  font-size: 21px;
+  font-size: 20px;
   line-height: 1.04;
   letter-spacing: -0.02em;
   color: var(--text);
@@ -442,8 +442,8 @@ watch(
 .stage-desc {
   margin: 0;
   max-width: none;
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: 11px;
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 
@@ -486,7 +486,7 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .meta-pill,
@@ -521,8 +521,8 @@ watch(
 
 .digital-stage__frame {
   position: relative;
-  margin-top: 12px;
-  height: 340px;
+  margin-top: 10px;
+  height: 292px;
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid rgba(191, 219, 254, 0.86);
@@ -543,7 +543,7 @@ watch(
 
 .digital-stage__viewport {
   position: absolute;
-  inset: 16px 16px 20px;
+  inset: 14px 14px 18px;
   border-radius: 20px;
   overflow: hidden;
   background:
@@ -571,7 +571,7 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 26px;
+  padding: 22px;
   text-align: center;
   color: var(--text-secondary);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(239, 245, 255, 0.42));
@@ -580,16 +580,16 @@ watch(
 
 .stage-placeholder__title {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text);
 }
 
 .stage-placeholder__desc {
   margin: 0;
-  max-width: 220px;
-  font-size: 12px;
-  line-height: 1.7;
+  max-width: 210px;
+  font-size: 11px;
+  line-height: 1.65;
 }
 
 .stage-placeholder__actions {
@@ -707,7 +707,7 @@ watch(
 }
 
 .stage-footer {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .stage-note {
@@ -1021,7 +1021,7 @@ watch(
   }
 
   .digital-stage__frame {
-    height: 312px;
+    height: 300px;
   }
 
   .config-drawer__head {
@@ -1045,7 +1045,7 @@ watch(
   }
 
   .digital-stage__frame {
-    height: 300px;
+    height: 280px;
   }
 
   .digital-stage__viewport {

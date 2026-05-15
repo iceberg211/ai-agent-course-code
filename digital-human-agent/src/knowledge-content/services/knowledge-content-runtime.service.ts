@@ -7,7 +7,10 @@ import {
   DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
   SUPABASE_CLIENT,
 } from '@/common/constants';
-import type { RetrieveKnowledgeOptions } from '@/knowledge-content/types/knowledge-content.types';
+import type {
+  NormalizedRetrieveKnowledgeOptions,
+  RetrieveKnowledgeOptions,
+} from '@/knowledge-content/types/knowledge-content.types';
 
 @Injectable()
 export class KnowledgeContentRuntimeService {
@@ -42,7 +45,7 @@ export class KnowledgeContentRuntimeService {
 
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,
-  ): Required<RetrieveKnowledgeOptions> {
+  ): NormalizedRetrieveKnowledgeOptions {
     const finalTopK = this.toBoundedNumber(
       options.finalTopK,
       DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,

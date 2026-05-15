@@ -10,7 +10,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from 'ai';
 import type { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { AgentService } from '@/agent/agent.service';
 import { ConversationService } from '@/conversation/conversation.service';
 import type { MessageStatus } from '@/conversation/conversation-message.entity';
@@ -62,7 +62,7 @@ export class ChatController {
       throw new BadRequestException('请求中缺少用户文本');
     }
 
-    const turnId = uuidv4();
+    const turnId = randomUUID();
     const textPartId = `text-${turnId}`;
     const abortController = new AbortController();
     let assistantReply = '';

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { ConversationService } from '@/conversation/conversation.service';
 import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
@@ -51,7 +51,7 @@ export class TextHandler {
       session.abortController.abort();
     }
 
-    const turnId = uuidv4();
+    const turnId = randomUUID();
     this.sessionRegistry.update(session.sessionId, {
       activeTurnId: turnId,
       sentenceBuffer: '',

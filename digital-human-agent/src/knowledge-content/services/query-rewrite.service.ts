@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
   buildKnowledgeQueryRewritePromptInput,
@@ -34,8 +35,13 @@ export class QueryRewriteService {
     },
   });
 
-  async rewrite(query: string): Promise<KnowledgeQueryRewriteResult> {
+  async rewrite(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<KnowledgeQueryRewriteResult> {
     const normalizedQuery = query.trim();
+    throwIfAborted(signal);
+
     if (!normalizedQuery) {
       return this.buildFallbackResult('', '原始问题为空，跳过改写');
     }
@@ -59,6 +65,8 @@ export class QueryRewriteService {
         }),
       },
       async () => {
+        throwIfAborted(signal);
+
         try {
           const rewriter = this.llm.withStructuredOutput(
             KnowledgeQueryRewriteSchema,
@@ -67,14 +75,19 @@ export class QueryRewriteService {
             await KNOWLEDGE_QUERY_REWRITE_PROMPT.formatMessages(
               buildKnowledgeQueryRewritePromptInput(normalizedQuery),
             ),
-            buildLangSmithRunnableConfig({
-              runName: 'knowledge_query_rewrite_llm',
-              tags: ['knowledge', 'rag', 'rewrite', 'llm'],
-              metadata: {
-                originalQuery: normalizedQuery,
-              },
-            }),
+            {
+              ...buildLangSmithRunnableConfig({
+                runName: 'knowledge_query_rewrite_llm',
+                tags: ['knowledge', 'rag', 'rewrite', 'llm'],
+                metadata: {
+                  originalQuery: normalizedQuery,
+                },
+              }),
+              signal,
+            },
           );
+
+          throwIfAborted(signal);
 
           const rewrittenQuery =
             result.rewrittenQuery.trim() || normalizedQuery;
@@ -90,6 +103,10 @@ export class QueryRewriteService {
             reason: result.reason.trim() || '改写完成',
           };
         } catch (error) {
+          if ((error as { name?: string })?.name === 'AbortError') {
+            throw error;
+          }
+
           this.logger.warn(
             `Query Rewrite 失败，回退原问题：${
               error instanceof Error ? error.message : String(error)

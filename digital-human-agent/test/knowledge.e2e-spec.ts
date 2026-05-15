@@ -300,6 +300,12 @@ describe('Knowledge API (e2e)', () => {
     expect(knowledgeContentService.retrieveForPersona).toHaveBeenCalledWith(
       personaId,
       '产品如何部署？',
+      {
+        rerank: undefined,
+        threshold: undefined,
+        stage1TopK: undefined,
+        finalTopK: undefined,
+      },
     );
     expect(res.body).toEqual({
       query: '产品如何部署？',

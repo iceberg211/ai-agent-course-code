@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
 import {
@@ -33,7 +34,10 @@ export class RerankerService {
     query: string,
     candidates: KnowledgeChunk[],
     topK = 5,
+    signal?: AbortSignal,
   ): Promise<KnowledgeChunk[]> {
+    throwIfAborted(signal);
+
     if (!candidates.length || topK <= 0) {
       return [];
     }
@@ -43,16 +47,21 @@ export class RerankerService {
       await KNOWLEDGE_RERANK_PROMPT.formatMessages(
         buildKnowledgeRerankPromptInput(query, candidates),
       ),
-      buildLangSmithRunnableConfig({
-        runName: 'knowledge_rerank_llm',
-        tags: ['knowledge', 'rag', 'rerank', 'llm'],
-        metadata: {
-          query,
-          candidateCount: candidates.length,
-          topK: safeTopK,
-        },
-      }),
+      {
+        ...buildLangSmithRunnableConfig({
+          runName: 'knowledge_rerank_llm',
+          tags: ['knowledge', 'rag', 'rerank', 'llm'],
+          metadata: {
+            query,
+            candidateCount: candidates.length,
+            topK: safeTopK,
+          },
+        }),
+        signal,
+      },
     );
+
+    throwIfAborted(signal);
 
     const raw = this.extractText(response.content);
     const parsed = this.parseRerankItems(raw);

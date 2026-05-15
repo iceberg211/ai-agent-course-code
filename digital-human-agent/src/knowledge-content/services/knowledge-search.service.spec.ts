@@ -1,3 +1,4 @@
+import { createAbortError } from '@/agent/agent.utils';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 
 describe('KnowledgeSearchService', () => {
@@ -88,7 +89,10 @@ describe('KnowledgeSearchService', () => {
 
     const result = await service.retrieveWithStages('kb-1', '原始问题');
 
-    expect(queryRewriteService.rewrite).toHaveBeenCalledWith('原始问题');
+    expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
+      '原始问题',
+      undefined,
+    );
     expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith(
       '改写后的检索问题',
     );
@@ -102,6 +106,7 @@ describe('KnowledgeSearchService', () => {
       '原始问题',
       [stage1Chunk, stage1Chunk2],
       5,
+      undefined,
     );
     expect(result.query).toBe('原始问题');
     expect(result.retrievalQuery).toBe('改写后的检索问题');
@@ -123,11 +128,29 @@ describe('KnowledgeSearchService', () => {
       rerank: false,
     });
 
-    expect(queryRewriteService.rewrite).toHaveBeenCalledWith('原始问题');
+    expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
+      '原始问题',
+      undefined,
+    );
     expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith(
       '改写后的检索问题',
     );
     expect(hybridRetriever.retrieve).toHaveBeenCalled();
     expect(result.retrievalQuery).toBe('改写后的检索问题');
+  });
+
+  it('retrieve 收到已中断信号时会抛出 AbortError，不会降级为空知识', async () => {
+    const { service, runtime, queryRewriteService } = createService();
+    const abortController = new AbortController();
+    abortController.abort();
+
+    await expect(
+      service.retrieve('kb-1', '原始问题', {
+        signal: abortController.signal,
+      }),
+    ).rejects.toMatchObject(createAbortError());
+
+    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
+    expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
   });
 });

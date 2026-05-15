@@ -17,6 +17,30 @@ describe('validateEnv', () => {
     expect(result.HYBRID_KEYWORD_BACKEND).toBe('pg');
   });
 
+  it('只配置 DASHSCOPE_API_KEY 时会补齐 OPENAI_API_KEY', () => {
+    const originalOpenAiKey = process.env.OPENAI_API_KEY;
+    const { OPENAI_API_KEY: _openAiKey, ...dashscopeOnlyEnv } = baseEnv;
+    void _openAiKey;
+
+    try {
+      delete process.env.OPENAI_API_KEY;
+
+      const result = validateEnv({
+        ...dashscopeOnlyEnv,
+        DASHSCOPE_API_KEY: 'dashscope-key',
+      });
+
+      expect(result.OPENAI_API_KEY).toBe('dashscope-key');
+      expect(process.env.OPENAI_API_KEY).toBe('dashscope-key');
+    } finally {
+      if (originalOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenAiKey;
+      }
+    }
+  });
+
   it('DIGITAL_HUMAN_PROVIDER=simli 时缺失配置会报错', () => {
     expect(() =>
       validateEnv({

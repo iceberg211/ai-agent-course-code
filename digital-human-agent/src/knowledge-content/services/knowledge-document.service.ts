@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
 import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
@@ -75,7 +75,7 @@ export class KnowledgeDocumentService {
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
       const chunkRows = splitDocuments.map((item, index) => ({
-        id: uuidv4(),
+        id: randomUUID(),
         document_id: document.id,
         chunk_index: index,
         content: item.pageContent,
@@ -99,7 +99,11 @@ export class KnowledgeDocumentService {
       return this.documentRepo.findOneByOrFail({ id: document.id });
     } catch (error) {
       this.logger.error('Ingest failed', error);
-      await this.documentRepo.update(document.id, { status: 'failed' });
+      await this.cleanupFailedIngest(document.id);
+      await this.documentRepo.update(document.id, {
+        status: 'failed',
+        chunkCount: 0,
+      });
       throw error;
     }
   }
@@ -175,6 +179,23 @@ export class KnowledgeDocumentService {
 
     this.logger.log(
       `[Insert 完成] doc=${documentId} batches=${Math.ceil(rows.length / batchSize)}`,
+    );
+  }
+
+  private async cleanupFailedIngest(documentId: string): Promise<void> {
+    try {
+      await this.chunkRepo.delete({ documentId });
+    } catch (error) {
+      this.logger.warn(
+        `导入失败清理 chunk 失败（doc=${documentId}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    await this.elasticsearchSyncService.safeDeleteByDocumentId(
+      documentId,
+      `导入失败清理文档 ${documentId}`,
     );
   }
 
