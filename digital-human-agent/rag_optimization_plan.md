@@ -3319,3 +3319,70 @@ P0 第 6 条要求 ES alias migration 必须由显式 switch/rollback 脚本表�
 3. Neo4j：当前没有仓库内可直接验证的 Neo4j 服务配置；进入 P2 前需要明确外部服务、同步模型、删除/重建策略和 chunk-backed GraphRetriever。
 4. ES v2：进入 P2 前仍应先完成现有 ES backfill、alias dry-run、正式切换和 rollback 演练，避免把 ensure index 当作迁移。
 5. 完整 live eval：需要在 DB/ES 状态稳定后，由人工确认模型调用授权，再执行 `pnpm eval:rag -- --allow-model-calls`。
+
+## P2 第一阶段：Graph/RAPTOR 可执行边界收敛（2026-05-16）
+
+本轮目标只推进 P2 第一阶段：把 PostgreSQL 派生 Graph RAG 与 RAPTOR 前置层恢复成可命令验证、可回退、边界清楚的状态。Neo4j 仍属于 P2 后续阶段，本轮不接入外部服务。
+
+### 当前库存与处理结果
+
+| 项目 | 当前状态 | 本轮处理 |
+|------|----------|----------|
+| PostgreSQL Graph RAG schema | `supabase/migrations/010_rag_graph_index.sql` 与 rollback 已存在，包含 `rag_graph_index_status`、node、edge 三张派生索引表 | 保留；未新增 schema |
+| Graph sync / backfill / retriever | `KnowledgeGraphSyncService`、`KnowledgeGraphBackfillService`、规则抽取器、GraphRetriever 和 path/neighbor 测试已存在 | 恢复 `scripts/backfill-knowledge-graph.ts` 与 `graph:backfill` 命令 |
+| Graph 可执行边界 | 之前服务层存在，但 CLI 入口已被清理，不能再声称 `graph:backfill` 可运行 | 本轮恢复 dry-run 和真实执行入口；真实执行前先做 DB preflight |
+| RAPTOR schema | `supabase/migrations/013_rag_raptor_index.sql` 与 rollback 已存在，包含 status、node、edge 表 | 保留；未新增 schema |
+| RAPTOR tree plan/options | `rag-raptor-tree-plan.ts` 与 `rag-raptor-backfill-options.ts` 已存在并有测试 | 恢复 `scripts/backfill-raptor-index.ts` 与 `raptor:backfill` 命令 |
+| RAPTOR 可执行边界 | 当前没有摘要生成、embedding 写入、索引状态写入和检索接入 | `raptor:backfill -- --dry-run` 只输出计划；非 dry-run 明确拒绝 |
+| Neo4j | 仓库内没有 Neo4j 服务配置、sync、backfill、rollback 或 Neo4j GraphRetriever | 本轮不实现；记录为 P2-2，需要单独目标和外部服务确认 |
+| ES v2 | ES index/backfill/alias switch/rollback 脚本存在 | 本轮不启动 ES，不切 alias |
+| 完整 live eval | `eval:rag` 已有显式模型调用授权开关 | 本轮不调用模型 |
+
+### 本轮新增或恢复的文件
+
+1. `scripts/backfill-knowledge-graph.ts`
+   - `--dry-run` 输出 action、pageSize、extractorVersion、schemaVersion、脱敏数据库形态和连接警告。
+   - 非 dry-run 会先执行 `assertKnowledgeGraphBackfillDatabaseReady()`，再通过 `KnowledgeGraphBackfillService.backfillAll()` 回填 PostgreSQL 派生图谱。
+2. `scripts/backfill-raptor-index.ts`
+   - `--dry-run` 输出 action、pageSize、fanout、maxLayers、summarizerVersion、schemaVersion、summarizerModel、脱敏数据库形态、`liveBackfillEnabled=false` 和拒绝原因。
+   - 非 dry-run 直接拒绝，原因是 RAPTOR 还没有摘要生成、embedding 写入、索引状态更新和检索接入。
+3. `package.json`
+   - 恢复 `graph:backfill`。
+   - 恢复 `raptor:backfill`，但当前只允许 dry-run。
+4. `src/knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts`
+   - 固化 P2 脚本库存，防止文档再次引用不存在的 Graph/RAPTOR 命令。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm test --runInBand src/knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts`（红灯） | 1 | 预期失败：`graph:backfill`、`raptor:backfill` 与两个脚本文件不存在 |
+| `pnpm test --runInBand src/knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts` | 0 | 1 个测试文件、3 个测试通过 |
+| `pnpm graph:backfill -- --dry-run --page-size=50` | 0 | 输出 Graph RAG 回填计划、版本和脱敏数据库形态；未连接数据库 |
+| `pnpm raptor:backfill -- --dry-run --page-size=50 --fanout=4 --max-layers=3` | 0 | 输出 RAPTOR plan-only dry-run；`liveBackfillEnabled=false`，未调用模型 |
+| `pnpm raptor:backfill` | 1 | 预期拒绝：第一阶段只支持 `--dry-run`，尚未接入摘要生成、embedding 写入、索引状态更新和检索接入 |
+| `pnpm db:migrate -- --dry-run` | 0 | migration ready=true；001-010、012、013 文件全部存在；仍提示 `DIRECT_URL` 指向 pooler |
+| `pnpm test --runInBand` | 0 | 68 个测试文件、226 个测试通过 |
+| `pnpm build` | 0 | 构建通过 |
+| `pnpm eval:rag:validate` | 0 | golden set 与 fixture 校验通过，caseCount=1 |
+| `pnpm eval:rag:fixture` | 0 | fixture-only 指标均为 1，并写入 `reports/rag-eval-20260515.json` |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+
+### Neo4j 停止原因
+
+Neo4j 属于 P2 的长期目标，但本轮目标明确不主动接入 Neo4j，也不启动或替换外部服务。当前仓库没有 Neo4j 服务配置、图同步服务、幂等写入、删除/重建/backfill、失败状态、rollback 和 chunk-backed Neo4j GraphRetriever，因此不能声明 Neo4j Graph RAG 完成。
+
+进入 Neo4j 阶段前需要单独目标，至少包含：
+
+1. Neo4j 本地或远程服务配置与连接预检。
+2. PostgreSQL source of truth 到 Neo4j derived index 的同步服务。
+3. 幂等 upsert、delete、rebuild、backfill 和 rollback 行为。
+4. graph index status 与 failed/stale 跳过策略。
+5. 回到 chunk 原文的 Neo4j GraphRetriever。
+6. 不依赖模型调用的 dry-run / 单测，以及获得授权后的 live eval。
+
+### 下一阶段建议
+
+1. 先继续把 PostgreSQL Graph RAG 的 `graph:backfill -- --dry-run` 纳入常规回归，并在 DB direct 连接确认后执行真实 Graph backfill。
+2. RAPTOR 下一步应先实现摘要生成与 embedding 写入的可替换接口，再实现 status 写入和检索接入；在此之前不开放非 dry-run。
+3. Neo4j 作为 P2-2 单独开目标，不与当前 PostgreSQL 派生图谱阶段混在同一次实施里。

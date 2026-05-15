@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { Client as ElasticsearchClient } from '@elastic/elasticsearch';
 import { NestFactory } from '@nestjs/core';
@@ -40,6 +41,8 @@ import type {
   RetrieveKnowledgeTraceItem,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
+
+const requireFromScript = createRequire(__filename);
 
 function readArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -93,7 +96,9 @@ function runtimeEnv(
 async function resolveLiveEvalModule(liveKeywordOnly: boolean) {
   if (liveKeywordOnly) return RagLiveKeywordEvalModule;
 
-  const { AppModule } = await import('../src/app.module');
+  const { AppModule } = requireFromScript(
+    '../src/app.module',
+  ) as typeof import('../src/app.module');
   return AppModule;
 }
 
