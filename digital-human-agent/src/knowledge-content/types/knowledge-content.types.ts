@@ -1,6 +1,6 @@
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 
-export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'hyde';
+export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'hyde' | 'graph';
 export type KeywordBackend = 'pg' | 'elastic';
 export type VectorBackend = 'pgvector';
 export type RetrievalQueryAngle =
@@ -22,10 +22,24 @@ export interface KnowledgeChunk {
   rerank_score?: number;
   keyword_score?: number;
   hybrid_score?: number;
+  graph_score?: number;
+  graph_evidence?: Array<{
+    source: string;
+    target: string;
+    relationType: string;
+    relationLabel?: string | null;
+    evidenceText?: string | null;
+    confidence?: number;
+  }>;
   retrieval_sources?: KnowledgeRetrievalSource[];
   matched_queries?: number[];
   keyword_backend?: KeywordBackend;
   vector_backend?: VectorBackend;
+  context_expanded?: boolean;
+  parent_context?: boolean;
+  parent_context_indexed?: boolean;
+  parent_context_key?: string;
+  parent_context_child_ids?: string[];
 }
 
 export interface RetrieveKnowledgeOptions {
@@ -34,13 +48,15 @@ export interface RetrieveKnowledgeOptions {
   stage1TopK?: number;
   finalTopK?: number;
   strategy?: RetrievalStrategy;
+  skipQueryRewrite?: boolean;
   signal?: AbortSignal;
 }
 
 export type NormalizedRetrieveKnowledgeOptions = Required<
-  Omit<RetrieveKnowledgeOptions, 'signal' | 'strategy'>
+  Omit<RetrieveKnowledgeOptions, 'signal' | 'strategy' | 'skipQueryRewrite'>
 > & {
   strategy?: RetrievalStrategy;
+  skipQueryRewrite: boolean;
 };
 
 export interface RetrievalQueryItem {
@@ -65,14 +81,24 @@ export interface RetrieveKnowledgeTraceItem {
   query: string;
   keywords: string[];
   angle: RetrievalQueryAngle;
-  vectorBackend: VectorBackend;
+  vectorBackend: VectorBackend | 'disabled';
   keywordBackend: KeywordBackend | 'disabled';
   vectorResultCount: number;
   hydeVectorResultCount: number;
   keywordResultCount: number;
+  graphResultCount?: number;
   mergedResultCount: number;
   fallbackToPg: boolean;
-  skippedChannels: Array<'vector' | 'keyword' | 'hyde'>;
+  skippedChannels: Array<'vector' | 'keyword' | 'hyde' | 'graph'>;
+}
+
+export interface RetrieveKnowledgeCacheInfo {
+  enabled: boolean;
+  lookup: 'miss' | 'exact-hit' | 'similar-hit';
+  cacheKey: string;
+  similarity?: number | null;
+  written?: boolean;
+  reason?: string;
 }
 
 export interface RetrieveKnowledgeDebugResult {
@@ -84,6 +110,7 @@ export interface RetrieveKnowledgeDebugResult {
   stage1Trace: RetrieveKnowledgeTraceItem[];
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
+  cache?: RetrieveKnowledgeCacheInfo;
 }
 
 export interface IngestKnowledgeDocumentOptions {

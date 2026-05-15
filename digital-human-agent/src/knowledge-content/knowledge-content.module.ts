@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { KnowledgeContentController } from '@/knowledge-content/controllers/knowledge-content.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge-content/controllers/persona-knowledge-search.controller';
+import { RagSemanticCacheStoreService } from '@/knowledge-content/cache/rag-semantic-cache-store.service';
 import { KnowledgeChunk } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
 import { KnowledgeElasticsearchBackfillService } from '@/knowledge-content/backfill/knowledge-elasticsearch-backfill.service';
@@ -9,8 +10,16 @@ import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/ela
 import { elasticsearchProvider } from '@/knowledge-content/elasticsearch/elasticsearch.provider';
 import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
+import { KnowledgeGraphBackfillService } from '@/knowledge-content/graph/knowledge-graph-backfill.service';
+import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
+import { KnowledgeGraphRetrieverService } from '@/knowledge-content/graph/knowledge-graph-retriever.service';
+import { KnowledgeGraphSyncService } from '@/knowledge-content/graph/knowledge-graph-sync.service';
+import { KnowledgeParentChildBackfillService } from '@/knowledge-content/parent-child/knowledge-parent-child-backfill.service';
+import { KnowledgeParentChildSyncService } from '@/knowledge-content/parent-child/knowledge-parent-child-sync.service';
 import { ElasticKeywordRetrieverService } from '@/knowledge-content/keyword-retrievers/elastic-keyword-retriever.service';
 import { PgKeywordRetrieverService } from '@/knowledge-content/keyword-retrievers/pg-keyword-retriever.service';
+import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
+import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
@@ -39,7 +48,15 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     ElasticsearchIndexService,
     ElasticsearchSyncService,
     KnowledgeChunkIndexQueryService,
+    KnowledgeGraphBackfillService,
+    KnowledgeGraphExtractorService,
+    KnowledgeGraphRetrieverService,
+    KnowledgeGraphSyncService,
+    KnowledgeParentChildBackfillService,
+    KnowledgeParentChildSyncService,
     KnowledgeElasticsearchBackfillService,
+    KnowledgeContextualRetrievalService,
+    KnowledgeChunkContextExpansionService,
     KnowledgeContentRuntimeService,
     KnowledgeDocumentService,
     KnowledgeVectorRetrieverService,
@@ -53,6 +70,7 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     DashScopeQwenRerankerProvider,
     LlmJsonRerankerProvider,
     RerankerService,
+    RagSemanticCacheStoreService,
   ],
   controllers: [KnowledgeContentController, PersonaKnowledgeSearchController],
   exports: [KnowledgeContentService, KnowledgeSearchService],

@@ -1,5 +1,8 @@
 import { Annotation } from '@langchain/langgraph';
-import { DEFAULT_RAG_MAX_HOPS } from '@/agent/agent.constants';
+import {
+  DEFAULT_RAG_MAX_HOPS,
+  DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
+} from '@/agent/agent.constants';
 import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
 import {
   getCurrentQuery,
@@ -36,6 +39,9 @@ export const RagGraphStateAnnotation = Annotation.Root({
   webQuery: Annotation<string>(),
   webSearchAttempted: Annotation<boolean>(),
   webSearchUsed: Annotation<boolean>(),
+  webSearchAttempts: Annotation<number>(),
+  maxWebSearchAttempts: Annotation<number>(),
+  webSearchQueries: Annotation<string[]>(),
   stopReason: Annotation<string>(),
   orchestrator: Annotation<'langgraph'>(),
   answerText: Annotation<string>(),
@@ -75,6 +81,9 @@ export function buildInitialRagGraphState(
     webQuery: '',
     webSearchAttempted: false,
     webSearchUsed: false,
+    webSearchAttempts: 0,
+    maxWebSearchAttempts: DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
+    webSearchQueries: [],
     stopReason: '',
     orchestrator: 'langgraph',
     answerText: '',

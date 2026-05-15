@@ -1,19 +1,16 @@
 [
   {
     "id": "legal_case_001",
-    "personaId": "replace-with-local-persona-id",
+    "personaId": "local-persona-after-import",
     "query": "示例服务协议里试用数据删除时限是什么？",
     "expected_evidence_spans": [
       {
-        "documentId": "replace-with-document-id",
         "source": "mock-legal-service-agreement.md",
         "quote": "试用期结束后，乙方应在七日内删除甲方试用数据",
-        "answerPoint": "试用结束后七日内删除试用数据",
-        "snapshotChunkIds": ["replace-with-current-snapshot-chunk-id"]
+        "answerPoint": "七日内删除甲方试用数据"
       }
     ],
-    "snapshot_chunk_ids": ["replace-with-current-snapshot-chunk-id"],
-    "expected_answer_points": ["试用结束后七日内删除试用数据"],
+    "expected_answer_points": ["七日内删除甲方试用数据"],
     "retrieval_config": {
       "threshold": 0.6,
       "stage1TopK": 20,

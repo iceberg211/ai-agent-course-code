@@ -1,7 +1,7 @@
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 export interface RagGoldenEvidenceSpan {
-  documentId: string;
+  documentId?: string;
   source: string;
   quote: string;
   answerPoint: string;
@@ -37,6 +37,10 @@ export interface RagEvalCaseResult {
   mrr: number;
   rerankRetention: number;
   answerPointCoverage: number;
+  stage1_evidence_hit_at_k: number;
+  stage2_evidence_hit_at_k: number;
+  rerank_retention: number;
+  answer_point_coverage: number;
 }
 
 export interface RagEvalMetrics {
@@ -61,42 +65,65 @@ export function calculateRagEvalMetrics(
     const firstRank = stage1HitRanks.find((rank) => rank > 0) ?? 0;
     const stage1HitCount = stage1HitRanks.filter((rank) => rank > 0).length;
     const stage2HitCount = stage2HitRanks.filter((rank) => rank > 0).length;
+    const retainedHitCount = stage1HitRanks.filter(
+      (rank, index) => rank > 0 && stage2HitRanks[index] > 0,
+    ).length;
+
+    const stage1EvidenceHitAtK = toRatio(
+      stage1HitCount,
+      input.case.expected_evidence_spans.length,
+    );
+    const stage2EvidenceHitAtK = toRatio(
+      stage2HitCount,
+      input.case.expected_evidence_spans.length,
+    );
+    const rerankRetention = toRatio(retainedHitCount, stage1HitCount);
+    const answerPointCoverage = calculateAnswerPointCoverage(
+      input.stage2,
+      input.case.expected_answer_points,
+    );
 
     return {
       id: input.case.id,
       query: input.case.query,
-      stage1EvidenceHitAtK: toRatio(
-        stage1HitCount,
-        input.case.expected_evidence_spans.length,
-      ),
-      stage2EvidenceHitAtK: toRatio(
-        stage2HitCount,
-        input.case.expected_evidence_spans.length,
-      ),
+      stage1EvidenceHitAtK,
+      stage2EvidenceHitAtK,
       mrr: firstRank > 0 ? 1 / firstRank : 0,
-      rerankRetention: toRatio(stage2HitCount, Math.max(stage1HitCount, 1)),
-      answerPointCoverage: calculateAnswerPointCoverage(
-        input.stage2,
-        input.case.expected_answer_points,
-      ),
+      rerankRetention,
+      answerPointCoverage,
+      stage1_evidence_hit_at_k: stage1EvidenceHitAtK,
+      stage2_evidence_hit_at_k: stage2EvidenceHitAtK,
+      rerank_retention: rerankRetention,
+      answer_point_coverage: answerPointCoverage,
     };
   });
+
+  const stage1EvidenceHitAtK = average(
+    caseResults.map((item) => item.stage1EvidenceHitAtK),
+  );
+  const stage2EvidenceHitAtK = average(
+    caseResults.map((item) => item.stage2EvidenceHitAtK),
+  );
+  const rerankRetention = average(
+    caseResults.map((item) => item.rerankRetention),
+  );
+  const answerPointCoverage = average(
+    caseResults.map((item) => item.answerPointCoverage),
+  );
 
   return {
     caseResults,
     summary: {
       caseCount: caseResults.length,
-      stage1EvidenceHitAtK: average(
-        caseResults.map((item) => item.stage1EvidenceHitAtK),
-      ),
-      stage2EvidenceHitAtK: average(
-        caseResults.map((item) => item.stage2EvidenceHitAtK),
-      ),
+      stage1EvidenceHitAtK,
+      stage2EvidenceHitAtK,
       mrr: average(caseResults.map((item) => item.mrr)),
-      rerankRetention: average(caseResults.map((item) => item.rerankRetention)),
-      answerPointCoverage: average(
-        caseResults.map((item) => item.answerPointCoverage),
-      ),
+      rerankRetention,
+      answerPointCoverage,
+      stage1_evidence_hit_at_k: stage1EvidenceHitAtK,
+      stage2_evidence_hit_at_k: stage2EvidenceHitAtK,
+      rerank_retention: rerankRetention,
+      answer_point_coverage: answerPointCoverage,
     },
   };
 }

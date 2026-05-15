@@ -93,6 +93,21 @@ export function createRetrieveEvidenceNode(
     if (!query) {
       return {};
     }
+    if (!state.retrievalStrategy.needRetrieval) {
+      return {
+        retrievalHistory: [
+          ...state.retrievalHistory,
+          {
+            query,
+            resultCount: 0,
+            skipped: true,
+            reason: state.retrievalStrategy.reason,
+            strategy: state.retrievalStrategy,
+          },
+        ],
+        stopReason: 'retrieval_skipped',
+      } satisfies Partial<RagGraphState>;
+    }
 
     const chunks = await knowledgeSearchService.retrieveForPersona(
       input.personaId,

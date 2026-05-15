@@ -7,6 +7,9 @@ import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-docume
 import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
 import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
+import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
+import { KnowledgeGraphSyncService } from '@/knowledge-content/graph/knowledge-graph-sync.service';
+import { splitKnowledgeDocumentContent } from '@/knowledge-content/services/knowledge-document-chunking.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
 
@@ -32,12 +35,18 @@ export class KnowledgeDocumentService {
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
     private readonly runtime: KnowledgeContentRuntimeService,
     private readonly elasticsearchSyncService: ElasticsearchSyncService,
+    private readonly graphSyncService: KnowledgeGraphSyncService,
     private readonly knowledgeChunkIndexQueryService: KnowledgeChunkIndexQueryService,
+    private readonly contextualRetrievalService: KnowledgeContextualRetrievalService,
   ) {}
 
   async deleteDocument(documentId: string): Promise<void> {
     await this.documentRepo.delete(documentId);
     await this.elasticsearchSyncService.safeDeleteByDocumentId(
+      documentId,
+      `删除文档 ${documentId}`,
+    );
+    await this.graphSyncService.safeDeleteByDocumentId(
       documentId,
       `删除文档 ${documentId}`,
     );
@@ -60,21 +69,38 @@ export class KnowledgeDocumentService {
     );
 
     try {
-      const splitDocuments = await this.runtime.splitter.createDocuments([
+      const splitDocuments = await splitKnowledgeDocumentContent(
         content,
-      ]);
+        this.runtime.splitter,
+        {
+          semanticChunking: {
+            enabled: this.readBoolean('ENABLE_SEMANTIC_CHUNKING', false),
+            embeddings: this.runtime.embeddings,
+            similarityThreshold: this.readNumber(
+              'SEMANTIC_CHUNKING_SIMILARITY_THRESHOLD',
+            ),
+            maxChunkLength: this.readNumber('SEMANTIC_CHUNKING_MAX_CHARS'),
+          },
+        },
+      );
       this.logger.log(
         `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
       );
+      const enrichedDocuments =
+        await this.contextualRetrievalService.enrichChunks({
+          filename,
+          documentContent: content,
+          chunks: splitDocuments,
+        });
 
-      const texts = splitDocuments.map((item) => item.pageContent);
+      const texts = enrichedDocuments.map((item) => item.pageContent);
       this.logger.log(
         `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
       );
       const embeddings = await this.runtime.embeddings.embedDocuments(texts);
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
-      const chunkRows = splitDocuments.map((item, index) => ({
+      const chunkRows = enrichedDocuments.map((item, index) => ({
         id: randomUUID(),
         document_id: document.id,
         chunk_index: index,
@@ -93,7 +119,7 @@ export class KnowledgeDocumentService {
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
-        chunkCount: splitDocuments.length,
+        chunkCount: enrichedDocuments.length,
       });
 
       return this.documentRepo.findOneByOrFail({ id: document.id });
@@ -197,6 +223,10 @@ export class KnowledgeDocumentService {
       documentId,
       `导入失败清理文档 ${documentId}`,
     );
+    await this.graphSyncService.safeDeleteByDocumentId(
+      documentId,
+      `导入失败清理文档 ${documentId}`,
+    );
   }
 
   private toIndexDocument(
@@ -213,5 +243,16 @@ export class KnowledgeDocumentService {
       category: row.category,
       enabled: row.enabled,
     };
+  }
+
+  private readBoolean(key: string, fallback: boolean): boolean {
+    const rawValue = String(process.env[key] ?? '').trim();
+    if (!rawValue) return fallback;
+    return ['1', 'true', 'yes', 'on'].includes(rawValue.toLowerCase());
+  }
+
+  private readNumber(key: string): number | undefined {
+    const value = Number(process.env[key]);
+    return Number.isFinite(value) ? value : undefined;
   }
 }

@@ -66,13 +66,83 @@ export function canContinueMultiHop(
   );
 }
 
+export function extendSubQuestionsWithMissingFacts(
+  state: Pick<
+    RagGraphState,
+    | 'strategy'
+    | 'question'
+    | 'subQuestions'
+    | 'retrievalHistory'
+    | 'maxHops'
+  >,
+  missingFacts: string[],
+): string[] {
+  if (state.strategy !== 'complex' || missingFacts.length === 0) {
+    return state.subQuestions;
+  }
+
+  const baseQuestions =
+    state.subQuestions.length > 0 ? state.subQuestions : [state.question];
+  const remainingSlots = Math.max(0, state.maxHops - baseQuestions.length);
+  if (remainingSlots === 0) {
+    return state.subQuestions;
+  }
+
+  const seen = new Set(
+    [...baseQuestions, ...state.retrievalHistory.map((item) => item.query)]
+      .map(normalizeQuestionKey)
+      .filter(Boolean),
+  );
+  const additions: string[] = [];
+
+  for (const fact of missingFacts) {
+    const query = normalizeMissingFactQuery(fact);
+    const key = normalizeQuestionKey(query);
+    if (!query || seen.has(key)) continue;
+
+    additions.push(query);
+    seen.add(key);
+    if (additions.length >= remainingSlots) {
+      break;
+    }
+  }
+
+  if (additions.length === 0) {
+    return state.subQuestions;
+  }
+
+  return [...baseQuestions, ...additions];
+}
+
 export function shouldUseWebFallback(
-  state: Pick<RagGraphState, 'webSearchAttempted' | 'webSearchUsed'>,
+  state: Pick<
+    RagGraphState,
+    | 'webSearchAttempted'
+    | 'webSearchAttempts'
+    | 'maxWebSearchAttempts'
+    | 'webSearchQueries'
+    | 'webQuery'
+  >,
   webFallbackEnabled: boolean,
 ): boolean {
-  return (
-    !state.webSearchAttempted && !state.webSearchUsed && webFallbackEnabled
-  );
+  if (!webFallbackEnabled) return false;
+
+  const attempts = Number.isFinite(state.webSearchAttempts)
+    ? state.webSearchAttempts
+    : state.webSearchAttempted
+      ? 1
+      : 0;
+  const maxAttempts = Number.isFinite(state.maxWebSearchAttempts)
+    ? state.maxWebSearchAttempts
+    : 1;
+  if (attempts >= maxAttempts) return false;
+
+  const queryKey = normalizeQuestionKey(state.webQuery);
+  if (!queryKey) return true;
+
+  return !(state.webSearchQueries ?? [])
+    .map(normalizeQuestionKey)
+    .includes(queryKey);
 }
 
 export function mergeEvidenceChunks(
@@ -145,6 +215,21 @@ export function mergeCitations(
   return [...localCitations, ...webCitations];
 }
 
+export function mergeWebCitations(
+  existing: RagWebCitation[],
+  incoming: RagWebCitation[],
+): RagWebCitation[] {
+  const merged = new Map<string, RagWebCitation>();
+
+  for (const citation of [...existing, ...incoming]) {
+    const key = citation.url.trim() || citation.title.trim();
+    if (!key || merged.has(key)) continue;
+    merged.set(key, citation);
+  }
+
+  return Array.from(merged.values());
+}
+
 export function publishCitations(
   input: RagWorkflowInput,
   citations: RagCitation[],
@@ -152,4 +237,17 @@ export function publishCitations(
   if (citations.length > 0) {
     input.onCitations(citations);
   }
+}
+
+function normalizeMissingFactQuery(fact: string): string {
+  const normalized = fact.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return /[。！？?]$/u.test(normalized) ? normalized : `${normalized}？`;
+}
+
+function normalizeQuestionKey(question: string): string {
+  return question
+    .replace(/\s+/g, '')
+    .replace(/[。！？?]+$/u, '')
+    .trim();
 }

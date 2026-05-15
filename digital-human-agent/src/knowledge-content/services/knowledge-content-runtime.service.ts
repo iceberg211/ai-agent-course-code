@@ -71,6 +71,7 @@ export class KnowledgeContentRuntimeService {
       rerank,
       stage1TopK,
       finalTopK,
+      skipQueryRewrite: options.skipQueryRewrite === true,
     };
   }
 

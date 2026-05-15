@@ -10,7 +10,7 @@ export const DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG: KnowledgeRetrievalConfig = {
 export const ELASTICSEARCH_CLIENT = 'ELASTICSEARCH_CLIENT';
 export const DEFAULT_ELASTICSEARCH_URL = 'http://localhost:9200';
 export const DEFAULT_ELASTICSEARCH_INDEX_PREFIX = 'digital-human';
-export const DEFAULT_ELASTICSEARCH_INDEX_VERSION = 'v1';
+export const DEFAULT_ELASTICSEARCH_INDEX_VERSION = 'v2';
 export const DEFAULT_HYBRID_KEYWORD_BACKEND = 'pg';
 
 export const KNOWLEDGE_UPLOAD_PDF_MIME_TYPE = 'application/pdf';

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { estypes } from '@elastic/elasticsearch';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
 import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
+import { buildElasticKeywordShouldClauses } from '@/knowledge-content/keyword-retrievers/elastic-keyword-query.builder';
 import { normalizeKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import type {
   KeywordRetrieveParams,
@@ -36,68 +37,9 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
 
     await this.elasticsearchIndexService.ensureKnowledgeChunkIndex();
 
-    const should = normalizedTerms.flatMap((term) =>
-      [
-        params.useExactPhrase
-          ? {
-              match_phrase: {
-                content: {
-                  query: term,
-                  boost: 8,
-                },
-              },
-            }
-          : null,
-        {
-          match: {
-            content: {
-              query: term,
-              boost: 4,
-            },
-          },
-        },
-        {
-          match: {
-            source: {
-              query: term,
-              boost: 2,
-            },
-          },
-        },
-        {
-          match: {
-            category: {
-              query: term,
-              boost: 2,
-            },
-          },
-        },
-        {
-          term: {
-            'source.keyword': {
-              value: term,
-              boost: 3,
-            },
-          },
-        },
-        {
-          term: {
-            'category.keyword': {
-              value: term,
-              boost: 3,
-            },
-          },
-        },
-        {
-          match: {
-            'content.ngram': {
-              query: term,
-              boost: 1.2,
-            },
-          },
-        },
-      ].filter((query) => query !== null),
-    );
+    const should = buildElasticKeywordShouldClauses(normalizedTerms, {
+      useExactPhrase: params.useExactPhrase === true,
+    });
 
     const response = await client.search<KnowledgeChunkIndexDocument>({
       index: this.elasticsearchIndexService.getKnowledgeChunkReadAlias(),

@@ -119,4 +119,26 @@ describe('KnowledgeKeywordRetrieverService', () => {
     expect(result.backend).toBe('pg');
     expect(result.fallbackToPg).toBe(true);
   });
+
+  it('ES 回退 PG 时保留 useExactPhrase 参数', async () => {
+    const { service, pgKeywordRetriever, elasticKeywordRetriever } =
+      createService({
+        backend: 'elastic',
+        elasticsearchEnabled: true,
+        elasticError: new Error('es unavailable'),
+      });
+    const params = {
+      knowledgeId: 'kb-1',
+      terms: ['删除时限'],
+      matchCount: 5,
+      useExactPhrase: true,
+    };
+
+    await service.retrieve(params);
+
+    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(
+      params,
+    );
+    expect(pgKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(params);
+  });
 });

@@ -8,6 +8,7 @@ import {
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import {
   canContinueMultiHop,
+  extendSubQuestionsWithMissingFacts,
   getPlannedQuestions,
   shouldUseWebFallback,
 } from '@/agent/langgraph/rag.utils';
@@ -28,6 +29,9 @@ function resolveStopReason(
   }
 
   if (state.webSearchUsed) {
+    if (shouldUseWebFallback(state, webFallbackEnabled)) {
+      return 'web_fallback_retry';
+    }
     return 'web_fallback_insufficient';
   }
 
@@ -59,6 +63,10 @@ function resolveStopReason(
     return 'multi_hop_insufficient';
   }
 
+  if (shouldUseWebFallback(state, webFallbackEnabled)) {
+    return 'single_hop_insufficient';
+  }
+
   return 'single_hop_insufficient';
 }
 
@@ -68,6 +76,27 @@ export function createEvaluateEvidenceNode(
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
+    if (
+      !state.retrievalStrategy.needRetrieval ||
+      state.stopReason === 'retrieval_skipped'
+    ) {
+      const reason =
+        state.retrievalStrategy.reason ||
+        state.retrievalStrategyReason ||
+        '无需检索，跳过证据评估';
+
+      return new Command({
+        update: {
+          enough: true,
+          missingFacts: [],
+          evaluationReason: reason,
+          webQuery: '',
+          stopReason: 'retrieval_skipped',
+        } satisfies Partial<RagGraphState>,
+        goto: 'load_context',
+      });
+    }
+
     const remainingSubQuestionCount =
       state.strategy === 'complex'
         ? Math.max(getPlannedQuestions(state).length - state.currentHop, 0)
@@ -84,12 +113,24 @@ export function createEvaluateEvidenceNode(
 
     const webFallbackEnabled =
       webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
+    const subQuestions = extendSubQuestionsWithMissingFacts(
+      state,
+      evaluation.missingFacts,
+    );
     const update = {
       enough: evaluation.enough,
       missingFacts: evaluation.missingFacts,
       evaluationReason: evaluation.reason,
       webQuery: evaluation.webQuery,
-      stopReason: resolveStopReason(state, evaluation.enough, webFallbackEnabled),
+      subQuestions,
+      stopReason: resolveStopReason(
+        {
+          ...state,
+          subQuestions,
+        },
+        evaluation.enough,
+        webFallbackEnabled,
+      ),
     } satisfies Partial<RagGraphState>;
 
     const nextState = {

@@ -10,6 +10,9 @@ export const DEFAULT_RETRIEVAL_STRATEGY: RetrievalStrategy = {
   useHyDE: false,
   allowWeb: true,
   queryCount: 3,
+  chunkContextWindow: 0,
+  parentContext: false,
+  parentContextMaxChars: 2000,
   contextCompression: false,
   lostInMiddle: true,
   reason: '默认使用本地混合检索',
@@ -22,21 +25,35 @@ export function normalizeRetrievalStrategy(
     ...DEFAULT_RETRIEVAL_STRATEGY,
     ...(strategy ?? {}),
   };
+  const useGraph = isGraphRetrievalEnabled() && merged.useGraph === true;
 
   const needRetrieval =
     merged.needRetrieval !== false &&
-    (merged.useVector || merged.useKeyword || merged.useGraph);
+    (merged.useVector || merged.useKeyword || useGraph);
 
   return {
     ...merged,
+    useGraph,
     needRetrieval,
     queryCount: clampInteger(merged.queryCount, 1, 5, 3),
+    chunkContextWindow: clampInteger(merged.chunkContextWindow, 0, 2, 0),
+    parentContext: merged.parentContext === true,
+    parentContextMaxChars: clampInteger(
+      merged.parentContextMaxChars,
+      500,
+      4000,
+      2000,
+    ),
     graphMaxHops:
       merged.graphMaxHops === undefined
         ? undefined
         : clampInteger(merged.graphMaxHops, 1, 3, 2),
     reason: String(merged.reason ?? '').trim() || '使用默认检索策略',
   };
+}
+
+function isGraphRetrievalEnabled(): boolean {
+  return String(process.env.ENABLE_GRAPH_RETRIEVAL ?? '').trim() === 'true';
 }
 
 function clampInteger(

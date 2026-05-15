@@ -1,6 +1,12 @@
 services:
   elasticsearch:
-    image: docker.m.daocloud.io/elasticsearch:9.3.3
+    build:
+      context: .
+      dockerfile: docker/elasticsearch/Dockerfile
+      args:
+        ELASTIC_BASE_IMAGE: docker.m.daocloud.io/elasticsearch:9.3.3
+        ELASTIC_VERSION: 9.3.3
+    image: digital-human-agent-elasticsearch-ik:9.3.3
     container_name: digital-human-agent-elasticsearch
     environment:
       discovery.type: single-node

@@ -4,6 +4,7 @@ import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/k
 import { KnowledgeVectorRetrieverService } from '@/knowledge-content/services/knowledge-vector-retriever.service';
 import type {
   KnowledgeChunk,
+  KnowledgeRetrievalSource,
   KeywordBackend,
 } from '@/knowledge-content/types/knowledge-content.types';
 
@@ -22,12 +23,12 @@ interface HybridRetrieveParams {
 
 export interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
-  keywordBackend: KeywordBackend;
+  keywordBackend: KeywordBackend | 'disabled';
   vectorResultCount: number;
   hydeVectorResultCount: number;
   keywordResultCount: number;
   fallbackToPg: boolean;
-  skippedChannels: Array<'vector' | 'keyword' | 'hyde'>;
+  skippedChannels: Array<'vector' | 'keyword' | 'hyde' | 'graph'>;
 }
 
 const RRF_K = 60;
@@ -125,7 +126,7 @@ export class KnowledgeHybridRetrieverService {
             keywordResult.chunks,
             hydeVectorResults,
           ).slice(0, params.matchCount),
-          keywordBackend: useKeyword ? keywordResult.backend : 'pg',
+          keywordBackend: useKeyword ? keywordResult.backend : 'disabled',
           vectorResultCount: vectorResults.length,
           hydeVectorResultCount: hydeVectorResults.length,
           keywordResultCount: keywordResult.chunks.length,
@@ -222,7 +223,7 @@ export class KnowledgeHybridRetrieverService {
   private mergeSources(
     chunk: KnowledgeChunk,
     source: 'vector' | 'keyword' | 'hyde',
-  ): Array<'vector' | 'keyword' | 'hyde'> {
+  ): KnowledgeRetrievalSource[] {
     return Array.from(new Set([...(chunk.retrieval_sources ?? []), source]));
   }
 

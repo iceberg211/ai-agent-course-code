@@ -59,4 +59,58 @@ describe('AnswerGenerationService', () => {
     expect(tokens).toEqual(['你', '好']);
     expect(output).toBe('你好');
   });
+
+  it('会把图谱证据传入最终回答提示词', async () => {
+    const service = new AnswerGenerationService();
+    const streamMock = jest.fn().mockResolvedValue(createStream(['好']));
+
+    Reflect.set(service, 'llm', {
+      stream: streamMock,
+    });
+
+    await service.generate({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      turnId: 'turn-1',
+      userMessage: '甲方和验收是什么关系？',
+      signal: new AbortController().signal,
+      persona: {
+        id: 'persona-1',
+        name: '乔峰',
+        description: '豪迈',
+        speakingStyle: '直接',
+        expertise: ['合同'],
+        voiceId: null,
+        avatarId: null,
+        systemPromptExtra: null,
+      } as never,
+      history: [],
+      localChunks: [
+        {
+          id: 'chunk-1',
+          content: '合同约定甲方在验收后七日内付款。',
+          source: 'contracts/service.md',
+          chunk_index: 3,
+          category: 'contract',
+          similarity: 0.82,
+          graph_evidence: [
+            {
+              source: '甲方',
+              target: '验收',
+              relationType: 'MENTIONS',
+              relationLabel: '提及',
+              evidenceText: '甲方应在验收后七日内完成付款。',
+              confidence: 0.91,
+            },
+          ],
+          retrieval_sources: ['graph'],
+        },
+      ],
+      onToken: jest.fn(),
+    });
+
+    const messages = streamMock.mock.calls[0][0] as Array<{ content: string }>;
+    expect(messages[0].content).toContain('图谱证据：');
+    expect(messages[0].content).toContain('甲方 --提及--> 验收');
+  });
 });

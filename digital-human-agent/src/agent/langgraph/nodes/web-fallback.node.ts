@@ -10,6 +10,7 @@ import {
 } from '@/agent/langgraph/rag.retry-policy';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import {
+  mergeWebCitations,
   publishCitations,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
@@ -28,6 +29,15 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
     }
 
     const webQuery = state.webQuery.trim() || state.question;
+    const previousAttempts = Number.isFinite(state.webSearchAttempts)
+      ? state.webSearchAttempts
+      : state.webSearchAttempted
+        ? 1
+        : 0;
+    const webSearchAttempts = previousAttempts + 1;
+    const webSearchQueries = Array.from(
+      new Set([...(state.webSearchQueries ?? []), webQuery]),
+    );
 
     try {
       const webCitations = await webFallbackService.search({
@@ -40,17 +50,24 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
           update: {
             webQuery,
             webSearchAttempted: true,
+            webSearchAttempts,
+            webSearchQueries,
             stopReason: 'web_fallback_empty',
           } satisfies Partial<RagGraphState>,
           goto: 'load_context',
         });
       }
 
+      const mergedWebCitations = mergeWebCitations(
+        state.webCitations,
+        webCitations,
+      );
+
       publishCitations(
         input,
         toWorkflowCitations({
           evidenceChunks: state.evidenceChunks,
-          webCitations,
+          webCitations: mergedWebCitations,
         } as Pick<RagGraphState, 'evidenceChunks' | 'webCitations'>),
       );
 
@@ -58,7 +75,9 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
         update: {
           webQuery,
           webSearchAttempted: true,
-          webCitations,
+          webSearchAttempts,
+          webSearchQueries,
+          webCitations: mergedWebCitations,
           webSearchUsed: true,
         } satisfies Partial<RagGraphState>,
         goto: 'evaluate_evidence',
@@ -79,6 +98,8 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
         update: {
           webQuery,
           webSearchAttempted: true,
+          webSearchAttempts,
+          webSearchQueries,
           stopReason: 'web_fallback_failed',
         } satisfies Partial<RagGraphState>,
         goto: 'load_context',

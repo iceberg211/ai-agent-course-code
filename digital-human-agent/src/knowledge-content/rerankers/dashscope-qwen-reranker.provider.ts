@@ -42,7 +42,11 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
     const onAbort = () => controller.abort();
     input.signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -79,6 +83,14 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
 
       const payload = (await response.json()) as DashScopeRerankResponse;
       return this.parsePayload(payload, input.candidates.length);
+    } catch (error) {
+      if (input.signal?.aborted) {
+        throw error;
+      }
+      if (timedOut && this.isAbortError(error)) {
+        throw new Error(`DashScope rerank 超时 ${this.timeoutMs}ms`);
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', onAbort);
@@ -122,5 +134,9 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.floor(parsed);
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return (error as { name?: string })?.name === 'AbortError';
   }
 }

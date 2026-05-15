@@ -234,6 +234,54 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
 
+  it('needRetrieval=false 时整条图跳过检索和证据评估，并记录 skipped 历史', async () => {
+    const { service, deps } = createService({
+      routeStrategy: 'simple',
+      retrievalStrategy: {
+        needRetrieval: false,
+        useVector: false,
+        useKeyword: false,
+        useGraph: false,
+        useExactPhrase: false,
+        useMultiQuery: false,
+        useHyDE: false,
+        allowWeb: false,
+        reason: '寒暄问题，不需要查知识库',
+      },
+    });
+
+    const result = await service.run({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      question: '你好',
+      turnId: 'turn-1',
+      signal: new AbortController().signal,
+      onToken: jest.fn(),
+      onCitations: jest.fn(),
+    });
+
+    expect(
+      deps.knowledgeSearchService.retrieveForPersona,
+    ).not.toHaveBeenCalled();
+    expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
+    expect(deps.webFallbackService.search).not.toHaveBeenCalled();
+    expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localChunks: [],
+        webCitations: [],
+      }),
+    );
+    expect(result.state.stopReason).toBe('retrieval_skipped');
+    expect(result.state.retrievalHistory).toEqual([
+      expect.objectContaining({
+        query: '你好',
+        resultCount: 0,
+        skipped: true,
+        reason: '寒暄问题，不需要查知识库',
+      }),
+    ]);
+  });
+
   it('complex 路径会按子问题逐跳检索，证据足够后停止', async () => {
     const chunkA = createChunk('chunk-a', '雁门关事件主谋是慕容博。');
     const chunkB = createChunk('chunk-b', '慕容复最终结局疯癫。');

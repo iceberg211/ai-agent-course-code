@@ -1,0 +1,255 @@
+import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
+
+describe('KnowledgeChunkContextExpansionService', () => {
+  function createService() {
+    const repo = {
+      find: jest.fn(),
+    };
+    const dataSource = {
+      query: jest.fn(),
+    };
+    const service = new KnowledgeChunkContextExpansionService(
+      repo as never,
+      dataSource as never,
+    );
+
+    return {
+      dataSource,
+      repo,
+      service,
+    };
+  }
+
+  it('显式窗口开启时，会按命中 chunk 的文档顺序带入前后邻居并保留原命中元数据', async () => {
+    const { repo, service } = createService();
+    const hit = {
+      id: 'chunk-2',
+      document_id: 'doc-1',
+      content: '命中段落',
+      source: 'qa.md',
+      chunk_index: 2,
+      category: 'faq',
+      similarity: 0.91,
+      hybrid_score: 0.88,
+    };
+    repo.find.mockResolvedValue([
+      {
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        content: '上文',
+        source: 'qa.md',
+        chunkIndex: 1,
+        category: 'faq',
+      },
+      {
+        id: 'chunk-2',
+        documentId: 'doc-1',
+        content: '数据库里的命中段落',
+        source: 'qa.md',
+        chunkIndex: 2,
+        category: 'faq',
+      },
+      {
+        id: 'chunk-3',
+        documentId: 'doc-1',
+        content: '下文',
+        source: 'qa.md',
+        chunkIndex: 3,
+        category: 'faq',
+      },
+    ]);
+
+    const expanded = await service.expand([hit], 1);
+
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    expect(expanded.map((item) => item.id)).toEqual([
+      'chunk-1',
+      'chunk-2',
+      'chunk-3',
+    ]);
+    expect(expanded[1]).toBe(hit);
+    expect(expanded[0]).toMatchObject({
+      context_expanded: true,
+      similarity: 0,
+    });
+  });
+
+  it('不会把同文档但不在任一命中窗口内的中间段落误带入上下文', async () => {
+    const { repo, service } = createService();
+    repo.find.mockResolvedValue([
+      {
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        content: '第 1 段',
+        source: 'qa.md',
+        chunkIndex: 1,
+        category: null,
+      },
+      {
+        id: 'chunk-6',
+        documentId: 'doc-1',
+        content: '不相邻段落',
+        source: 'qa.md',
+        chunkIndex: 6,
+        category: null,
+      },
+      {
+        id: 'chunk-9',
+        documentId: 'doc-1',
+        content: '第 9 段',
+        source: 'qa.md',
+        chunkIndex: 9,
+        category: null,
+      },
+    ]);
+
+    const expanded = await service.expand(
+      [
+        {
+          id: 'chunk-2',
+          document_id: 'doc-1',
+          content: '第 2 段',
+          source: 'qa.md',
+          chunk_index: 2,
+          category: null,
+          similarity: 0.9,
+        },
+        {
+          id: 'chunk-10',
+          document_id: 'doc-1',
+          content: '第 10 段',
+          source: 'qa.md',
+          chunk_index: 10,
+          category: null,
+          similarity: 0.8,
+        },
+      ],
+      1,
+    );
+
+    expect(expanded.map((item) => item.id)).toEqual([
+      'chunk-1',
+      'chunk-2',
+      'chunk-9',
+      'chunk-10',
+    ]);
+  });
+
+  it('窗口为 0 时不查询数据库并直接返回原结果', async () => {
+    const { repo, service } = createService();
+    const chunks = [
+      {
+        id: 'chunk-1',
+        document_id: 'doc-1',
+        content: '命中段落',
+        source: 'qa.md',
+        chunk_index: 1,
+        category: null,
+        similarity: 0.9,
+      },
+    ];
+
+    await expect(service.expand(chunks, 0)).resolves.toBe(chunks);
+    expect(repo.find).not.toHaveBeenCalled();
+  });
+
+  it('parent context 开启时用同文档大块上下文替换命中 chunk 内容并保留命中元数据', async () => {
+    const { dataSource, repo, service } = createService();
+    const hit = {
+      id: 'chunk-2',
+      document_id: 'doc-1',
+      content: '命中小段',
+      source: 'qa.md',
+      chunk_index: 2,
+      category: 'faq',
+      similarity: 0.91,
+      hybrid_score: 0.88,
+    };
+    dataSource.query.mockResolvedValue([]);
+    repo.find.mockResolvedValue([
+      {
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        content: '上文大块',
+        source: 'qa.md',
+        chunkIndex: 1,
+        category: 'faq',
+      },
+      {
+        id: 'chunk-2',
+        documentId: 'doc-1',
+        content: '数据库里的命中小段',
+        source: 'qa.md',
+        chunkIndex: 2,
+        category: 'faq',
+      },
+      {
+        id: 'chunk-3',
+        documentId: 'doc-1',
+        content: '下文大块',
+        source: 'qa.md',
+        chunkIndex: 3,
+        category: 'faq',
+      },
+    ]);
+
+    const expanded = await service.expandParentContext([hit], 2000);
+
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    expect(expanded).toHaveLength(1);
+    expect(expanded[0]).toMatchObject({
+      id: 'chunk-2',
+      similarity: 0.91,
+      hybrid_score: 0.88,
+      parent_context: true,
+      parent_context_child_ids: ['chunk-1', 'chunk-2', 'chunk-3'],
+      content: ['上文大块', '命中小段', '下文大块'].join('\n\n'),
+    });
+  });
+
+  it('存在 Parent-Child 派生索引时优先读取已回填 parent chunk', async () => {
+    const { dataSource, repo, service } = createService();
+    const hit = {
+      id: 'chunk-2',
+      document_id: 'doc-1',
+      content: '命中小段',
+      source: 'qa.md',
+      chunk_index: 2,
+      category: 'faq',
+      similarity: 0.91,
+      hybrid_score: 0.88,
+    };
+    dataSource.query.mockResolvedValue([
+      {
+        hit_chunk_id: 'chunk-2',
+        parent_key: 'ParentChunk:doc-1:parent-child-v1:1-3',
+        content: '已回填的大块上下文',
+        source: 'qa.md',
+        category: 'faq',
+        start_chunk_index: 1,
+        end_chunk_index: 3,
+        child_chunk_ids: ['chunk-1', 'chunk-2', 'chunk-3'],
+      },
+    ]);
+
+    const expanded = await service.expandParentContext([hit], 2000);
+
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('rag_parent_chunk_child'),
+      [['chunk-2'], 'parent-child-v1', 2000],
+    );
+    expect(repo.find).not.toHaveBeenCalled();
+    expect(expanded).toEqual([
+      expect.objectContaining({
+        id: 'chunk-2',
+        content: '已回填的大块上下文',
+        parent_context: true,
+        parent_context_indexed: true,
+        parent_context_key: 'ParentChunk:doc-1:parent-child-v1:1-3',
+        parent_context_child_ids: ['chunk-1', 'chunk-2', 'chunk-3'],
+        similarity: 0.91,
+        hybrid_score: 0.88,
+      }),
+    ]);
+  });
+});

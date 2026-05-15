@@ -1,7 +1,13 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '@/app.module';
+import {
+  buildSwitchAliasActions,
+  buildSwitchAliasRefusalReasons,
+  replaceElasticsearchIndexVersion,
+} from '@/knowledge-content/elasticsearch/elasticsearch-alias-actions';
+import { formatElasticsearchError } from '@/knowledge-content/elasticsearch/elasticsearch-error-format';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
+import { ElasticsearchScriptModule } from './elasticsearch-script.module';
 
 function readRequiredArg(name: string): string {
   const prefix = `--${name}=`;
@@ -12,14 +18,15 @@ function readRequiredArg(name: string): string {
   return value;
 }
 
-function replaceVersion(indexName: string, version: string): string {
-  return indexName.replace(/-[^-]+$/, `-${version}`);
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
 }
 
 async function main(): Promise<void> {
   const fromVersion = readRequiredArg('from');
   const toVersion = readRequiredArg('to');
-  const app = await NestFactory.createApplicationContext(AppModule, {
+  const dryRun = hasFlag('dry-run');
+  const app = await NestFactory.createApplicationContext(ElasticsearchScriptModule, {
     logger: ['log', 'warn', 'error'],
   });
 
@@ -31,19 +38,70 @@ async function main(): Promise<void> {
     }
 
     const currentIndex = indexService.getKnowledgeChunkIndexName();
-    const fromIndex = replaceVersion(currentIndex, fromVersion);
-    const toIndex = replaceVersion(currentIndex, toVersion);
+    const fromIndex = replaceElasticsearchIndexVersion(
+      currentIndex,
+      fromVersion,
+    );
+    const toIndex = replaceElasticsearchIndexVersion(currentIndex, toVersion);
     const readAlias = indexService.getKnowledgeChunkReadAlias();
     const writeAlias = indexService.getKnowledgeChunkWriteAlias();
 
-    const [targetExists, health, count] = await Promise.all([
-      client.indices.exists({ index: toIndex }),
-      client.cluster.health({ index: toIndex }),
-      client.count({ index: toIndex }),
-    ]);
+    const targetExists = await client.indices.exists({ index: toIndex });
+    const [health, count] = targetExists
+      ? await Promise.all([
+          client.cluster.health({ index: toIndex }),
+          client.count({ index: toIndex }),
+        ])
+      : [null, null];
+    const before = await client.indices.getAlias({
+      name: `${readAlias},${writeAlias}`,
+      ignore_unavailable: true,
+    });
+    const actions = buildSwitchAliasActions({
+      fromIndex,
+      toIndex,
+      readAlias,
+      writeAlias,
+    });
+    const refusalReasons = buildSwitchAliasRefusalReasons({
+      fromIndex,
+      toIndex,
+      readAlias,
+      writeAlias,
+      targetExists,
+      documentCount: count?.count ?? null,
+      healthStatus: health?.status ?? null,
+      beforeAliasMap: before,
+    });
+
+    if (dryRun) {
+      console.log(
+        JSON.stringify(
+          {
+            action: 'switch-elasticsearch-alias',
+            dryRun: true,
+            from: fromIndex,
+            to: toIndex,
+            targetExists,
+            documentCount: count?.count ?? null,
+            health: health?.status ?? null,
+            ready: refusalReasons.length === 0,
+            refusalReasons,
+            before,
+            actions,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
 
     if (!targetExists) {
       throw new Error(`目标索引不存在：${toIndex}`);
+    }
+    if (!count || !health) {
+      throw new Error(`目标索引状态读取失败：${toIndex}`);
     }
     if (count.count <= 0) {
       throw new Error(`目标索引没有文档，拒绝切换：${toIndex}`);
@@ -51,19 +109,12 @@ async function main(): Promise<void> {
     if (health.status === 'red') {
       throw new Error(`目标索引 health=red，拒绝切换：${toIndex}`);
     }
-
-    const before = await client.indices.getAlias({
-      name: `${readAlias},${writeAlias}`,
-      ignore_unavailable: true,
-    });
+    if (refusalReasons.length > 0) {
+      throw new Error(`ES alias 切换前置检查失败：${refusalReasons.join('；')}`);
+    }
 
     await client.indices.updateAliases({
-      actions: [
-        { remove: { index: fromIndex, alias: readAlias, must_exist: false } },
-        { remove: { index: fromIndex, alias: writeAlias, must_exist: false } },
-        { add: { index: toIndex, alias: readAlias } },
-        { add: { index: toIndex, alias: writeAlias, is_write_index: true } },
-      ],
+      actions,
     });
 
     const after = await client.indices.getAlias({
@@ -92,8 +143,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(
-    `ES alias 切换失败：${error instanceof Error ? error.message : String(error)}`,
-  );
+  console.error(`ES alias 切换失败：${formatElasticsearchError(error)}`);
   process.exit(1);
 });

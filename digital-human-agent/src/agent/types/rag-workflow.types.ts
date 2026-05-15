@@ -14,6 +14,9 @@ export interface RetrievalStrategy {
   useHyDE: boolean;
   allowWeb: boolean;
   queryCount?: number;
+  chunkContextWindow?: number;
+  parentContext?: boolean;
+  parentContextMaxChars?: number;
   contextCompression?: boolean;
   lostInMiddle?: boolean;
   graphMode?: 'neighbors' | 'path';
@@ -79,6 +82,9 @@ export interface RagWorkflowState {
   webQuery: string;
   webSearchAttempted: boolean;
   webSearchUsed: boolean;
+  webSearchAttempts: number;
+  maxWebSearchAttempts: number;
+  webSearchQueries: string[];
   stopReason: string;
   orchestrator: RagOrchestratorName;
 }

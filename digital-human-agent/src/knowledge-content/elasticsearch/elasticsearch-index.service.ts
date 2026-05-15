@@ -12,6 +12,7 @@ import {
   DEFAULT_ELASTICSEARCH_INDEX_VERSION,
   ELASTICSEARCH_CLIENT,
 } from '@/common/constants';
+import { formatElasticsearchError } from '@/knowledge-content/elasticsearch/elasticsearch-error-format';
 
 @Injectable()
 export class ElasticsearchIndexService implements OnModuleInit {
@@ -30,7 +31,9 @@ export class ElasticsearchIndexService implements OnModuleInit {
     this.indexPrefix =
       this.readString('ELASTICSEARCH_INDEX_PREFIX') ||
       DEFAULT_ELASTICSEARCH_INDEX_PREFIX;
-    this.indexVersion = DEFAULT_ELASTICSEARCH_INDEX_VERSION;
+    this.indexVersion =
+      this.readString('ELASTICSEARCH_INDEX_VERSION') ||
+      DEFAULT_ELASTICSEARCH_INDEX_VERSION;
   }
 
   async onModuleInit(): Promise<void> {
@@ -40,9 +43,7 @@ export class ElasticsearchIndexService implements OnModuleInit {
       await this.ensureKnowledgeChunkIndex();
     } catch (error) {
       this.logger.warn(
-        `ES 索引初始化失败，当前先跳过：${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `ES 索引初始化失败，当前先跳过：${formatElasticsearchError(error)}`,
       );
     }
   }
@@ -89,6 +90,16 @@ export class ElasticsearchIndexService implements OnModuleInit {
               },
             },
             analyzer: {
+              knowledge_content_ik_analyzer: {
+                type: 'custom',
+                tokenizer: 'ik_max_word',
+                filter: ['lowercase'],
+              },
+              knowledge_content_ik_search_analyzer: {
+                type: 'custom',
+                tokenizer: 'ik_smart',
+                filter: ['lowercase'],
+              },
               knowledge_content_ngram_analyzer: {
                 type: 'custom',
                 tokenizer: 'standard',
@@ -107,6 +118,8 @@ export class ElasticsearchIndexService implements OnModuleInit {
             enabled: { type: 'boolean' },
             content: {
               type: 'text',
+              analyzer: 'knowledge_content_ik_analyzer',
+              search_analyzer: 'knowledge_content_ik_search_analyzer',
               fields: {
                 ngram: {
                   type: 'text',

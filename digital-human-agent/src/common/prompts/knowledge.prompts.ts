@@ -35,6 +35,34 @@ export const KNOWLEDGE_HYDE_PROMPT = ChatPromptTemplate.fromMessages([
   ['human', '用户问题：{query}'],
 ]);
 
+export const KNOWLEDGE_CONTEXTUAL_RETRIEVAL_PROMPT =
+  ChatPromptTemplate.fromMessages([
+    [
+      'system',
+      [
+        '你是知识库 ingest 阶段的上下文增强助手。',
+        '任务：根据完整文档和当前 chunk，写一小段能帮助检索理解该 chunk 的文档级上下文。',
+        '要求：',
+        '1. 只说明该 chunk 在文档中的主题、对象、约束或章节位置。',
+        '2. 不要回答用户问题，不要补充文档里没有的事实。',
+        '3. 控制在 80 字以内。',
+        '4. 不要输出 Markdown，不要加引号。',
+      ].join('\n'),
+    ],
+    [
+      'human',
+      [
+        '文件名：{filename}',
+        '',
+        '文档摘录：',
+        '{documentExcerpt}',
+        '',
+        '当前 chunk：',
+        '{chunkContent}',
+      ].join('\n'),
+    ],
+  ]);
+
 export const KNOWLEDGE_RERANK_PROMPT = ChatPromptTemplate.fromMessages([
   [
     'system',
@@ -52,6 +80,18 @@ export function buildKnowledgeQueryRewritePromptInput(query: string) {
 export function buildKnowledgeHydePromptInput(query: string) {
   return {
     query,
+  };
+}
+
+export function buildKnowledgeContextualRetrievalPromptInput(input: {
+  filename: string;
+  documentContent: string;
+  chunkContent: string;
+}) {
+  return {
+    filename: input.filename,
+    documentExcerpt: input.documentContent.slice(0, 4000),
+    chunkContent: input.chunkContent.slice(0, 1200),
   };
 }
 

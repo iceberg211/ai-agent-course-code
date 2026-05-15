@@ -27,7 +27,8 @@ export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
 4. 语气和用词要符合角色人设
 5. 回答要口语化，适合语音朗读（避免长列表、代码块、复杂格式）
 6. 回答时自然地提及信息来源，例如"根据文档里的说明..."、"根据网页资料..."
-7. 如果用了联网补充信息，优先提及标题或链接来源；如果本地知识与网页信息存在冲突，要说明不确定性{systemPromptExtraSection}`,
+7. 如果本地知识包含图谱证据，把它作为实体关系线索，但不要脱离证据自行扩展关系
+8. 如果用了联网补充信息，优先提及标题或链接来源；如果本地知识与网页信息存在冲突，要说明不确定性{systemPromptExtraSection}`,
   ],
   new MessagesPlaceholder('history'),
   ['human', '{userMessage}'],
@@ -60,6 +61,9 @@ export const RAG_RETRIEVAL_STRATEGY_PROMPT = ChatPromptTemplate.fromMessages([
       'useExactPhrase：包含明确实体、标题、文件名、引用短句时为 true。',
       'useMultiQuery：问题表述模糊或需要多角度召回时为 true。',
       'useHyDE：问题偏概念、描述性，适合用假设答案做额外向量召回时为 true。',
+      'chunkContextWindow：是否把命中段落前后相邻段落带入最终上下文；默认 0，只有需要连续上下文时设为 1，最大 2。',
+      'parentContext：是否把命中的小段扩展为同文档大块上下文；默认 false，只有问题需要连续解释、条款上下文或段落前后因果时设为 true。',
+      'parentContextMaxChars：parentContext 开启时每个命中大块的最大字符数；默认 2000，范围 500 到 4000。',
       'allowWeb：本地证据不足时是否允许联网补充。',
       '不要回答用户问题，只输出结构化策略。',
     ].join('\n'),
@@ -129,10 +133,54 @@ export function formatKnowledgeBlock(chunks: KnowledgeChunk[]): string {
 
   return chunks
     .map(
-      (chunk) =>
-        `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]\n${chunk.content}`,
+      (chunk) => {
+        const graphEvidenceBlock = formatGraphEvidenceBlock(chunk);
+        return [
+          `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]`,
+          graphEvidenceBlock,
+          chunk.content,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      },
     )
     .join('\n---\n');
+}
+
+function formatGraphEvidenceBlock(chunk: KnowledgeChunk): string {
+  const graphEvidence = chunk.graph_evidence ?? [];
+  if (graphEvidence.length === 0) {
+    return '';
+  }
+
+  const lines = graphEvidence.slice(0, 5).map((item) => {
+    const relationLabel = normalizeGraphEvidenceText(
+      item.relationLabel ?? item.relationType,
+    );
+    const evidenceText = normalizeGraphEvidenceText(item.evidenceText);
+    const confidence =
+      typeof item.confidence === 'number' && Number.isFinite(item.confidence)
+        ? `，置信度：${Number(item.confidence.toFixed(2))}`
+        : '';
+    const evidence = evidenceText ? `，证据：${evidenceText}` : '';
+
+    return `- ${normalizeGraphEvidenceText(
+      item.source,
+    )} --${relationLabel}--> ${normalizeGraphEvidenceText(
+      item.target,
+    )}（类型：${normalizeGraphEvidenceText(
+      item.relationType,
+    )}${confidence}${evidence}）`;
+  });
+
+  return ['图谱证据：', ...lines].join('\n');
+}
+
+function normalizeGraphEvidenceText(value: unknown): string {
+  const normalized = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.slice(0, 160) || '未知';
 }
 
 export function mapConversationHistoryToPromptMessages(

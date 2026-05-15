@@ -23,20 +23,18 @@ export function applyLostInTheMiddleOrdering(
 ): KnowledgeChunk[] {
   if (chunks.length <= 2) return chunks;
 
-  const reordered: KnowledgeChunk[] = [];
-  let left = 0;
-  let right = chunks.length - 1;
+  const front: KnowledgeChunk[] = [];
+  const back: KnowledgeChunk[] = [];
 
-  while (left <= right) {
-    reordered.push(chunks[left]);
-    if (left !== right) {
-      reordered.push(chunks[right]);
+  chunks.forEach((chunk, index) => {
+    if (index % 2 === 0) {
+      front.push(chunk);
+    } else {
+      back.unshift(chunk);
     }
-    left += 1;
-    right -= 1;
-  }
+  });
 
-  return reordered;
+  return [...front, ...back];
 }
 
 export function compressChunkForQuestion(content: string, question: string) {
