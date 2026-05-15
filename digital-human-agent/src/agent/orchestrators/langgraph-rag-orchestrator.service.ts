@@ -10,6 +10,7 @@ import { AnswerGenerationService } from '@/agent/services/answer-generation.serv
 import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
 import { RagRouteService } from '@/agent/services/rag-route.service';
+import { RetrievalStrategyService } from '@/agent/services/retrieval-strategy.service';
 import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import type {
   RagOrchestrator,
@@ -34,6 +35,7 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
     private readonly conversationService: ConversationService,
     private readonly answerGenerationService: AnswerGenerationService,
     private readonly ragRouteService: RagRouteService,
+    private readonly retrievalStrategyService: RetrievalStrategyService,
     private readonly multiHopPlannerService: MultiHopPlannerService,
     private readonly evidenceEvaluatorService: EvidenceEvaluatorService,
     private readonly webFallbackService: WebFallbackService,
@@ -44,6 +46,7 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
       conversationService: this.conversationService,
       answerGenerationService: this.answerGenerationService,
       ragRouteService: this.ragRouteService,
+      retrievalStrategyService: this.retrievalStrategyService,
       multiHopPlannerService: this.multiHopPlannerService,
       evidenceEvaluatorService: this.evidenceEvaluatorService,
       webFallbackService: this.webFallbackService,

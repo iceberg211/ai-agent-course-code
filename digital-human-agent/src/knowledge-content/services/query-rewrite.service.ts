@@ -4,18 +4,37 @@ import { z } from 'zod';
 import { throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
+  buildKnowledgeHydePromptInput,
   buildKnowledgeQueryRewritePromptInput,
+  KNOWLEDGE_HYDE_PROMPT,
   KNOWLEDGE_QUERY_REWRITE_PROMPT,
 } from '@/common/prompts';
 import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import type { KnowledgeQueryRewriteResult } from '@/knowledge-content/types/knowledge-content.types';
+import type {
+  KnowledgeQueryRewriteResult,
+  RetrievalQueryAngle,
+  RetrievalQueryItem,
+} from '@/knowledge-content/types/knowledge-content.types';
 
 const KnowledgeQueryRewriteSchema = z.object({
   rewrittenQuery: z.string().min(1).max(500),
   keywords: z.array(z.string().min(1).max(50)).min(1).max(6),
+  expandedQueries: z
+    .array(
+      z.object({
+        query: z.string().min(1).max(500),
+        keywords: z.array(z.string().min(1).max(50)).min(1).max(6),
+        angle: z
+          .enum(['original', 'entity', 'semantic', 'symptom', 'detail'])
+          .default('semantic'),
+      }),
+    )
+    .min(1)
+    .max(5)
+    .optional(),
   reason: z.string().min(1).max(200),
 });
 
@@ -95,10 +114,16 @@ export class QueryRewriteService {
             result.keywords,
             normalizedQuery,
           );
+          const expandedQueries = this.normalizeExpandedQueries(
+            result.expandedQueries,
+            rewrittenQuery,
+            keywords,
+          );
           return {
             originalQuery: normalizedQuery,
             rewrittenQuery,
             keywords,
+            expandedQueries,
             changed: rewrittenQuery !== normalizedQuery,
             reason: result.reason.trim() || '改写完成',
           };
@@ -121,6 +146,60 @@ export class QueryRewriteService {
     );
   }
 
+  async generateHypotheticalAnswer(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const normalizedQuery = query.trim();
+    throwIfAborted(signal);
+    if (!normalizedQuery) return '';
+
+    return runInTracedScope(
+      {
+        name: 'knowledge_hyde_generation',
+        runType: 'chain',
+        tags: ['knowledge', 'rag', 'hyde'],
+        input: {
+          query: normalizedQuery,
+        },
+        outputProcessor: (output) => ({
+          length: output.length,
+        }),
+      },
+      async () => {
+        try {
+          const response = await this.llm.invoke(
+            await KNOWLEDGE_HYDE_PROMPT.formatMessages(
+              buildKnowledgeHydePromptInput(normalizedQuery),
+            ),
+            {
+              ...buildLangSmithRunnableConfig({
+                runName: 'knowledge_hyde_llm',
+                tags: ['knowledge', 'rag', 'hyde', 'llm'],
+                metadata: {
+                  query: normalizedQuery,
+                },
+              }),
+              signal,
+            },
+          );
+          throwIfAborted(signal);
+          return this.extractText(response.content).slice(0, 600);
+        } catch (error) {
+          if ((error as { name?: string })?.name === 'AbortError') {
+            throw error;
+          }
+          this.logger.warn(
+            `HyDE 生成失败，跳过 HyDE 召回：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return '';
+        }
+      },
+    );
+  }
+
   private buildFallbackResult(
     query: string,
     reason: string,
@@ -129,9 +208,53 @@ export class QueryRewriteService {
       originalQuery: query,
       rewrittenQuery: query,
       keywords: this.normalizeKeywords([], query),
+      expandedQueries: this.normalizeExpandedQueries(
+        [],
+        query,
+        this.normalizeKeywords([], query),
+      ),
       changed: false,
       reason,
     };
+  }
+
+  private normalizeExpandedQueries(
+    expandedQueries: Array<{
+      query: string;
+      keywords: string[];
+      angle?: RetrievalQueryAngle;
+    }> = [],
+    rewrittenQuery: string,
+    keywords: string[],
+  ): RetrievalQueryItem[] {
+    const seen = new Set<string>();
+    const items = [
+      {
+        query: rewrittenQuery,
+        keywords,
+        angle: 'original' as RetrievalQueryAngle,
+      },
+      ...expandedQueries,
+    ];
+
+    return items
+      .map((item) => ({
+        query: item.query.trim(),
+        keywords: this.normalizeKeywords(item.keywords ?? [], item.query),
+        angle: item.angle ?? ('semantic' as RetrievalQueryAngle),
+      }))
+      .filter((item) => {
+        if (!item.query) return false;
+        const key = item.query.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 5)
+      .map((item, index) => ({
+        index,
+        ...item,
+      }));
   }
 
   private normalizeKeywords(keywords: string[], query: string): string[] {
@@ -157,5 +280,20 @@ export class QueryRewriteService {
 
     const deduped = Array.from(new Set(normalized)).slice(0, 6);
     return deduped.length > 0 ? deduped : [query];
+  }
+
+  private extractText(content: unknown): string {
+    if (typeof content === 'string') return content.trim();
+    if (!Array.isArray(content)) return '';
+
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (!part || typeof part !== 'object') return '';
+        const text = (part as { text?: unknown }).text;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('\n')
+      .trim();
   }
 }

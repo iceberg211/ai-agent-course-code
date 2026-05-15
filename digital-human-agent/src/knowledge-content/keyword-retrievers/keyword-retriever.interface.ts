@@ -7,6 +7,7 @@ export interface KeywordRetrieveParams {
   knowledgeId: string;
   terms: string[];
   matchCount: number;
+  useExactPhrase?: boolean;
 }
 
 export interface KeywordRetriever {

@@ -3,6 +3,7 @@ import type { AnswerGenerationService } from '@/agent/services/answer-generation
 import type { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import type { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
 import type { RagRouteService } from '@/agent/services/rag-route.service';
+import type { RetrievalStrategyService } from '@/agent/services/retrieval-strategy.service';
 import type { WebFallbackService } from '@/agent/services/web-fallback.service';
 import { RagGraphContextAnnotation } from '@/agent/langgraph/rag.context';
 import { createEvaluateEvidenceNode } from '@/agent/langgraph/nodes/evaluate-evidence.node';
@@ -10,6 +11,7 @@ import { RAG_DEPENDENCY_RETRY_POLICY } from '@/agent/langgraph/rag.retry-policy'
 import { createGenerateAnswerNode } from '@/agent/langgraph/nodes/generate-answer.node';
 import { createLoadContextNode } from '@/agent/langgraph/nodes/load-context.node';
 import { createPlanSubQuestionsNode } from '@/agent/langgraph/nodes/plan-sub-questions.node';
+import { createRetrievalStrategyNode } from '@/agent/langgraph/nodes/retrieval-strategy.node';
 import {
   createPrepareQueryNode,
   createRetrieveEvidenceNode,
@@ -27,6 +29,7 @@ export interface RagGraphDeps {
   conversationService: ConversationService;
   answerGenerationService: AnswerGenerationService;
   ragRouteService: RagRouteService;
+  retrievalStrategyService: RetrievalStrategyService;
   multiHopPlannerService: MultiHopPlannerService;
   evidenceEvaluatorService: EvidenceEvaluatorService;
   webFallbackService: WebFallbackService;
@@ -35,11 +38,18 @@ export interface RagGraphDeps {
 export function buildRagGraph(deps: RagGraphDeps) {
   return new StateGraph(RagGraphStateAnnotation, RagGraphContextAnnotation)
     .addNode('route_question', createRouteQuestionNode(deps.ragRouteService), {
-      ends: ['prepare_query', 'plan_sub_questions'],
+      ends: ['plan_retrieval_strategy', 'plan_sub_questions'],
     })
     .addNode(
       'plan_sub_questions',
       createPlanSubQuestionsNode(deps.multiHopPlannerService),
+    )
+    .addNode(
+      'plan_retrieval_strategy',
+      createRetrievalStrategyNode(deps.retrievalStrategyService),
+      {
+        ends: ['prepare_query', 'load_context'],
+      },
     )
     .addNode('prepare_query', createPrepareQueryNode(deps.webFallbackService), {
       ends: ['retrieve_evidence', 'web_fallback', 'load_context'],
@@ -77,7 +87,7 @@ export function buildRagGraph(deps: RagGraphDeps) {
       createGenerateAnswerNode(deps.answerGenerationService),
     )
     .addEdge(START, 'route_question')
-    .addEdge('plan_sub_questions', 'prepare_query')
+    .addEdge('plan_sub_questions', 'plan_retrieval_strategy')
     .addEdge('retrieve_evidence', 'evaluate_evidence')
     .addEdge('load_context', 'generate_answer')
     .addEdge('generate_answer', END)

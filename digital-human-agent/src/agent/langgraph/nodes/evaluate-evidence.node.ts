@@ -82,16 +82,14 @@ export function createEvaluateEvidenceNode(
       signal: input.signal,
     });
 
+    const webFallbackEnabled =
+      webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
     const update = {
       enough: evaluation.enough,
       missingFacts: evaluation.missingFacts,
       evaluationReason: evaluation.reason,
       webQuery: evaluation.webQuery,
-      stopReason: resolveStopReason(
-        state,
-        evaluation.enough,
-        webFallbackService.isEnabled(),
-      ),
+      stopReason: resolveStopReason(state, evaluation.enough, webFallbackEnabled),
     } satisfies Partial<RagGraphState>;
 
     const nextState = {
@@ -106,7 +104,7 @@ export function createEvaluateEvidenceNode(
     } else if (canContinueMultiHop(nextState)) {
       goto = 'prepare_query';
     } else if (
-      shouldUseWebFallback(nextState, webFallbackService.isEnabled())
+      shouldUseWebFallback(nextState, webFallbackEnabled)
     ) {
       goto = 'web_fallback';
     }

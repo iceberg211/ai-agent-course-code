@@ -2,6 +2,32 @@ import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-cont
 
 export type RagStrategy = 'simple' | 'complex';
 export type RagOrchestratorName = 'langgraph';
+export type RetrievalChannel = 'vector' | 'keyword' | 'graph' | 'web';
+
+export interface RetrievalStrategy {
+  needRetrieval: boolean;
+  useVector: boolean;
+  useKeyword: boolean;
+  useGraph: boolean;
+  useExactPhrase: boolean;
+  useMultiQuery: boolean;
+  useHyDE: boolean;
+  allowWeb: boolean;
+  queryCount?: number;
+  contextCompression?: boolean;
+  lostInMiddle?: boolean;
+  graphMode?: 'neighbors' | 'path';
+  graphMaxHops?: number;
+  reason: string;
+}
+
+export interface RetrievalHistoryItem {
+  query: string;
+  resultCount: number;
+  skipped?: boolean;
+  reason?: string;
+  strategy?: RetrievalStrategy;
+}
 
 export interface RagKnowledgeCitation extends RetrievedKnowledgeChunk {
   kind: 'knowledge';
@@ -44,7 +70,9 @@ export interface RagWorkflowState {
   localCitations: RagKnowledgeCitation[];
   webCitations: RagWebCitation[];
   citations: RagCitation[];
-  retrievalHistory: Array<{ query: string; resultCount: number }>;
+  retrievalHistory: RetrievalHistoryItem[];
+  retrievalStrategy: RetrievalStrategy;
+  retrievalStrategyReason: string;
   enough: boolean | null;
   missingFacts: string[];
   evaluationReason: string;
@@ -77,6 +105,8 @@ export interface RagEvidenceEvaluation {
   reason: string;
   webQuery: string;
 }
+
+export interface RagRetrievalStrategyDecision extends RetrievalStrategy {}
 
 export interface RagOrchestrator {
   run(input: RagWorkflowInput): Promise<RagWorkflowResult>;

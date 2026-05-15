@@ -36,40 +36,68 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
 
     await this.elasticsearchIndexService.ensureKnowledgeChunkIndex();
 
-    const should = normalizedTerms.flatMap((term) => [
-      {
-        match: {
-          content: {
-            query: term,
-            boost: 4,
+    const should = normalizedTerms.flatMap((term) =>
+      [
+        params.useExactPhrase
+          ? {
+              match_phrase: {
+                content: {
+                  query: term,
+                  boost: 8,
+                },
+              },
+            }
+          : null,
+        {
+          match: {
+            content: {
+              query: term,
+              boost: 4,
+            },
           },
         },
-      },
-      {
-        match: {
-          source: {
-            query: term,
-            boost: 2,
+        {
+          match: {
+            source: {
+              query: term,
+              boost: 2,
+            },
           },
         },
-      },
-      {
-        match: {
-          category: {
-            query: term,
-            boost: 2,
+        {
+          match: {
+            category: {
+              query: term,
+              boost: 2,
+            },
           },
         },
-      },
-      {
-        match: {
-          'content.ngram': {
-            query: term,
-            boost: 1.2,
+        {
+          term: {
+            'source.keyword': {
+              value: term,
+              boost: 3,
+            },
           },
         },
-      },
-    ]);
+        {
+          term: {
+            'category.keyword': {
+              value: term,
+              boost: 3,
+            },
+          },
+        },
+        {
+          match: {
+            'content.ngram': {
+              query: term,
+              boost: 1.2,
+            },
+          },
+        },
+      ].filter((query) => query !== null),
+    );
 
     const response = await client.search<KnowledgeChunkIndexDocument>({
       index: this.elasticsearchIndexService.getKnowledgeChunkReadAlias(),
@@ -111,6 +139,7 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
 
         return {
           id: source.id,
+          document_id: source.document_id,
           content: source.content,
           source: source.source,
           chunk_index: Number(source.chunk_index),

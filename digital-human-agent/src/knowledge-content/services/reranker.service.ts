@@ -1,34 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
 import { throwIfAborted } from '@/agent/agent.utils';
-import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
-import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
-import {
-  buildKnowledgeRerankPromptInput,
-  KNOWLEDGE_RERANK_PROMPT,
-} from '@/common/prompts';
+import { DashScopeQwenRerankerProvider } from '@/knowledge-content/rerankers/dashscope-qwen-reranker.provider';
+import { LlmJsonRerankerProvider } from '@/knowledge-content/rerankers/llm-json-reranker.provider';
+import type {
+  RerankerProvider,
+  RerankerProviderItem,
+} from '@/knowledge-content/rerankers/reranker-provider.interface';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
-
-interface RerankItem {
-  index: number;
-  score: number;
-}
 
 @Injectable()
 export class RerankerService {
   private readonly logger = new Logger(RerankerService.name);
 
-  private readonly llm = new ChatOpenAI({
-    model:
-      process.env.RERANKER_MODEL_NAME ??
-      process.env.MODEL_NAME ??
-      DEFAULT_LLM_MODEL_NAME,
-    temperature: 0,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  constructor(
+    private readonly dashscopeProvider: DashScopeQwenRerankerProvider,
+    private readonly llmJsonProvider: LlmJsonRerankerProvider,
+  ) {}
 
   async rerank(
     query: string,
@@ -43,28 +30,37 @@ export class RerankerService {
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), candidates.length);
-    const response = await this.llm.invoke(
-      await KNOWLEDGE_RERANK_PROMPT.formatMessages(
-        buildKnowledgeRerankPromptInput(query, candidates),
-      ),
-      {
-        ...buildLangSmithRunnableConfig({
-          runName: 'knowledge_rerank_llm',
-          tags: ['knowledge', 'rag', 'rerank', 'llm'],
-          metadata: {
-            query,
-            candidateCount: candidates.length,
-            topK: safeTopK,
-          },
-        }),
-        signal,
-      },
-    );
+    const providers = this.resolveProviders();
 
-    throwIfAborted(signal);
+    for (const provider of providers) {
+      try {
+        const parsed = await provider.rerank({
+          query,
+          candidates,
+          topK: safeTopK,
+          signal,
+        });
+        return this.applyScores(candidates, parsed, safeTopK);
+      } catch (error) {
+        if (this.isAbortError(error)) {
+          throw error;
+        }
+        this.logger.warn(
+          `${provider.name} rerank 失败，准备降级：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
-    const raw = this.extractText(response.content);
-    const parsed = this.parseRerankItems(raw);
+    return candidates.slice(0, safeTopK);
+  }
+
+  private applyScores(
+    candidates: KnowledgeChunk[],
+    parsed: RerankerProviderItem[],
+    safeTopK: number,
+  ): KnowledgeChunk[] {
     const scoreMap = new Map<number, number>();
 
     for (const item of parsed) {
@@ -92,74 +88,19 @@ export class RerankerService {
     return reranked.slice(0, safeTopK);
   }
 
-  private extractText(content: unknown): string {
-    if (typeof content === 'string') return content.trim();
-    if (!Array.isArray(content)) return '';
+  private resolveProviders(): RerankerProvider[] {
+    const provider = String(process.env.RERANKER_PROVIDER ?? 'llm-json')
+      .trim()
+      .toLowerCase();
 
-    const joined = content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        if (!part || typeof part !== 'object') return '';
-        const text = (part as { text?: unknown }).text;
-        return typeof text === 'string' ? text : '';
-      })
-      .join('\n');
-    return joined.trim();
+    if (provider === 'dashscope') {
+      return [this.dashscopeProvider, this.llmJsonProvider];
+    }
+
+    return [this.llmJsonProvider];
   }
 
-  private parseRerankItems(raw: string): RerankItem[] {
-    const normalized = raw.trim();
-    if (!normalized) {
-      this.logger.warn('Reranker 返回空内容，按无重排处理');
-      return [];
-    }
-
-    const direct = this.tryParseArray(normalized);
-    if (direct) return direct;
-
-    const match = normalized.match(/\[[\s\S]*\]/);
-    if (match) {
-      const extracted = this.tryParseArray(match[0]);
-      if (extracted) return extracted;
-    }
-
-    throw new Error(`Reranker 输出不是合法 JSON：${normalized.slice(0, 180)}`);
-  }
-
-  private tryParseArray(raw: string): RerankItem[] | null {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((item) => ({
-            index: Number((item as { index?: unknown }).index),
-            score: Number((item as { score?: unknown }).score),
-          }))
-          .filter(
-            (item) =>
-              Number.isInteger(item.index) && Number.isFinite(item.score),
-          );
-      }
-
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        Array.isArray((parsed as { scores?: unknown }).scores)
-      ) {
-        const scores = (parsed as { scores: unknown[] }).scores;
-        return scores
-          .map((item) => ({
-            index: Number((item as { index?: unknown }).index),
-            score: Number((item as { score?: unknown }).score),
-          }))
-          .filter(
-            (item) =>
-              Number.isInteger(item.index) && Number.isFinite(item.score),
-          );
-      }
-    } catch {
-      return null;
-    }
-    return null;
+  private isAbortError(error: unknown): boolean {
+    return (error as { name?: string })?.name === 'AbortError';
   }
 }

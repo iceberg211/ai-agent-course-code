@@ -40,6 +40,17 @@ describe('LangGraphRagOrchestratorService', () => {
     webSearchError?: Error;
     webSearchFailuresBeforeSuccess?: number;
     personaFailuresBeforeSuccess?: number;
+    retrievalStrategy?: {
+      needRetrieval: boolean;
+      useVector: boolean;
+      useKeyword: boolean;
+      useGraph: boolean;
+      useExactPhrase: boolean;
+      useMultiQuery: boolean;
+      useHyDE: boolean;
+      allowWeb: boolean;
+      reason: string;
+    };
   }) {
     let retrieveFailuresBeforeSuccess =
       options?.retrieveFailuresBeforeSuccess ?? 0;
@@ -97,6 +108,21 @@ describe('LangGraphRagOrchestratorService', () => {
         reason: '先前置事实，再查结局',
       }),
     };
+    const retrievalStrategyService = {
+      plan: jest.fn().mockResolvedValue(
+        options?.retrievalStrategy ?? {
+          needRetrieval: true,
+          useVector: true,
+          useKeyword: true,
+          useGraph: false,
+          useExactPhrase: false,
+          useMultiQuery: true,
+          useHyDE: false,
+          allowWeb: true,
+          reason: '测试默认检索策略',
+        },
+      ),
+    };
     const evaluations = [...(options?.evaluations ?? [])];
     const evidenceEvaluatorService = {
       evaluate: jest.fn().mockImplementation(async () => {
@@ -134,6 +160,7 @@ describe('LangGraphRagOrchestratorService', () => {
         conversationService as never,
         answerGenerationService as never,
         ragRouteService as never,
+        retrievalStrategyService as never,
         multiHopPlannerService as never,
         evidenceEvaluatorService as never,
         webFallbackService as never,
@@ -144,6 +171,7 @@ describe('LangGraphRagOrchestratorService', () => {
         conversationService,
         answerGenerationService,
         ragRouteService,
+        retrievalStrategyService,
         multiHopPlannerService,
         evidenceEvaluatorService,
         webFallbackService,

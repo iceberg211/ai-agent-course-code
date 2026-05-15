@@ -47,6 +47,34 @@ export const RAG_ROUTE_PROMPT = ChatPromptTemplate.fromMessages([
   ['human', '用户问题：{question}'],
 ]);
 
+export const RAG_RETRIEVAL_STRATEGY_PROMPT = ChatPromptTemplate.fromMessages([
+  [
+    'system',
+    [
+      '你是数字人 RAG 的检索策略规划器。',
+      '任务：判断当前问题是否需要查知识库，以及应该启用哪些检索通道。',
+      '字段说明：',
+      'needRetrieval：纯寒暄、闲聊、无需知识库事实时为 false。',
+      'useVector：语义模糊匹配、概念性问题、同义表达时为 true。',
+      'useKeyword：包含实体名、术语、文件名、编号、短语时为 true。',
+      'useExactPhrase：包含明确实体、标题、文件名、引用短句时为 true。',
+      'useMultiQuery：问题表述模糊或需要多角度召回时为 true。',
+      'useHyDE：问题偏概念、描述性，适合用假设答案做额外向量召回时为 true。',
+      'allowWeb：本地证据不足时是否允许联网补充。',
+      '不要回答用户问题，只输出结构化策略。',
+    ].join('\n'),
+  ],
+  [
+    'human',
+    [
+      '原始问题：{question}',
+      '当前检索问题：{currentQuery}',
+      '路线：{routeStrategy}',
+      '剩余跳数：{remainingHops}',
+    ].join('\n'),
+  ],
+]);
+
 export const MULTI_HOP_PLANNER_PROMPT = ChatPromptTemplate.fromMessages([
   [
     'system',
@@ -159,6 +187,15 @@ export function buildRagRoutePromptInput(question: string) {
   return {
     question,
   };
+}
+
+export function buildRagRetrievalStrategyPromptInput(input: {
+  question: string;
+  currentQuery: string;
+  routeStrategy: string;
+  remainingHops: number;
+}) {
+  return input;
 }
 
 export function buildMultiHopPlannerPromptInput(question: string) {

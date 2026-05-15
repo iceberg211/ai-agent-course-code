@@ -9,19 +9,25 @@ import type {
 
 interface HybridRetrieveParams {
   knowledgeId: string;
-  queryEmbedding: number[];
+  queryEmbedding?: number[];
+  hydeQueryEmbedding?: number[];
   retrievalQuery: string;
   keywordTerms: string[];
   threshold: number;
   matchCount: number;
+  useVector?: boolean;
+  useKeyword?: boolean;
+  useExactPhrase?: boolean;
 }
 
 export interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
   keywordBackend: KeywordBackend;
   vectorResultCount: number;
+  hydeVectorResultCount: number;
   keywordResultCount: number;
   fallbackToPg: boolean;
+  skippedChannels: Array<'vector' | 'keyword' | 'hyde'>;
 }
 
 const RRF_K = 60;
@@ -44,6 +50,9 @@ export class KnowledgeHybridRetrieverService {
           threshold: params.threshold,
           matchCount: params.matchCount,
           keywordTermCount: params.keywordTerms.length,
+          useVector: params.useVector !== false,
+          useKeyword: params.useKeyword !== false,
+          useExactPhrase: params.useExactPhrase === true,
         },
         input: {
           knowledgeId: params.knowledgeId,
@@ -54,34 +63,74 @@ export class KnowledgeHybridRetrieverService {
           resultCount: output.chunks.length,
           keywordBackend: output.keywordBackend,
           vectorResultCount: output.vectorResultCount,
+          hydeVectorResultCount: output.hydeVectorResultCount,
           keywordResultCount: output.keywordResultCount,
           fallbackToPg: output.fallbackToPg,
+          skippedChannels: output.skippedChannels,
         }),
       },
       async () => {
-        const [vectorResults, keywordResult] = await Promise.all([
-          this.vectorRetriever.retrieve({
-            knowledgeId: params.knowledgeId,
-            queryEmbedding: params.queryEmbedding,
-            threshold: params.threshold,
-            matchCount: params.matchCount,
-          }),
-          this.keywordRetriever.retrieve({
-            knowledgeId: params.knowledgeId,
-            terms: params.keywordTerms,
-            matchCount: params.matchCount,
-          }),
-        ]);
+        const useVector = params.useVector !== false;
+        const useKeyword = params.useKeyword !== false;
+        const skippedChannels: Array<'vector' | 'keyword' | 'hyde'> = [];
+
+        const vectorPromise =
+          useVector && params.queryEmbedding
+            ? this.vectorRetriever.retrieve({
+                knowledgeId: params.knowledgeId,
+                queryEmbedding: params.queryEmbedding,
+                threshold: params.threshold,
+                matchCount: params.matchCount,
+              })
+            : Promise.resolve([] as KnowledgeChunk[]);
+        if (!useVector || !params.queryEmbedding) {
+          skippedChannels.push('vector');
+        }
+
+        const hydeVectorPromise =
+          useVector && params.hydeQueryEmbedding
+            ? this.vectorRetriever.retrieve({
+                knowledgeId: params.knowledgeId,
+                queryEmbedding: params.hydeQueryEmbedding,
+                threshold: params.threshold,
+                matchCount: params.matchCount,
+              })
+            : Promise.resolve([] as KnowledgeChunk[]);
+        if (!useVector || !params.hydeQueryEmbedding) {
+          skippedChannels.push('hyde');
+        }
+
+        const keywordPromise = useKeyword
+          ? this.keywordRetriever.retrieve({
+              knowledgeId: params.knowledgeId,
+              terms: params.keywordTerms,
+              matchCount: params.matchCount,
+              useExactPhrase: params.useExactPhrase,
+            })
+          : Promise.resolve({
+              chunks: [] as KnowledgeChunk[],
+              backend: 'pg' as const,
+              fallbackToPg: false,
+            });
+        if (!useKeyword) {
+          skippedChannels.push('keyword');
+        }
+
+        const [vectorResults, hydeVectorResults, keywordResult] =
+          await Promise.all([vectorPromise, hydeVectorPromise, keywordPromise]);
 
         return {
-          chunks: this.fuse(vectorResults, keywordResult.chunks).slice(
-            0,
-            params.matchCount,
-          ),
-          keywordBackend: keywordResult.backend,
+          chunks: this.fuse(
+            vectorResults,
+            keywordResult.chunks,
+            hydeVectorResults,
+          ).slice(0, params.matchCount),
+          keywordBackend: useKeyword ? keywordResult.backend : 'pg',
           vectorResultCount: vectorResults.length,
+          hydeVectorResultCount: hydeVectorResults.length,
           keywordResultCount: keywordResult.chunks.length,
           fallbackToPg: keywordResult.fallbackToPg,
+          skippedChannels,
         };
       },
     );
@@ -90,10 +139,12 @@ export class KnowledgeHybridRetrieverService {
   private fuse(
     vectorResults: KnowledgeChunk[],
     keywordResults: KnowledgeChunk[],
+    hydeVectorResults: KnowledgeChunk[],
   ): KnowledgeChunk[] {
     const merged = new Map<string, KnowledgeChunk>();
     const vectorRanks = new Map<string, number>();
     const keywordRanks = new Map<string, number>();
+    const hydeRanks = new Map<string, number>();
 
     vectorResults.forEach((chunk, index) => {
       vectorRanks.set(chunk.id, index + 1);
@@ -110,6 +161,24 @@ export class KnowledgeHybridRetrieverService {
               retrieval_sources: this.mergeSources(existing, 'vector'),
             }
           : { ...chunk, retrieval_sources: ['vector'] },
+      );
+    });
+
+    hydeVectorResults.forEach((chunk, index) => {
+      hydeRanks.set(chunk.id, index + 1);
+      const existing = merged.get(chunk.id);
+      merged.set(
+        chunk.id,
+        existing
+          ? {
+              ...existing,
+              similarity: Math.max(
+                existing.similarity ?? 0,
+                chunk.similarity ?? 0,
+              ),
+              retrieval_sources: this.mergeSources(existing, 'hyde'),
+            }
+          : { ...chunk, retrieval_sources: ['hyde'] },
       );
     });
 
@@ -136,7 +205,8 @@ export class KnowledgeHybridRetrieverService {
         ...chunk,
         hybrid_score:
           this.rrf(vectorRanks.get(chunk.id)) +
-          this.rrf(keywordRanks.get(chunk.id)),
+          this.rrf(keywordRanks.get(chunk.id)) +
+          this.rrf(hydeRanks.get(chunk.id)),
       }))
       .sort((left, right) => this.compareChunks(right, left));
   }
@@ -151,8 +221,8 @@ export class KnowledgeHybridRetrieverService {
 
   private mergeSources(
     chunk: KnowledgeChunk,
-    source: 'vector' | 'keyword',
-  ): Array<'vector' | 'keyword'> {
+    source: 'vector' | 'keyword' | 'hyde',
+  ): Array<'vector' | 'keyword' | 'hyde'> {
     return Array.from(new Set([...(chunk.retrieval_sources ?? []), source]));
   }
 

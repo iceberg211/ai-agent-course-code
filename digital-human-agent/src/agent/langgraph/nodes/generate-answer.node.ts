@@ -24,6 +24,7 @@ export function createGenerateAnswerNode(
       persona: state.persona,
       history: state.history,
       localChunks: state.evidenceChunks,
+      retrievalStrategy: state.retrievalStrategy,
       webCitations: state.webCitations,
       onToken: input.onToken,
     });

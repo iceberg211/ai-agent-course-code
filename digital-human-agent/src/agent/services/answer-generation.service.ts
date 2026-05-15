@@ -4,11 +4,14 @@ import { throwIfAborted } from '@/agent/agent.utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
 import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
+import { prepareLocalChunksForAnswer } from '@/agent/services/answer-context.service';
 import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
+import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
 
@@ -21,6 +24,7 @@ export interface GenerateAnswerParams {
   persona: Persona;
   history: ConversationMessage[];
   localChunks: RetrievedKnowledgeChunk[];
+  retrievalStrategy?: RetrievalStrategy;
   webCitations?: RagWebCitation[];
   onToken: (token: string) => void;
 }
@@ -74,7 +78,11 @@ export class AnswerGenerationService {
     const messages = await AGENT_CHAT_PROMPT.formatMessages(
       buildAgentPromptInput(
         params.persona,
-        params.localChunks,
+        prepareLocalChunksForAnswer(
+          params.localChunks,
+          params.userMessage,
+          params.retrievalStrategy ?? DEFAULT_RETRIEVAL_STRATEGY,
+        ),
         params.userMessage,
         params.history,
         {

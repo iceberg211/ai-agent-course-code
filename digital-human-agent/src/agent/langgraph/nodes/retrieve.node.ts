@@ -16,6 +16,10 @@ import {
 } from '@/agent/langgraph/rag.utils';
 
 function shouldRetrieve(state: RagGraphState): boolean {
+  if (!state.retrievalStrategy.needRetrieval) {
+    return false;
+  }
+
   const nextQuery = getNextQuery(state);
   if (!nextQuery) {
     return false;
@@ -41,7 +45,8 @@ export function createPrepareQueryNode(webFallbackService: WebFallbackService) {
       });
     }
 
-    const webFallbackEnabled = webFallbackService.isEnabled();
+    const webFallbackEnabled =
+      webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
     let stopReason = state.stopReason;
 
     if (state.currentHop >= state.maxHops) {
@@ -94,6 +99,7 @@ export function createRetrieveEvidenceNode(
       query,
       {
         signal: input.signal,
+        strategy: state.retrievalStrategy,
       },
     );
 
@@ -114,6 +120,7 @@ export function createRetrieveEvidenceNode(
         {
           query,
           resultCount: chunks.length,
+          strategy: state.retrievalStrategy,
         },
       ],
     } satisfies Partial<RagGraphState>;

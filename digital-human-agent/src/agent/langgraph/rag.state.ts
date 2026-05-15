@@ -1,5 +1,6 @@
 import { Annotation } from '@langchain/langgraph';
 import { DEFAULT_RAG_MAX_HOPS } from '@/agent/agent.constants';
+import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
 import {
   getCurrentQuery,
   toKnowledgeCitations,
@@ -8,12 +9,11 @@ import {
 import type {
   RagWorkflowInput,
   RagWorkflowState,
+  RetrievalHistoryItem,
 } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/conversation-message.entity';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
-
-export type RetrievalHistoryItem = { query: string; resultCount: number };
 
 export const RagGraphStateAnnotation = Annotation.Root({
   conversationId: Annotation<string>(),
@@ -28,6 +28,8 @@ export const RagGraphStateAnnotation = Annotation.Root({
   evidenceChunks: Annotation<RetrievedKnowledgeChunk[]>(),
   webCitations: Annotation<RagWorkflowState['webCitations']>(),
   retrievalHistory: Annotation<RetrievalHistoryItem[]>(),
+  retrievalStrategy: Annotation<RagWorkflowState['retrievalStrategy']>(),
+  retrievalStrategyReason: Annotation<string>(),
   enough: Annotation<boolean | null>(),
   missingFacts: Annotation<string[]>(),
   evaluationReason: Annotation<string>(),
@@ -65,6 +67,8 @@ export function buildInitialRagGraphState(
     evidenceChunks: [],
     webCitations: [],
     retrievalHistory: [],
+    retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY,
+    retrievalStrategyReason: DEFAULT_RETRIEVAL_STRATEGY.reason,
     enough: null,
     missingFacts: [],
     evaluationReason: '',

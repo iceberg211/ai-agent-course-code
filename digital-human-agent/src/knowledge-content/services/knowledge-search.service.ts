@@ -1,18 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { throwIfAborted } from '@/agent/agent.utils';
+import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
+  RetrieveKnowledgeTraceItem,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
+  RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
+import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -73,6 +77,7 @@ export class KnowledgeSearchService {
           retrievalQuery: output.retrievalQuery,
           stage1Count: output.stage1.length,
           stage2Count: output.stage2.length,
+          stage1TraceCount: output.stage1Trace.length,
         }),
       },
       () => this.retrieveWithStagesInternal(knowledgeId, query, options),
@@ -88,6 +93,8 @@ export class KnowledgeSearchService {
     throwIfAborted(options.signal);
 
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
+    const strategy = normalizeRetrievalStrategy(options.strategy);
+    normalizedOptions.strategy = strategy;
 
     if (!normalizedQuery) {
       const fallbackRewrite = this.buildFallbackRewrite(
@@ -99,6 +106,25 @@ export class KnowledgeSearchService {
         retrievalQuery: normalizedQuery,
         rewrite: fallbackRewrite,
         options: normalizedOptions,
+        retrievalQueries: [],
+        stage1Trace: [],
+        stage1: [],
+        stage2: [],
+      };
+    }
+
+    if (!strategy.needRetrieval) {
+      const fallbackRewrite = this.buildFallbackRewrite(
+        normalizedQuery,
+        strategy.reason,
+      );
+      return {
+        query: normalizedQuery,
+        retrievalQuery: normalizedQuery,
+        retrievalQueries: fallbackRewrite.expandedQueries,
+        rewrite: fallbackRewrite,
+        options: normalizedOptions,
+        stage1Trace: [],
         stage1: [],
         stage2: [],
       };
@@ -110,25 +136,20 @@ export class KnowledgeSearchService {
     );
     throwIfAborted(options.signal);
 
-    const retrievalQuery = rewrite.rewrittenQuery;
-
-    const queryEmbedding = await this.runtime.withTransientRetry(
-      'embed query',
-      () => {
-        throwIfAborted(options.signal);
-        return this.runtime.embeddings.embedQuery(retrievalQuery);
-      },
-      3,
+    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
+    const hydeQueryEmbedding = await this.resolveHydeEmbedding(
+      normalizedQuery,
+      strategy,
+      options.signal,
     );
-    throwIfAborted(options.signal);
-
-    const stage1Result = await this.retrieveStage1(
+    const stage1Result = await this.retrieveStage1ForKnowledge(
       knowledgeId,
-      queryEmbedding,
-      retrievalQuery,
-      rewrite.keywords,
+      retrievalQueries,
+      hydeQueryEmbedding,
+      strategy,
       normalizedOptions.threshold,
       normalizedOptions.stage1TopK,
+      options.signal,
     );
     throwIfAborted(options.signal);
 
@@ -158,9 +179,11 @@ export class KnowledgeSearchService {
 
     return {
       query: normalizedQuery,
-      retrievalQuery,
+      retrievalQuery: rewrite.rewrittenQuery,
+      retrievalQueries,
       rewrite,
       options: normalizedOptions,
+      stage1Trace: stage1Result.trace,
       stage1,
       stage2,
     };
@@ -191,25 +214,109 @@ export class KnowledgeSearchService {
           resultCount: output.length,
         }),
       },
-      () => this.retrieveForPersonaInternal(personaId, query, options),
+      async () =>
+        (await this.retrieveForPersonaWithStagesInternal(personaId, query, options))
+          .stage2,
     );
   }
 
-  private async retrieveForPersonaInternal(
+  async retrieveForPersonaWithStages(
     personaId: string,
     query: string,
     options: RetrieveKnowledgeOptions = {},
-  ): Promise<KnowledgeChunk[]> {
+  ): Promise<RetrieveKnowledgeDebugResult> {
+    return runInTracedScope(
+      {
+        name: 'persona_knowledge_retrieve_with_stages',
+        runType: 'chain',
+        tags: ['knowledge', 'rag', 'retrieve', 'persona', 'debug'],
+        metadata: {
+          personaId,
+        },
+        input: {
+          personaId,
+          query,
+          rerank: options.rerank,
+          stage1TopK: options.stage1TopK,
+          finalTopK: options.finalTopK,
+          threshold: options.threshold,
+          strategy: options.strategy ? JSON.stringify(options.strategy) : undefined,
+        },
+        outputProcessor: (output) => ({
+          stage1Count: output.stage1.length,
+          stage2Count: output.stage2.length,
+          stage1TraceCount: output.stage1Trace.length,
+        }),
+      },
+      () => this.retrieveForPersonaWithStagesInternal(personaId, query, options),
+    );
+  }
+
+  private async retrieveForPersonaWithStagesInternal(
+    personaId: string,
+    query: string,
+    options: RetrieveKnowledgeOptions = {},
+  ): Promise<RetrieveKnowledgeDebugResult> {
     const normalizedQuery = query.trim();
     throwIfAborted(options.signal);
 
-    if (!normalizedQuery) return [];
-
     const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
+    const strategy = normalizeRetrievalStrategy(options.strategy);
+    normalizedOptions.strategy = strategy;
+
+    if (!normalizedQuery) {
+      const fallbackRewrite = this.buildFallbackRewrite(
+        normalizedQuery,
+        '原始问题为空，跳过检索',
+      );
+      return {
+        query: normalizedQuery,
+        retrievalQuery: normalizedQuery,
+        retrievalQueries: [],
+        rewrite: fallbackRewrite,
+        options: normalizedOptions,
+        stage1Trace: [],
+        stage1: [],
+        stage2: [],
+      };
+    }
+
+    if (!strategy.needRetrieval) {
+      const fallbackRewrite = this.buildFallbackRewrite(
+        normalizedQuery,
+        strategy.reason,
+      );
+      return {
+        query: normalizedQuery,
+        retrievalQuery: normalizedQuery,
+        retrievalQueries: fallbackRewrite.expandedQueries,
+        rewrite: fallbackRewrite,
+        options: normalizedOptions,
+        stage1Trace: [],
+        stage1: [],
+        stage2: [],
+      };
+    }
+
     const knowledgeConfigs = await this.listMountedKnowledgeConfigs(personaId);
     throwIfAborted(options.signal);
 
-    if (knowledgeConfigs.length === 0) return [];
+    if (knowledgeConfigs.length === 0) {
+      const fallbackRewrite = this.buildFallbackRewrite(
+        normalizedQuery,
+        `persona ${personaId} 未挂载知识库`,
+      );
+      return {
+        query: normalizedQuery,
+        retrievalQuery: normalizedQuery,
+        retrievalQueries: fallbackRewrite.expandedQueries,
+        rewrite: fallbackRewrite,
+        options: normalizedOptions,
+        stage1Trace: [],
+        stage1: [],
+        stage2: [],
+      };
+    }
 
     const rewrite = await this.resolveRetrievalQuery(
       normalizedQuery,
@@ -217,13 +324,11 @@ export class KnowledgeSearchService {
     );
     throwIfAborted(options.signal);
 
-    const queryEmbedding = await this.runtime.withTransientRetry(
-      'embed query',
-      () => {
-        throwIfAborted(options.signal);
-        return this.runtime.embeddings.embedQuery(rewrite.rewrittenQuery);
-      },
-      3,
+    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
+    const hydeQueryEmbedding = await this.resolveHydeEmbedding(
+      normalizedQuery,
+      strategy,
+      options.signal,
     );
     throwIfAborted(options.signal);
 
@@ -240,17 +345,18 @@ export class KnowledgeSearchService {
             options.stage1TopK === undefined
               ? config.stage1TopK
               : normalizedOptions.stage1TopK;
-          const stage1Result = await this.retrieveStage1(
+          const stage1Result = await this.retrieveStage1ForKnowledge(
             config.knowledgeId,
-            queryEmbedding,
-            rewrite.rewrittenQuery,
-            rewrite.keywords,
+            retrievalQueries,
+            hydeQueryEmbedding,
+            strategy,
             effectiveThreshold,
             effectiveStage1TopK,
+            options.signal,
           );
           throwIfAborted(options.signal);
 
-          return stage1Result.chunks;
+          return stage1Result;
         } catch (error) {
           if (this.isAbortError(error)) {
             throw error;
@@ -261,28 +367,51 @@ export class KnowledgeSearchService {
               error instanceof Error ? error.message : String(error)
             }`,
           );
-          return [] as KnowledgeChunk[];
+          return {
+            chunks: [] as KnowledgeChunk[],
+            trace: [] as RetrieveKnowledgeTraceItem[],
+          };
         }
       }),
     );
 
     const mergedStage1 = this.mergeStage1Results(
-      stage1Results,
+      stage1Results.map((result) => result.chunks),
       options.stage1TopK === undefined
         ? Math.max(20, ...knowledgeConfigs.map((config) => config.stage1TopK))
         : normalizedOptions.stage1TopK,
     );
+    const stage1Trace = stage1Results.flatMap((result) => result.trace);
     if (mergedStage1.length <= 1 || !normalizedOptions.rerank) {
-      return mergedStage1.slice(0, normalizedOptions.finalTopK);
+      return {
+        query: normalizedQuery,
+        retrievalQuery: rewrite.rewrittenQuery,
+        retrievalQueries,
+        rewrite,
+        options: normalizedOptions,
+        stage1Trace,
+        stage1: mergedStage1,
+        stage2: mergedStage1.slice(0, normalizedOptions.finalTopK),
+      };
     }
 
     try {
-      return await this.rerankerService.rerank(
+      const stage2 = await this.rerankerService.rerank(
         normalizedQuery,
         mergedStage1,
         normalizedOptions.finalTopK,
         options.signal,
       );
+      return {
+        query: normalizedQuery,
+        retrievalQuery: rewrite.rewrittenQuery,
+        retrievalQueries,
+        rewrite,
+        options: normalizedOptions,
+        stage1Trace,
+        stage1: mergedStage1,
+        stage2,
+      };
     } catch (error) {
       if (this.isAbortError(error)) {
         throw error;
@@ -293,7 +422,16 @@ export class KnowledgeSearchService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return mergedStage1.slice(0, normalizedOptions.finalTopK);
+      return {
+        query: normalizedQuery,
+        retrievalQuery: rewrite.rewrittenQuery,
+        retrievalQueries,
+        rewrite,
+        options: normalizedOptions,
+        stage1Trace,
+        stage1: mergedStage1,
+        stage2: mergedStage1.slice(0, normalizedOptions.finalTopK),
+      };
     }
   }
 
@@ -354,9 +492,10 @@ export class KnowledgeSearchService {
     for (const chunks of stage1Results) {
       for (const chunk of chunks) {
         const current = dedupedChunks.get(chunk.id);
-        if (!current || this.compareRetrievalChunks(chunk, current) > 0) {
-          dedupedChunks.set(chunk.id, chunk);
-        }
+        dedupedChunks.set(
+          chunk.id,
+          current ? this.mergeRetrievedChunk(current, chunk) : chunk,
+        );
       }
     }
 
@@ -382,27 +521,192 @@ export class KnowledgeSearchService {
       originalQuery: query,
       rewrittenQuery: query,
       keywords: [query],
+      expandedQueries: [
+        {
+          index: 0,
+          query,
+          keywords: [query],
+          angle: 'original',
+        },
+      ],
       changed: false,
       reason,
     };
   }
 
+  private resolveRetrievalQueries(
+    rewrite: KnowledgeQueryRewriteResult,
+    strategy: RetrievalStrategy,
+  ): RetrievalQueryItem[] {
+    const queries =
+      strategy.useMultiQuery && (rewrite.expandedQueries?.length ?? 0) > 0
+        ? rewrite.expandedQueries
+        : [
+            {
+              index: 0,
+              query: rewrite.rewrittenQuery,
+              keywords: rewrite.keywords,
+              angle: 'original' as const,
+            },
+          ];
+
+    return queries.slice(0, strategy.queryCount ?? 3).map((item, index) => ({
+      ...item,
+      index,
+    }));
+  }
+
+  private async resolveHydeEmbedding(
+    query: string,
+    strategy: RetrievalStrategy,
+    signal?: AbortSignal,
+  ): Promise<number[] | undefined> {
+    if (!strategy.useHyDE || !strategy.useVector) return undefined;
+    const hypotheticalAnswer =
+      await this.queryRewriteService.generateHypotheticalAnswer(query, signal);
+    if (!hypotheticalAnswer.trim()) return undefined;
+
+    return this.runtime.withTransientRetry(
+      'embed hyde query',
+      () => {
+        throwIfAborted(signal);
+        return this.runtime.embeddings.embedQuery(hypotheticalAnswer);
+      },
+      3,
+    );
+  }
+
+  private async retrieveStage1ForKnowledge(
+    knowledgeId: string,
+    retrievalQueries: RetrievalQueryItem[],
+    hydeQueryEmbedding: number[] | undefined,
+    strategy: RetrievalStrategy,
+    threshold: number,
+    globalStage1TopK: number,
+    signal?: AbortSignal,
+  ): Promise<{ chunks: KnowledgeChunk[]; trace: RetrieveKnowledgeTraceItem[] }> {
+    const perQueryTopK = Math.max(
+      4,
+      Math.ceil(globalStage1TopK / Math.max(retrievalQueries.length, 1)),
+    );
+    const results: KnowledgeChunk[][] = [];
+    const trace: RetrieveKnowledgeTraceItem[] = [];
+
+    for (const retrievalQuery of retrievalQueries) {
+      throwIfAborted(signal);
+      const queryEmbedding = strategy.useVector
+        ? await this.runtime.withTransientRetry(
+            'embed query',
+            () => {
+              throwIfAborted(signal);
+              return this.runtime.embeddings.embedQuery(retrievalQuery.query);
+            },
+            3,
+          )
+        : undefined;
+
+      const stage1Result = await this.retrieveStage1(
+        knowledgeId,
+        queryEmbedding,
+        hydeQueryEmbedding,
+        retrievalQuery.query,
+        retrievalQuery.keywords,
+        threshold,
+        perQueryTopK,
+        strategy,
+      );
+      const chunks = stage1Result.chunks.map((chunk) => ({
+        ...chunk,
+        matched_queries: Array.from(
+          new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
+        ),
+        keyword_backend: stage1Result.keywordBackend,
+        vector_backend: 'pgvector' as const,
+      }));
+      results.push(chunks);
+      trace.push({
+        knowledgeId,
+        queryIndex: retrievalQuery.index,
+        query: retrievalQuery.query,
+        keywords: retrievalQuery.keywords,
+        angle: retrievalQuery.angle,
+        vectorBackend: 'pgvector',
+        keywordBackend: strategy.useKeyword
+          ? stage1Result.keywordBackend
+          : 'disabled',
+        vectorResultCount: stage1Result.vectorResultCount,
+        hydeVectorResultCount: stage1Result.hydeVectorResultCount,
+        keywordResultCount: stage1Result.keywordResultCount,
+        mergedResultCount: chunks.length,
+        fallbackToPg: stage1Result.fallbackToPg,
+        skippedChannels: stage1Result.skippedChannels,
+      });
+    }
+
+    return {
+      chunks: this.mergeStage1Results(results, globalStage1TopK),
+      trace,
+    };
+  }
+
   private async retrieveStage1(
     knowledgeId: string,
-    queryEmbedding: number[],
+    queryEmbedding: number[] | undefined,
+    hydeQueryEmbedding: number[] | undefined,
     retrievalQuery: string,
     keywordTerms: string[],
     threshold: number,
     matchCount: number,
+    strategy: RetrievalStrategy,
   ): Promise<HybridRetrieveResult> {
     return this.hybridRetriever.retrieve({
       knowledgeId,
       queryEmbedding,
+      hydeQueryEmbedding,
       retrievalQuery,
       keywordTerms,
       threshold,
       matchCount,
+      useVector: strategy.useVector,
+      useKeyword: strategy.useKeyword,
+      useExactPhrase: strategy.useExactPhrase,
     });
+  }
+
+  private mergeRetrievedChunk(
+    current: KnowledgeChunk,
+    incoming: KnowledgeChunk,
+  ): KnowledgeChunk {
+    const better = this.compareRetrievalChunks(incoming, current) > 0
+      ? incoming
+      : current;
+
+    return {
+      ...better,
+      similarity: Math.max(current.similarity ?? 0, incoming.similarity ?? 0),
+      hybrid_score: Math.max(
+        current.hybrid_score ?? 0,
+        incoming.hybrid_score ?? 0,
+      ),
+      keyword_score: Math.max(
+        current.keyword_score ?? 0,
+        incoming.keyword_score ?? 0,
+      ),
+      retrieval_sources: Array.from(
+        new Set([
+          ...(current.retrieval_sources ?? []),
+          ...(incoming.retrieval_sources ?? []),
+        ]),
+      ),
+      matched_queries: Array.from(
+        new Set([
+          ...(current.matched_queries ?? []),
+          ...(incoming.matched_queries ?? []),
+        ]),
+      ).sort((left, right) => left - right),
+      keyword_backend: incoming.keyword_backend ?? current.keyword_backend,
+      vector_backend: incoming.vector_backend ?? current.vector_backend,
+    };
   }
 
   private compareRetrievalChunks(
