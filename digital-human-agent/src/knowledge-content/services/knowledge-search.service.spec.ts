@@ -227,6 +227,7 @@ describe('KnowledgeSearchService', () => {
       retrieval_sources: ['graph'],
     };
     const graphRetriever = {
+      isEnabled: jest.fn().mockReturnValue(true),
       retrieve: jest.fn().mockResolvedValue([graphChunk]),
     };
     const {
@@ -268,6 +269,7 @@ describe('KnowledgeSearchService', () => {
       expect(result.stage1Trace[0]).toMatchObject({
         knowledgeId: 'kb-1',
         graphResultCount: 1,
+        graphBackend: 'neo4j',
         vectorBackend: 'disabled',
         keywordBackend: 'disabled',
         skippedChannels: expect.arrayContaining(['vector', 'keyword', 'hyde']),

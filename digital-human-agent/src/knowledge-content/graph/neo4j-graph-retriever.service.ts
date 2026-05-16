@@ -20,7 +20,7 @@ interface Neo4jGraphEvidence {
   confidence: number;
 }
 
-interface Neo4jGraphRetrieveRow {
+interface Neo4jGraphRetrieveRow extends Record<string, unknown> {
   id: string;
   document_id: string;
   knowledge_base_id: string;
@@ -98,7 +98,7 @@ export class Neo4jGraphRetrieverService {
           (chunkMatches * 0.2 + graphMatches * 0.6 + confidenceSum * 0.05) AS graph_score,
           evidence[..5] AS graph_evidence
         ORDER BY graph_score DESC, c.chunkIndex ASC
-        LIMIT $matchCount
+        LIMIT toInteger($matchCount)
       `,
       {
         knowledgeId: params.knowledgeId,

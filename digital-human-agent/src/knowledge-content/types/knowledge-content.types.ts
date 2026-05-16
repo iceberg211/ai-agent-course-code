@@ -3,6 +3,7 @@ import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'hyde' | 'graph';
 export type KeywordBackend = 'pg' | 'elastic';
 export type VectorBackend = 'pgvector';
+export type GraphBackend = 'neo4j';
 export type RetrievalQueryAngle =
   | 'original'
   | 'entity'
@@ -83,6 +84,7 @@ export interface RetrieveKnowledgeTraceItem {
   angle: RetrievalQueryAngle;
   vectorBackend: VectorBackend | 'disabled';
   keywordBackend: KeywordBackend | 'disabled';
+  graphBackend: GraphBackend | 'disabled';
   vectorResultCount: number;
   hydeVectorResultCount: number;
   keywordResultCount: number;

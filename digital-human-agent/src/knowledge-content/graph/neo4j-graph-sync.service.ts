@@ -200,10 +200,15 @@ export class Neo4jGraphSyncService {
           n.normalizedName = row.normalizedName,
           n.entityType = row.entityType,
           n.aliases = row.aliases,
-          n.metadata = row.metadata,
+          n.metadataJson = row.metadataJson,
           n.updatedAt = datetime()
       `,
-      { nodes },
+      {
+        nodes: nodes.map((node) => ({
+          ...node,
+          metadataJson: JSON.stringify(node.metadata ?? {}),
+        })),
+      },
     );
   }
 
@@ -245,10 +250,15 @@ export class Neo4jGraphSyncService {
             rel.schemaVersion = row.schemaVersion,
             rel.confidence = row.confidence,
             rel.evidenceText = row.evidenceText,
-            rel.metadata = row.metadata,
+            rel.metadataJson = row.metadataJson,
             rel.updatedAt = datetime()
         `,
-        { edges: batch },
+        {
+          edges: batch.map((edge) => ({
+            ...edge,
+            metadataJson: JSON.stringify(edge.metadata ?? {}),
+          })),
+        },
       );
     }
   }

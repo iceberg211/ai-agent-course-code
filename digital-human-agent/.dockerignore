@@ -1,0 +1,5 @@
+node_modules
+dist
+reports
+coverage
+docker/neo4j/vendor/*.tar.gz

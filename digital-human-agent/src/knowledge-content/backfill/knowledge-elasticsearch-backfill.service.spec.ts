@@ -5,9 +5,12 @@ describe('KnowledgeElasticsearchBackfillService', () => {
     const elasticsearchIndexService = {
       isEnabled: jest.fn().mockReturnValue(true),
       ensureKnowledgeChunkIndex: jest.fn().mockResolvedValue(undefined),
+      getKnowledgeChunkIndexName: jest
+        .fn()
+        .mockReturnValue('digital-human-knowledge-chunk-v2'),
     };
     const elasticsearchSyncService = {
-      bulkUpsertChunkDocuments: jest.fn().mockResolvedValue(undefined),
+      bulkUpsertChunkDocumentsToIndex: jest.fn().mockResolvedValue(undefined),
     };
     const knowledgeChunkIndexQueryService = {
       listPage: jest
@@ -72,8 +75,27 @@ describe('KnowledgeElasticsearchBackfillService', () => {
       },
     );
     expect(
-      elasticsearchSyncService.bulkUpsertChunkDocuments,
+      elasticsearchSyncService.bulkUpsertChunkDocumentsToIndex,
     ).toHaveBeenCalledTimes(2);
+    expect(
+      elasticsearchSyncService.bulkUpsertChunkDocumentsToIndex,
+    ).toHaveBeenNthCalledWith(
+      1,
+      [
+        {
+          id: 'chunk-1',
+          document_id: 'doc-1',
+          knowledge_base_id: 'kb-1',
+          chunk_index: 0,
+          content: '第一页第一条',
+          source: 'a.md',
+          category: null,
+          enabled: true,
+        },
+      ],
+      'digital-human-knowledge-chunk-v2',
+      true,
+    );
     expect(result).toEqual({
       pageCount: 2,
       chunkCount: 2,

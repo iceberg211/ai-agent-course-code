@@ -116,12 +116,13 @@ function buildFixtureTrace(
     angle: 'original',
     vectorBackend: 'disabled',
     keywordBackend: 'disabled',
+    graphBackend: 'disabled',
     vectorResultCount: 0,
     hydeVectorResultCount: 0,
     keywordResultCount: 0,
     mergedResultCount: chunkCount,
     fallbackToPg: false,
-    skippedChannels: ['vector', 'keyword', 'hyde'],
+    skippedChannels: ['vector', 'keyword', 'hyde', 'graph'],
   };
 }
 

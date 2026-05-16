@@ -28,5 +28,29 @@ services:
     ports:
       - '5601:5601'
 
+  neo4j:
+    build:
+      context: .
+      dockerfile: docker/neo4j/Dockerfile
+      args:
+        NEO4J_VERSION: ${NEO4J_VERSION:-5.26.26}
+        NEO4J_BASE_IMAGE: ${NEO4J_BASE_IMAGE:-digital-human-agent-elasticsearch-ik:9.3.3}
+    image: ${NEO4J_IMAGE:-digital-human-agent-neo4j:5.26.26}
+    container_name: digital-human-agent-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-12345678}
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+
 volumes:
   elasticsearch-data:
+  neo4j-data:
+  neo4j-logs:

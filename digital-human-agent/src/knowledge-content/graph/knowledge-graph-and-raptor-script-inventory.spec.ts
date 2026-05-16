@@ -10,7 +10,7 @@ describe('Neo4j Graph/RAPTOR script inventory', () => {
     ) as { scripts: Record<string, string> };
 
     expect(packageJson.scripts['neo4j:up']).toBe(
-      'docker compose -f docker-compose.neo4j.yml up -d',
+      'docker compose -f docker-compose.rag.yml up -d neo4j',
     );
     expect(packageJson.scripts['neo4j:backfill']).toBe(
       'node -r ts-node/register -r tsconfig-paths/register ./scripts/backfill-knowledge-neo4j.ts',

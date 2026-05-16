@@ -50,7 +50,7 @@ describe('buildRagFixtureEvalInputs', () => {
       trace: [
         expect.objectContaining({
           keywordBackend: 'disabled',
-          skippedChannels: ['vector', 'keyword', 'hyde'],
+          skippedChannels: ['vector', 'keyword', 'hyde', 'graph'],
           mergedResultCount: 1,
         }),
       ],

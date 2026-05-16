@@ -13,6 +13,18 @@ export class ElasticsearchSyncService {
   async bulkUpsertChunkDocuments(
     documents: KnowledgeChunkIndexDocument[],
   ): Promise<void> {
+    await this.bulkUpsertChunkDocumentsToIndex(
+      documents,
+      this.elasticsearchIndexService.getKnowledgeChunkWriteAlias(),
+      false,
+    );
+  }
+
+  async bulkUpsertChunkDocumentsToIndex(
+    documents: KnowledgeChunkIndexDocument[],
+    indexName: string,
+    waitForRefresh = false,
+  ): Promise<void> {
     if (documents.length === 0) return;
 
     const client = this.elasticsearchIndexService.getClient();
@@ -23,7 +35,7 @@ export class ElasticsearchSyncService {
     const operations = documents.flatMap((document) => [
       {
         update: {
-          _index: this.elasticsearchIndexService.getKnowledgeChunkWriteAlias(),
+          _index: indexName,
           _id: document.id,
         },
       },
@@ -34,7 +46,7 @@ export class ElasticsearchSyncService {
     ]);
 
     const result = await client.bulk({
-      refresh: false,
+      refresh: waitForRefresh ? 'wait_for' : false,
       operations,
     });
 

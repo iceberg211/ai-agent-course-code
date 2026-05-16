@@ -67,8 +67,12 @@ describe('KnowledgeDocumentService', () => {
       safeBulkUpsertChunkDocuments: jest.fn(),
       safeDeleteByDocumentId: jest.fn(),
     };
-    const graphSyncService = {
+    const graphExtractorService = {
+      extract: jest.fn().mockResolvedValue({ nodes: [], edges: [] }),
+    };
+    const neo4jGraphSyncService = {
       safeDeleteByDocumentId: jest.fn(),
+      safeUpsertDocument: jest.fn(),
     };
     const knowledgeChunkIndexQueryService = {
       findByChunkId: jest.fn(),
@@ -89,7 +93,8 @@ describe('KnowledgeDocumentService', () => {
       chunkRepo as never,
       runtime as never,
       elasticsearchSyncService as never,
-      graphSyncService as never,
+      graphExtractorService as never,
+      neo4jGraphSyncService as never,
       knowledgeChunkIndexQueryService as never,
       contextualRetrievalService as never,
     );
@@ -102,17 +107,18 @@ describe('KnowledgeDocumentService', () => {
       insert,
       contextualRetrievalService,
       elasticsearchSyncService,
-      graphSyncService,
+      graphExtractorService,
+      neo4jGraphSyncService,
     };
   }
 
-  it('导入失败时会清理当前文档的 chunk、ES 与图谱派生索引，并把文档标记为 failed', async () => {
+  it('导入失败时会清理当前文档的 chunk、ES 与 Neo4j 图谱索引，并把文档标记为 failed', async () => {
     const {
       service,
       documentRepo,
       chunkRepo,
       elasticsearchSyncService,
-      graphSyncService,
+      neo4jGraphSyncService,
     } = createService({ insertError: 'insert failed' });
 
     await expect(
@@ -123,7 +129,7 @@ describe('KnowledgeDocumentService', () => {
     expect(
       elasticsearchSyncService.safeDeleteByDocumentId,
     ).toHaveBeenCalledWith('doc-1', '导入失败清理文档 doc-1');
-    expect(graphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+    expect(neo4jGraphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '导入失败清理文档 doc-1',
     );
@@ -133,9 +139,13 @@ describe('KnowledgeDocumentService', () => {
     });
   });
 
-  it('删除文档时会同步清理 ES 与图谱派生索引', async () => {
-    const { service, documentRepo, elasticsearchSyncService, graphSyncService } =
-      createService();
+  it('删除文档时会同步清理 ES 与 Neo4j 图谱索引', async () => {
+    const {
+      service,
+      documentRepo,
+      elasticsearchSyncService,
+      neo4jGraphSyncService,
+    } = createService();
 
     await service.deleteDocument('doc-1');
 
@@ -143,15 +153,21 @@ describe('KnowledgeDocumentService', () => {
     expect(
       elasticsearchSyncService.safeDeleteByDocumentId,
     ).toHaveBeenCalledWith('doc-1', '删除文档 doc-1');
-    expect(graphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+    expect(neo4jGraphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '删除文档 doc-1',
     );
   });
 
   it('Markdown 导入时会按标题边界生成结构化 chunk 再写入索引', async () => {
-    const { service, documentRepo, runtime, insert, elasticsearchSyncService } =
-      createService();
+    const {
+      service,
+      documentRepo,
+      runtime,
+      insert,
+      elasticsearchSyncService,
+      neo4jGraphSyncService,
+    } = createService();
 
     await service.ingestDocument(
       'kb-1',
@@ -200,6 +216,19 @@ describe('KnowledgeDocumentService', () => {
         }),
       ]),
       '写入文档 doc-1',
+    );
+    expect(neo4jGraphSyncService.safeUpsertDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: 'doc-1',
+        knowledgeId: 'kb-1',
+        source: 'demo.md',
+        chunks: expect.arrayContaining([
+          expect.objectContaining({
+            content: '# 服务协议\n\n总览说明。',
+            chunkIndex: 0,
+          }),
+        ]),
+      }),
     );
     expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
       status: 'completed',

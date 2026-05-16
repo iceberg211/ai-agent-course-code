@@ -25,6 +25,8 @@ export class KnowledgeElasticsearchBackfillService {
     }
 
     await this.elasticsearchIndexService.ensureKnowledgeChunkIndex();
+    const targetIndex =
+      this.elasticsearchIndexService.getKnowledgeChunkIndexName();
 
     let cursor: KnowledgeChunkIndexCursor | undefined;
     let pageCount = 0;
@@ -40,7 +42,11 @@ export class KnowledgeElasticsearchBackfillService {
         break;
       }
 
-      await this.elasticsearchSyncService.bulkUpsertChunkDocuments(documents);
+      await this.elasticsearchSyncService.bulkUpsertChunkDocumentsToIndex(
+        documents,
+        targetIndex,
+        true,
+      );
       pageCount += 1;
       chunkCount += documents.length;
 

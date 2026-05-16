@@ -26,6 +26,7 @@ import type {
   KeywordBackend,
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
+  GraphBackend,
   RetrieveKnowledgeTraceItem,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
@@ -1095,6 +1096,7 @@ export class KnowledgeSearchService {
         vectorResultCount: stage1Result.vectorResultCount,
         hydeVectorResultCount: stage1Result.hydeVectorResultCount,
         keywordResultCount: stage1Result.keywordResultCount,
+        graphBackend: stage1Result.graphBackend,
         graphResultCount: stage1Result.graphResultCount,
         mergedResultCount: chunks.length,
         fallbackToPg: stage1Result.fallbackToPg,
@@ -1117,7 +1119,12 @@ export class KnowledgeSearchService {
     threshold: number,
     matchCount: number,
     strategy: RetrievalStrategy,
-  ): Promise<HybridRetrieveResult & { graphResultCount: number }> {
+  ): Promise<
+    HybridRetrieveResult & {
+      graphBackend: GraphBackend | 'disabled';
+      graphResultCount: number;
+    }
+  > {
     const hybridResult =
       strategy.useVector || strategy.useKeyword
         ? await this.hybridRetriever.retrieve({
@@ -1142,7 +1149,10 @@ export class KnowledgeSearchService {
       strategy,
     );
     const skippedChannels = new Set(hybridResult.skippedChannels);
-    if (!strategy.useGraph || !this.graphRetriever) {
+    const graphBackend = this.isGraphRetrieverEnabled(strategy)
+      ? 'neo4j'
+      : 'disabled';
+    if (graphBackend === 'disabled') {
       skippedChannels.add('graph');
     }
 
@@ -1152,6 +1162,7 @@ export class KnowledgeSearchService {
         [hybridResult.chunks, graphChunks],
         matchCount,
       ),
+      graphBackend,
       graphResultCount: graphChunks.length,
       skippedChannels: Array.from(skippedChannels),
     };
@@ -1189,10 +1200,11 @@ export class KnowledgeSearchService {
     matchCount: number,
     strategy: RetrievalStrategy,
   ): Promise<KnowledgeChunk[]> {
-    if (!strategy.useGraph || !this.graphRetriever) return [];
+    const graphRetriever = this.graphRetriever;
+    if (!this.isGraphRetrieverEnabled(strategy) || !graphRetriever) return [];
 
     try {
-      return await this.graphRetriever.retrieve({
+      return await graphRetriever.retrieve({
         knowledgeId,
         retrievalQuery,
         keywordTerms,
@@ -1212,6 +1224,14 @@ export class KnowledgeSearchService {
       );
       return [];
     }
+  }
+
+  private isGraphRetrieverEnabled(strategy: RetrievalStrategy): boolean {
+    return (
+      strategy.useGraph === true &&
+      this.graphRetriever !== undefined &&
+      this.graphRetriever.isEnabled()
+    );
   }
 
   private async expandStage2Context(
