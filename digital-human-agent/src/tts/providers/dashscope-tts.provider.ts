@@ -67,7 +67,6 @@ export class DashscopeTtsProvider implements TtsProvider {
   constructor(private readonly configService: ConfigService) {
     this.apiKey =
       this.readString('TTS_API_KEY') ||
-      this.readString('DASHSCOPE_API_KEY') ||
       this.readString('OPENAI_API_KEY');
     this.baseUrl = (
       this.readString('TTS_BASE_URL') || DEFAULT_DASHSCOPE_TTS_BASE_URL
@@ -558,7 +557,7 @@ export class DashscopeTtsProvider implements TtsProvider {
   private ensureConfigReady(): void {
     if (!this.apiKey || !this.baseUrl) {
       throw new InternalServerErrorException(
-        'TTS 配置缺失：请设置 TTS_API_KEY（或 DASHSCOPE_API_KEY）与 TTS_BASE_URL',
+        'TTS 配置缺失：请设置 TTS_API_KEY（或 OPENAI_API_KEY）与 TTS_BASE_URL',
       );
     }
   }

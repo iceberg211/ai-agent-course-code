@@ -1,4 +1,10 @@
-import { formatKnowledgeBlock } from '@/common/prompts/agent.prompts';
+import {
+  formatKnowledgeBlock,
+  MULTI_HOP_PLANNER_PROMPT,
+  RAG_EVIDENCE_EVALUATOR_PROMPT,
+  RAG_ROUTE_PROMPT,
+  RAG_RETRIEVAL_STRATEGY_PROMPT,
+} from '@/common/prompts/agent.prompts';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 describe('agent.prompts', () => {
@@ -45,5 +51,55 @@ describe('agent.prompts', () => {
     expect(formatKnowledgeBlock(chunks)).toBe(
       '[来源: docs/basic.md, 段落 1]\n普通知识内容',
     );
+  });
+
+  it('检索策略 prompt 会明确指导关系类问题启用 Graph', async () => {
+    const messages = await RAG_RETRIEVAL_STRATEGY_PROMPT.formatMessages({
+      question: '甲方和乙方是什么关系？',
+      currentQuery: '甲方和乙方是什么关系？',
+      routeStrategy: 'simple',
+      remainingHops: 1,
+    });
+    const content = messages.map((message) => String(message.content)).join('\n');
+
+    expect(content).toContain('useGraph');
+    expect(content).toContain('实体关系');
+    expect(content).toContain('graphMode');
+    expect(content).toContain('graphMaxHops');
+  });
+
+  it('结构化输出 prompt 显式声明 JSON，兼容 qwen-max response_format 要求', async () => {
+    const routeMessages = await RAG_ROUTE_PROMPT.formatMessages({
+      question: '系统定位和智能检索是什么关系？',
+    });
+    const strategyMessages = await RAG_RETRIEVAL_STRATEGY_PROMPT.formatMessages({
+      question: '系统定位和智能检索是什么关系？',
+      currentQuery: '系统定位和智能检索是什么关系？',
+      routeStrategy: 'simple',
+      remainingHops: 1,
+    });
+    const plannerMessages = await MULTI_HOP_PLANNER_PROMPT.formatMessages({
+      question: '系统定位和智能检索是什么关系？',
+    });
+    const evaluatorMessages = await RAG_EVIDENCE_EVALUATOR_PROMPT.formatMessages({
+      question: '系统定位和智能检索是什么关系？',
+      currentHop: 1,
+      maxHops: 1,
+      remainingSubQuestionCount: 0,
+      localEvidenceBlock: '证据',
+      webEvidenceBlock: '无',
+    });
+
+    for (const messages of [
+      routeMessages,
+      strategyMessages,
+      plannerMessages,
+      evaluatorMessages,
+    ]) {
+      const content = messages
+        .map((message) => String(message.content))
+        .join('\n');
+      expect(content).toContain('JSON');
+    }
   });
 });

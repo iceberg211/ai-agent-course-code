@@ -16,10 +16,7 @@ export class AsrService {
   private hasWarnedModelFallback = false;
 
   constructor(private readonly configService: ConfigService) {
-    this.apiKey =
-      this.configService.get<string>('OPENAI_API_KEY') ??
-      this.configService.get<string>('DASHSCOPE_API_KEY') ??
-      '';
+    this.apiKey = this.configService.get<string>('OPENAI_API_KEY') ?? '';
     this.baseUrl = (
       this.configService.get<string>('OPENAI_BASE_URL') ??
       DEFAULT_OPENAI_COMPAT_BASE_URL
@@ -33,9 +30,7 @@ export class AsrService {
 
   async recognize(audioBuffer: Buffer): Promise<string> {
     if (!this.apiKey) {
-      throw new Error(
-        'ASR 配置缺失：请设置 OPENAI_API_KEY 或 DASHSCOPE_API_KEY',
-      );
+      throw new Error('ASR 配置缺失：请设置 OPENAI_API_KEY');
     }
 
     try {

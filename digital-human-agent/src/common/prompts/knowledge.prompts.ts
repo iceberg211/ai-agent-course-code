@@ -14,6 +14,8 @@ export const KNOWLEDGE_QUERY_REWRITE_PROMPT = ChatPromptTemplate.fromMessages([
       '4. keywords 只输出 1 到 6 个短语，优先实体名、事件名、版本名、术语，不要输出整段长句。',
       '5. expandedQueries 必须输出 3 条，用于多路召回；第一条通常保留 original 或 rewrittenQuery，后续从 entity、semantic、detail、symptom 角度补充。',
       '6. 只针对检索改写，不负责回答问题。',
+      '7. 只输出符合结构化 schema 的 JSON 对象。',
+      'JSON 示例：{{"rewrittenQuery":"系统定位和智能检索是什么关系？","keywords":["系统定位","智能检索"],"expandedQueries":[{{"query":"系统定位和智能检索是什么关系？","keywords":["系统定位","智能检索"],"angle":"original"}},{{"query":"系统定位 智能检索 包含子主题","keywords":["系统定位","智能检索","包含子主题"],"angle":"entity"}},{{"query":"系统定位下的智能检索能力说明","keywords":["系统定位","智能检索"],"angle":"semantic"}}],"reason":"保留核心实体并扩展关系检索角度"}}。',
     ].join('\n'),
   ],
   ['human', '原始问题：{query}'],

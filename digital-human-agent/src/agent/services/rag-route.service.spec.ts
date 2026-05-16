@@ -40,4 +40,24 @@ describe('RagRouteService', () => {
       reason: '需要多步事实组合',
     });
   });
+
+  it('LLM 路由失败时，直接关系类问题回退为 simple', async () => {
+    const service = new RagRouteService();
+    const invoke = jest.fn().mockRejectedValue(new Error('模型不可用'));
+
+    Reflect.set(service, 'llm', {
+      withStructuredOutput: jest.fn().mockReturnValue({
+        invoke,
+      }),
+    });
+
+    await expect(
+      service.routeQuestion(
+        '面向法务角色的系统讲解提纲和一、系统定位的包含子主题关系是什么？',
+      ),
+    ).resolves.toEqual({
+      strategy: 'simple',
+      reason: '启发式判断为直接实体关系问题',
+    });
+  });
 });

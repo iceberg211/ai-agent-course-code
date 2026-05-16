@@ -96,4 +96,31 @@ describe('QueryRewriteService', () => {
     expect(result.expandedQueries[1].query).toContain('协议终止');
     expect(result.expandedQueries[2].query).toContain('试用数据');
   });
+
+  it('能兼容 qwen-max 将关键词返回为字符串的情况', async () => {
+    const service = new QueryRewriteService();
+    mockInvoke.mockResolvedValue({
+      rewrittenQuery: '系统定位和智能检索的关系',
+      keywords: '系统定位, 智能检索, 关系',
+      expandedQueries: [
+        {
+          query: '系统定位和智能检索的包含子主题关系',
+          keywords: '系统定位 智能检索 包含子主题',
+          angle: 'entity',
+        },
+      ],
+      reason: '补充实体关系表达',
+    });
+
+    const result = await service.rewrite(
+      '系统定位和智能检索是什么关系？',
+    );
+
+    expect(result.keywords).toEqual(
+      expect.arrayContaining(['系统定位', '智能检索', '关系']),
+    );
+    expect(result.expandedQueries[1].keywords).toEqual(
+      expect.arrayContaining(['系统定位', '智能检索', '包含子主题']),
+    );
+  });
 });

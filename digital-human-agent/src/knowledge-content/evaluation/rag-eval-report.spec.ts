@@ -19,7 +19,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
         ELASTICSEARCH_INDEX_VERSION: 'v3',
         GRAPH_INDEX_VERSION: 'graph-v1',
         KNOWLEDGE_CHUNKING_VERSION: 'semantic-v1',
-        MODEL_NAME: 'qwen-plus',
+        MODEL_NAME: 'qwen-max',
         EMBEDDINGS_MODEL_NAME: 'text-embedding-v4',
         QUERY_REWRITE_MODEL_NAME: 'qwen-turbo',
         RERANKER_PROVIDER: 'dashscope',
@@ -35,7 +35,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
         mode: 'live',
       },
       models: {
-        llm: 'qwen-plus',
+        llm: 'qwen-max',
         embeddings: 'text-embedding-v4',
         queryRewrite: 'qwen-turbo',
         rerankerProvider: 'dashscope',
@@ -108,7 +108,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
       env: {
         HYBRID_KEYWORD_BACKEND: 'pg',
         ELASTICSEARCH_ENABLED: 'false',
-        MODEL_NAME: 'qwen-plus',
+        MODEL_NAME: 'qwen-max',
         EMBEDDINGS_MODEL_NAME: 'text-embedding-v4',
         RERANKER_PROVIDER: 'dashscope',
       },
@@ -303,16 +303,16 @@ describe('buildRagEvalRuntimeMetadata', () => {
         DATABASE_URL: 'postgres://user:pass@example/db',
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_SERVICE_ROLE_KEY: 'service-role',
-        MODEL_NAME: 'qwen-plus',
-        DASHSCOPE_API_KEY: 'dashscope-key',
+        MODEL_NAME: 'qwen-max',
+        OPENAI_API_KEY: 'dashscope-key',
       }),
     ).toEqual([]);
 
-    expect(findRagEvalLiveEnvIssues({ MODEL_NAME: 'qwen-plus' })).toEqual([
+    expect(findRagEvalLiveEnvIssues({ MODEL_NAME: 'qwen-max' })).toEqual([
       'DATABASE_URL',
       'SUPABASE_URL',
       'SUPABASE_SERVICE_ROLE_KEY',
-      'OPENAI_API_KEY 或 DASHSCOPE_API_KEY',
+      'OPENAI_API_KEY',
     ]);
   });
 

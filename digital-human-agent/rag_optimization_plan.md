@@ -137,7 +137,7 @@ RerankerService
 
 ```text
 RERANKER_PROVIDER=dashscope
-DASHSCOPE_API_KEY=xxx
+OPENAI_API_KEY=xxx
 RERANKER_MODEL=qwen3-rerank
 ```
 
@@ -580,7 +580,7 @@ reports/rag-eval-YYYYMMDD.json
   - DATABASE_URL
   - SUPABASE_URL
   - SUPABASE_SERVICE_ROLE_KEY
-  - OPENAI_API_KEY 或 DASHSCOPE_API_KEY
+  - OPENAI_API_KEY
 
 可选：
   - ELASTICSEARCH_ENABLED=true
@@ -622,7 +622,7 @@ pnpm eval:rag
 
 ```text
 POST https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
-Authorization: Bearer $DASHSCOPE_API_KEY
+Authorization: Bearer $OPENAI_API_KEY
 model: qwen3-rerank
 input.query: 用户问题
 input.documents: stage1 候选 chunk 文本数组
@@ -1276,7 +1276,7 @@ gantt
    - 新增 `LlmJsonRerankerProvider`，复用原 LLM JSON 重排逻辑。
    - `RerankerService` 负责 provider 选择、fallback 和 AbortError 透传：DashScope 失败、超时或返回格式异常时回退 LLM JSON；LLM JSON 也失败时回退 Stage1 排序。
    - DashScope 内部超时会转换为普通错误交给上层 provider fallback；用户主动中断仍保留 AbortError 语义。
-   - `.env.example` 已补充 `RERANKER_PROVIDER`、`RERANKER_MODEL`、`RERANKER_TIMEOUT_MS` 和 `DASHSCOPE_RERANKER_ENDPOINT`，避免把 `qwen3-rerank` 写死在业务链路里。
+   - `.env.example` 已补充 `RERANKER_PROVIDER`、`RERANKER_MODEL`、`RERANKER_TIMEOUT_MS` 和 `DASHSCOPE_RERANKER_ENDPOINT`，DashScope reranker 统一使用 `OPENAI_API_KEY`，避免把 `qwen3-rerank` 写死在业务链路里。
 
 3. **Multi-Query Hybrid Retrieval**
    - `QueryRewriteService` 输出 `expandedQueries`，每条包含 `query`、`keywords`、`angle`。
@@ -3485,3 +3485,178 @@ Neo4j 属于 P2 的长期目标，但本轮目标明确不主动接入 Neo4j，�
 2. smoke 不生成最终回答，也不调用模型；真实回答链路需要单独授权模型调用后再验证。
 3. ES alias 仍有只读警告：`digital-human-knowledge-chunk-read/write` 未指向 v2，本轮不处理 ES。
 4. Graph 质量仍受规则抽取器限制；后续再补 graph eval case、证据排序和更稳的实体抽取。
+
+## Graph RAG 最小回答主路径接入（2026-05-16 09:45）
+
+本轮目标是打通最小可运行回答主路径，不做 Neo4j/RAPTOR，也不重写 LangGraph 主流程。当前已经新增完整主路径 smoke 命令，但真实模型服务返回 403 免费额度耗尽，因此 `generate_answer` 还没有完成 live 成功验证，目标保持阻塞状态。
+
+### 采用入口与调用顺序
+
+1. 生产入口仍是：
+   - `ChatController`
+   - `AgentService`
+   - `RAG_ORCHESTRATOR`
+   - `LangGraphRagOrchestratorService`
+   - `rag.graph.ts`
+2. 本轮 smoke 为了命令化和可观察性，直接从 `RAG_ORCHESTRATOR` 调用 `orchestrator.run()`，复用同一个 `LangGraphRagOrchestratorService` 和同一张 LangGraph。
+3. 预期主路径节点顺序：
+   - `route_question`
+   - `plan_sub_questions`
+   - `plan_retrieval_strategy`
+   - `prepare_query`
+   - `retrieve_evidence`
+   - `evaluate_evidence`
+   - `load_context`
+   - `generate_answer`
+4. `retrieve_evidence` 仍通过 `KnowledgeSearchService` 进入 PostgreSQL `KnowledgeGraphRetriever`，Graph 仍是派生索引，PostgreSQL/Supabase 仍是事实源。
+
+### 本轮变更
+
+1. `package.json`
+   - 新增 `rag:smoke:graph-answer`。
+2. `scripts/smoke-rag-graph-answer.ts`
+   - 使用 `RAG_ORCHESTRATOR` 与 `orchestrator.run()` 走完整 LangGraph 主路径。
+   - 默认要求显式追加 `-- --i-understand-real-content-model-call`，避免误把真实知识库检索内容发送到模型服务。
+   - 在进程内设置 `ENABLE_GRAPH_RETRIEVAL=true` 和 `RAG_SEMANTIC_CACHE_ENABLED=false`，不修改真实 `.env`。
+   - 在 smoke 进程内关闭 LangSmith tracing，避免验证命令先被观测上报网络拖住；业务运行时配置不变。
+   - 支持 `--timeout-ms=...`，默认 45000ms，避免模型网络不可用时验证命令长时间悬挂。
+   - 支持 `--model-name=...`、`--reranker-provider=...`、`--reranker-model=...`，并在 JSON 输出里展示 `llmModel`、`apiKeySource`、`rerankerProvider`、`rerankerModel`，避免混淆回答模型与重排模型。
+   - 自动选择已有 indexed graph 关系边的 persona，并生成关系类问题。
+   - 输出 JSON 摘要字段：`status`、`personaId`、`query`、`answerPreview`、`citationCount`、`graphEvidenceCount`、`retrievalStrategy`、`retrievalHistory`、`modelCalls=true`、`blockedReason`。
+   - 新增 `--fixture-sanitized` 模式：只使用合成 persona、合成 Graph evidence 和真实 `AnswerGenerationService`，用于验证 `LangGraphRagOrchestratorService -> generate_answer` 的命令形态，不发送真实知识库内容。
+3. `src/common/prompts/agent.prompts.ts`
+   - 检索策略 prompt 增加 `useGraph`、`graphMode`、`graphMaxHops` 的说明，指导模型在实体关系、层级关系、流程依赖、参与方关系、条款关联类问题上启用 Graph。
+4. `src/agent/services/retrieval-strategy.service.ts`
+   - 结构化策略 schema 增加 `graphMode` 和 `graphMaxHops`，让模型规划出的 Graph 参数能进入后续 `normalizeRetrievalStrategy()`。
+5. `src/knowledge-content/rerankers/dashscope-qwen-reranker.provider.ts`
+   - DashScope reranker 统一使用 `OPENAI_API_KEY`，不再读取 `DASHSCOPE_API_KEY`。
+   - `.env.example`、env validation、preflight、ASR、TTS、health、eval 环境检查也移除了 `DASHSCOPE_API_KEY`，减少重复 key 维护。
+6. 测试
+   - `agent.prompts.spec.ts` 覆盖检索策略 prompt 的 Graph 字段说明。
+   - `knowledge-graph-and-raptor-script-inventory.spec.ts` 覆盖 `rag:smoke:graph-answer` 命令、`RAG_ORCHESTRATOR`、`orchestrator.run`、`modelCalls=true`、`--fixture-sanitized`、`--timeout-ms`、`--model-name`、reranker 覆盖参数和输出字段。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm test --runInBand -- common/prompts/agent.prompts.spec.ts knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts`（红灯） | 1 | 预期失败：缺少 `rag:smoke:graph-answer`，检索策略 prompt 未描述 Graph 字段 |
+| `pnpm test --runInBand -- common/prompts/agent.prompts.spec.ts knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts` | 0 | 2 个测试文件、9 个测试通过 |
+| `pnpm rag:smoke:graph-answer` | 1 | 早期版本已触发真实模型调用；阻塞原因：模型服务返回 `403 The free tier of the model has been exhausted...`，未完成 `generate_answer` live 成功验证 |
+| `pnpm build` | 0 | 构建通过 |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+| `pnpm test --runInBand` | 0 | 68 个测试文件、231 个测试通过 |
+| `pnpm rag:smoke:graph-answer`（2026-05-16 09:47 沙箱内复跑） | 1 | 沙箱内 DNS 无法解析 Supabase pooler：`getaddrinfo ENOTFOUND aws-1-ap-southeast-1.pooler.supabase.com` |
+| `pnpm rag:smoke:graph-answer`（2026-05-16 09:47 请求外部网络权限） | 未执行 | 安全审查拒绝：命令会把真实知识库检索内容发送到外部模型服务；需要用户在了解风险后再次明确确认，或改用脱敏/fixture 内容验证 |
+| `pnpm rag:smoke:graph-answer`（追加显式确认保护后） | 1 | 当前脚本默认拒绝真实内容外发；输出 `blockedReason`，真实验证需运行 `pnpm rag:smoke:graph-answer -- --i-understand-real-content-model-call` |
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts common/prompts/agent.prompts.spec.ts` | 0 | 2 个测试文件、9 个测试通过 |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized`（沙箱内） | 1 | 只发送脱敏合成内容；沙箱网络连接失败，返回 `Connection error.` |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized`（沙箱外） | 1 | 只发送脱敏合成内容；已连到模型服务，但返回 `403 The free tier of the model has been exhausted...` |
+| `pnpm test --runInBand` | 0 | 68 个测试文件、231 个测试通过 |
+| `pnpm build` | 0 | 构建通过 |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized`（2026-05-16 10:03 沙箱内，关闭 tracing 后） | 1 | tracing 噪声已消失；模型网络仍返回 `Connection error.` |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized`（2026-05-16 10:03 沙箱外，关闭 tracing 后） | 1 | 只发送脱敏合成内容；模型服务仍返回 `403 The free tier of the model has been exhausted...` |
+| `pnpm rag:smoke:graph`（2026-05-16 10:04 沙箱内） | 1 | 沙箱内 DNS 无法解析 Supabase pooler：`getaddrinfo ENOTFOUND aws-1-ap-southeast-1.pooler.supabase.com` |
+| `pnpm rag:smoke:graph`（2026-05-16 10:05 沙箱外） | 0 | 真实 DB Graph 检索通过：`resultCount=2`、`graphEvidenceCount=2`、`citationCount=2`、`modelCalls=false` |
+| `pnpm rag:smoke:graph-answer`（2026-05-16 10:06） | 1 | 默认阻止真实知识库内容外发；输出 `langsmithTracing=false` 和确认参数提示 |
+| `pnpm test --runInBand`（2026-05-16 10:06） | 0 | 68 个测试文件、231 个测试通过 |
+| `pnpm build`（2026-05-16 10:06） | 0 | 构建通过 |
+| `git diff --check`（2026-05-16 10:06） | 0 | 未发现空白格式问题 |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized --timeout-ms=5000`（2026-05-16 10:12 沙箱内） | 1 | 超时控制生效；输出 `timeoutMs=5000` 和 `Graph answer smoke 超时：5000ms` |
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts common/prompts/agent.prompts.spec.ts`（2026-05-16 10:12） | 0 | 2 个测试文件、9 个测试通过；覆盖 `--timeout-ms` 库存边界 |
+| `pnpm build`（2026-05-16 10:12） | 0 | 构建通过 |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized --timeout-ms=15000`（2026-05-16 10:13 沙箱外） | 1 | 只发送脱敏合成内容；模型服务仍返回 `403 The free tier of the model has been exhausted...` |
+| `pnpm rag:smoke:graph`（2026-05-16 10:13 沙箱外） | 0 | 真实 DB Graph 检索仍通过：`resultCount=2`、`graphEvidenceCount=2`、`citationCount=2`、`modelCalls=false` |
+| `pnpm rag:smoke:graph-answer`（2026-05-16 10:14） | 1 | 默认阻止真实知识库内容外发；输出 `timeoutMs=45000`、`langsmithTracing=false` 和确认参数提示 |
+| `pnpm test --runInBand`（2026-05-16 10:14） | 0 | 68 个测试文件、231 个测试通过 |
+| `pnpm build`（2026-05-16 10:14） | 0 | 构建通过 |
+| `git diff --check`（2026-05-16 10:14） | 0 | 未发现空白格式问题 |
+| `pnpm test --runInBand -- config/env.validation.spec.ts knowledge-content/rerankers/dashscope-qwen-reranker.provider.spec.ts knowledge-content/evaluation/rag-eval-report.spec.ts`（2026-05-16 15:08） | 0 | 3 个测试文件、28 个测试通过；`DASHSCOPE_API_KEY` 不再作为模型 key |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized --reranker-provider=dashscope --reranker-model=qwen3-vl-rerank --timeout-ms=15000`（2026-05-16 15:10） | 1 | 输出 `apiKeySource=OPENAI_API_KEY`、`rerankerModel=qwen3-vl-rerank`；仍由 `llmModel=qwen-plus` 返回 403 |
+| `pnpm rag:smoke:graph-answer -- --i-understand-real-content-model-call --reranker-provider=dashscope --reranker-model=qwen3-vl-rerank --timeout-ms=45000`（2026-05-16 15:11） | 1 | 真实 DB 主路径可进入 route/planner/rewrite/evaluate fallback；最终仍由 `llmModel=qwen-plus` 返回 403 |
+| `pnpm test --runInBand -- knowledge-content/graph/knowledge-graph-and-raptor-script-inventory.spec.ts config/env.validation.spec.ts knowledge-content/rerankers/dashscope-qwen-reranker.provider.spec.ts knowledge-content/evaluation/rag-eval-report.spec.ts`（2026-05-16 15:12） | 0 | 4 个测试文件、34 个测试通过；覆盖模型/重排输出字段与 key 收敛 |
+| `pnpm build`（2026-05-16 15:12） | 0 | 构建通过 |
+| `rg -n "DASHSCOPE_API_KEY" .env .env.example src scripts`（2026-05-16 15:14） | 1 | 退出码 1 表示未匹配；配置和源码中已移除 `DASHSCOPE_API_KEY` |
+| `pnpm test --runInBand`（2026-05-16 15:14） | 0 | 68 个测试文件、231 个测试通过 |
+| `pnpm build`（2026-05-16 15:14） | 0 | 构建通过 |
+| `git diff --check`（2026-05-16 15:14） | 0 | 未发现空白格式问题 |
+
+### 当前阻塞项
+
+1. `pnpm rag:smoke:graph-answer -- --fixture-sanitized` 已进入真实模型调用，且已确认使用 `OPENAI_API_KEY` 和 `rerankerModel=qwen3-vl-rerank`；当前 403 来自 `llmModel=qwen-plus`，不是 reranker。
+2. 真实知识库主路径 `pnpm rag:smoke:graph-answer -- --i-understand-real-content-model-call` 已在显式确认参数下复跑，仍停在 `qwen-plus` 生成模型 403，因此尚未完成 `generate_answer` 成功验证。
+3. 2026-05-16 09:47 复跑时，沙箱内网络无法解析 Supabase pooler；请求外部网络权限后被安全审查拒绝，原因是该命令会把真实知识库检索内容发送给外部模型服务。
+4. 因为模型调用未成功完成，尚不能声明最小回答主路径完成；当前只能证明命令入口、主路径调用、Graph 策略字段、真实 DB Graph 检索能力和脱敏 fixture 命令形态已经准备好。
+5. 修复方式是在模型管理控制台确认 `qwen-plus` 是否有可用额度，或通过 `--model-name=...` / `MODEL_NAME=...` 切换到有额度的聊天/生成模型；当前已经不再使用 `DASHSCOPE_API_KEY`。
+   - `pnpm rag:smoke:graph-answer -- --i-understand-real-content-model-call`
+   - `pnpm test --runInBand`
+   - `pnpm build`
+   - `git diff --check`
+6. 更保守的替代路径已经落地为 `pnpm rag:smoke:graph-answer -- --fixture-sanitized`；当前同样被模型额度 403 阻塞，修复模型配置后可先跑这条命令，再跑真实知识库主路径。
+
+### 下一步建议
+
+1. 先修复模型服务额度或鉴权配置，再复跑 `pnpm rag:smoke:graph-answer`。
+2. 如果复跑后 `retrievalStrategy.useGraph=false`，优先调整策略 prompt 或 fallback 策略，不改 LangGraph 主流程。
+3. 如果 `graphEvidenceCount=0`，优先检查 Graph 回填数据、GraphRetriever 匹配条件和查询生成，不进入 Neo4j/RAPTOR。
+
+## Graph RAG 最小回答主路径 qwen-max 验证收敛（2026-05-16 16:12）
+
+本轮按最新目标把回答模型切换为 `qwen-max`，继续使用 DashScope OpenAI-compatible 接口和 `OPENAI_API_KEY`。旧的 `qwen-plus` 403 阻塞已经解除，Graph RAG 最小回答主路径已经完成一次脱敏 fixture 验证和一次真实 DB + 真实模型验证。
+
+### 目标任务更新
+
+1. 生成模型改为 `qwen-max`。
+   - `.env` 本地已更新为 `MODEL_NAME=qwen-max`。
+   - `.env.example` 已更新为 `MODEL_NAME=qwen-max` 和 `CONTEXTUAL_RETRIEVAL_MODEL_NAME=qwen-max`。
+2. DashScope reranker 只使用 `OPENAI_API_KEY`。
+   - 源码、脚本和 `.env.example` 不再读取 `DASHSCOPE_API_KEY`。
+   - `rg -n "DASHSCOPE_API_KEY" .env .env.example src scripts` 退出码为 1，表示没有匹配项。
+3. `qwen3-vl-rerank` 作为可配置 reranker 模型继续通过 `--reranker-model=qwen3-vl-rerank` 或 `RERANKER_MODEL=qwen3-vl-rerank` 注入，不写死在业务链路。
+4. `qwen-max` 结构化输出兼容小修已经完成。
+   - RAG 结构化 prompt 明确包含 JSON 要求。
+   - `QueryRewriteService` 兼容模型把 `keywords` 返回为字符串或字符串数组的情况，并避免使用无法表达为 JSON Schema 的 transform。
+   - `RagRouteService` 在 LLM 路由失败时，会把直接实体关系问题回退为 `simple`，减少不必要的多跳规划。
+
+### 本轮主路径结果
+
+1. 脱敏 fixture 验证通过。
+   - 命令使用 `qwen-max` 真实调用模型，但只发送合成 Graph evidence。
+   - 输出 `status=ok`、`modelCalls=true`、`llmModel=qwen-max`、`apiKeySource=OPENAI_API_KEY`、`rerankerModel=qwen3-vl-rerank`、`citationCount=1`、`graphEvidenceCount=2`。
+2. 真实 DB + 真实模型验证通过。
+   - 命令在 `ENABLE_GRAPH_RETRIEVAL=true` 下通过 `RAG_ORCHESTRATOR -> LangGraphRagOrchestratorService -> rag.graph.ts` 执行完整主链路。
+   - 执行节点包含 `route_question`、`plan_sub_questions`、`plan_retrieval_strategy`、`prepare_query`、`retrieve_evidence`、`evaluate_evidence`、`load_context`、`generate_answer`。
+   - 输出 `status=ok`、`llmModel=qwen-max`、`apiKeySource=OPENAI_API_KEY`、`retrievalStrategy.useGraph=true`、`citationCount=5`、`graphEvidenceCount=10`、`blockedReason=null`。
+   - 回答预览能说明“面向法务角色的系统讲解提纲”和“一、系统定位”之间是包含子主题关系。
+3. 真实 smoke 中仍会出现 ES 连接警告：`ES 索引初始化失败，当前先跳过`。
+   - 本轮没有启动或替换 ES 服务。
+   - 该警告不影响 Graph RAG 最小回答主路径，因为本次证据中已经包含 PostgreSQL Graph evidence。
+
+### 本轮命令记录
+
+| 命令 | 退出码 | 结果 |
+|------|--------|------|
+| `pnpm test --runInBand -- knowledge-content/services/query-rewrite.service.spec.ts agent/services/rag-route.service.spec.ts common/prompts/agent.prompts.spec.ts common/prompts/knowledge.prompts.spec.ts` | 0 | 4 个测试文件、14 个测试通过；覆盖 `qwen-max` JSON prompt、query rewrite 关键词字符串兼容和关系类路由 fallback |
+| `pnpm build` | 0 | 构建通过 |
+| `pnpm rag:smoke:graph-answer -- --fixture-sanitized --model-name=qwen-max --reranker-provider=dashscope --reranker-model=qwen3-vl-rerank --timeout-ms=60000` | 0 | 脱敏 Graph evidence 回答 smoke 通过；`citationCount=1`、`graphEvidenceCount=2`、`modelCalls=true` |
+| `pnpm rag:smoke:graph-answer -- --i-understand-real-content-model-call --model-name=qwen-max --reranker-provider=dashscope --reranker-model=qwen3-vl-rerank --timeout-ms=300000` | 0 | 真实 DB + 真实模型主路径通过；`citationCount=5`、`graphEvidenceCount=10`、`retrievalStrategy.useGraph=true` |
+| `pnpm test --runInBand` | 0 | 68 个测试文件、235 个测试通过 |
+| `git diff --check` | 0 | 未发现空白格式问题 |
+| `pnpm build`（最终复跑） | 0 | 构建通过 |
+| `git diff --cached --check` | 0 | 暂存区未发现空白格式问题 |
+| `git diff HEAD --check` | 0 | 当前全部改动未发现空白格式问题 |
+
+### 当前完成项
+
+1. `rag:smoke:graph-answer` 已能在真实 DB、真实 Graph 索引、真实模型调用下生成 answer。
+2. smoke 输出包含 `answerPreview`、`citationCount`、`graphEvidenceCount`、`retrievalStrategy`、`retrievalHistory`、`modelCalls=true`、`blockedReason`、`llmModel`、`apiKeySource`、`rerankerModel`。
+3. Graph 参与检索已有真实证据：`retrievalStrategy.useGraph=true`，citations 中包含 `retrievalSources=["vector","keyword","graph"]` 和 Graph evidence。
+4. `DASHSCOPE_API_KEY` 已从本轮业务配置和验证路径中移除。
+5. `qwen-max` 已替代 `qwen-plus` 完成最小回答主路径验证。
+
+### 剩余问题与下一步
+
+1. ES 当前未连接，本轮只记录警告，不启动或替换 ES。
+2. 当前 Graph 抽取器仍是基础规则版，后续需要补更多关系类样本和 graph eval case。
+3. 路由模型仍可能把直接关系问题判为 `complex`，但真实主路径已经能完成回答；后续可继续调 prompt 或 smoke query，让最小路径更短。
+4. 下一阶段建议先做 Graph 质量迭代：更稳的实体抽取、关系去重、图谱证据排序和专门的 Graph eval case；暂不进入 Neo4j/RAPTOR。

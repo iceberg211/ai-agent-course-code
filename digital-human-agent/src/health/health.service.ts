@@ -76,12 +76,7 @@ export class HealthService {
       this.configService.get<string>('MODEL_NAME') ?? ''
     ).trim();
     const hasApiKey =
-      Boolean(
-        (this.configService.get<string>('OPENAI_API_KEY') ?? '').trim(),
-      ) ||
-      Boolean(
-        (this.configService.get<string>('DASHSCOPE_API_KEY') ?? '').trim(),
-      );
+      Boolean((this.configService.get<string>('OPENAI_API_KEY') ?? '').trim());
     if (!modelName || !hasApiKey) {
       return {
         status: 'error',

@@ -36,9 +36,9 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
   ): Promise<RerankerProviderItem[]> {
     throwIfAborted(input.signal);
 
-    const apiKey = String(process.env.DASHSCOPE_API_KEY ?? '').trim();
+    const apiKey = this.readApiKey();
     if (!apiKey) {
-      throw new Error('DASHSCOPE_API_KEY 未配置，无法使用 DashScope reranker');
+      throw new Error('OPENAI_API_KEY 未配置，无法使用 DashScope reranker');
     }
 
     const controller = new AbortController();
@@ -128,6 +128,10 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
 
   private buildDocumentText(chunk: { content: string; source: string }): string {
     return [`来源：${chunk.source}`, chunk.content.slice(0, 1800)].join('\n');
+  }
+
+  private readApiKey(): string {
+    return String(process.env.OPENAI_API_KEY ?? '').trim();
   }
 
   private toPositiveInteger(value: unknown, fallback: number): number {

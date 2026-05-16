@@ -21,7 +21,7 @@ describe('DashScopeQwenRerankerProvider', () => {
   });
 
   it('内部超时时抛出普通错误，允许上层 provider fallback 接管', async () => {
-    process.env.DASHSCOPE_API_KEY = 'dashscope-key';
+    process.env.OPENAI_API_KEY = 'dashscope-key';
     process.env.RERANKER_TIMEOUT_MS = '1';
     global.fetch = jest.fn((_url, init) => {
       const signal = (init as RequestInit).signal as AbortSignal;
@@ -47,7 +47,7 @@ describe('DashScopeQwenRerankerProvider', () => {
   });
 
   it('用户中断仍保留 AbortError 语义', async () => {
-    process.env.DASHSCOPE_API_KEY = 'dashscope-key';
+    process.env.OPENAI_API_KEY = 'dashscope-key';
     const provider = new DashScopeQwenRerankerProvider();
     const abortController = new AbortController();
     abortController.abort();
@@ -63,7 +63,7 @@ describe('DashScopeQwenRerankerProvider', () => {
   });
 
   it('返回格式异常时抛出普通错误，允许上层继续降级', async () => {
-    process.env.DASHSCOPE_API_KEY = 'dashscope-key';
+    process.env.OPENAI_API_KEY = 'dashscope-key';
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({

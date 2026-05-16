@@ -21,15 +21,21 @@ import type {
 } from '@/knowledge-content/types/knowledge-content.types';
 
 const DEFAULT_EXPANDED_QUERY_COUNT = 3;
+const KEYWORD_SPLIT_PATTERN = /[、,，;；\s]+/u;
+
+const KeywordListSchema = z.union([
+  z.array(z.string().min(1).max(50)).min(1).max(6),
+  z.string().min(1).max(300),
+]);
 
 const KnowledgeQueryRewriteSchema = z.object({
   rewrittenQuery: z.string().min(1).max(500),
-  keywords: z.array(z.string().min(1).max(50)).min(1).max(6),
+  keywords: KeywordListSchema,
   expandedQueries: z
     .array(
       z.object({
         query: z.string().min(1).max(500),
-        keywords: z.array(z.string().min(1).max(50)).min(1).max(6),
+        keywords: KeywordListSchema,
         angle: z
           .enum(['original', 'entity', 'semantic', 'symptom', 'detail'])
           .default('semantic'),
@@ -224,7 +230,7 @@ export class QueryRewriteService {
   private normalizeExpandedQueries(
     expandedQueries: Array<{
       query: string;
-      keywords: string[];
+      keywords?: unknown;
       angle?: RetrievalQueryAngle;
     }> = [],
     rewrittenQuery: string,
@@ -335,10 +341,19 @@ export class QueryRewriteService {
     return padded;
   }
 
-  private normalizeKeywords(keywords: string[], query: string): string[] {
+  private normalizeKeywords(keywords: unknown, query: string): string[] {
+    const keywordItems = Array.isArray(keywords)
+      ? keywords
+      : typeof keywords === 'string'
+        ? keywords.split(KEYWORD_SPLIT_PATTERN)
+        : [];
+
     const normalized = Array.from(
       new Set(
-        keywords.map((item) => item.trim()).filter((item) => item.length >= 2),
+        keywordItems
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length >= 2),
       ),
     ).slice(0, 6);
 

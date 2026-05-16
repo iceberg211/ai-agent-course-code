@@ -230,8 +230,8 @@ export function findRagEvalLiveEnvIssues(
     return missing;
   }
 
-  if (!envValue(env, 'OPENAI_API_KEY') && !envValue(env, 'DASHSCOPE_API_KEY')) {
-    missing.push('OPENAI_API_KEY 或 DASHSCOPE_API_KEY');
+  if (!envValue(env, 'OPENAI_API_KEY')) {
+    missing.push('OPENAI_API_KEY');
   }
 
   return missing;

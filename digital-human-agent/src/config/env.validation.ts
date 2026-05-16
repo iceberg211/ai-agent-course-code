@@ -34,10 +34,8 @@ export function validateEnv(config: EnvMap): EnvMap {
   }
 
   const openAiApiKey = asNonEmptyString(config.OPENAI_API_KEY);
-  const dashscopeApiKey = asNonEmptyString(config.DASHSCOPE_API_KEY);
-  const apiKey = openAiApiKey || dashscopeApiKey;
-  if (!apiKey) {
-    errors.push('OPENAI_API_KEY 或 DASHSCOPE_API_KEY 至少配置一个');
+  if (!openAiApiKey) {
+    errors.push('OPENAI_API_KEY 不能为空');
   }
 
   const ttsProvider = normalizeLowercase(config.TTS_PROVIDER, 'dashscope');
@@ -81,14 +79,8 @@ export function validateEnv(config: EnvMap): EnvMap {
     throw new Error(`环境变量校验失败:\n- ${errors.join('\n- ')}`);
   }
 
-  const normalizedConfig = { ...config };
-  if (!openAiApiKey && dashscopeApiKey) {
-    process.env.OPENAI_API_KEY = dashscopeApiKey;
-    normalizedConfig.OPENAI_API_KEY = dashscopeApiKey;
-  }
-
   return {
-    ...normalizedConfig,
+    ...config,
     TTS_PROVIDER: ttsProvider,
     TTS_TRANSPORT: ttsTransport,
     ELASTICSEARCH_ENABLED: elasticsearchEnabled,

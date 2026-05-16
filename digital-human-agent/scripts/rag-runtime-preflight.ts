@@ -96,7 +96,7 @@ async function checkEnv(): Promise<CheckResult> {
     'MODEL_NAME',
   ];
   const missing = required.filter((key) => !hasValue(key));
-  const hasModelKey = hasValue('OPENAI_API_KEY') || hasValue('DASHSCOPE_API_KEY');
+  const hasModelKey = hasValue('OPENAI_API_KEY');
 
   return {
     name: 'env',

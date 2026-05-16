@@ -25,6 +25,8 @@ const RetrievalStrategySchema = z.object({
   useExactPhrase: z.boolean().default(false),
   useMultiQuery: z.boolean().default(true),
   useHyDE: z.boolean().default(false),
+  graphMode: z.enum(['neighbors', 'path']).optional(),
+  graphMaxHops: z.number().int().min(1).max(3).optional(),
   allowWeb: z.boolean().default(true),
   queryCount: z.number().int().min(1).max(5).optional(),
   chunkContextWindow: z.number().int().min(0).max(2).default(0),

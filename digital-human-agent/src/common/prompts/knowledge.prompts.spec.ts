@@ -1,5 +1,7 @@
 import {
+  buildKnowledgeQueryRewritePromptInput,
   buildKnowledgeRerankPromptInput,
+  KNOWLEDGE_QUERY_REWRITE_PROMPT,
   KNOWLEDGE_RERANK_PROMPT,
 } from '@/common/prompts/knowledge.prompts';
 
@@ -21,5 +23,14 @@ describe('KNOWLEDGE_RERANK_PROMPT', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toContain('[{"index":0,"score":8.6}]');
     expect(messages[1].content).toContain('"query": "系统的核心功能是什么？"');
+  });
+
+  it('Query Rewrite 结构化输出 prompt 显式声明 JSON', async () => {
+    const messages = await KNOWLEDGE_QUERY_REWRITE_PROMPT.formatMessages(
+      buildKnowledgeQueryRewritePromptInput('系统的核心功能是什么？'),
+    );
+
+    const content = messages.map((message) => String(message.content)).join('\n');
+    expect(content).toContain('JSON');
   });
 });

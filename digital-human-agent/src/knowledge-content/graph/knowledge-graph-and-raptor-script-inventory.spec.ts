@@ -18,6 +18,9 @@ describe('P2 Graph/RAPTOR script inventory', () => {
     expect(packageJson.scripts['rag:smoke:graph-flow']).toBe(
       'node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-graph-flow.ts',
     );
+    expect(packageJson.scripts['rag:smoke:graph-answer']).toBe(
+      'node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-graph-answer.ts',
+    );
     expect(packageJson.scripts['raptor:backfill']).toBe(
       'node -r ts-node/register -r tsconfig-paths/register ./scripts/backfill-raptor-index.ts',
     );
@@ -43,6 +46,28 @@ describe('P2 Graph/RAPTOR script inventory', () => {
     expect(source).toContain('skipQueryRewrite: true');
     expect(source).toContain('rerank: false');
     expect(source).toContain("modelCalls: false");
+  });
+
+  it('Graph answer smoke 脚本复用完整 LangGraph 主链路并允许模型调用', () => {
+    const scriptPath = join(rootDir, 'scripts/smoke-rag-graph-answer.ts');
+    expect(existsSync(scriptPath)).toBe(true);
+
+    const source = readFileSync(scriptPath, 'utf8');
+    expect(source).toContain('RAG_ORCHESTRATOR');
+    expect(source).toContain('orchestrator.run');
+    expect(source).toContain("modelCalls: true");
+    expect(source).toContain('i-understand-real-content-model-call');
+    expect(source).toContain('fixture-sanitized');
+    expect(source).toContain('timeout-ms');
+    expect(source).toContain('model-name');
+    expect(source).toContain('llmModel');
+    expect(source).toContain('apiKeySource');
+    expect(source).toContain('reranker-provider');
+    expect(source).toContain('reranker-model');
+    expect(source).toContain('rerankerModel');
+    expect(source).toContain('LangGraphRagOrchestratorService');
+    expect(source).toContain('answerPreview');
+    expect(source).toContain('graphEvidenceCount');
   });
 
   it('Graph flow smoke 脚本验证策略节点到检索节点，不调用模型', () => {

@@ -104,14 +104,13 @@ export class RagRouteService {
 
   private buildFallbackDecision(question: string): RagRouteDecision {
     const normalized = question.replace(/\s+/g, '');
-    const complexPatterns = [
+    const multiStepPatterns = [
       /先.*再/u,
       /然后/u,
       /以及/u,
       /并且/u,
       /分别/u,
       /对比/u,
-      /关系/u,
       /原因/u,
       /为什么/u,
       /如何/u,
@@ -119,6 +118,22 @@ export class RagRouteService {
       /最终/u,
       /结局/u,
       /第几[集章节]/u,
+    ];
+    const directRelationQuestion =
+      /(?:和|与).{1,80}(?:是什么关系|的关系是什么|包含子主题关系是什么|关联关系是什么)/u.test(
+        normalized,
+      ) && !multiStepPatterns.some((pattern) => pattern.test(normalized));
+
+    if (directRelationQuestion) {
+      return {
+        strategy: 'simple',
+        reason: '启发式判断为直接实体关系问题',
+      };
+    }
+
+    const complexPatterns = [
+      ...multiStepPatterns,
+      /关系/u,
     ];
     const hitCount = complexPatterns.filter((pattern) =>
       pattern.test(normalized),
