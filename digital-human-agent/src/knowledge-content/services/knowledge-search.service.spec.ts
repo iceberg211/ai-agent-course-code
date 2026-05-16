@@ -2,6 +2,8 @@ import { createAbortError } from '@/agent/agent.utils';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
+import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
@@ -152,25 +154,35 @@ describe('KnowledgeSearchService', () => {
         Promise.resolve(chunks),
       ),
     };
+    const stage1RetrievalService = new KnowledgeStage1RetrievalService(
+      runtime as never,
+      hybridRetriever as never,
+      graphRetriever as never,
+    );
+    const semanticCacheCoordinator = new RagSemanticCacheCoordinatorService(
+      runtime as never,
+      semanticCacheStore as never,
+    );
 
     const service = new KnowledgeSearchService(
       runtime as never,
-      hybridRetriever as never,
+      stage1RetrievalService,
       rerankerService as never,
       queryRewriteService as never,
       chunkContextExpansionService as never,
-      semanticCacheStore as never,
-      graphRetriever as never,
+      semanticCacheCoordinator,
     );
 
     return {
       service,
       runtime,
       hybridRetriever,
+      stage1RetrievalService,
       rerankerService,
       queryRewriteService,
       chunkContextExpansionService,
       semanticCacheStore,
+      semanticCacheCoordinator,
       graphRetriever,
     };
   }

@@ -1,32 +1,15 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { throwIfAborted } from '@/agent/agent.utils';
 import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
-import {
-  DEFAULT_ELASTICSEARCH_INDEX_VERSION,
-  DEFAULT_EMBEDDINGS_MODEL_NAME,
-  DEFAULT_HYBRID_KEYWORD_BACKEND,
-} from '@/common/constants';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import {
-  buildMountedKnowledgeBaseCacheFingerprint,
-  buildRagSemanticCacheKey,
-  type MountedKnowledgeBaseCacheFingerprint,
-  type RagSemanticCacheKeyResult,
-} from '@/knowledge-content/cache/rag-semantic-cache-key';
-import {
-  RagSemanticCacheStoreService,
-  type RagSemanticCacheLookupResult,
-  type RagSemanticCachePayload,
-  type RagSemanticCacheScope,
-} from '@/knowledge-content/cache/rag-semantic-cache-store.service';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
-import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import type { MountedKnowledgeConfig } from '@/knowledge-content/services/knowledge-retrieval.types';
+import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
+import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import type {
-  KeywordBackend,
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
-  GraphBackend,
   RetrieveKnowledgeTraceItem,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
@@ -35,35 +18,9 @@ import type {
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
-import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
-import { DEFAULT_PARENT_CHILD_INDEX_VERSION } from '@/knowledge-content/parent-child/knowledge-parent-child-plan';
-import {
-  fuseStage1Channels,
-  mergeStage1Results,
-} from '@/knowledge-content/services/knowledge-retrieval-fusion';
+import { mergeStage1Results } from '@/knowledge-content/services/knowledge-retrieval-fusion';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
-import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
-
-interface MountedKnowledgeConfig {
-  knowledgeId: string;
-  threshold: number;
-  stage1TopK: number;
-  retrievalConfig: Partial<KnowledgeRetrievalConfig>;
-  updatedAt: string | null;
-}
-
-interface PersonaSemanticCacheContext {
-  keyResult: RagSemanticCacheKeyResult;
-  scope: RagSemanticCacheScope;
-  mountedKnowledgeBaseIds: string[];
-  queryEmbedding?: number[];
-}
-
-interface PersonaSemanticCacheResolution {
-  context: PersonaSemanticCacheContext | null;
-  cachedResult?: RetrieveKnowledgeDebugResult;
-}
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -71,13 +28,11 @@ export class KnowledgeSearchService {
 
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
-    private readonly hybridRetriever: KnowledgeHybridRetrieverService,
+    private readonly stage1RetrievalService: KnowledgeStage1RetrievalService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
     private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
-    private readonly semanticCacheStore?: RagSemanticCacheStoreService,
-    @Optional()
-    private readonly graphRetriever?: Neo4jGraphRetrieverService,
+    private readonly semanticCacheCoordinator: RagSemanticCacheCoordinatorService,
   ) {}
 
   async retrieve(
@@ -198,14 +153,16 @@ export class KnowledgeSearchService {
       strategy,
       options.signal,
     );
-    const stage1Result = await this.retrieveStage1ForKnowledge(
-      knowledgeId,
-      retrievalQueries,
-      hydeQueryEmbedding,
-      strategy,
-      normalizedOptions.threshold,
-      normalizedOptions.stage1TopK,
-      options.signal,
+    const stage1Result = await this.stage1RetrievalService.retrieveForKnowledge(
+      {
+        knowledgeId,
+        retrievalQueries,
+        hydeQueryEmbedding,
+        strategy,
+        threshold: normalizedOptions.threshold,
+        globalStage1TopK: normalizedOptions.stage1TopK,
+        signal: options.signal,
+      },
     );
     throwIfAborted(options.signal);
 
@@ -387,14 +344,14 @@ export class KnowledgeSearchService {
       };
     }
 
-    const cacheResolution = await this.resolvePersonaSemanticCache(
+    const cacheResolution = await this.semanticCacheCoordinator.resolve({
       personaId,
       normalizedQuery,
       normalizedOptions,
       strategy,
       knowledgeConfigs,
-      options.signal,
-    );
+      signal: options.signal,
+    });
     if (cacheResolution.cachedResult) {
       return cacheResolution.cachedResult;
     }
@@ -428,15 +385,16 @@ export class KnowledgeSearchService {
             options.stage1TopK === undefined
               ? config.stage1TopK
               : normalizedOptions.stage1TopK;
-          const stage1Result = await this.retrieveStage1ForKnowledge(
-            config.knowledgeId,
-            retrievalQueries,
-            hydeQueryEmbedding,
-            strategy,
-            effectiveThreshold,
-            effectiveStage1TopK,
-            options.signal,
-          );
+          const stage1Result =
+            await this.stage1RetrievalService.retrieveForKnowledge({
+              knowledgeId: config.knowledgeId,
+              retrievalQueries,
+              hydeQueryEmbedding,
+              strategy,
+              threshold: effectiveThreshold,
+              globalStage1TopK: effectiveStage1TopK,
+              signal: options.signal,
+            });
           throwIfAborted(options.signal);
 
           return stage1Result;
@@ -480,7 +438,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.writePersonaSemanticCache(
+      return this.semanticCacheCoordinator.write(
         semanticCacheContext,
         strategy,
         result,
@@ -505,7 +463,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.writePersonaSemanticCache(
+      return this.semanticCacheCoordinator.write(
         semanticCacheContext,
         strategy,
         result,
@@ -534,7 +492,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.writePersonaSemanticCache(
+      return this.semanticCacheCoordinator.write(
         semanticCacheContext,
         strategy,
         result,
@@ -591,369 +549,6 @@ export class KnowledgeSearchService {
             : null,
       };
     });
-  }
-
-  private async resolvePersonaSemanticCache(
-    personaId: string,
-    normalizedQuery: string,
-    normalizedOptions: RetrieveKnowledgeDebugResult['options'],
-    strategy: RetrievalStrategy,
-    knowledgeConfigs: MountedKnowledgeConfig[],
-    signal?: AbortSignal,
-  ): Promise<PersonaSemanticCacheResolution> {
-    if (!this.semanticCacheStore?.isEnabled()) {
-      return { context: null };
-    }
-
-    try {
-      const mountedKnowledgeBases =
-        await this.buildMountedKnowledgeBaseFingerprints(knowledgeConfigs);
-      if (mountedKnowledgeBases.length !== knowledgeConfigs.length) {
-        return { context: null };
-      }
-
-      const keyResult = buildRagSemanticCacheKey({
-        query: normalizedQuery,
-        personaId,
-        mountedKnowledgeBases,
-        retrievalConfig: normalizedOptions,
-        embeddingModel: this.readEmbeddingModelName(),
-        rerankerProvider: this.readRerankerProvider(),
-        rerankerModel: this.readRerankerModel(),
-        allowWeb: strategy.allowWeb,
-        strategyFlags: strategy,
-        indexVersions: this.readIndexVersions(),
-      });
-      const scope = this.buildSemanticCacheScope(keyResult);
-      const context: PersonaSemanticCacheContext = {
-        keyResult,
-        scope,
-        mountedKnowledgeBaseIds: keyResult.material.mountedKnowledgeBaseIds,
-      };
-
-      const exactHit = await this.semanticCacheStore.getByKey(keyResult.key);
-      const exactResult = this.toCachedDebugResult(exactHit, 'exact-hit');
-      if (exactResult) {
-        return { context, cachedResult: exactResult };
-      }
-
-      if (!strategy.useVector) {
-        return { context };
-      }
-
-      context.queryEmbedding = await this.runtime.withTransientRetry(
-        'embed semantic cache query',
-        () => {
-          throwIfAborted(signal);
-          return this.runtime.embeddings.embedQuery(normalizedQuery);
-        },
-        3,
-      );
-      throwIfAborted(signal);
-
-      const similarHit = await this.semanticCacheStore.findSimilar({
-        ...scope,
-        queryEmbedding: context.queryEmbedding,
-      });
-      const similarResult = this.toCachedDebugResult(similarHit, 'similar-hit');
-      if (similarResult) {
-        return { context, cachedResult: similarResult };
-      }
-
-      return { context };
-    } catch (error) {
-      if (this.isAbortError(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        `RAG 语义缓存查询失败，继续走实时检索：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return { context: null };
-    }
-  }
-
-  private async buildMountedKnowledgeBaseFingerprints(
-    knowledgeConfigs: MountedKnowledgeConfig[],
-  ): Promise<MountedKnowledgeBaseCacheFingerprint[]> {
-    const knowledgeIds = knowledgeConfigs.map((config) => config.knowledgeId);
-    const { data: documentRows, error } = await this.runtime.supabase
-      .from('knowledge_document')
-      .select('id, knowledge_base_id, status, chunk_count, created_at')
-      .in('knowledge_base_id', knowledgeIds);
-
-    if (error) {
-      this.logger.warn(`查询知识文档统计失败：${error.message}`);
-      return [];
-    }
-
-    const statsByKnowledgeId = new Map<
-      string,
-      {
-        documentCount: number;
-        completedDocumentCount: number;
-        chunkCount: number;
-        maxDocumentCreatedAt: string | null;
-      }
-    >();
-
-    for (const row of documentRows ?? []) {
-      if (!isRecord(row)) continue;
-      const knowledgeId = readString(row.knowledge_base_id);
-      if (!knowledgeId) continue;
-
-      const current = statsByKnowledgeId.get(knowledgeId) ?? {
-        documentCount: 0,
-        completedDocumentCount: 0,
-        chunkCount: 0,
-        maxDocumentCreatedAt: null,
-      };
-      current.documentCount += 1;
-      if (readString(row.status) === 'completed') {
-        current.completedDocumentCount += 1;
-      }
-      current.chunkCount += readNumber(row.chunk_count);
-      current.maxDocumentCreatedAt = maxIsoDate(
-        current.maxDocumentCreatedAt,
-        readString(row.created_at),
-      );
-      statsByKnowledgeId.set(knowledgeId, current);
-    }
-
-    return knowledgeConfigs.map((config) => {
-      const stats = statsByKnowledgeId.get(config.knowledgeId) ?? {
-        documentCount: 0,
-        completedDocumentCount: 0,
-        chunkCount: 0,
-        maxDocumentCreatedAt: null,
-      };
-
-      return buildMountedKnowledgeBaseCacheFingerprint({
-        id: config.knowledgeId,
-        updatedAt: config.updatedAt,
-        documentCount: stats.documentCount,
-        completedDocumentCount: stats.completedDocumentCount,
-        chunkCount: stats.chunkCount,
-        maxDocumentCreatedAt: stats.maxDocumentCreatedAt,
-        maxChunkCreatedAt: null,
-        retrievalConfig: config.retrievalConfig,
-        indexVersions: this.readIndexVersions(),
-      });
-    });
-  }
-
-  private toCachedDebugResult(
-    hit: RagSemanticCacheLookupResult | null,
-    lookup: 'exact-hit' | 'similar-hit',
-  ): RetrieveKnowledgeDebugResult | null {
-    if (!hit) return null;
-
-    const result = this.readCachedDebugPayload(hit.payload);
-    if (!result) {
-      this.logger.warn(`RAG 语义缓存 payload 无法恢复：${hit.cacheKey}`);
-      return null;
-    }
-
-    return {
-      ...result,
-      cache: {
-        enabled: true,
-        lookup,
-        cacheKey: hit.cacheKey,
-        similarity: hit.similarity,
-        written: false,
-      },
-    };
-  }
-
-  private readCachedDebugPayload(
-    payload: RagSemanticCachePayload,
-  ): Omit<RetrieveKnowledgeDebugResult, 'cache'> | null {
-    const result = payload.result;
-    if (!isRecord(result)) return null;
-    if (
-      !Array.isArray(result.retrievalQueries) ||
-      !isRecord(result.rewrite) ||
-      !isRecord(result.options) ||
-      !Array.isArray(result.stage1Trace) ||
-      !Array.isArray(result.stage1) ||
-      !Array.isArray(result.stage2)
-    ) {
-      return null;
-    }
-
-    return result;
-  }
-
-  private async writePersonaSemanticCache(
-    context: PersonaSemanticCacheContext | null,
-    strategy: RetrievalStrategy,
-    result: Omit<RetrieveKnowledgeDebugResult, 'cache'>,
-  ): Promise<RetrieveKnowledgeDebugResult> {
-    if (!context || !this.semanticCacheStore?.isEnabled()) {
-      return result;
-    }
-
-    if (!context.queryEmbedding || context.queryEmbedding.length === 0) {
-      return {
-        ...result,
-        cache: {
-          enabled: true,
-          lookup: 'miss',
-          cacheKey: context.keyResult.key,
-          written: false,
-          reason: 'missing-query-embedding',
-        },
-      };
-    }
-
-    try {
-      const writeResult = await this.semanticCacheStore.upsert({
-        ...context.scope,
-        cacheKey: context.keyResult.key,
-        normalizedQueryHash: context.keyResult.material.normalizedQueryHash,
-        query: result.query,
-        queryEmbedding: context.queryEmbedding,
-        mountedKnowledgeBaseIds: context.mountedKnowledgeBaseIds,
-        backend: this.buildSemanticCacheBackend(strategy),
-        payload: this.buildSemanticCachePayload(result),
-      });
-
-      return {
-        ...result,
-        cache: {
-          enabled: true,
-          lookup: 'miss',
-          cacheKey: context.keyResult.key,
-          written: writeResult.written,
-          reason: writeResult.reason,
-        },
-      };
-    } catch (error) {
-      if (this.isAbortError(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        `RAG 语义缓存写入失败，返回实时检索结果：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return {
-        ...result,
-        cache: {
-          enabled: true,
-          lookup: 'miss',
-          cacheKey: context.keyResult.key,
-          written: false,
-          reason: 'cache-write-error',
-        },
-      };
-    }
-  }
-
-  private buildSemanticCachePayload(
-    result: Omit<RetrieveKnowledgeDebugResult, 'cache'>,
-  ): RagSemanticCachePayload {
-    return {
-      result,
-      stage1ChunkIds: result.stage1.map((chunk) => chunk.id),
-      stage2ChunkIds: result.stage2.map((chunk) => chunk.id),
-      compressedContext: result.stage2
-        .map(
-          (chunk, index) =>
-            `[${index + 1}] ${chunk.source}#${chunk.chunk_index}\n${chunk.content}`,
-        )
-        .join('\n\n')
-        .slice(0, 12000),
-      trace: {
-        retrievalQueries: result.retrievalQueries,
-        stage1Trace: result.stage1Trace,
-      },
-    };
-  }
-
-  private buildSemanticCacheScope(
-    keyResult: RagSemanticCacheKeyResult,
-  ): RagSemanticCacheScope {
-    return {
-      personaId: keyResult.material.personaId,
-      mountedKnowledgeBaseFingerprints:
-        keyResult.material.mountedKnowledgeBaseFingerprints,
-      retrievalConfig: keyResult.material.retrievalConfig as unknown as Record<
-        string,
-        unknown
-      >,
-      models: {
-        embeddingModel: keyResult.material.embeddingModel,
-        rerankerProvider: keyResult.material.rerankerProvider,
-        rerankerModel: keyResult.material.rerankerModel,
-      },
-      strategyFlags: keyResult.material.strategyFlags as unknown as Record<
-        string,
-        unknown
-      >,
-      indexVersions: keyResult.material.indexVersions as unknown as Record<
-        string,
-        unknown
-      >,
-    };
-  }
-
-  private buildSemanticCacheBackend(
-    strategy: RetrievalStrategy,
-  ): Record<string, unknown> {
-    return {
-      vector: strategy.useVector ? 'pgvector' : 'disabled',
-      keyword: strategy.useKeyword ? this.readKeywordBackendName() : 'disabled',
-      graph: strategy.useGraph ? 'neo4j' : 'disabled',
-    };
-  }
-
-  private readEmbeddingModelName(): string {
-    return (
-      readNonEmptyEnv('EMBEDDINGS_MODEL_NAME') ?? DEFAULT_EMBEDDINGS_MODEL_NAME
-    );
-  }
-
-  private readRerankerProvider(): string {
-    return readNonEmptyEnv('RERANKER_PROVIDER') ?? 'llm-json';
-  }
-
-  private readRerankerModel(): string | null {
-    return (
-      readNonEmptyEnv('RERANKER_MODEL') ??
-      readNonEmptyEnv('RERANKER_MODEL_NAME')
-    );
-  }
-
-  private readKeywordBackendName(): string {
-    return (
-      readNonEmptyEnv('HYBRID_KEYWORD_BACKEND') ??
-      DEFAULT_HYBRID_KEYWORD_BACKEND
-    );
-  }
-
-  private readIndexVersions(): {
-    elasticsearch: string | null;
-    graph: string | null;
-    parentChild: string | null;
-    chunking: string | null;
-  } {
-    return {
-      elasticsearch:
-        readNonEmptyEnv('ELASTICSEARCH_INDEX_VERSION') ??
-        DEFAULT_ELASTICSEARCH_INDEX_VERSION,
-      graph: readNonEmptyEnv('NEO4J_GRAPH_SCHEMA_VERSION'),
-      parentChild:
-        readNonEmptyEnv('PARENT_CHILD_INDEX_VERSION') ??
-        DEFAULT_PARENT_CHILD_INDEX_VERSION,
-      chunking:
-        readNonEmptyEnv('KNOWLEDGE_CHUNKING_VERSION') ??
-        'markdown-structure-v1',
-    };
   }
 
   private async resolveRetrievalQuery(
@@ -1031,213 +626,6 @@ export class KnowledgeSearchService {
     );
   }
 
-  private async retrieveStage1ForKnowledge(
-    knowledgeId: string,
-    retrievalQueries: RetrievalQueryItem[],
-    hydeQueryEmbedding: number[] | undefined,
-    strategy: RetrievalStrategy,
-    threshold: number,
-    globalStage1TopK: number,
-    signal?: AbortSignal,
-  ): Promise<{
-    chunks: KnowledgeChunk[];
-    trace: RetrieveKnowledgeTraceItem[];
-  }> {
-    const perQueryTopK = Math.max(
-      4,
-      Math.ceil(globalStage1TopK / Math.max(retrievalQueries.length, 1)),
-    );
-    const results: KnowledgeChunk[][] = [];
-    const trace: RetrieveKnowledgeTraceItem[] = [];
-
-    for (const retrievalQuery of retrievalQueries) {
-      throwIfAborted(signal);
-      const queryEmbedding = strategy.useVector
-        ? await this.runtime.withTransientRetry(
-            'embed query',
-            () => {
-              throwIfAborted(signal);
-              return this.runtime.embeddings.embedQuery(retrievalQuery.query);
-            },
-            3,
-          )
-        : undefined;
-
-      const stage1Result = await this.retrieveStage1(
-        knowledgeId,
-        queryEmbedding,
-        hydeQueryEmbedding,
-        retrievalQuery.query,
-        retrievalQuery.keywords,
-        threshold,
-        perQueryTopK,
-        strategy,
-        signal,
-      );
-      const keywordBackend: KeywordBackend | undefined =
-        stage1Result.keywordBackend === 'disabled'
-          ? undefined
-          : stage1Result.keywordBackend;
-      const chunks = stage1Result.chunks.map((chunk) => ({
-        ...chunk,
-        matched_queries: Array.from(
-          new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
-        ),
-        keyword_backend: keywordBackend ?? chunk.keyword_backend,
-        vector_backend: this.resolveChunkVectorBackend(chunk),
-      }));
-      results.push(chunks);
-      trace.push({
-        knowledgeId,
-        queryIndex: retrievalQuery.index,
-        query: retrievalQuery.query,
-        keywords: retrievalQuery.keywords,
-        angle: retrievalQuery.angle,
-        vectorBackend: strategy.useVector ? 'pgvector' : 'disabled',
-        keywordBackend: strategy.useKeyword
-          ? stage1Result.keywordBackend
-          : 'disabled',
-        vectorResultCount: stage1Result.vectorResultCount,
-        hydeVectorResultCount: stage1Result.hydeVectorResultCount,
-        keywordResultCount: stage1Result.keywordResultCount,
-        graphBackend: stage1Result.graphBackend,
-        graphResultCount: stage1Result.graphResultCount,
-        mergedResultCount: chunks.length,
-        fallbackToPg: stage1Result.fallbackToPg,
-        skippedChannels: stage1Result.skippedChannels,
-      });
-    }
-
-    return {
-      chunks: mergeStage1Results(results, globalStage1TopK),
-      trace,
-    };
-  }
-
-  private async retrieveStage1(
-    knowledgeId: string,
-    queryEmbedding: number[] | undefined,
-    hydeQueryEmbedding: number[] | undefined,
-    retrievalQuery: string,
-    keywordTerms: string[],
-    threshold: number,
-    matchCount: number,
-    strategy: RetrievalStrategy,
-    signal?: AbortSignal,
-  ): Promise<
-    HybridRetrieveResult & {
-      graphBackend: GraphBackend | 'disabled';
-      graphResultCount: number;
-    }
-  > {
-    const hybridResult =
-      strategy.useVector || strategy.useKeyword
-        ? await this.hybridRetriever.retrieve({
-            knowledgeId,
-            queryEmbedding,
-            hydeQueryEmbedding,
-            retrievalQuery,
-            keywordTerms,
-            threshold,
-            matchCount,
-            useVector: strategy.useVector,
-            useKeyword: strategy.useKeyword,
-            useExactPhrase: strategy.useExactPhrase,
-            signal,
-          })
-        : this.buildSkippedHybridResult(strategy);
-
-    const graphChunks = await this.retrieveGraphChunks(
-      knowledgeId,
-      retrievalQuery,
-      keywordTerms,
-      matchCount,
-      strategy,
-      signal,
-    );
-    const skippedChannels = new Set(hybridResult.skippedChannels);
-    const graphBackend = this.isGraphRetrieverEnabled(strategy)
-      ? 'neo4j'
-      : 'disabled';
-    if (graphBackend === 'disabled') {
-      skippedChannels.add('graph');
-    }
-
-    return {
-      ...hybridResult,
-      chunks: fuseStage1Channels(hybridResult.chunks, graphChunks, matchCount),
-      graphBackend,
-      graphResultCount: graphChunks.length,
-      skippedChannels: Array.from(skippedChannels),
-    };
-  }
-
-  private buildSkippedHybridResult(
-    strategy: RetrievalStrategy,
-  ): HybridRetrieveResult {
-    const skippedChannels = new Set<'vector' | 'keyword' | 'hyde' | 'graph'>();
-    if (!strategy.useVector) {
-      skippedChannels.add('vector');
-      skippedChannels.add('hyde');
-    } else if (!strategy.useHyDE) {
-      skippedChannels.add('hyde');
-    }
-    if (!strategy.useKeyword) skippedChannels.add('keyword');
-
-    return {
-      chunks: [],
-      keywordBackend: 'disabled',
-      vectorResultCount: 0,
-      hydeVectorResultCount: 0,
-      keywordResultCount: 0,
-      fallbackToPg: false,
-      skippedChannels: Array.from(skippedChannels),
-    };
-  }
-
-  private async retrieveGraphChunks(
-    knowledgeId: string,
-    retrievalQuery: string,
-    keywordTerms: string[],
-    matchCount: number,
-    strategy: RetrievalStrategy,
-    signal?: AbortSignal,
-  ): Promise<KnowledgeChunk[]> {
-    const graphRetriever = this.graphRetriever;
-    if (!this.isGraphRetrieverEnabled(strategy) || !graphRetriever) return [];
-
-    try {
-      return await graphRetriever.retrieve({
-        knowledgeId,
-        retrievalQuery,
-        keywordTerms,
-        matchCount,
-        graphMaxHops: strategy.graphMaxHops,
-        graphMode: strategy.graphMode,
-        signal,
-      });
-    } catch (error) {
-      if (this.isAbortError(error)) {
-        throw error;
-      }
-
-      this.logger.warn(
-        `Neo4j GraphRetriever 失败，继续使用其他检索通道：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return [];
-    }
-  }
-
-  private isGraphRetrieverEnabled(strategy: RetrievalStrategy): boolean {
-    return (
-      strategy.useGraph === true &&
-      this.graphRetriever !== undefined &&
-      this.graphRetriever.isEnabled()
-    );
-  }
-
   private async expandStage2Context(
     stage2: KnowledgeChunk[],
     strategy: RetrievalStrategy,
@@ -1275,47 +663,7 @@ export class KnowledgeSearchService {
     }
   }
 
-  private resolveChunkVectorBackend(
-    chunk: KnowledgeChunk,
-  ): KnowledgeChunk['vector_backend'] {
-    if (chunk.vector_backend) {
-      return chunk.vector_backend;
-    }
-
-    const sources = chunk.retrieval_sources ?? [];
-    if (sources.includes('vector') || sources.includes('hyde')) {
-      return 'pgvector';
-    }
-
-    return undefined;
-  }
-
   private isAbortError(error: unknown): boolean {
     return (error as { name?: string })?.name === 'AbortError';
   }
-}
-
-function readNonEmptyEnv(key: string): string | null {
-  const value = String(process.env[key] ?? '').trim();
-  return value.length > 0 ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function readNumber(value: unknown): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.trunc(parsed));
-}
-
-function maxIsoDate(left: string | null, right: string): string | null {
-  if (!right) return left;
-  if (!left) return right;
-  return new Date(right).getTime() > new Date(left).getTime() ? right : left;
 }

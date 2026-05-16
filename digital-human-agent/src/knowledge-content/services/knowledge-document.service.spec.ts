@@ -1,3 +1,4 @@
+import { KnowledgeDocumentIndexSyncService } from '@/knowledge-content/services/knowledge-document-index-sync.service';
 import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
 
 describe('KnowledgeDocumentService', () => {
@@ -142,15 +143,18 @@ describe('KnowledgeDocumentService', () => {
           ),
       ),
     };
+    const documentIndexSyncService = new KnowledgeDocumentIndexSyncService(
+      elasticsearchSyncService as never,
+      graphExtractorService as never,
+      neo4jGraphSyncService as never,
+      knowledgeChunkIndexQueryService as never,
+    );
 
     const service = new KnowledgeDocumentService(
       documentRepo as never,
       chunkRepo as never,
       runtime as never,
-      elasticsearchSyncService as never,
-      graphExtractorService as never,
-      neo4jGraphSyncService as never,
-      knowledgeChunkIndexQueryService as never,
+      documentIndexSyncService,
       contextualRetrievalService as never,
     );
 
@@ -163,6 +167,7 @@ describe('KnowledgeDocumentService', () => {
       update,
       updateEq,
       contextualRetrievalService,
+      documentIndexSyncService,
       elasticsearchSyncService,
       graphExtractorService,
       neo4jGraphSyncService,

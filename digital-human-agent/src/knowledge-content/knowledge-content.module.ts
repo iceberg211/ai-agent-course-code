@@ -23,11 +23,14 @@ import { KnowledgeContextualRetrievalService } from '@/knowledge-content/service
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
+import { KnowledgeDocumentIndexSyncService } from '@/knowledge-content/services/knowledge-document-index-sync.service';
 import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
 import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import { KnowledgeVectorRetrieverService } from '@/knowledge-content/services/knowledge-vector-retriever.service';
+import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { DashScopeQwenRerankerProvider } from '@/knowledge-content/rerankers/dashscope-qwen-reranker.provider';
@@ -60,12 +63,15 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeContextualRetrievalService,
     KnowledgeChunkContextExpansionService,
     KnowledgeContentRuntimeService,
+    KnowledgeDocumentIndexSyncService,
     KnowledgeDocumentService,
     KnowledgeVectorRetrieverService,
     PgKeywordRetrieverService,
     ElasticKeywordRetrieverService,
     KnowledgeKeywordRetrieverService,
     KnowledgeHybridRetrieverService,
+    KnowledgeStage1RetrievalService,
+    RagSemanticCacheCoordinatorService,
     KnowledgeSearchService,
     KnowledgeContentService,
     QueryRewriteService,

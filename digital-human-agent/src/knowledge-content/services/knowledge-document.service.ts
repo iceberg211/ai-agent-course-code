@@ -4,29 +4,16 @@ import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
-import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
-import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
 import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
-import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
 import {
-  Neo4jGraphSyncService,
-  type Neo4jGraphSyncResult,
-} from '@/knowledge-content/graph/neo4j-graph-sync.service';
+  KnowledgeDocumentIndexSyncService,
+  type KnowledgeDocumentChunkRow,
+} from '@/knowledge-content/services/knowledge-document-index-sync.service';
 import { splitKnowledgeDocumentContent } from '@/knowledge-content/services/knowledge-document-chunking.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
 
-interface InsertChunkRow {
-  id: string;
-  document_id: string;
-  chunk_index: number;
-  content: string;
-  source: string;
-  category: string | null;
-  enabled: boolean;
-  embedding: string;
-}
+type InsertChunkRow = KnowledgeDocumentChunkRow;
 
 @Injectable()
 export class KnowledgeDocumentService {
@@ -38,20 +25,13 @@ export class KnowledgeDocumentService {
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
     private readonly runtime: KnowledgeContentRuntimeService,
-    private readonly elasticsearchSyncService: ElasticsearchSyncService,
-    private readonly graphExtractorService: KnowledgeGraphExtractorService,
-    private readonly neo4jGraphSyncService: Neo4jGraphSyncService,
-    private readonly knowledgeChunkIndexQueryService: KnowledgeChunkIndexQueryService,
+    private readonly documentIndexSyncService: KnowledgeDocumentIndexSyncService,
     private readonly contextualRetrievalService: KnowledgeContextualRetrievalService,
   ) {}
 
   async deleteDocument(documentId: string): Promise<void> {
     await this.documentRepo.delete(documentId);
-    await this.elasticsearchSyncService.safeDeleteByDocumentId(
-      documentId,
-      `删除文档 ${documentId}`,
-    );
-    await this.neo4jGraphSyncService.safeDeleteByDocumentId(
+    await this.documentIndexSyncService.cleanupDocument(
       documentId,
       `删除文档 ${documentId}`,
     );
@@ -117,23 +97,13 @@ export class KnowledgeDocumentService {
       })) satisfies InsertChunkRow[];
 
       await this.insertChunkRows(document.id, chunkRows);
-      await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
-        chunkRows.map((row) => this.toIndexDocument(row, knowledgeId)),
-        `写入文档 ${document.id}`,
-      );
-      const graphChunks = chunkRows.map((row) => ({
-        id: row.id,
-        chunkIndex: row.chunk_index,
-        source: row.source,
-        category: row.category,
-        content: row.content,
-      }));
-      const graphSyncResult = await this.syncDocumentGraph({
-        documentId: document.id,
-        knowledgeId,
-        source: filename,
-        chunks: graphChunks,
-      });
+      const graphSyncResult =
+        await this.documentIndexSyncService.syncCreatedDocument({
+          documentId: document.id,
+          knowledgeId,
+          source: filename,
+          rows: chunkRows,
+        });
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
@@ -186,16 +156,7 @@ export class KnowledgeDocumentService {
       throw new Error(error.message);
     }
 
-    const chunkDocument =
-      await this.knowledgeChunkIndexQueryService.findByChunkId(chunkId);
-    if (chunkDocument) {
-      await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
-        [chunkDocument],
-        context,
-      );
-    }
-
-    await this.neo4jGraphSyncService.safeUpdateChunkEnabled(
+    await this.documentIndexSyncService.syncChunkEnabled(
       chunkId,
       enabled,
       context,
@@ -248,66 +209,10 @@ export class KnowledgeDocumentService {
       );
     }
 
-    await this.elasticsearchSyncService.safeDeleteByDocumentId(
+    await this.documentIndexSyncService.cleanupDocument(
       documentId,
       `导入失败清理文档 ${documentId}`,
     );
-    await this.neo4jGraphSyncService.safeDeleteByDocumentId(
-      documentId,
-      `导入失败清理文档 ${documentId}`,
-    );
-  }
-
-  private async syncDocumentGraph(input: {
-    documentId: string;
-    knowledgeId: string;
-    source: string;
-    chunks: Array<{
-      id: string;
-      chunkIndex: number;
-      source: string;
-      category: string | null;
-      content: string;
-    }>;
-  }): Promise<Neo4jGraphSyncResult> {
-    if (!this.neo4jGraphSyncService.isEnabled()) {
-      return { status: 'skipped' };
-    }
-
-    try {
-      const extractedGraph = await this.graphExtractorService.extract({
-        documentId: input.documentId,
-        chunks: input.chunks,
-      });
-
-      return await this.neo4jGraphSyncService.safeUpsertDocument({
-        ...input,
-        extractedGraph,
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `图谱抽取失败（document=${input.documentId}）：${errorMessage}`,
-      );
-      return { status: 'failed', errorMessage };
-    }
-  }
-
-  private toIndexDocument(
-    row: InsertChunkRow,
-    knowledgeId: string,
-  ): KnowledgeChunkIndexDocument {
-    return {
-      id: row.id,
-      document_id: row.document_id,
-      knowledge_base_id: knowledgeId,
-      chunk_index: row.chunk_index,
-      content: row.content,
-      source: row.source,
-      category: row.category,
-      enabled: row.enabled,
-    };
   }
 
   private readBoolean(key: string, fallback: boolean): boolean {
