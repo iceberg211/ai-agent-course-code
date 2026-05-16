@@ -27,7 +27,6 @@ const MIGRATIONS = [
   '007_drop_legacy_shim.sql',
   '008_keyword_retrieval_index.sql',
   '009_rag_semantic_cache.sql',
-  '010_rag_graph_index.sql',
   '012_rag_parent_child_index.sql',
   '013_rag_raptor_index.sql',
 ];

@@ -4,13 +4,13 @@ import {
 } from '@/agent/retrieval-strategy.utils';
 
 describe('normalizeRetrievalStrategy', () => {
-  const originalGraphFlag = process.env.ENABLE_GRAPH_RETRIEVAL;
+  const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
 
   afterEach(() => {
     if (originalGraphFlag === undefined) {
-      delete process.env.ENABLE_GRAPH_RETRIEVAL;
+      delete process.env.NEO4J_GRAPH_ENABLED;
     } else {
-      process.env.ENABLE_GRAPH_RETRIEVAL = originalGraphFlag;
+      process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
     }
   });
 
@@ -40,7 +40,7 @@ describe('normalizeRetrievalStrategy', () => {
   });
 
   it('当前没有 GraphRetriever 时，不把 graph-only 策略当作可执行检索', () => {
-    delete process.env.ENABLE_GRAPH_RETRIEVAL;
+    delete process.env.NEO4J_GRAPH_ENABLED;
 
     const strategy = normalizeRetrievalStrategy({
       needRetrieval: true,
@@ -59,7 +59,7 @@ describe('normalizeRetrievalStrategy', () => {
   });
 
   it('显式开启图谱检索后，graph-only 策略可以进入检索', () => {
-    process.env.ENABLE_GRAPH_RETRIEVAL = 'true';
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
 
     const strategy = normalizeRetrievalStrategy({
       needRetrieval: true,

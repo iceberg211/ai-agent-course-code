@@ -10,10 +10,11 @@ import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/ela
 import { elasticsearchProvider } from '@/knowledge-content/elasticsearch/elasticsearch.provider';
 import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
-import { KnowledgeGraphBackfillService } from '@/knowledge-content/graph/knowledge-graph-backfill.service';
 import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
-import { KnowledgeGraphRetrieverService } from '@/knowledge-content/graph/knowledge-graph-retriever.service';
-import { KnowledgeGraphSyncService } from '@/knowledge-content/graph/knowledge-graph-sync.service';
+import { Neo4jGraphBackfillService } from '@/knowledge-content/graph/neo4j-graph-backfill.service';
+import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
+import { Neo4jGraphService } from '@/knowledge-content/graph/neo4j-graph.service';
+import { Neo4jGraphSyncService } from '@/knowledge-content/graph/neo4j-graph-sync.service';
 import { KnowledgeParentChildBackfillService } from '@/knowledge-content/parent-child/knowledge-parent-child-backfill.service';
 import { KnowledgeParentChildSyncService } from '@/knowledge-content/parent-child/knowledge-parent-child-sync.service';
 import { ElasticKeywordRetrieverService } from '@/knowledge-content/keyword-retrievers/elastic-keyword-retriever.service';
@@ -48,10 +49,11 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     ElasticsearchIndexService,
     ElasticsearchSyncService,
     KnowledgeChunkIndexQueryService,
-    KnowledgeGraphBackfillService,
     KnowledgeGraphExtractorService,
-    KnowledgeGraphRetrieverService,
-    KnowledgeGraphSyncService,
+    Neo4jGraphService,
+    Neo4jGraphBackfillService,
+    Neo4jGraphRetrieverService,
+    Neo4jGraphSyncService,
     KnowledgeParentChildBackfillService,
     KnowledgeParentChildSyncService,
     KnowledgeElasticsearchBackfillService,

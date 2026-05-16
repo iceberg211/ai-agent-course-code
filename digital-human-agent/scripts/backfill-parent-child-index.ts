@@ -7,7 +7,7 @@ import {
   buildKnowledgeParentChildBackfillConnectionWarnings,
   resolveKnowledgeParentChildBackfillOptions,
 } from '@/knowledge-content/parent-child/knowledge-parent-child-backfill-options';
-import { assertKnowledgeGraphBackfillDatabaseReady } from '@/knowledge-content/graph/knowledge-graph-backfill-preflight';
+import { assertPostgresBackfillDatabaseReady } from '@/knowledge-content/backfill/postgres-backfill-preflight';
 import { KnowledgeParentChildBackfillService } from '@/knowledge-content/parent-child/knowledge-parent-child-backfill.service';
 
 function readDotEnv(): Record<string, string> {
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     console.warn(`Parent-Child 回填连接警告：${warning}`);
   }
 
-  await assertKnowledgeGraphBackfillDatabaseReady(envValue('DATABASE_URL'));
+  await assertPostgresBackfillDatabaseReady(envValue('DATABASE_URL'));
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'warn', 'error'],

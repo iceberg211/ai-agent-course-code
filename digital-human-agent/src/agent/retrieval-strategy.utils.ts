@@ -53,7 +53,7 @@ export function normalizeRetrievalStrategy(
 }
 
 function isGraphRetrievalEnabled(): boolean {
-  return String(process.env.ENABLE_GRAPH_RETRIEVAL ?? '').trim() === 'true';
+  return String(process.env.NEO4J_GRAPH_ENABLED ?? '').trim() === 'true';
 }
 
 function clampInteger(

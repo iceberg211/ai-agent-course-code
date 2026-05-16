@@ -47,6 +47,7 @@ export function validateEnv(config: EnvMap): EnvMap {
     errors.push(`TTS_TRANSPORT 仅支持 ws/http/auto，当前为 ${ttsTransport}`);
   }
   const elasticsearchEnabled = asBooleanFlag(config.ELASTICSEARCH_ENABLED);
+  const neo4jGraphEnabled = asBooleanFlag(config.NEO4J_GRAPH_ENABLED);
   const hybridKeywordBackend = normalizeLowercase(
     config.HYBRID_KEYWORD_BACKEND,
     'pg',
@@ -84,6 +85,7 @@ export function validateEnv(config: EnvMap): EnvMap {
     TTS_PROVIDER: ttsProvider,
     TTS_TRANSPORT: ttsTransport,
     ELASTICSEARCH_ENABLED: elasticsearchEnabled,
+    NEO4J_GRAPH_ENABLED: neo4jGraphEnabled,
     HYBRID_KEYWORD_BACKEND: hybridKeywordBackend,
     DIGITAL_HUMAN_PROVIDER: provider,
   };

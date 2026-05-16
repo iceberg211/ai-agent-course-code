@@ -214,8 +214,8 @@ describe('KnowledgeSearchService', () => {
   });
 
   it('图谱检索开启且 graph-only 时，会把图谱结果纳入 stage1', async () => {
-    const originalGraphFlag = process.env.ENABLE_GRAPH_RETRIEVAL;
-    process.env.ENABLE_GRAPH_RETRIEVAL = 'true';
+    const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
     const graphChunk = {
       id: 'chunk-graph',
       content: '甲方应保留审计记录。',
@@ -274,9 +274,9 @@ describe('KnowledgeSearchService', () => {
       });
     } finally {
       if (originalGraphFlag === undefined) {
-        delete process.env.ENABLE_GRAPH_RETRIEVAL;
+        delete process.env.NEO4J_GRAPH_ENABLED;
       } else {
-        process.env.ENABLE_GRAPH_RETRIEVAL = originalGraphFlag;
+        process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
       }
     }
   });

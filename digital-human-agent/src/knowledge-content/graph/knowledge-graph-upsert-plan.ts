@@ -1,4 +1,4 @@
-export const DEFAULT_RAG_GRAPH_SCHEMA_VERSION = 'graph-schema-v1';
+export const DEFAULT_RAG_GRAPH_SCHEMA_VERSION = 'neo4j-graph-v1';
 export const DEFAULT_RAG_GRAPH_EXTRACTOR_VERSION = 'graph-extractor-v1';
 
 export type KnowledgeGraphNodeType =
@@ -13,6 +13,7 @@ export interface KnowledgeGraphChunkRef {
   chunkIndex: number;
   source: string;
   content?: string;
+  category?: string | null;
 }
 
 export interface KnowledgeGraphNodeRef {

@@ -8,7 +8,8 @@ import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsea
 import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
 import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
-import { KnowledgeGraphSyncService } from '@/knowledge-content/graph/knowledge-graph-sync.service';
+import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
+import { Neo4jGraphSyncService } from '@/knowledge-content/graph/neo4j-graph-sync.service';
 import { splitKnowledgeDocumentContent } from '@/knowledge-content/services/knowledge-document-chunking.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
@@ -35,7 +36,8 @@ export class KnowledgeDocumentService {
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
     private readonly runtime: KnowledgeContentRuntimeService,
     private readonly elasticsearchSyncService: ElasticsearchSyncService,
-    private readonly graphSyncService: KnowledgeGraphSyncService,
+    private readonly graphExtractorService: KnowledgeGraphExtractorService,
+    private readonly neo4jGraphSyncService: Neo4jGraphSyncService,
     private readonly knowledgeChunkIndexQueryService: KnowledgeChunkIndexQueryService,
     private readonly contextualRetrievalService: KnowledgeContextualRetrievalService,
   ) {}
@@ -46,7 +48,7 @@ export class KnowledgeDocumentService {
       documentId,
       `删除文档 ${documentId}`,
     );
-    await this.graphSyncService.safeDeleteByDocumentId(
+    await this.neo4jGraphSyncService.safeDeleteByDocumentId(
       documentId,
       `删除文档 ${documentId}`,
     );
@@ -116,6 +118,28 @@ export class KnowledgeDocumentService {
         chunkRows.map((row) => this.toIndexDocument(row, knowledgeId)),
         `写入文档 ${document.id}`,
       );
+      await this.neo4jGraphSyncService.safeUpsertDocument({
+        documentId: document.id,
+        knowledgeId,
+        source: filename,
+        chunks: chunkRows.map((row) => ({
+          id: row.id,
+          chunkIndex: row.chunk_index,
+          source: row.source,
+          category: row.category,
+          content: row.content,
+        })),
+        extractedGraph: await this.graphExtractorService.extract({
+          documentId: document.id,
+          chunks: chunkRows.map((row) => ({
+            id: row.id,
+            chunkIndex: row.chunk_index,
+            source: row.source,
+            category: row.category,
+            content: row.content,
+          })),
+        }),
+      });
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
@@ -223,7 +247,7 @@ export class KnowledgeDocumentService {
       documentId,
       `导入失败清理文档 ${documentId}`,
     );
-    await this.graphSyncService.safeDeleteByDocumentId(
+    await this.neo4jGraphSyncService.safeDeleteByDocumentId(
       documentId,
       `导入失败清理文档 ${documentId}`,
     );

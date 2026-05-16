@@ -248,7 +248,7 @@ function buildIndexVersions(
     elasticsearch:
       envValue(env, 'ELASTICSEARCH_INDEX_VERSION') ||
       DEFAULT_ELASTICSEARCH_INDEX_VERSION,
-    graph: envValue(env, 'GRAPH_INDEX_VERSION') || null,
+    graph: envValue(env, 'NEO4J_GRAPH_SCHEMA_VERSION') || null,
     chunking:
       envValue(env, 'KNOWLEDGE_CHUNKING_VERSION') || DEFAULT_CHUNKING_VERSION,
   };

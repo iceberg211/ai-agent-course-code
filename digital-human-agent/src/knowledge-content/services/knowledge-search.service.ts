@@ -34,7 +34,7 @@ import type {
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
-import { KnowledgeGraphRetrieverService } from '@/knowledge-content/graph/knowledge-graph-retriever.service';
+import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
 import { DEFAULT_PARENT_CHILD_INDEX_VERSION } from '@/knowledge-content/parent-child/knowledge-parent-child-plan';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
@@ -72,7 +72,7 @@ export class KnowledgeSearchService {
     private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
     private readonly semanticCacheStore?: RagSemanticCacheStoreService,
     @Optional()
-    private readonly graphRetriever?: KnowledgeGraphRetrieverService,
+    private readonly graphRetriever?: Neo4jGraphRetrieverService,
   ) {}
 
   async retrieve(
@@ -887,7 +887,7 @@ export class KnowledgeSearchService {
     return {
       vector: strategy.useVector ? 'pgvector' : 'disabled',
       keyword: strategy.useKeyword ? this.readKeywordBackendName() : 'disabled',
-      graph: strategy.useGraph ? 'postgres-graph-index' : 'disabled',
+      graph: strategy.useGraph ? 'neo4j' : 'disabled',
     };
   }
 
@@ -922,7 +922,7 @@ export class KnowledgeSearchService {
       elasticsearch:
         readNonEmptyEnv('ELASTICSEARCH_INDEX_VERSION') ??
         DEFAULT_ELASTICSEARCH_INDEX_VERSION,
-      graph: readNonEmptyEnv('GRAPH_INDEX_VERSION'),
+      graph: readNonEmptyEnv('NEO4J_GRAPH_SCHEMA_VERSION'),
       parentChild:
         readNonEmptyEnv('PARENT_CHILD_INDEX_VERSION') ??
         DEFAULT_PARENT_CHILD_INDEX_VERSION,
@@ -1206,7 +1206,7 @@ export class KnowledgeSearchService {
       }
 
       this.logger.warn(
-        `GraphRetriever 失败，继续使用其他检索通道：${
+        `Neo4j GraphRetriever 失败，继续使用其他检索通道：${
           error instanceof Error ? error.message : String(error)
         }`,
       );

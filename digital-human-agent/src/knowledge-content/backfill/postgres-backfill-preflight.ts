@@ -2,17 +2,17 @@ import { Client as PgClient } from 'pg';
 import { formatRagEvalError } from '@/knowledge-content/evaluation/rag-eval-report';
 import { redactRuntimeDiagnostic } from '@/knowledge-content/evaluation/rag-runtime-preflight.helpers';
 
-export type GraphBackfillDatabaseConnector = (
+export type PostgresBackfillDatabaseConnector = (
   databaseUrl: string,
 ) => Promise<void>;
 
-export async function assertKnowledgeGraphBackfillDatabaseReady(
+export async function assertPostgresBackfillDatabaseReady(
   databaseUrl: string,
-  connector: GraphBackfillDatabaseConnector = connectPostgresOnce,
+  connector: PostgresBackfillDatabaseConnector = connectPostgresOnce,
 ): Promise<void> {
   const normalizedUrl = databaseUrl.trim();
   if (!normalizedUrl) {
-    throw new Error('DATABASE_URL 为空，无法执行 Graph RAG 回填');
+    throw new Error('DATABASE_URL 为空，无法执行回填');
   }
 
   try {
@@ -21,7 +21,7 @@ export async function assertKnowledgeGraphBackfillDatabaseReady(
     const host = redactRuntimeDiagnostic(readDatabaseHost(normalizedUrl));
     const reason = redactRuntimeDiagnostic(formatRagEvalError(error));
     throw new Error(
-      `Graph RAG 回填预检失败 database host=${host}: ${reason}。请先运行 pnpm rag:preflight 查看脱敏诊断。`,
+      `回填预检失败 database host=${host}: ${reason}。请先运行 pnpm rag:preflight 查看脱敏诊断。`,
     );
   }
 }

@@ -60,8 +60,8 @@ describe('RetrievalStrategyService', () => {
   });
 
   it('显式开启 Graph 后，关系型问题 fallback 策略会把图谱作为补充召回通道', async () => {
-    const originalGraphFlag = process.env.ENABLE_GRAPH_RETRIEVAL;
-    process.env.ENABLE_GRAPH_RETRIEVAL = 'true';
+    const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
     const { service } = createServiceWithFailingLlm();
 
     try {
@@ -82,9 +82,9 @@ describe('RetrievalStrategyService', () => {
       });
     } finally {
       if (originalGraphFlag === undefined) {
-        delete process.env.ENABLE_GRAPH_RETRIEVAL;
+        delete process.env.NEO4J_GRAPH_ENABLED;
       } else {
-        process.env.ENABLE_GRAPH_RETRIEVAL = originalGraphFlag;
+        process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
       }
     }
   });

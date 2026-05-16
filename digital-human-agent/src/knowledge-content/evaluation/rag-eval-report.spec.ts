@@ -17,7 +17,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
         HYBRID_KEYWORD_BACKEND: 'elastic',
         ELASTICSEARCH_ENABLED: 'true',
         ELASTICSEARCH_INDEX_VERSION: 'v3',
-        GRAPH_INDEX_VERSION: 'graph-v1',
+        NEO4J_GRAPH_SCHEMA_VERSION: 'neo4j-graph-v1',
         KNOWLEDGE_CHUNKING_VERSION: 'semantic-v1',
         MODEL_NAME: 'qwen-max',
         EMBEDDINGS_MODEL_NAME: 'text-embedding-v4',
@@ -43,7 +43,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
       },
       indexVersions: {
         elasticsearch: 'v3',
-        graph: 'graph-v1',
+        graph: 'neo4j-graph-v1',
         chunking: 'semantic-v1',
       },
     });
