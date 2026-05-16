@@ -19,6 +19,7 @@ interface HybridRetrieveParams {
   useVector?: boolean;
   useKeyword?: boolean;
   useExactPhrase?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface HybridRetrieveResult {
@@ -82,6 +83,7 @@ export class KnowledgeHybridRetrieverService {
                 queryEmbedding: params.queryEmbedding,
                 threshold: params.threshold,
                 matchCount: params.matchCount,
+                signal: params.signal,
               })
             : Promise.resolve([] as KnowledgeChunk[]);
         if (!useVector || !params.queryEmbedding) {
@@ -95,6 +97,7 @@ export class KnowledgeHybridRetrieverService {
                 queryEmbedding: params.hydeQueryEmbedding,
                 threshold: params.threshold,
                 matchCount: params.matchCount,
+                signal: params.signal,
               })
             : Promise.resolve([] as KnowledgeChunk[]);
         if (!useVector || !params.hydeQueryEmbedding) {
@@ -107,6 +110,7 @@ export class KnowledgeHybridRetrieverService {
               terms: params.keywordTerms,
               matchCount: params.matchCount,
               useExactPhrase: params.useExactPhrase,
+              signal: params.signal,
             })
           : Promise.resolve({
               chunks: [] as KnowledgeChunk[],

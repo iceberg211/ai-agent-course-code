@@ -69,11 +69,7 @@ export function canContinueMultiHop(
 export function extendSubQuestionsWithMissingFacts(
   state: Pick<
     RagGraphState,
-    | 'strategy'
-    | 'question'
-    | 'subQuestions'
-    | 'retrievalHistory'
-    | 'maxHops'
+    'strategy' | 'question' | 'subQuestions' | 'retrievalHistory' | 'maxHops'
   >,
   missingFacts: string[],
 ): string[] {
@@ -173,6 +169,8 @@ export function mergeEvidenceChunks(
         previous.rerank_score ?? 0,
         chunk.rerank_score ?? 0,
       ),
+      graph_score: Math.max(previous.graph_score ?? 0, chunk.graph_score ?? 0),
+      graph_evidence: mergeGraphEvidence(previous, chunk),
       retrieval_sources: Array.from(
         new Set([
           ...(previous.retrieval_sources ?? []),
@@ -195,8 +193,33 @@ export function compareEvidence(
     (left.rerank_score ?? 0) - (right.rerank_score ?? 0) ||
     (left.hybrid_score ?? 0) - (right.hybrid_score ?? 0) ||
     (left.keyword_score ?? 0) - (right.keyword_score ?? 0) ||
+    (left.graph_score ?? 0) - (right.graph_score ?? 0) ||
     (left.similarity ?? 0) - (right.similarity ?? 0)
   );
+}
+
+function mergeGraphEvidence(
+  previous: RetrievedKnowledgeChunk,
+  incoming: RetrievedKnowledgeChunk,
+): RetrievedKnowledgeChunk['graph_evidence'] {
+  const merged = [
+    ...(previous.graph_evidence ?? []),
+    ...(incoming.graph_evidence ?? []),
+  ];
+  if (merged.length === 0) return undefined;
+
+  const seen = new Set<string>();
+  return merged.filter((item) => {
+    const key = [
+      item.source,
+      item.target,
+      item.relationType,
+      item.evidenceText ?? '',
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function toKnowledgeCitations(

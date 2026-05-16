@@ -8,6 +8,7 @@ export interface KeywordRetrieveParams {
   terms: string[];
   matchCount: number;
   useExactPhrase?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface KeywordRetriever {

@@ -9,7 +9,10 @@ import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elas
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
 import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
 import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
-import { Neo4jGraphSyncService } from '@/knowledge-content/graph/neo4j-graph-sync.service';
+import {
+  Neo4jGraphSyncService,
+  type Neo4jGraphSyncResult,
+} from '@/knowledge-content/graph/neo4j-graph-sync.service';
 import { splitKnowledgeDocumentContent } from '@/knowledge-content/services/knowledge-document-chunking.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
@@ -118,32 +121,29 @@ export class KnowledgeDocumentService {
         chunkRows.map((row) => this.toIndexDocument(row, knowledgeId)),
         `写入文档 ${document.id}`,
       );
-      await this.neo4jGraphSyncService.safeUpsertDocument({
+      const graphChunks = chunkRows.map((row) => ({
+        id: row.id,
+        chunkIndex: row.chunk_index,
+        source: row.source,
+        category: row.category,
+        content: row.content,
+      }));
+      const graphSyncResult = await this.syncDocumentGraph({
         documentId: document.id,
         knowledgeId,
         source: filename,
-        chunks: chunkRows.map((row) => ({
-          id: row.id,
-          chunkIndex: row.chunk_index,
-          source: row.source,
-          category: row.category,
-          content: row.content,
-        })),
-        extractedGraph: await this.graphExtractorService.extract({
-          documentId: document.id,
-          chunks: chunkRows.map((row) => ({
-            id: row.id,
-            chunkIndex: row.chunk_index,
-            source: row.source,
-            category: row.category,
-            content: row.content,
-          })),
-        }),
+        chunks: graphChunks,
       });
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
         chunkCount: enrichedDocuments.length,
+        graphSyncStatus: graphSyncResult.status,
+        graphSyncError:
+          graphSyncResult.status === 'failed'
+            ? graphSyncResult.errorMessage
+            : null,
+        graphSyncedAt: graphSyncResult.status === 'indexed' ? new Date() : null,
       });
 
       return this.documentRepo.findOneByOrFail({ id: document.id });
@@ -176,6 +176,7 @@ export class KnowledgeDocumentService {
   }
 
   async updateChunkEnabled(chunkId: string, enabled: boolean): Promise<void> {
+    const context = `更新 chunk ${chunkId}`;
     const { error } = await this.runtime.supabase
       .from('knowledge_chunk')
       .update({ enabled })
@@ -187,13 +188,17 @@ export class KnowledgeDocumentService {
 
     const chunkDocument =
       await this.knowledgeChunkIndexQueryService.findByChunkId(chunkId);
-    if (!chunkDocument) {
-      return;
+    if (chunkDocument) {
+      await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
+        [chunkDocument],
+        context,
+      );
     }
 
-    await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
-      [chunkDocument],
-      `更新 chunk ${chunkId}`,
+    await this.neo4jGraphSyncService.safeUpdateChunkEnabled(
+      chunkId,
+      enabled,
+      context,
     );
   }
 
@@ -251,6 +256,42 @@ export class KnowledgeDocumentService {
       documentId,
       `导入失败清理文档 ${documentId}`,
     );
+  }
+
+  private async syncDocumentGraph(input: {
+    documentId: string;
+    knowledgeId: string;
+    source: string;
+    chunks: Array<{
+      id: string;
+      chunkIndex: number;
+      source: string;
+      category: string | null;
+      content: string;
+    }>;
+  }): Promise<Neo4jGraphSyncResult> {
+    if (!this.neo4jGraphSyncService.isEnabled()) {
+      return { status: 'skipped' };
+    }
+
+    try {
+      const extractedGraph = await this.graphExtractorService.extract({
+        documentId: input.documentId,
+        chunks: input.chunks,
+      });
+
+      return await this.neo4jGraphSyncService.safeUpsertDocument({
+        ...input,
+        extractedGraph,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `图谱抽取失败（document=${input.documentId}）：${errorMessage}`,
+      );
+      return { status: 'failed', errorMessage };
+    }
   }
 
   private toIndexDocument(

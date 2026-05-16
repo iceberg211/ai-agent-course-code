@@ -203,4 +203,45 @@ describe('KnowledgeHybridRetrieverService', () => {
       useExactPhrase: true,
     });
   });
+
+  it('会把 AbortSignal 继续传给向量、HyDE 和关键词检索', async () => {
+    const signal = new AbortController().signal;
+    const vectorRetriever = {
+      retrieve: jest.fn().mockResolvedValue([]),
+    };
+    const keywordRetriever = {
+      retrieve: jest.fn().mockResolvedValue({
+        backend: 'pg',
+        fallbackToPg: false,
+        chunks: [],
+      }),
+    };
+    const service = new KnowledgeHybridRetrieverService(
+      vectorRetriever as never,
+      keywordRetriever as never,
+    );
+
+    await service.retrieve({
+      knowledgeId: 'kb-1',
+      queryEmbedding: [0.1, 0.2],
+      hydeQueryEmbedding: [0.3, 0.4],
+      retrievalQuery: '删除时限',
+      keywordTerms: ['删除时限'],
+      threshold: 0.6,
+      matchCount: 5,
+      signal,
+    });
+
+    expect(vectorRetriever.retrieve).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ signal }),
+    );
+    expect(vectorRetriever.retrieve).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ signal }),
+    );
+    expect(keywordRetriever.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ signal }),
+    );
+  });
 });

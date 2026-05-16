@@ -88,4 +88,13 @@ describe('validateEnv', () => {
       }),
     ).toThrow('HYBRID_KEYWORD_BACKEND');
   });
+
+  it('启用 Neo4j Graph RAG 时必须显式配置连接信息', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        NEO4J_GRAPH_ENABLED: 'true',
+      }),
+    ).toThrow('NEO4J_URL');
+  });
 });

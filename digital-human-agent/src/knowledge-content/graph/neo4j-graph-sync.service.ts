@@ -21,6 +21,11 @@ export interface Neo4jGraphSyncSummary {
   edgeCount: number;
 }
 
+export type Neo4jGraphSyncResult =
+  | { status: 'indexed' }
+  | { status: 'skipped' }
+  | { status: 'failed'; errorMessage: string };
+
 @Injectable()
 export class Neo4jGraphSyncService {
   private readonly logger = new Logger(Neo4jGraphSyncService.name);
@@ -48,15 +53,66 @@ export class Neo4jGraphSyncService {
     }
   }
 
-  async safeUpsertDocument(input: Neo4jGraphSyncInput): Promise<void> {
-    if (!this.isEnabled()) return;
+  async safeUpsertDocument(
+    input: Neo4jGraphSyncInput,
+  ): Promise<Neo4jGraphSyncResult> {
+    if (!this.isEnabled()) {
+      return { status: 'skipped' };
+    }
 
     try {
       await this.upsertDocument(input);
+      return { status: 'indexed' };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Neo4j 写入文档图谱失败（document=${input.documentId}）：${errorMessage}`,
+      );
+      await this.cleanupFailedUpsert(input.documentId);
+      return { status: 'failed', errorMessage };
+    }
+  }
+
+  async safeUpdateChunkEnabled(
+    chunkId: string,
+    enabled: boolean,
+    reason: string,
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+
+    try {
+      await this.updateChunkEnabled(chunkId, enabled);
     } catch (error) {
       this.logger.warn(
-        `Neo4j 写入文档图谱失败（document=${input.documentId}）：${
+        `Neo4j 更新 chunk 启停状态失败（${reason}）：${
           error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  async updateChunkEnabled(chunkId: string, enabled: boolean): Promise<void> {
+    await this.neo4jGraphService.query(
+      `
+        MATCH (c:KnowledgeChunk {id: $chunkId})
+        SET
+          c.enabled = $enabled,
+          c.updatedAt = datetime()
+      `,
+      { chunkId, enabled },
+    );
+  }
+
+  private async cleanupFailedUpsert(documentId: string): Promise<void> {
+    try {
+      await this.deleteByDocumentId(documentId);
+    } catch (cleanupError) {
+      this.logger.warn(
+        `Neo4j 清理半写入图谱失败（document=${documentId}）：${
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError)
         }`,
       );
     }
@@ -103,7 +159,9 @@ export class Neo4jGraphSyncService {
 
     await this.upsertDocumentAndChunks(input);
     await this.upsertGraphNodes(
-      plan.nodes.filter((node) => !['Document', 'Chunk'].includes(node.nodeType)),
+      plan.nodes.filter(
+        (node) => !['Document', 'Chunk'].includes(node.nodeType),
+      ),
     );
     await this.upsertGraphEdges(
       plan.edges.filter((edge) => edge.relationType !== 'HAS_CHUNK'),
@@ -140,7 +198,9 @@ export class Neo4jGraphSyncService {
     `);
   }
 
-  private async upsertDocumentAndChunks(input: Neo4jGraphSyncInput): Promise<void> {
+  private async upsertDocumentAndChunks(
+    input: Neo4jGraphSyncInput,
+  ): Promise<void> {
     await this.neo4jGraphService.query(
       `
         MERGE (d:KnowledgeDocument {id: $documentId})
@@ -231,7 +291,10 @@ export class Neo4jGraphSyncService {
     const edgesByType = new Map<string, typeof edges>();
     for (const edge of edges) {
       const relationType = toCypherRelationshipType(edge.relationType);
-      edgesByType.set(relationType, [...(edgesByType.get(relationType) ?? []), edge]);
+      edgesByType.set(relationType, [
+        ...(edgesByType.get(relationType) ?? []),
+        edge,
+      ]);
     }
 
     for (const [relationType, batch] of edgesByType) {

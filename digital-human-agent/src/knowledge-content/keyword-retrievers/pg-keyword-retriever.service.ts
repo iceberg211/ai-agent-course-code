@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
 import {
@@ -33,6 +34,7 @@ export class PgKeywordRetrieverService implements KeywordRetriever {
   async retrieveChunks(
     params: KeywordRetrieveParams,
   ): Promise<KnowledgeChunk[]> {
+    throwIfAborted(params.signal);
     const normalizedTerms = normalizeKeywordTerms(params.terms);
     if (normalizedTerms.length === 0) {
       return [];
@@ -95,6 +97,7 @@ export class PgKeywordRetrieverService implements KeywordRetriever {
       .limit(params.matchCount)
       .setParameters(parameters)
       .getRawMany<KeywordRow>();
+    throwIfAborted(params.signal);
 
     return rows
       .map((row) => {

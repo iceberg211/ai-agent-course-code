@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { estypes } from '@elastic/elasticsearch';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
 import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
 import { buildElasticKeywordShouldClauses } from '@/knowledge-content/keyword-retrievers/elastic-keyword-query.builder';
@@ -19,6 +20,7 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
   async retrieveChunks(
     params: KeywordRetrieveParams,
   ): Promise<KnowledgeChunk[]> {
+    throwIfAborted(params.signal);
     const normalizedTerms = normalizeKeywordTerms(params.terms);
     if (normalizedTerms.length === 0) {
       return [];
@@ -41,7 +43,7 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
       useExactPhrase: params.useExactPhrase === true,
     });
 
-    const response = await client.search<KnowledgeChunkIndexDocument>({
+    const searchRequest = {
       index: this.elasticsearchIndexService.getKnowledgeChunkReadAlias(),
       size: params.matchCount,
       query: {
@@ -63,7 +65,13 @@ export class ElasticKeywordRetrieverService implements KeywordRetriever {
         },
       },
       sort: [{ _score: { order: 'desc' } }, { chunk_index: { order: 'asc' } }],
-    });
+    } satisfies estypes.SearchRequest;
+    const response = params.signal
+      ? await client.search<KnowledgeChunkIndexDocument>(searchRequest, {
+          signal: params.signal,
+        })
+      : await client.search<KnowledgeChunkIndexDocument>(searchRequest);
+    throwIfAborted(params.signal);
 
     return this.mapResponseToChunks(response);
   }

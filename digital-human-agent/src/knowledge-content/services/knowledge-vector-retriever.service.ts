@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { throwIfAborted } from '@/agent/agent.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
@@ -8,6 +9,7 @@ interface VectorRetrieveParams {
   queryEmbedding: number[];
   threshold: number;
   matchCount: number;
+  signal?: AbortSignal;
 }
 
 @Injectable()
@@ -30,18 +32,23 @@ export class KnowledgeVectorRetrieverService {
         }),
       },
       async () => {
+        throwIfAborted(params.signal);
         const { data, error } = await this.runtime.withTransientRetry<{
           data: KnowledgeChunk[] | null;
           error: { message: string } | null;
         }>(
           'match_knowledge rpc',
           async () => {
-            const result = await this.runtime.supabase.rpc('match_knowledge', {
+            throwIfAborted(params.signal);
+            const query = this.runtime.supabase.rpc('match_knowledge', {
               query_embedding: params.queryEmbedding,
               p_kb_id: params.knowledgeId,
               match_threshold: params.threshold,
               match_count: params.matchCount,
             });
+            const result = params.signal
+              ? await query.abortSignal(params.signal)
+              : await query;
 
             return {
               data: (result.data as KnowledgeChunk[] | null) ?? null,
@@ -50,6 +57,7 @@ export class KnowledgeVectorRetrieverService {
           },
           3,
         );
+        throwIfAborted(params.signal);
 
         if (error) {
           throw new Error(error.message);

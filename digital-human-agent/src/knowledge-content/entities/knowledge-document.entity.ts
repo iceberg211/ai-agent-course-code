@@ -10,6 +10,11 @@ import { Knowledge } from '@/knowledge/knowledge.entity';
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type DocumentSourceType = 'upload';
+export type DocumentGraphSyncStatus =
+  | 'pending'
+  | 'indexed'
+  | 'failed'
+  | 'skipped';
 
 @Entity('knowledge_document')
 export class KnowledgeDocument {
@@ -40,6 +45,15 @@ export class KnowledgeDocument {
 
   @Column({ name: 'source_type', type: 'text', default: 'upload' })
   sourceType: DocumentSourceType;
+
+  @Column({ name: 'graph_sync_status', type: 'text', default: 'pending' })
+  graphSyncStatus: DocumentGraphSyncStatus;
+
+  @Column({ name: 'graph_sync_error', type: 'text', nullable: true })
+  graphSyncError: string | null;
+
+  @Column({ name: 'graph_synced_at', type: 'timestamptz', nullable: true })
+  graphSyncedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -57,6 +57,18 @@ export function validateEnv(config: EnvMap): EnvMap {
       `HYBRID_KEYWORD_BACKEND 仅支持 pg/elastic，当前为 ${hybridKeywordBackend}`,
     );
   }
+  if (neo4jGraphEnabled) {
+    for (const key of [
+      'NEO4J_URL',
+      'NEO4J_USERNAME',
+      'NEO4J_PASSWORD',
+      'NEO4J_DATABASE',
+    ] as const) {
+      if (!asNonEmptyString(config[key])) {
+        errors.push(`NEO4J_GRAPH_ENABLED=true 时，${key} 不能为空`);
+      }
+    }
+  }
 
   if (
     asBooleanFlag(config.LANGSMITH_TRACING) &&

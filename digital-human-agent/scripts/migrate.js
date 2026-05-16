@@ -29,6 +29,7 @@ const MIGRATIONS = [
   '009_rag_semantic_cache.sql',
   '012_rag_parent_child_index.sql',
   '013_rag_raptor_index.sql',
+  '014_knowledge_document_graph_sync_status.sql',
 ];
 
 function hasFlag(name) {
@@ -121,7 +122,10 @@ async function migrate() {
     console.warn(`数据库 migration 连接警告：${warning}`);
   }
 
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const client = new Client({
+    connectionString: url,
+    ssl: { rejectUnauthorized: false },
+  });
 
   try {
     await client.connect();
@@ -140,7 +144,11 @@ async function migrate() {
         //   42P07 = duplicate_table (表已存在)
         //   42P13 = invalid_function_definition (函数签名已变更，无法 CREATE OR REPLACE)
         //   42723 = duplicate_function (函数已存在)
-        if (err.code === '42P07' || err.code === '42P13' || err.code === '42723') {
+        if (
+          err.code === '42P07' ||
+          err.code === '42P13' ||
+          err.code === '42723'
+        ) {
           console.log(`${file} 已存在，跳过\n`);
           continue;
         }
@@ -201,8 +209,7 @@ function redactRuntimeDiagnostic(value) {
     )
     .replace(
       /\bdb\.([A-Za-z0-9_-]+)\.supabase\.co\b/g,
-      (_match, projectRef) =>
-        `db.${maskIdentifier(projectRef)}.supabase.co`,
+      (_match, projectRef) => `db.${maskIdentifier(projectRef)}.supabase.co`,
     )
     .replace(
       /(^|[^.\w-])([A-Za-z0-9_-]+)\.supabase\.co\b/g,

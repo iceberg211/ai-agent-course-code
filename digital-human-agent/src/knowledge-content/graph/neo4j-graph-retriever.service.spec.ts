@@ -55,7 +55,9 @@ describe('Neo4jGraphRetrieverService', () => {
     });
 
     expect(graphService.query).toHaveBeenCalledWith(
-      expect.stringContaining('MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})'),
+      expect.stringContaining(
+        'MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})',
+      ),
       expect.objectContaining({
         knowledgeId: 'kb-1',
         terms: ['甲方', '乙方', '甲方 乙方'],
@@ -76,5 +78,34 @@ describe('Neo4jGraphRetrieverService', () => {
         ],
       }),
     ]);
+  });
+
+  it('path 模式会按 graphMaxHops 构造多跳路径查询', async () => {
+    const query = jest
+      .fn<Promise<unknown[]>, [string, Record<string, unknown>]>()
+      .mockResolvedValue([]);
+    const graphService = {
+      isEnabled: jest.fn().mockReturnValue(true),
+      query,
+    };
+    const service = new Neo4jGraphRetrieverService(graphService as never);
+
+    await service.retrieve({
+      knowledgeId: 'kb-1',
+      retrievalQuery: '甲方 验收 付款',
+      keywordTerms: ['甲方', '付款'],
+      matchCount: 5,
+      graphMode: 'path',
+      graphMaxHops: 2,
+    });
+
+    expect(graphService.query).toHaveBeenCalledWith(
+      expect.stringContaining('MATCH path ='),
+      expect.objectContaining({
+        knowledgeId: 'kb-1',
+        matchCount: 5,
+      }),
+    );
+    expect(query.mock.calls[0]?.[0]).toContain('*1..2');
   });
 });

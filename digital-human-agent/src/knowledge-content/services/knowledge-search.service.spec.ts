@@ -1,8 +1,52 @@
 import { createAbortError } from '@/agent/agent.utils';
+import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import type {
+  KnowledgeChunk,
+  RetrieveKnowledgeOptions,
+} from '@/knowledge-content/types/knowledge-content.types';
 
 describe('KnowledgeSearchService', () => {
-  const stage1Chunk = {
+  type SemanticCacheStoreMock = Record<string, jest.Mock<unknown, unknown[]>>;
+
+  type GraphRetrieverMock = {
+    isEnabled: jest.Mock<boolean, []>;
+    retrieve: jest.Mock<Promise<KnowledgeChunk[]>, [unknown]>;
+  };
+
+  type GraphRetrieveCall = {
+    knowledgeId: string;
+    retrievalQuery: string;
+    keywordTerms: string[];
+    matchCount: number;
+    graphMaxHops?: number;
+    graphMode?: 'neighbors' | 'path';
+    signal?: AbortSignal;
+  };
+
+  type HybridRetrieveCall = {
+    retrievalQuery: string;
+    keywordTerms: string[];
+    useVector?: boolean;
+    useKeyword?: boolean;
+  };
+
+  type SemanticCacheUpsertCall = {
+    query: string;
+    queryEmbedding: number[];
+    mountedKnowledgeBaseIds: string[];
+    payload: {
+      stage1ChunkIds: string[];
+      stage2ChunkIds: string[];
+      result: {
+        query: string;
+        retrievalQuery: string;
+      };
+    };
+  };
+
+  const stage1Chunk: KnowledgeChunk = {
     id: 'chunk-1',
     content: '雁门关事件相关片段',
     source: 'test.md',
@@ -10,7 +54,7 @@ describe('KnowledgeSearchService', () => {
     category: null,
     similarity: 0.92,
   };
-  const stage1Chunk2 = {
+  const stage1Chunk2: KnowledgeChunk = {
     id: 'chunk-2',
     content: '萧峰结局相关片段',
     source: 'test.md',
@@ -20,20 +64,30 @@ describe('KnowledgeSearchService', () => {
   };
 
   function createService(
-    semanticCacheStore?: Record<string, jest.Mock>,
-    graphRetriever?: Record<string, jest.Mock>,
+    semanticCacheStore?: SemanticCacheStoreMock,
+    graphRetriever?: GraphRetrieverMock,
   ) {
     const runtime = {
-      normalizeRetrieveOptions: jest.fn((options = {}) => ({
-        threshold: 0.6,
-        rerank: true,
-        stage1TopK: 10,
-        finalTopK: 5,
-        skipQueryRewrite: (options as { skipQueryRewrite?: boolean })
-          .skipQueryRewrite === true,
-      })),
+      normalizeRetrieveOptions: jest.fn(
+        (
+          options: Pick<
+            RetrieveKnowledgeOptions,
+            | 'rerank'
+            | 'stage1TopK'
+            | 'finalTopK'
+            | 'threshold'
+            | 'skipQueryRewrite'
+          > = {},
+        ) => ({
+          threshold: options.threshold ?? 0.6,
+          rerank: options.rerank !== false,
+          stage1TopK: options.stage1TopK ?? 10,
+          finalTopK: options.finalTopK ?? 5,
+          skipQueryRewrite: options.skipQueryRewrite === true,
+        }),
+      ),
       withTransientRetry: jest.fn(
-        async (_operation, fn: () => Promise<unknown>) => fn(),
+        <T>(_operation: string, fn: () => Promise<T>): Promise<T> => fn(),
       ),
       embeddings: {
         embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
@@ -41,27 +95,36 @@ describe('KnowledgeSearchService', () => {
       supabase: {
         from: jest.fn(),
       },
-      toBoundedNumber: jest.fn((raw, defaultValue, min, max) => {
-        const value = Number(raw);
-        if (!Number.isFinite(value)) return defaultValue;
-        return Math.min(max, Math.max(min, value));
-      }),
+      toBoundedNumber: jest.fn(
+        (raw: unknown, defaultValue: number, min: number, max: number) => {
+          const value = Number(raw);
+          if (!Number.isFinite(value)) return defaultValue;
+          return Math.min(max, Math.max(min, value));
+        },
+      ),
     };
 
     const hybridRetriever = {
-      retrieve: jest.fn().mockResolvedValue({
-        chunks: [stage1Chunk, stage1Chunk2],
-        keywordBackend: 'pg',
-        vectorResultCount: 2,
-        hydeVectorResultCount: 0,
-        keywordResultCount: 1,
-        fallbackToPg: false,
-        skippedChannels: [],
-      }),
+      retrieve: jest
+        .fn<Promise<HybridRetrieveResult>, [unknown]>()
+        .mockResolvedValue({
+          chunks: [stage1Chunk, stage1Chunk2],
+          keywordBackend: 'pg',
+          vectorResultCount: 2,
+          hydeVectorResultCount: 0,
+          keywordResultCount: 1,
+          fallbackToPg: false,
+          skippedChannels: [],
+        }),
     };
 
     const rerankerService = {
-      rerank: jest.fn().mockResolvedValue([stage1Chunk, stage1Chunk2]),
+      rerank: jest
+        .fn<
+          Promise<KnowledgeChunk[]>,
+          [string, KnowledgeChunk[], number, AbortSignal?]
+        >()
+        .mockResolvedValue([stage1Chunk, stage1Chunk2]),
     };
 
     const queryRewriteService = {
@@ -84,8 +147,10 @@ describe('KnowledgeSearchService', () => {
     };
 
     const chunkContextExpansionService = {
-      expand: jest.fn(async (chunks) => chunks),
-      expandParentContext: jest.fn(async (chunks) => chunks),
+      expand: jest.fn((chunks: KnowledgeChunk[]) => Promise.resolve(chunks)),
+      expandParentContext: jest.fn((chunks: KnowledgeChunk[]) =>
+        Promise.resolve(chunks),
+      ),
     };
 
     const service = new KnowledgeSearchService(
@@ -107,6 +172,34 @@ describe('KnowledgeSearchService', () => {
       chunkContextExpansionService,
       semanticCacheStore,
       graphRetriever,
+    };
+  }
+
+  function createGraphRetriever(
+    chunks: KnowledgeChunk[] = [],
+  ): GraphRetrieverMock {
+    return {
+      isEnabled: jest.fn<boolean, []>().mockReturnValue(true),
+      retrieve: jest
+        .fn<Promise<KnowledgeChunk[]>, [unknown]>()
+        .mockResolvedValue(chunks),
+    };
+  }
+
+  function baseStrategy(
+    overrides: Partial<RetrievalStrategy> = {},
+  ): RetrievalStrategy {
+    return {
+      needRetrieval: true,
+      useVector: true,
+      useKeyword: true,
+      useGraph: false,
+      useExactPhrase: false,
+      useMultiQuery: false,
+      useHyDE: false,
+      allowWeb: true,
+      reason: '测试检索策略',
+      ...overrides,
     };
   }
 
@@ -161,7 +254,7 @@ describe('KnowledgeSearchService', () => {
     };
   }
 
-  function buildRetrievalStrategy() {
+  function buildRetrievalStrategy(): RetrievalStrategy {
     return {
       needRetrieval: true,
       useVector: true,
@@ -213,10 +306,26 @@ describe('KnowledgeSearchService', () => {
     expect(result.rewrite.changed).toBe(true);
   });
 
+  it('retrieveWithStages 会把 AbortSignal 传给 stage1 检索通道', async () => {
+    const { service, hybridRetriever } = createService();
+    const signal = new AbortController().signal;
+
+    await service.retrieveWithStages('kb-1', '原始问题', {
+      signal,
+      skipQueryRewrite: true,
+    });
+
+    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signal,
+      }),
+    );
+  });
+
   it('图谱检索开启且 graph-only 时，会把图谱结果纳入 stage1', async () => {
     const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
     process.env.NEO4J_GRAPH_ENABLED = 'true';
-    const graphChunk = {
+    const graphChunk: KnowledgeChunk = {
       id: 'chunk-graph',
       content: '甲方应保留审计记录。',
       source: 'contract.md',
@@ -226,10 +335,7 @@ describe('KnowledgeSearchService', () => {
       graph_score: 0.72,
       retrieval_sources: ['graph'],
     };
-    const graphRetriever = {
-      isEnabled: jest.fn().mockReturnValue(true),
-      retrieve: jest.fn().mockResolvedValue([graphChunk]),
-    };
+    const graphRetriever = createGraphRetriever([graphChunk]);
     const {
       service,
       runtime,
@@ -240,6 +346,7 @@ describe('KnowledgeSearchService', () => {
 
     try {
       const result = await service.retrieveWithStages('kb-1', '甲方审计保留', {
+        signal: new AbortController().signal,
         strategy: {
           needRetrieval: true,
           useVector: false,
@@ -256,7 +363,11 @@ describe('KnowledgeSearchService', () => {
       expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
       expect(hybridRetriever.retrieve).not.toHaveBeenCalled();
       expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-      expect(graphRetriever.retrieve).toHaveBeenCalledWith({
+      expect(graphRetriever.retrieve).toHaveBeenCalledTimes(1);
+      const graphRetrieveCall = graphRetriever.retrieve.mock.calls[0]?.[0] as
+        | GraphRetrieveCall
+        | undefined;
+      expect(graphRetrieveCall).toMatchObject({
         knowledgeId: 'kb-1',
         retrievalQuery: '甲方审计保留',
         keywordTerms: ['甲方审计保留'],
@@ -264,16 +375,87 @@ describe('KnowledgeSearchService', () => {
         graphMaxHops: undefined,
         graphMode: undefined,
       });
+      expect(graphRetrieveCall?.signal).toBeInstanceOf(AbortSignal);
       expect(rerankerService.rerank).not.toHaveBeenCalled();
-      expect(result.stage1).toEqual([expect.objectContaining({ id: 'chunk-graph' })]);
+      expect(result.stage1).toEqual([
+        expect.objectContaining({ id: 'chunk-graph' }),
+      ]);
       expect(result.stage1Trace[0]).toMatchObject({
         knowledgeId: 'kb-1',
         graphResultCount: 1,
         graphBackend: 'neo4j',
         vectorBackend: 'disabled',
         keywordBackend: 'disabled',
-        skippedChannels: expect.arrayContaining(['vector', 'keyword', 'hyde']),
       });
+      expect(result.stage1Trace[0]?.skippedChannels).toContain('vector');
+      expect(result.stage1Trace[0]?.skippedChannels).toContain('keyword');
+      expect(result.stage1Trace[0]?.skippedChannels).toContain('hyde');
+    } finally {
+      if (originalGraphFlag === undefined) {
+        delete process.env.NEO4J_GRAPH_ENABLED;
+      } else {
+        process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
+      }
+    }
+  });
+
+  it('图谱结果进入统一 rank 融合，不会用原始 graph_score 压过混合检索', async () => {
+    const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
+    const hybridChunk: KnowledgeChunk = {
+      id: 'chunk-hybrid',
+      content: '向量和关键词共同命中的验收付款条款。',
+      source: 'contract.md',
+      chunk_index: 1,
+      category: 'contract',
+      similarity: 0.91,
+      hybrid_score: 0.032,
+      retrieval_sources: ['vector', 'keyword'],
+    };
+    const graphChunk: KnowledgeChunk = {
+      id: 'chunk-graph',
+      content: '图谱关系命中的审计记录条款。',
+      source: 'contract.md',
+      chunk_index: 4,
+      category: 'contract',
+      similarity: 0,
+      graph_score: 99,
+      retrieval_sources: ['graph'],
+    };
+    const graphRetriever = createGraphRetriever([graphChunk]);
+    const { service, hybridRetriever, rerankerService } = createService(
+      undefined,
+      graphRetriever,
+    );
+    hybridRetriever.retrieve.mockResolvedValue({
+      chunks: [hybridChunk],
+      keywordBackend: 'pg',
+      vectorResultCount: 1,
+      hydeVectorResultCount: 0,
+      keywordResultCount: 1,
+      fallbackToPg: false,
+      skippedChannels: [],
+    });
+
+    try {
+      const result = await service.retrieveWithStages('kb-1', '验收付款关系', {
+        rerank: false,
+        skipQueryRewrite: true,
+        strategy: baseStrategy({
+          useGraph: true,
+          useKeyword: true,
+          useVector: true,
+          allowWeb: false,
+        }),
+      });
+
+      expect(rerankerService.rerank).not.toHaveBeenCalled();
+      expect(result.stage1.map((chunk) => chunk.id)).toEqual([
+        'chunk-hybrid',
+        'chunk-graph',
+      ]);
+      expect(result.stage1[1].hybrid_score).toBeLessThan(0.032);
+      expect(result.stage1[1].graph_score).toBe(99);
     } finally {
       if (originalGraphFlag === undefined) {
         delete process.env.NEO4J_GRAPH_ENABLED;
@@ -534,7 +716,9 @@ describe('KnowledgeSearchService', () => {
     });
 
     expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(queryRewriteService.generateHypotheticalAnswer).not.toHaveBeenCalled();
+    expect(
+      queryRewriteService.generateHypotheticalAnswer,
+    ).not.toHaveBeenCalled();
     expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
     expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -591,14 +775,16 @@ describe('KnowledgeSearchService', () => {
 
     expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
     expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
-    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        retrievalQuery: '示例服务协议里协议终止后的试用数据应如何处理？',
-        keywordTerms: expect.arrayContaining(['协议终止', '试用数据']),
-        useVector: false,
-        useKeyword: true,
-      }),
-    );
+    const retrieveCall = hybridRetriever.retrieve.mock.calls[0]?.[0] as
+      | HybridRetrieveCall
+      | undefined;
+    expect(retrieveCall).toMatchObject({
+      retrievalQuery: '示例服务协议里协议终止后的试用数据应如何处理？',
+      useVector: false,
+      useKeyword: true,
+    });
+    expect(retrieveCall?.keywordTerms).toContain('协议终止');
+    expect(retrieveCall?.keywordTerms).toContain('试用数据');
   });
 
   it('useKeyword=false 时 trace 标记 keyword disabled，但 chunk 元数据不写入 disabled backend', async () => {
@@ -729,10 +915,9 @@ describe('KnowledgeSearchService', () => {
       5,
       undefined,
     );
-    expect(chunkContextExpansionService.expandParentContext).toHaveBeenCalledWith(
-      [stage1Chunk, stage1Chunk2],
-      2000,
-    );
+    expect(
+      chunkContextExpansionService.expandParentContext,
+    ).toHaveBeenCalledWith([stage1Chunk, stage1Chunk2], 2000);
     expect(chunkContextExpansionService.expand).not.toHaveBeenCalled();
     expect(result.stage2).toBe(parentStage2);
   });
@@ -849,21 +1034,22 @@ describe('KnowledgeSearchService', () => {
     );
     expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
     expect(hybridRetriever.retrieve).toHaveBeenCalled();
-    expect(cacheStore?.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: '原始问题',
-        queryEmbedding: [0.1, 0.2, 0.3],
-        mountedKnowledgeBaseIds: ['kb-1'],
-        payload: expect.objectContaining({
-          stage1ChunkIds: ['chunk-1', 'chunk-2'],
-          stage2ChunkIds: ['chunk-1', 'chunk-2'],
-          result: expect.objectContaining({
-            query: '原始问题',
-            retrievalQuery: '原始问题',
-          }),
-        }),
-      }),
-    );
+    const upsertCall = cacheStore?.upsert.mock.calls[0]?.[0] as
+      | SemanticCacheUpsertCall
+      | undefined;
+    expect(upsertCall).toMatchObject({
+      query: '原始问题',
+      queryEmbedding: [0.1, 0.2, 0.3],
+      mountedKnowledgeBaseIds: ['kb-1'],
+      payload: {
+        stage1ChunkIds: ['chunk-1', 'chunk-2'],
+        stage2ChunkIds: ['chunk-1', 'chunk-2'],
+        result: {
+          query: '原始问题',
+          retrievalQuery: '原始问题',
+        },
+      },
+    });
     expect(result.cache).toMatchObject({
       enabled: true,
       lookup: 'miss',

@@ -132,13 +132,12 @@ describe('KnowledgeKeywordRetrieverService', () => {
       terms: ['删除时限'],
       matchCount: 5,
       useExactPhrase: true,
+      signal: new AbortController().signal,
     };
 
     await service.retrieve(params);
 
-    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(
-      params,
-    );
+    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(params);
     expect(pgKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(params);
   });
 });

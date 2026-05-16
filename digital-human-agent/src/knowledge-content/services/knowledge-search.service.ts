@@ -37,6 +37,10 @@ import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
 import { DEFAULT_PARENT_CHILD_INDEX_VERSION } from '@/knowledge-content/parent-child/knowledge-parent-child-plan';
+import {
+  fuseStage1Channels,
+  mergeStage1Results,
+} from '@/knowledge-content/services/knowledge-retrieval-fusion';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
@@ -268,8 +272,13 @@ export class KnowledgeSearchService {
         }),
       },
       async () =>
-        (await this.retrieveForPersonaWithStagesInternal(personaId, query, options))
-          .stage2,
+        (
+          await this.retrieveForPersonaWithStagesInternal(
+            personaId,
+            query,
+            options,
+          )
+        ).stage2,
     );
   }
 
@@ -293,7 +302,9 @@ export class KnowledgeSearchService {
           stage1TopK: options.stage1TopK,
           finalTopK: options.finalTopK,
           threshold: options.threshold,
-          strategy: options.strategy ? JSON.stringify(options.strategy) : undefined,
+          strategy: options.strategy
+            ? JSON.stringify(options.strategy)
+            : undefined,
           skipQueryRewrite: options.skipQueryRewrite,
         },
         outputProcessor: (output) => ({
@@ -302,7 +313,8 @@ export class KnowledgeSearchService {
           stage1TraceCount: output.stage1Trace.length,
         }),
       },
-      () => this.retrieveForPersonaWithStagesInternal(personaId, query, options),
+      () =>
+        this.retrieveForPersonaWithStagesInternal(personaId, query, options),
     );
   }
 
@@ -446,7 +458,7 @@ export class KnowledgeSearchService {
       }),
     );
 
-    const mergedStage1 = this.mergeStage1Results(
+    const mergedStage1 = mergeStage1Results(
       stage1Results.map((result) => result.chunks),
       options.stage1TopK === undefined
         ? Math.max(20, ...knowledgeConfigs.map((config) => config.stage1TopK))
@@ -574,7 +586,9 @@ export class KnowledgeSearchService {
         stage1TopK: this.runtime.toBoundedNumber(config.stage1TopK, 20, 1, 50),
         retrievalConfig: config,
         updatedAt:
-          typeof knowledge.updated_at === 'string' ? knowledge.updated_at : null,
+          typeof knowledge.updated_at === 'string'
+            ? knowledge.updated_at
+            : null,
       };
     });
   }
@@ -770,7 +784,7 @@ export class KnowledgeSearchService {
       return null;
     }
 
-    return result as Omit<RetrieveKnowledgeDebugResult, 'cache'>;
+    return result;
   }
 
   private async writePersonaSemanticCache(
@@ -868,17 +882,23 @@ export class KnowledgeSearchService {
       personaId: keyResult.material.personaId,
       mountedKnowledgeBaseFingerprints:
         keyResult.material.mountedKnowledgeBaseFingerprints,
-      retrievalConfig: keyResult.material
-        .retrievalConfig as unknown as Record<string, unknown>,
+      retrievalConfig: keyResult.material.retrievalConfig as unknown as Record<
+        string,
+        unknown
+      >,
       models: {
         embeddingModel: keyResult.material.embeddingModel,
         rerankerProvider: keyResult.material.rerankerProvider,
         rerankerModel: keyResult.material.rerankerModel,
       },
-      strategyFlags: keyResult.material
-        .strategyFlags as unknown as Record<string, unknown>,
-      indexVersions: keyResult.material
-        .indexVersions as unknown as Record<string, unknown>,
+      strategyFlags: keyResult.material.strategyFlags as unknown as Record<
+        string,
+        unknown
+      >,
+      indexVersions: keyResult.material.indexVersions as unknown as Record<
+        string,
+        unknown
+      >,
     };
   }
 
@@ -893,7 +913,9 @@ export class KnowledgeSearchService {
   }
 
   private readEmbeddingModelName(): string {
-    return readNonEmptyEnv('EMBEDDINGS_MODEL_NAME') ?? DEFAULT_EMBEDDINGS_MODEL_NAME;
+    return (
+      readNonEmptyEnv('EMBEDDINGS_MODEL_NAME') ?? DEFAULT_EMBEDDINGS_MODEL_NAME
+    );
   }
 
   private readRerankerProvider(): string {
@@ -909,7 +931,8 @@ export class KnowledgeSearchService {
 
   private readKeywordBackendName(): string {
     return (
-      readNonEmptyEnv('HYBRID_KEYWORD_BACKEND') ?? DEFAULT_HYBRID_KEYWORD_BACKEND
+      readNonEmptyEnv('HYBRID_KEYWORD_BACKEND') ??
+      DEFAULT_HYBRID_KEYWORD_BACKEND
     );
   }
 
@@ -931,29 +954,6 @@ export class KnowledgeSearchService {
         readNonEmptyEnv('KNOWLEDGE_CHUNKING_VERSION') ??
         'markdown-structure-v1',
     };
-  }
-
-  private mergeStage1Results(
-    stage1Results: KnowledgeChunk[][],
-    globalStage1TopK: number,
-  ): KnowledgeChunk[] {
-    const dedupedChunks = new Map<string, KnowledgeChunk>();
-
-    for (const chunks of stage1Results) {
-      for (const chunk of chunks) {
-        const current = dedupedChunks.get(chunk.id);
-        dedupedChunks.set(
-          chunk.id,
-          current ? this.mergeRetrievedChunk(current, chunk) : chunk,
-        );
-      }
-    }
-
-    const sortedChunks = Array.from(dedupedChunks.values()).sort(
-      (left, right) => this.compareRetrievalChunks(right, left),
-    );
-
-    return sortedChunks.slice(0, globalStage1TopK);
   }
 
   private async resolveRetrievalQuery(
@@ -1039,7 +1039,10 @@ export class KnowledgeSearchService {
     threshold: number,
     globalStage1TopK: number,
     signal?: AbortSignal,
-  ): Promise<{ chunks: KnowledgeChunk[]; trace: RetrieveKnowledgeTraceItem[] }> {
+  ): Promise<{
+    chunks: KnowledgeChunk[];
+    trace: RetrieveKnowledgeTraceItem[];
+  }> {
     const perQueryTopK = Math.max(
       4,
       Math.ceil(globalStage1TopK / Math.max(retrievalQueries.length, 1)),
@@ -1069,6 +1072,7 @@ export class KnowledgeSearchService {
         threshold,
         perQueryTopK,
         strategy,
+        signal,
       );
       const keywordBackend: KeywordBackend | undefined =
         stage1Result.keywordBackend === 'disabled'
@@ -1105,7 +1109,7 @@ export class KnowledgeSearchService {
     }
 
     return {
-      chunks: this.mergeStage1Results(results, globalStage1TopK),
+      chunks: mergeStage1Results(results, globalStage1TopK),
       trace,
     };
   }
@@ -1119,6 +1123,7 @@ export class KnowledgeSearchService {
     threshold: number,
     matchCount: number,
     strategy: RetrievalStrategy,
+    signal?: AbortSignal,
   ): Promise<
     HybridRetrieveResult & {
       graphBackend: GraphBackend | 'disabled';
@@ -1138,6 +1143,7 @@ export class KnowledgeSearchService {
             useVector: strategy.useVector,
             useKeyword: strategy.useKeyword,
             useExactPhrase: strategy.useExactPhrase,
+            signal,
           })
         : this.buildSkippedHybridResult(strategy);
 
@@ -1147,6 +1153,7 @@ export class KnowledgeSearchService {
       keywordTerms,
       matchCount,
       strategy,
+      signal,
     );
     const skippedChannels = new Set(hybridResult.skippedChannels);
     const graphBackend = this.isGraphRetrieverEnabled(strategy)
@@ -1158,10 +1165,7 @@ export class KnowledgeSearchService {
 
     return {
       ...hybridResult,
-      chunks: this.mergeStage1Results(
-        [hybridResult.chunks, graphChunks],
-        matchCount,
-      ),
+      chunks: fuseStage1Channels(hybridResult.chunks, graphChunks, matchCount),
       graphBackend,
       graphResultCount: graphChunks.length,
       skippedChannels: Array.from(skippedChannels),
@@ -1171,9 +1175,7 @@ export class KnowledgeSearchService {
   private buildSkippedHybridResult(
     strategy: RetrievalStrategy,
   ): HybridRetrieveResult {
-    const skippedChannels = new Set<
-      'vector' | 'keyword' | 'hyde' | 'graph'
-    >();
+    const skippedChannels = new Set<'vector' | 'keyword' | 'hyde' | 'graph'>();
     if (!strategy.useVector) {
       skippedChannels.add('vector');
       skippedChannels.add('hyde');
@@ -1199,6 +1201,7 @@ export class KnowledgeSearchService {
     keywordTerms: string[],
     matchCount: number,
     strategy: RetrievalStrategy,
+    signal?: AbortSignal,
   ): Promise<KnowledgeChunk[]> {
     const graphRetriever = this.graphRetriever;
     if (!this.isGraphRetrieverEnabled(strategy) || !graphRetriever) return [];
@@ -1211,6 +1214,7 @@ export class KnowledgeSearchService {
         matchCount,
         graphMaxHops: strategy.graphMaxHops,
         graphMode: strategy.graphMode,
+        signal,
       });
     } catch (error) {
       if (this.isAbortError(error)) {
@@ -1271,44 +1275,6 @@ export class KnowledgeSearchService {
     }
   }
 
-  private mergeRetrievedChunk(
-    current: KnowledgeChunk,
-    incoming: KnowledgeChunk,
-  ): KnowledgeChunk {
-    const better = this.compareRetrievalChunks(incoming, current) > 0
-      ? incoming
-      : current;
-
-    return {
-      ...better,
-      similarity: Math.max(current.similarity ?? 0, incoming.similarity ?? 0),
-      hybrid_score: Math.max(
-        current.hybrid_score ?? 0,
-        incoming.hybrid_score ?? 0,
-      ),
-      keyword_score: Math.max(
-        current.keyword_score ?? 0,
-        incoming.keyword_score ?? 0,
-      ),
-      graph_score: Math.max(current.graph_score ?? 0, incoming.graph_score ?? 0),
-      retrieval_sources: Array.from(
-        new Set([
-          ...(current.retrieval_sources ?? []),
-          ...(incoming.retrieval_sources ?? []),
-        ]),
-      ),
-      matched_queries: Array.from(
-        new Set([
-          ...(current.matched_queries ?? []),
-          ...(incoming.matched_queries ?? []),
-        ]),
-      ).sort((left, right) => left - right),
-      keyword_backend: incoming.keyword_backend ?? current.keyword_backend,
-      vector_backend: incoming.vector_backend ?? current.vector_backend,
-      graph_evidence: mergeGraphEvidence(current, incoming),
-    };
-  }
-
   private resolveChunkVectorBackend(
     chunk: KnowledgeChunk,
   ): KnowledgeChunk['vector_backend'] {
@@ -1324,45 +1290,9 @@ export class KnowledgeSearchService {
     return undefined;
   }
 
-  private compareRetrievalChunks(
-    left: KnowledgeChunk,
-    right: KnowledgeChunk,
-  ): number {
-    return (
-      (left.hybrid_score ?? 0) - (right.hybrid_score ?? 0) ||
-      (left.keyword_score ?? 0) - (right.keyword_score ?? 0) ||
-      (left.graph_score ?? 0) - (right.graph_score ?? 0) ||
-      (left.similarity ?? 0) - (right.similarity ?? 0)
-    );
-  }
-
   private isAbortError(error: unknown): boolean {
     return (error as { name?: string })?.name === 'AbortError';
   }
-}
-
-function mergeGraphEvidence(
-  current: KnowledgeChunk,
-  incoming: KnowledgeChunk,
-): KnowledgeChunk['graph_evidence'] {
-  const merged = [
-    ...(current.graph_evidence ?? []),
-    ...(incoming.graph_evidence ?? []),
-  ];
-  if (merged.length === 0) return undefined;
-
-  const keys = new Set<string>();
-  return merged.filter((item) => {
-    const key = [
-      item.source,
-      item.target,
-      item.relationType,
-      item.evidenceText ?? '',
-    ].join('|');
-    if (keys.has(key)) return false;
-    keys.add(key);
-    return true;
-  });
 }
 
 function readNonEmptyEnv(key: string): string | null {
