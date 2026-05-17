@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
-import type { MountedKnowledgeConfig } from '@/knowledge-content/services/knowledge-retrieval.types';
 import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
+import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
@@ -19,7 +19,6 @@ import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import { mergeStage1Results } from '@/knowledge-content/services/knowledge-retrieval-fusion';
-import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 
 const DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY = 3;
@@ -58,6 +57,7 @@ export class KnowledgeSearchService {
     private readonly queryRewriteService: QueryRewriteService,
     private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
     private readonly semanticCacheCoordinator: RagSemanticCacheCoordinatorService,
+    private readonly personaKnowledgeConfigService: PersonaKnowledgeConfigService,
   ) {}
 
   async retrieve(
@@ -69,7 +69,7 @@ export class KnowledgeSearchService {
       const result = await this.retrieveWithStages(knowledgeId, query, options);
       return result.stage2;
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortError(error)) {
         throw error;
       }
 
@@ -203,7 +203,7 @@ export class KnowledgeSearchService {
           options.signal,
         );
       } catch (error) {
-        if (this.isAbortError(error)) {
+        if (isAbortError(error)) {
           throw error;
         }
 
@@ -349,7 +349,10 @@ export class KnowledgeSearchService {
       };
     }
 
-    const knowledgeConfigs = await this.listMountedKnowledgeConfigs(personaId);
+    const knowledgeConfigs =
+      await this.personaKnowledgeConfigService.listMountedKnowledgeConfigs(
+        personaId,
+      );
     throwIfAborted(options.signal);
 
     if (knowledgeConfigs.length === 0) {
@@ -426,7 +429,7 @@ export class KnowledgeSearchService {
 
           return stage1Result;
         } catch (error) {
-          if (this.isAbortError(error)) {
+          if (isAbortError(error)) {
             throw error;
           }
           if (this.isTransientRetrievalError(error)) {
@@ -499,7 +502,7 @@ export class KnowledgeSearchService {
         result,
       );
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortError(error)) {
         throw error;
       }
 
@@ -528,72 +531,6 @@ export class KnowledgeSearchService {
         result,
       );
     }
-  }
-
-  private async listMountedKnowledgeConfigs(
-    personaId: string,
-  ): Promise<MountedKnowledgeConfig[]> {
-    const { data: mounts } = await this.runtime.withTransientRetry(
-      `查询 persona ${personaId} 挂载知识库`,
-      async () => {
-        const result = await this.runtime.supabase
-          .from('persona_knowledge_base')
-          .select('knowledge_base_id')
-          .eq('persona_id', personaId);
-        if (result.error) {
-          throw this.createSupabaseQueryError(
-            `查询 persona ${personaId} 挂载失败`,
-            result.error,
-          );
-        }
-        return result;
-      },
-      3,
-    );
-
-    if (!mounts || mounts.length === 0) {
-      this.logger.log(`persona ${personaId} 未挂载任何知识库`);
-      return [];
-    }
-
-    const knowledgeIds = mounts.map((item) => item.knowledge_base_id as string);
-    const { data: knowledgeRows } = await this.runtime.withTransientRetry(
-      '查询已挂载知识库配置',
-      async () => {
-        const result = await this.runtime.supabase
-          .from('knowledge_base')
-          .select('id, retrieval_config, updated_at')
-          .in('id', knowledgeIds);
-        if (result.error) {
-          throw this.createSupabaseQueryError(
-            '查询知识库配置失败',
-            result.error,
-          );
-        }
-        return result;
-      },
-      3,
-    );
-
-    if (!knowledgeRows || knowledgeRows.length === 0) {
-      return [];
-    }
-
-    return knowledgeRows.map((knowledge) => {
-      const config =
-        (knowledge.retrieval_config as Partial<KnowledgeRetrievalConfig>) ?? {};
-
-      return {
-        knowledgeId: knowledge.id as string,
-        threshold: this.runtime.toBoundedNumber(config.threshold, 0.6, 0, 1),
-        stage1TopK: this.runtime.toBoundedNumber(config.stage1TopK, 20, 1, 50),
-        retrievalConfig: config,
-        updatedAt:
-          typeof knowledge.updated_at === 'string'
-            ? knowledge.updated_at
-            : null,
-      };
-    });
   }
 
   private async resolveRetrievalQuery(
@@ -708,10 +645,6 @@ export class KnowledgeSearchService {
     }
   }
 
-  private isAbortError(error: unknown): boolean {
-    return (error as { name?: string })?.name === 'AbortError';
-  }
-
   private resolvePersonaKnowledgeConcurrency(): number {
     return this.runtime.toBoundedNumber(
       process.env.RAG_PERSONA_KB_CONCURRENCY,
@@ -719,14 +652,6 @@ export class KnowledgeSearchService {
       1,
       8,
     );
-  }
-
-  private createSupabaseQueryError(
-    message: string,
-    error: { message?: string; code?: string },
-  ): Error {
-    const suffix = [error.code, error.message].filter(Boolean).join(' ');
-    return new Error(suffix ? `${message}: ${suffix}` : message);
   }
 
   private isTransientRetrievalError(error: unknown): boolean {

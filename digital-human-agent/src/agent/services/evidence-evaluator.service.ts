@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import type {
   RagEvidenceEvaluation,
   RagWebCitation,
@@ -15,6 +15,10 @@ import {
   buildRagEvidenceEvaluatorPromptInput,
   RAG_EVIDENCE_EVALUATOR_PROMPT,
 } from '@/common/prompts';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 const RagEvidenceEvaluationSchema = z.object({
@@ -38,17 +42,17 @@ interface EvaluateEvidenceParams {
 export class EvidenceEvaluatorService {
   private readonly logger = new Logger(EvidenceEvaluatorService.name);
 
-  private readonly llm = new ChatOpenAI({
-    model:
-      process.env.EVIDENCE_EVALUATOR_MODEL_NAME ??
-      process.env.MODEL_NAME ??
-      DEFAULT_LLM_MODEL_NAME,
-    temperature: 0,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  private readonly llm: ChatOpenAI;
+
+  constructor(@Optional() llmFactory?: LlmFactoryService) {
+    this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
+      {
+        modelEnvKeys: ['EVIDENCE_EVALUATOR_MODEL_NAME'],
+        defaultModel: DEFAULT_LLM_MODEL_NAME,
+        temperature: 0,
+      },
+    );
+  }
 
   async evaluate(
     params: EvaluateEvidenceParams,
@@ -127,7 +131,7 @@ export class EvidenceEvaluatorService {
             webQuery: String(result.webQuery ?? '').trim(),
           } satisfies RagEvidenceEvaluation;
         } catch (error) {
-          if ((error as { name?: string })?.name === 'AbortError') {
+          if (isAbortError(error)) {
             throw error;
           }
 

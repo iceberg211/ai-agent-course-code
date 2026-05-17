@@ -5,6 +5,11 @@ import { Repository } from 'typeorm';
 import { Persona } from '@/persona/persona.entity';
 import { CreatePersonaDto } from '@/persona/dto/create-persona.dto';
 import { UpdatePersonaDto } from '@/persona/dto/update-persona.dto';
+import {
+  formatErrorMessage,
+  isTransientDbError,
+  withRetry,
+} from '@/common/utils';
 
 export interface DeletePersonaResult {
   id: string;
@@ -56,30 +61,21 @@ export class PersonaService {
     return { id, deleted: (result.affected ?? 0) > 0 };
   }
 
-  private isTransientDbError(error: unknown): boolean {
-    const message =
-      error instanceof Error ? error.message : String(error ?? '');
-    return /Connection terminated unexpectedly|ECONNRESET|ETIMEDOUT|too many clients/i.test(
-      message,
-    );
-  }
-
   private async withTransientRetry<T>(
     op: string,
     fn: () => Promise<T>,
   ): Promise<T> {
-    try {
-      return await fn();
-    } catch (error) {
-      if (!this.isTransientDbError(error)) throw error;
-      this.logger.warn(
-        `${op} 首次失败，检测到数据库瞬时错误，准备重试一次：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      return fn();
-    }
+    return withRetry(op, fn, {
+      attempts: 2,
+      initialDelayMs: 200,
+      maxDelayMs: 200,
+      logger: this.logger,
+      shouldRetry: isTransientDbError,
+      formatRetryMessage: ({ operation, error }) =>
+        `${operation} 首次失败，检测到数据库瞬时错误，准备重试一次：${formatErrorMessage(
+          error,
+        )}`,
+    });
   }
 
   /**
@@ -89,12 +85,12 @@ export class PersonaService {
     try {
       return await this.repo.save(persona);
     } catch (error) {
-      if (!this.isTransientDbError(error)) throw error;
+      if (!isTransientDbError(error)) throw error;
 
       this.logger.warn(
-        `create 首次失败，检测到数据库瞬时错误，准备按幂等策略重试：${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `create 首次失败，检测到数据库瞬时错误，准备按幂等策略重试：${formatErrorMessage(
+          error,
+        )}`,
       );
 
       // 如果首写其实已经成功，这里可直接读回

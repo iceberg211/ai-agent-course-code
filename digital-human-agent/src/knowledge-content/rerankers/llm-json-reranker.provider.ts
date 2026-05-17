@@ -1,8 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 import {
   buildKnowledgeRerankPromptInput,
   KNOWLEDGE_RERANK_PROMPT,
@@ -17,23 +21,23 @@ import type {
 export class LlmJsonRerankerProvider implements RerankerProvider {
   private readonly logger = new Logger(LlmJsonRerankerProvider.name);
   readonly name = 'llm-json';
-  readonly model =
-    process.env.RERANKER_MODEL_NAME ??
-    process.env.MODEL_NAME ??
-    DEFAULT_LLM_MODEL_NAME;
+  readonly model: string;
 
-  private readonly llm = new ChatOpenAI({
-    model: this.model,
-    temperature: 0,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  private readonly llm: ChatOpenAI;
 
-  async rerank(
-    input: RerankerProviderInput,
-  ): Promise<RerankerProviderItem[]> {
+  constructor(@Optional() llmFactory?: LlmFactoryService) {
+    const factory = llmFactory ?? createDefaultLlmFactoryService();
+    this.model = factory.resolveModel({
+      modelEnvKeys: ['RERANKER_MODEL_NAME'],
+      defaultModel: DEFAULT_LLM_MODEL_NAME,
+    });
+    this.llm = factory.createChatModel({
+      model: this.model,
+      temperature: 0,
+    });
+  }
+
+  async rerank(input: RerankerProviderInput): Promise<RerankerProviderItem[]> {
     throwIfAborted(input.signal);
 
     const response = await this.llm.invoke(

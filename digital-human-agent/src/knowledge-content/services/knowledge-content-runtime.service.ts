@@ -7,6 +7,11 @@ import {
   DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
   SUPABASE_CLIENT,
 } from '@/common/constants';
+import {
+  formatErrorMessage,
+  isTransientInfrastructureError,
+  withRetry,
+} from '@/common/utils';
 import type {
   NormalizedRetrieveKnowledgeOptions,
   RetrieveKnowledgeOptions,
@@ -91,38 +96,14 @@ export class KnowledgeContentRuntimeService {
     fn: () => Promise<T>,
     attempts = 2,
   ): Promise<T> {
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-        if (!this.isTransientError(error) || attempt === attempts) {
-          break;
-        }
-        this.logger.warn(
-          `${operation} 第 ${attempt} 次失败，准备重试：${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-      }
-    }
-
-    throw lastError;
-  }
-
-  private isTransientError(error: unknown): boolean {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : '';
-
-    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly|socket hang up|ECONNREFUSED|502|503|504|429/i.test(
-      message,
-    );
+    return withRetry(operation, fn, {
+      attempts,
+      initialDelayMs: 200,
+      maxDelayMs: 1000,
+      logger: this.logger,
+      shouldRetry: isTransientInfrastructureError,
+      formatRetryMessage: ({ operation: op, attempt, error }) =>
+        `${op} 第 ${attempt} 次失败，准备重试：${formatErrorMessage(error)}`,
+    });
   }
 }

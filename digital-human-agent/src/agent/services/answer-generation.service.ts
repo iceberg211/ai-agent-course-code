@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { throwIfAborted } from '@/agent/agent.utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
 import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
 import { prepareLocalChunksForAnswer } from '@/agent/services/answer-context.service';
@@ -33,15 +37,17 @@ export interface GenerateAnswerParams {
 
 @Injectable()
 export class AnswerGenerationService {
-  private readonly llm = new ChatOpenAI({
-    model: process.env.MODEL_NAME ?? DEFAULT_LLM_MODEL_NAME,
-    streaming: true,
-    temperature: 0.7,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  private readonly llm: ChatOpenAI;
+
+  constructor(@Optional() llmFactory?: LlmFactoryService) {
+    this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
+      {
+        defaultModel: DEFAULT_LLM_MODEL_NAME,
+        streaming: true,
+        temperature: 0.7,
+      },
+    );
+  }
 
   async generate(params: GenerateAnswerParams): Promise<string> {
     return runInTracedScope(

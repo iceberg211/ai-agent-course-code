@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CommonModule } from '@/common/common.module';
 import { KnowledgeContentController } from '@/knowledge-content/controllers/knowledge-content.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge-content/controllers/persona-knowledge-search.controller';
 import { RagSemanticCacheStoreService } from '@/knowledge-content/cache/rag-semantic-cache-store.service';
@@ -30,6 +31,7 @@ import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/k
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import { KnowledgeVectorRetrieverService } from '@/knowledge-content/services/knowledge-vector-retriever.service';
+import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
@@ -40,6 +42,7 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
 
 @Module({
   imports: [
+    CommonModule,
     TypeOrmModule.forFeature([
       KnowledgeDocument,
       KnowledgeChunk,
@@ -71,6 +74,7 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeKeywordRetrieverService,
     KnowledgeHybridRetrieverService,
     KnowledgeStage1RetrievalService,
+    PersonaKnowledgeConfigService,
     RagSemanticCacheCoordinatorService,
     KnowledgeSearchService,
     KnowledgeContentService,

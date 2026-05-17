@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
 import type {
   RagRetrievalStrategyDecision,
@@ -16,6 +16,10 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 
 const RetrievalStrategySchema = z.object({
   needRetrieval: z.boolean(),
@@ -41,17 +45,17 @@ const RetrievalStrategySchema = z.object({
 export class RetrievalStrategyService {
   private readonly logger = new Logger(RetrievalStrategyService.name);
 
-  private readonly llm = new ChatOpenAI({
-    model:
-      process.env.RETRIEVAL_STRATEGY_MODEL_NAME ??
-      process.env.MODEL_NAME ??
-      DEFAULT_LLM_MODEL_NAME,
-    temperature: 0,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  private readonly llm: ChatOpenAI;
+
+  constructor(@Optional() llmFactory?: LlmFactoryService) {
+    this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
+      {
+        modelEnvKeys: ['RETRIEVAL_STRATEGY_MODEL_NAME'],
+        defaultModel: DEFAULT_LLM_MODEL_NAME,
+        temperature: 0,
+      },
+    );
+  }
 
   async plan(
     input: {
@@ -121,7 +125,7 @@ export class RetrievalStrategyService {
 
           return normalizeRetrievalStrategy(result);
         } catch (error) {
-          if ((error as { name?: string })?.name === 'AbortError') {
+          if (isAbortError(error)) {
             throw error;
           }
           this.logger.warn(
@@ -137,9 +141,8 @@ export class RetrievalStrategyService {
 
   private buildFallbackStrategy(query: string): RagRetrievalStrategyDecision {
     const normalized = query.replace(/\s+/g, '');
-    const isGreeting = /^(你好|您好|嗨|hi|hello|哈喽|谢谢|多谢)[。！!？?]*$/iu.test(
-      normalized,
-    );
+    const isGreeting =
+      /^(你好|您好|嗨|hi|hello|哈喽|谢谢|多谢)[。！!？?]*$/iu.test(normalized);
     if (isGreeting) {
       return normalizeRetrievalStrategy({
         needRetrieval: false,
@@ -160,7 +163,8 @@ export class RetrievalStrategyService {
     const exactLike =
       /《|》|"|'|\.md|\.txt|编号|订单|合同|条款|第.+章|第.+条/u.test(query);
     const graphLike =
-      exactLike || /关系|关联|参与方|甲方|乙方|主体|事件|流程|上下游/u.test(query);
+      exactLike ||
+      /关系|关联|参与方|甲方|乙方|主体|事件|流程|上下游/u.test(query);
 
     return normalizeRetrievalStrategy({
       needRetrieval: true,

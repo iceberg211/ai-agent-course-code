@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import type {
   RerankerProvider,
   RerankerProviderInput,
@@ -31,9 +31,7 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
     8000,
   );
 
-  async rerank(
-    input: RerankerProviderInput,
-  ): Promise<RerankerProviderItem[]> {
+  async rerank(input: RerankerProviderInput): Promise<RerankerProviderItem[]> {
     throwIfAborted(input.signal);
 
     const apiKey = this.readApiKey();
@@ -87,7 +85,7 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
       if (input.signal?.aborted) {
         throw error;
       }
-      if (timedOut && this.isAbortError(error)) {
+      if (timedOut && isAbortError(error)) {
         throw new Error(`DashScope rerank 超时 ${this.timeoutMs}ms`);
       }
       throw error;
@@ -126,7 +124,10 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
     return parsed;
   }
 
-  private buildDocumentText(chunk: { content: string; source: string }): string {
+  private buildDocumentText(chunk: {
+    content: string;
+    source: string;
+  }): string {
     return [`来源：${chunk.source}`, chunk.content.slice(0, 1800)].join('\n');
   }
 
@@ -138,9 +139,5 @@ export class DashScopeQwenRerankerProvider implements RerankerProvider {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.floor(parsed);
-  }
-
-  private isAbortError(error: unknown): boolean {
-    return (error as { name?: string })?.name === 'AbortError';
   }
 }

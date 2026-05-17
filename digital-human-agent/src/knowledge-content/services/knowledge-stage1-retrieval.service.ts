@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
@@ -228,7 +228,7 @@ export class KnowledgeStage1RetrievalService {
         signal,
       });
     } catch (error) {
-      if (this.isAbortError(error)) {
+      if (isAbortError(error)) {
         throw error;
       }
 
@@ -262,9 +262,5 @@ export class KnowledgeStage1RetrievalService {
     }
 
     return undefined;
-  }
-
-  private isAbortError(error: unknown): boolean {
-    return (error as { name?: string })?.name === 'AbortError';
   }
 }

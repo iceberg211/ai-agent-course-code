@@ -1,18 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SUPABASE_CLIENT } from '@/common/constants';
+import { normalizeEnvValue, readBooleanEnv } from '@/common/utils';
 import { supabaseProvider } from '@/database/supabase.provider';
-
-function normalizeEnvValue(value: string | undefined): string {
-  const raw = (value ?? '').trim();
-  if (
-    (raw.startsWith('"') && raw.endsWith('"')) ||
-    (raw.startsWith("'") && raw.endsWith("'"))
-  ) {
-    return raw.slice(1, -1).trim();
-  }
-  return raw;
-}
 
 @Global()
 @Module({
@@ -30,10 +20,9 @@ function normalizeEnvValue(value: string | undefined): string {
           keepAlive: true,
           keepAliveInitialDelayMillis: 10000,
         },
-        logging:
-          process.env.TYPEORM_LOGGING === 'true'
-            ? ['error', 'warn', 'query']
-            : ['error', 'warn'],
+        logging: readBooleanEnv(process.env, 'TYPEORM_LOGGING')
+          ? ['error', 'warn', 'query']
+          : ['error', 'warn'],
       }),
     }),
   ],

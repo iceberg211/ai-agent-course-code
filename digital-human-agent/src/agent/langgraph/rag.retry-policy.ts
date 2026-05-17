@@ -1,9 +1,10 @@
 import type { RetryPolicy } from '@langchain/langgraph';
+import { isAbortError } from '@/agent/agent.utils';
 
 export const RAG_DEPENDENCY_RETRY_MAX_ATTEMPTS = 3;
 
 export function isTransientRagDependencyError(error: unknown): boolean {
-  if ((error as { name?: string })?.name === 'AbortError') {
+  if (isAbortError(error)) {
     return false;
   }
 

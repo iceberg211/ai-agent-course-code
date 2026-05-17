@@ -8,6 +8,11 @@ import {
   MessageRole,
   MessageStatus,
 } from '@/conversation/conversation-message.entity';
+import {
+  formatErrorMessage,
+  isTransientDbError,
+  withRetry,
+} from '@/common/utils';
 
 @Injectable()
 export class ConversationService {
@@ -94,39 +99,20 @@ export class ConversationService {
     return recentDesc.reverse();
   }
 
-  private isTransientDbError(error: unknown): boolean {
-    const message =
-      error instanceof Error ? error.message : String(error ?? '');
-    return /Connection terminated unexpectedly|ECONNRESET|ETIMEDOUT|too many clients|terminating connection/i.test(
-      message,
-    );
-  }
-
   private async withTransientRetry<T>(
     op: string,
     fn: () => Promise<T>,
   ): Promise<T> {
-    let delayMs = 200;
-    const maxAttempts = 3;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        return await fn();
-      } catch (error) {
-        if (!this.isTransientDbError(error) || attempt >= maxAttempts) {
-          throw error;
-        }
-
-        this.logger.warn(
-          `${op} 第 ${attempt} 次失败，检测到数据库瞬时错误，${delayMs}ms 后重试：${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 2, 1000);
-      }
-    }
-
-    throw new Error(`${op} 数据库重试流程异常结束`);
+    return withRetry(op, fn, {
+      attempts: 3,
+      initialDelayMs: 200,
+      maxDelayMs: 1000,
+      logger: this.logger,
+      shouldRetry: isTransientDbError,
+      formatRetryMessage: ({ operation, attempt, delayMs, error }) =>
+        `${operation} 第 ${attempt} 次失败，检测到数据库瞬时错误，${delayMs}ms 后重试：${formatErrorMessage(
+          error,
+        )}`,
+    });
   }
 }

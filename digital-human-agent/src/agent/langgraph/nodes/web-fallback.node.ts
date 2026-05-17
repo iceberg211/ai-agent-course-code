@@ -1,4 +1,5 @@
 import { Command } from '@langchain/langgraph';
+import { isAbortError } from '@/agent/agent.utils';
 import type { WebFallbackService } from '@/agent/services/web-fallback.service';
 import {
   ensureWorkflowNotAborted,
@@ -83,7 +84,7 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
         goto: 'evaluate_evidence',
       });
     } catch (error) {
-      if ((error as { name?: string })?.name === 'AbortError') {
+      if (isAbortError(error)) {
         throw error;
       }
 

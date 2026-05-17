@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import { DashScopeQwenRerankerProvider } from '@/knowledge-content/rerankers/dashscope-qwen-reranker.provider';
 import { LlmJsonRerankerProvider } from '@/knowledge-content/rerankers/llm-json-reranker.provider';
 import type {
@@ -42,7 +42,7 @@ export class RerankerService {
         });
         return this.applyScores(candidates, parsed, safeTopK);
       } catch (error) {
-        if (this.isAbortError(error)) {
+        if (isAbortError(error)) {
           throw error;
         }
         this.logger.warn(
@@ -98,9 +98,5 @@ export class RerankerService {
     }
 
     return [this.llmJsonProvider];
-  }
-
-  private isAbortError(error: unknown): boolean {
-    return (error as { name?: string })?.name === 'AbortError';
   }
 }

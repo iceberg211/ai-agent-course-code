@@ -1,8 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 import {
   buildMultiHopPlannerPromptInput,
   MULTI_HOP_PLANNER_PROMPT,
@@ -22,17 +26,17 @@ const MultiHopPlanSchema = z.object({
 export class MultiHopPlannerService {
   private readonly logger = new Logger(MultiHopPlannerService.name);
 
-  private readonly llm = new ChatOpenAI({
-    model:
-      process.env.MULTI_HOP_PLANNER_MODEL_NAME ??
-      process.env.MODEL_NAME ??
-      DEFAULT_LLM_MODEL_NAME,
-    temperature: 0,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  private readonly llm: ChatOpenAI;
+
+  constructor(@Optional() llmFactory?: LlmFactoryService) {
+    this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
+      {
+        modelEnvKeys: ['MULTI_HOP_PLANNER_MODEL_NAME'],
+        defaultModel: DEFAULT_LLM_MODEL_NAME,
+        temperature: 0,
+      },
+    );
+  }
 
   async planSubQuestions(
     question: string,
@@ -93,7 +97,7 @@ export class MultiHopPlannerService {
             reason: result.reason.trim() || '多跳规划完成',
           } satisfies RagMultiHopPlan;
         } catch (error) {
-          if ((error as { name?: string })?.name === 'AbortError') {
+          if (isAbortError(error)) {
             throw error;
           }
           this.logger.warn(

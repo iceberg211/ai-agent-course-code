@@ -1,11 +1,15 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AIMessage } from '@langchain/core/messages';
-import { ChatOpenAI } from '@langchain/openai';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import {
+  createDefaultLlmFactoryService,
+  LlmFactoryService,
+} from '@/common/llm/llm-factory.service';
 import {
   buildKnowledgeContextualRetrievalPromptInput,
   KNOWLEDGE_CONTEXTUAL_RETRIEVAL_PROMPT,
 } from '@/common/prompts';
+import { readBooleanEnv } from '@/common/utils';
 import type { KnowledgeDocumentChunk } from '@/knowledge-content/services/knowledge-document-chunking.service';
 
 export const KNOWLEDGE_CONTEXTUAL_RETRIEVAL_LLM =
@@ -23,30 +27,30 @@ interface EnrichChunksInput {
 
 @Injectable()
 export class KnowledgeContextualRetrievalService {
-  private readonly logger = new Logger(KnowledgeContextualRetrievalService.name);
+  private readonly logger = new Logger(
+    KnowledgeContextualRetrievalService.name,
+  );
   private readonly llm: ContextualRetrievalLlm;
 
   constructor(
     @Optional()
     @Inject(KNOWLEDGE_CONTEXTUAL_RETRIEVAL_LLM)
     llm?: ContextualRetrievalLlm,
+    @Optional()
+    llmFactory?: LlmFactoryService,
   ) {
     this.llm =
       llm ??
-      new ChatOpenAI({
-        model:
-          process.env.CONTEXTUAL_RETRIEVAL_MODEL_NAME ??
-          process.env.MODEL_NAME ??
-          DEFAULT_LLM_MODEL_NAME,
+      (llmFactory ?? createDefaultLlmFactoryService()).createChatModel({
+        modelEnvKeys: ['CONTEXTUAL_RETRIEVAL_MODEL_NAME'],
+        defaultModel: DEFAULT_LLM_MODEL_NAME,
         temperature: 0,
-        configuration: {
-          baseURL: process.env.OPENAI_BASE_URL,
-          apiKey: process.env.OPENAI_API_KEY,
-        },
       });
   }
 
-  async enrichChunks(input: EnrichChunksInput): Promise<KnowledgeDocumentChunk[]> {
+  async enrichChunks(
+    input: EnrichChunksInput,
+  ): Promise<KnowledgeDocumentChunk[]> {
     if (!this.isEnabled() || input.chunks.length === 0) {
       return input.chunks;
     }
@@ -63,13 +67,14 @@ export class KnowledgeContextualRetrievalService {
     chunk: KnowledgeDocumentChunk,
   ): Promise<KnowledgeDocumentChunk> {
     try {
-      const messages = await KNOWLEDGE_CONTEXTUAL_RETRIEVAL_PROMPT.formatMessages(
-        buildKnowledgeContextualRetrievalPromptInput({
-          filename: input.filename,
-          documentContent: input.documentContent,
-          chunkContent: chunk.pageContent,
-        }),
-      );
+      const messages =
+        await KNOWLEDGE_CONTEXTUAL_RETRIEVAL_PROMPT.formatMessages(
+          buildKnowledgeContextualRetrievalPromptInput({
+            filename: input.filename,
+            documentContent: input.documentContent,
+            chunkContent: chunk.pageContent,
+          }),
+        );
       const response = await this.llm.invoke(messages);
       const context = this.normalizeContext(this.extractText(response));
       if (!context) return chunk;
@@ -89,9 +94,7 @@ export class KnowledgeContextualRetrievalService {
   }
 
   private isEnabled(): boolean {
-    return ['1', 'true', 'yes', 'on'].includes(
-      String(process.env.ENABLE_CONTEXTUAL_RETRIEVAL ?? '').toLowerCase(),
-    );
+    return readBooleanEnv(process.env, 'ENABLE_CONTEXTUAL_RETRIEVAL');
   }
 
   private normalizeContext(value: string): string {

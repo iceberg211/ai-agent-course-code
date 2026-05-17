@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 import {
   DEFAULT_ELASTICSEARCH_INDEX_VERSION,
@@ -426,8 +426,4 @@ function maxIsoDate(left: string | null, right: string): string | null {
   if (!right) return left;
   if (!left) return right;
   return new Date(right).getTime() > new Date(left).getTime() ? right : left;
-}
-
-function isAbortError(error: unknown): boolean {
-  return (error as { name?: string })?.name === 'AbortError';
 }

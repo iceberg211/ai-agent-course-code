@@ -3,6 +3,7 @@ import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
+import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import type {
   KnowledgeChunk,
@@ -163,6 +164,9 @@ describe('KnowledgeSearchService', () => {
       runtime as never,
       semanticCacheStore as never,
     );
+    const personaKnowledgeConfigService = new PersonaKnowledgeConfigService(
+      runtime as never,
+    );
 
     const service = new KnowledgeSearchService(
       runtime as never,
@@ -171,6 +175,7 @@ describe('KnowledgeSearchService', () => {
       queryRewriteService as never,
       chunkContextExpansionService as never,
       semanticCacheCoordinator,
+      personaKnowledgeConfigService,
     );
 
     return {
@@ -183,6 +188,7 @@ describe('KnowledgeSearchService', () => {
       chunkContextExpansionService,
       semanticCacheStore,
       semanticCacheCoordinator,
+      personaKnowledgeConfigService,
       graphRetriever,
     };
   }
