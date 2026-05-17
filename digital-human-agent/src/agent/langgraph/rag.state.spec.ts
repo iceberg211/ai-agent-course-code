@@ -39,7 +39,6 @@ describe('toRagWorkflowState', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: true,
-        useHyDE: false,
         allowWeb: true,
         reason: '测试策略',
       },

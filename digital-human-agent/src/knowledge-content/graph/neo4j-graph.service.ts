@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Neo4jGraph } from '@langchain/community/graphs/neo4j_graph';
+import type { Neo4jGraph } from '@langchain/community/graphs/neo4j_graph';
 
 @Injectable()
 export class Neo4jGraphService implements OnModuleDestroy {
@@ -45,6 +45,7 @@ export class Neo4jGraphService implements OnModuleDestroy {
 
     if (this.graph) return this.graph;
 
+    const { Neo4jGraph } = await importNeo4jGraphModule();
     this.graph = new Neo4jGraph({
       url: this.readString('NEO4J_URL') || 'bolt://localhost:7687',
       username: this.readString('NEO4J_USERNAME') || 'neo4j',
@@ -70,5 +71,17 @@ export class Neo4jGraphService implements OnModuleDestroy {
   private readNumber(key: string, fallback: number): number {
     const value = Number(this.readString(key));
     return Number.isFinite(value) ? value : fallback;
+  }
+}
+
+async function importNeo4jGraphModule() {
+  try {
+    return await import('@langchain/community/graphs/neo4j_graph');
+  } catch (error) {
+    throw new Error(
+      `Neo4j 图谱检索依赖缺失或加载失败，请安装 @langchain/community：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }

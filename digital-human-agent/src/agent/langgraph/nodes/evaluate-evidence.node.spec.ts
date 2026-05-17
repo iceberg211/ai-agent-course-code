@@ -36,7 +36,6 @@ describe('createEvaluateEvidenceNode', () => {
       useGraph: false,
       useExactPhrase: true,
       useMultiQuery: true,
-      useHyDE: false,
       allowWeb: true,
       reason: '需要知识库事实',
     },

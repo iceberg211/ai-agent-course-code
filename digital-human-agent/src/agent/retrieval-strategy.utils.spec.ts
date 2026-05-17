@@ -39,7 +39,6 @@ describe('normalizeRetrievalStrategy', () => {
       useGraph: true,
       useExactPhrase: false,
       useMultiQuery: false,
-      useHyDE: false,
       allowWeb: false,
       reason: '仅请求图谱检索',
     });
@@ -58,7 +57,6 @@ describe('normalizeRetrievalStrategy', () => {
       useGraph: true,
       useExactPhrase: false,
       useMultiQuery: false,
-      useHyDE: false,
       allowWeb: false,
       reason: '仅请求图谱检索',
     });

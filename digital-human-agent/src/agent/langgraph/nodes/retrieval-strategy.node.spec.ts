@@ -40,7 +40,6 @@ describe('createRetrievalStrategyNode', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: false,
-        useHyDE: false,
         allowWeb: false,
         reason: '寒暄问题，不需要查知识库',
       }),
@@ -79,7 +78,6 @@ describe('createRetrievalStrategyNode', () => {
       useGraph: false,
       useExactPhrase: true,
       useMultiQuery: true,
-      useHyDE: false,
       allowWeb: true,
       reason: '需要知识库事实',
     };

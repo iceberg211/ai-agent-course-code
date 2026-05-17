@@ -27,7 +27,6 @@ describe('AgentService', () => {
           useGraph: false,
           useExactPhrase: false,
           useMultiQuery: false,
-          useHyDE: false,
           allowWeb: false,
           reason: '寒暄问题，不需要查知识库',
         },

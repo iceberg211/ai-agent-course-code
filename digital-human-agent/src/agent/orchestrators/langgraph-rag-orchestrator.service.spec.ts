@@ -47,7 +47,6 @@ describe('LangGraphRagOrchestratorService', () => {
       useGraph: boolean;
       useExactPhrase: boolean;
       useMultiQuery: boolean;
-      useHyDE: boolean;
       allowWeb: boolean;
       reason: string;
     };
@@ -117,7 +116,6 @@ describe('LangGraphRagOrchestratorService', () => {
           useGraph: false,
           useExactPhrase: false,
           useMultiQuery: true,
-          useHyDE: false,
           allowWeb: true,
           reason: '测试默认检索策略',
         },
@@ -244,7 +242,6 @@ describe('LangGraphRagOrchestratorService', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: false,
-        useHyDE: false,
         allowWeb: false,
         reason: '寒暄问题，不需要查知识库',
       },

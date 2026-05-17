@@ -94,7 +94,6 @@ describe('KnowledgeSearchService', () => {
           chunks: [stage1Chunk, stage1Chunk2],
           keywordBackend: 'pg',
           vectorResultCount: 2,
-          hydeVectorResultCount: 0,
           keywordResultCount: 1,
           fallbackToPg: false,
           skippedChannels: [],
@@ -126,7 +125,6 @@ describe('KnowledgeSearchService', () => {
         changed: true,
         reason: '补全实体，便于检索',
       }),
-      generateHypotheticalAnswer: jest.fn().mockResolvedValue('假设答案文本'),
     };
 
     const chunkContextExpansionService = {
@@ -184,7 +182,6 @@ describe('KnowledgeSearchService', () => {
       useGraph: false,
       useExactPhrase: false,
       useMultiQuery: false,
-      useHyDE: false,
       allowWeb: true,
       reason: '测试检索策略',
       ...overrides,
@@ -292,7 +289,6 @@ describe('KnowledgeSearchService', () => {
       useGraph: false,
       useExactPhrase: false,
       useMultiQuery: false,
-      useHyDE: false,
       allowWeb: true,
       reason: '测试 persona 缓存',
     };
@@ -384,7 +380,6 @@ describe('KnowledgeSearchService', () => {
           useGraph: true,
           useExactPhrase: false,
           useMultiQuery: false,
-          useHyDE: false,
           allowWeb: false,
           reason: '图谱关系检索',
         },
@@ -419,7 +414,6 @@ describe('KnowledgeSearchService', () => {
       });
       expect(result.stage1Trace[0]?.skippedChannels).toContain('vector');
       expect(result.stage1Trace[0]?.skippedChannels).toContain('keyword');
-      expect(result.stage1Trace[0]?.skippedChannels).toContain('hyde');
     } finally {
       if (originalGraphFlag === undefined) {
         delete process.env.NEO4J_GRAPH_ENABLED;
@@ -459,7 +453,6 @@ describe('KnowledgeSearchService', () => {
       chunks: [hybridChunk],
       keywordBackend: 'pg',
       vectorResultCount: 1,
-      hydeVectorResultCount: 0,
       keywordResultCount: 1,
       fallbackToPg: false,
       skippedChannels: [],
@@ -554,7 +547,6 @@ describe('KnowledgeSearchService', () => {
         chunks: [stage1Chunk],
         keywordBackend: 'pg',
         vectorResultCount: 1,
-        hydeVectorResultCount: 0,
         keywordResultCount: 0,
         fallbackToPg: false,
         skippedChannels: [],
@@ -570,7 +562,6 @@ describe('KnowledgeSearchService', () => {
         ],
         keywordBackend: 'elastic',
         vectorResultCount: 1,
-        hydeVectorResultCount: 0,
         keywordResultCount: 1,
         fallbackToPg: false,
         skippedChannels: [],
@@ -585,7 +576,6 @@ describe('KnowledgeSearchService', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: true,
-        useHyDE: false,
         allowWeb: true,
         queryCount: 2,
         reason: '测试多查询',
@@ -630,7 +620,6 @@ describe('KnowledgeSearchService', () => {
       chunks: [stage1Chunk],
       keywordBackend: 'pg',
       vectorResultCount: 1,
-      hydeVectorResultCount: 0,
       keywordResultCount: 1,
       fallbackToPg: false,
       skippedChannels: [],
@@ -645,7 +634,6 @@ describe('KnowledgeSearchService', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: false,
-        useHyDE: false,
         allowWeb: true,
         queryCount: 5,
         reason: '测试关闭多查询',
@@ -673,47 +661,6 @@ describe('KnowledgeSearchService', () => {
     expect(result.stage1Trace).toHaveLength(1);
   });
 
-  it('useHyDE=true 时会把假设答案作为额外向量召回通道', async () => {
-    const { service, runtime, hybridRetriever, queryRewriteService } =
-      createService();
-    runtime.embeddings.embedQuery
-      .mockResolvedValueOnce([0.9, 0.9, 0.9])
-      .mockResolvedValueOnce([0.1, 0.2, 0.3]);
-
-    await service.retrieveWithStages('kb-1', '原始问题', {
-      strategy: {
-        needRetrieval: true,
-        useVector: true,
-        useKeyword: true,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: false,
-        useHyDE: true,
-        allowWeb: true,
-        reason: '测试 HyDE',
-      },
-    });
-
-    expect(queryRewriteService.generateHypotheticalAnswer).toHaveBeenCalledWith(
-      '原始问题',
-      undefined,
-    );
-    expect(runtime.embeddings.embedQuery).toHaveBeenNthCalledWith(
-      1,
-      '假设答案文本',
-    );
-    expect(runtime.embeddings.embedQuery).toHaveBeenNthCalledWith(
-      2,
-      '原始问题',
-    );
-    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hydeQueryEmbedding: [0.9, 0.9, 0.9],
-        queryEmbedding: [0.1, 0.2, 0.3],
-      }),
-    );
-  });
-
   it('skipQueryRewrite=true 且 useVector=false 时只走原始问题关键词召回，不调用 LLM rewrite 或 embedding', async () => {
     const { service, runtime, hybridRetriever, queryRewriteService } =
       createService();
@@ -721,10 +668,9 @@ describe('KnowledgeSearchService', () => {
       chunks: [stage1Chunk],
       keywordBackend: 'pg',
       vectorResultCount: 0,
-      hydeVectorResultCount: 0,
       keywordResultCount: 1,
       fallbackToPg: false,
-      skippedChannels: ['vector', 'hyde'],
+      skippedChannels: ['vector'],
     });
 
     const result = await service.retrieveWithStages('kb-1', '原始问题', {
@@ -736,7 +682,6 @@ describe('KnowledgeSearchService', () => {
         useGraph: false,
         useExactPhrase: true,
         useMultiQuery: false,
-        useHyDE: false,
         allowWeb: false,
         reason: '安全关键词评估',
       },
@@ -744,14 +689,10 @@ describe('KnowledgeSearchService', () => {
     });
 
     expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(
-      queryRewriteService.generateHypotheticalAnswer,
-    ).not.toHaveBeenCalled();
     expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
     expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({
         queryEmbedding: undefined,
-        hydeQueryEmbedding: undefined,
         retrievalQuery: '原始问题',
         keywordTerms: ['原始问题'],
         useVector: false,
@@ -775,10 +716,9 @@ describe('KnowledgeSearchService', () => {
       chunks: [stage1Chunk],
       keywordBackend: 'pg',
       vectorResultCount: 0,
-      hydeVectorResultCount: 0,
       keywordResultCount: 1,
       fallbackToPg: false,
-      skippedChannels: ['vector', 'hyde'],
+      skippedChannels: ['vector'],
     });
 
     await service.retrieveWithStages(
@@ -793,7 +733,6 @@ describe('KnowledgeSearchService', () => {
           useGraph: false,
           useExactPhrase: true,
           useMultiQuery: false,
-          useHyDE: false,
           allowWeb: false,
           reason: '安全关键词评估',
         },
@@ -826,10 +765,9 @@ describe('KnowledgeSearchService', () => {
       ],
       keywordBackend: 'disabled',
       vectorResultCount: 1,
-      hydeVectorResultCount: 0,
       keywordResultCount: 0,
       fallbackToPg: false,
-      skippedChannels: ['keyword', 'hyde'],
+      skippedChannels: ['keyword'],
     });
 
     const result = await service.retrieveWithStages('kb-1', '原始问题', {
@@ -841,7 +779,6 @@ describe('KnowledgeSearchService', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: false,
-        useHyDE: false,
         allowWeb: false,
         reason: '只测向量通道',
       },
@@ -877,7 +814,6 @@ describe('KnowledgeSearchService', () => {
         useGraph: false,
         useExactPhrase: false,
         useMultiQuery: true,
-        useHyDE: false,
         allowWeb: true,
         chunkContextWindow: 1,
         reason: '测试邻近上下文',

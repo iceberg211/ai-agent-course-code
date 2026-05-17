@@ -2,24 +2,15 @@ import { createAbortError } from '@/common/utils';
 import { RetrievalStrategyService } from '@/agent/services/retrieval-strategy.service';
 
 describe('RetrievalStrategyService', () => {
-  function createServiceWithFailingLlm() {
+  function createService() {
     const service = new RetrievalStrategyService();
-    const invoke = jest.fn().mockRejectedValue(new Error('planner failed'));
-    Object.assign(service as unknown as { llm: unknown }, {
-      llm: {
-        withStructuredOutput: jest.fn(() => ({
-          invoke,
-        })),
-      },
-    });
     return {
       service,
-      invoke,
     };
   }
 
-  it('LLM 失败且是寒暄问题时，回退为跳过检索策略', async () => {
-    const { service } = createServiceWithFailingLlm();
+  it('寒暄问题会跳过检索', async () => {
+    const { service } = createService();
 
     await expect(
       service.plan({
@@ -34,12 +25,12 @@ describe('RetrievalStrategyService', () => {
       useKeyword: false,
       useGraph: false,
       allowWeb: false,
-      reason: '寒暄或礼貌表达，不需要查知识库',
+      reason: '寒暄问题，不需要查知识库',
     });
   });
 
-  it('LLM 失败且问题包含明确短语时，回退策略会启用 exact phrase', async () => {
-    const { service } = createServiceWithFailingLlm();
+  it('问题包含明确短语时，规则策略会启用 exact phrase', async () => {
+    const { service } = createService();
 
     await expect(
       service.plan({
@@ -53,16 +44,16 @@ describe('RetrievalStrategyService', () => {
       useVector: true,
       useKeyword: true,
       useExactPhrase: true,
-      useMultiQuery: true,
-      queryCount: 2,
+      useMultiQuery: false,
+      queryCount: 1,
       allowWeb: true,
     });
   });
 
-  it('显式开启 Graph 后，关系型问题 fallback 策略会把图谱作为补充召回通道', async () => {
+  it('显式开启 Graph 后，关系型问题会把图谱作为补充召回通道', async () => {
     const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
     process.env.NEO4J_GRAPH_ENABLED = 'true';
-    const { service } = createServiceWithFailingLlm();
+    const { service } = createService();
 
     try {
       await expect(
@@ -89,8 +80,8 @@ describe('RetrievalStrategyService', () => {
     }
   });
 
-  it('用户中断时不降级为 fallback 策略', async () => {
-    const { service, invoke } = createServiceWithFailingLlm();
+  it('用户中断时直接抛出 AbortError', async () => {
+    const { service } = createService();
     const abortController = new AbortController();
     abortController.abort();
 
@@ -105,6 +96,5 @@ describe('RetrievalStrategyService', () => {
         abortController.signal,
       ),
     ).rejects.toMatchObject(createAbortError());
-    expect(invoke).not.toHaveBeenCalled();
   });
 });

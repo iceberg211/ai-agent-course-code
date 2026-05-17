@@ -117,11 +117,11 @@ describe('KnowledgeHybridRetrieverService', () => {
     expect(result.keywordBackend).toBe('disabled');
     expect(result.keywordResultCount).toBe(0);
     expect(result.skippedChannels).toEqual(
-      expect.arrayContaining(['keyword', 'hyde']),
+      expect.arrayContaining(['keyword']),
     );
   });
 
-  it('useVector=false 时不会调用向量检索，并记录 vector/hyde 跳过通道', async () => {
+  it('useVector=false 时不会调用向量检索，并记录 vector 跳过通道', async () => {
     const vectorRetriever = {
       retrieve: jest.fn(),
     };
@@ -151,7 +151,6 @@ describe('KnowledgeHybridRetrieverService', () => {
     const result = await service.retrieve({
       knowledgeId: 'kb-1',
       queryEmbedding: [0.1, 0.2],
-      hydeQueryEmbedding: [0.9, 0.8],
       retrievalQuery: '删除时限',
       keywordTerms: ['删除时限'],
       threshold: 0.6,
@@ -163,10 +162,9 @@ describe('KnowledgeHybridRetrieverService', () => {
     expect(vectorRetriever.retrieve).not.toHaveBeenCalled();
     expect(keywordRetriever.retrieve).toHaveBeenCalledTimes(1);
     expect(result.vectorResultCount).toBe(0);
-    expect(result.hydeVectorResultCount).toBe(0);
     expect(result.keywordResultCount).toBe(1);
     expect(result.skippedChannels).toEqual(
-      expect.arrayContaining(['vector', 'hyde']),
+      expect.arrayContaining(['vector']),
     );
   });
 
@@ -204,7 +202,7 @@ describe('KnowledgeHybridRetrieverService', () => {
     });
   });
 
-  it('会把 AbortSignal 继续传给向量、HyDE 和关键词检索', async () => {
+  it('会把 AbortSignal 继续传给向量和关键词检索', async () => {
     const signal = new AbortController().signal;
     const vectorRetriever = {
       retrieve: jest.fn().mockResolvedValue([]),
@@ -224,7 +222,6 @@ describe('KnowledgeHybridRetrieverService', () => {
     await service.retrieve({
       knowledgeId: 'kb-1',
       queryEmbedding: [0.1, 0.2],
-      hydeQueryEmbedding: [0.3, 0.4],
       retrievalQuery: '删除时限',
       keywordTerms: ['删除时限'],
       threshold: 0.6,
@@ -234,10 +231,6 @@ describe('KnowledgeHybridRetrieverService', () => {
 
     expect(vectorRetriever.retrieve).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ signal }),
-    );
-    expect(vectorRetriever.retrieve).toHaveBeenNthCalledWith(
-      2,
       expect.objectContaining({ signal }),
     );
     expect(keywordRetriever.retrieve).toHaveBeenCalledWith(

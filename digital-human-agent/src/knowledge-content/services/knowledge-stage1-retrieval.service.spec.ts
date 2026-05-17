@@ -10,7 +10,6 @@ describe('KnowledgeStage1RetrievalService', () => {
     useGraph: true,
     useExactPhrase: false,
     useMultiQuery: false,
-    useHyDE: false,
     allowWeb: false,
     reason: '测试',
   };
@@ -49,7 +48,6 @@ describe('KnowledgeStage1RetrievalService', () => {
         chunks: [hybridChunk],
         keywordBackend: 'pg',
         vectorResultCount: 1,
-        hydeVectorResultCount: 0,
         keywordResultCount: 1,
         fallbackToPg: false,
         skippedChannels: [],
@@ -75,7 +73,6 @@ describe('KnowledgeStage1RetrievalService', () => {
           angle: 'original',
         },
       ],
-      hydeQueryEmbedding: undefined,
       strategy,
       threshold: 0.6,
       globalStage1TopK: 10,
