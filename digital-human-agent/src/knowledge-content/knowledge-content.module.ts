@@ -5,18 +5,14 @@ import { KnowledgeContentController } from '@/knowledge-content/controllers/know
 import { PersonaKnowledgeSearchController } from '@/knowledge-content/controllers/persona-knowledge-search.controller';
 import { KnowledgeChunk } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import { KnowledgeElasticsearchBackfillService } from '@/knowledge-content/backfill/knowledge-elasticsearch-backfill.service';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
 import { elasticsearchProvider } from '@/knowledge-content/elasticsearch/elasticsearch.provider';
 import { ElasticsearchSyncService } from '@/knowledge-content/elasticsearch/elasticsearch-sync.service';
 import { KnowledgeChunkIndexQueryService } from '@/knowledge-content/elasticsearch/knowledge-chunk-index-query.service';
 import { KnowledgeGraphExtractorService } from '@/knowledge-content/graph/knowledge-graph-extractor.service';
-import { Neo4jGraphBackfillService } from '@/knowledge-content/graph/neo4j-graph-backfill.service';
 import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
 import { Neo4jGraphService } from '@/knowledge-content/graph/neo4j-graph.service';
 import { Neo4jGraphSyncService } from '@/knowledge-content/graph/neo4j-graph-sync.service';
-import { KnowledgeParentChildBackfillService } from '@/knowledge-content/parent-child/knowledge-parent-child-backfill.service';
-import { KnowledgeParentChildSyncService } from '@/knowledge-content/parent-child/knowledge-parent-child-sync.service';
 import { ElasticKeywordRetrieverService } from '@/knowledge-content/keyword-retrievers/elastic-keyword-retriever.service';
 import { PgKeywordRetrieverService } from '@/knowledge-content/keyword-retrievers/pg-keyword-retriever.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
@@ -54,12 +50,8 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeChunkIndexQueryService,
     KnowledgeGraphExtractorService,
     Neo4jGraphService,
-    Neo4jGraphBackfillService,
     Neo4jGraphRetrieverService,
     Neo4jGraphSyncService,
-    KnowledgeParentChildBackfillService,
-    KnowledgeParentChildSyncService,
-    KnowledgeElasticsearchBackfillService,
     KnowledgeChunkContextExpansionService,
     KnowledgeContentRuntimeService,
     KnowledgeDocumentIndexSyncService,

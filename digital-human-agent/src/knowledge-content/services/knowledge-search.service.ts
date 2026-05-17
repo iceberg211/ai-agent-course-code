@@ -585,22 +585,6 @@ export class KnowledgeSearchService {
     stage2: KnowledgeChunk[],
     strategy: RetrievalStrategy,
   ): Promise<KnowledgeChunk[]> {
-    if (strategy.parentContext) {
-      try {
-        return await this.chunkContextExpansionService.expandParentContext(
-          stage2,
-          strategy.parentContextMaxChars ?? 2000,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `扩展 parent context 失败，保留原 stage2：${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        return stage2;
-      }
-    }
-
     const window = strategy.chunkContextWindow ?? 0;
     if (window <= 0 || stage2.length === 0) {
       return stage2;

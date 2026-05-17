@@ -118,7 +118,7 @@ async function main(): Promise<void> {
 
     if (strict && !passed) {
       throw new Error(
-        '三路检索未全部命中；可先检查 Neo4j/ES 是否启动并已 backfill，或用 --allow-partial 只观察输出',
+        '三路检索未全部命中；可先检查 Neo4j/ES 是否启动、文档是否已重新导入并完成索引同步，或用 --allow-partial 只观察输出',
       );
     }
   } finally {

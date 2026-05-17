@@ -1,20 +1,14 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { Client as ElasticsearchClient } from '@elastic/elasticsearch';
 import { Client as PgClient } from 'pg';
-import { formatRagEvalError } from '@/knowledge-content/evaluation/rag-eval-report';
-import {
-  buildDatabaseHints,
-  buildDerivedDirectUrl as buildDerivedDirectUrlFromEnv,
-  buildPoolerCandidateUrl,
-  buildPoolerCandidates as buildPoolerCandidatesFromEnv,
-  redactPoolerCandidate,
-  redactDatabaseUrl,
-  redactRuntimeDiagnostic,
-  redactSupabaseRestEndpoint,
-  type PoolerCandidate,
-} from '@/knowledge-content/evaluation/rag-runtime-preflight.helpers';
 
 type CheckStatus = 'ok' | 'fail' | 'skip';
+
+interface PoolerCandidate {
+  host: string;
+  port: string;
+  username: string;
+}
 
 interface CheckResult {
   name: string;

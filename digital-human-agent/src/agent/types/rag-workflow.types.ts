@@ -15,8 +15,6 @@ export interface RetrievalStrategy {
   allowWeb: boolean;
   queryCount?: number;
   chunkContextWindow?: number;
-  parentContext?: boolean;
-  parentContextMaxChars?: number;
   contextCompression?: boolean;
   lostInMiddle?: boolean;
   graphMode?: 'neighbors' | 'path';

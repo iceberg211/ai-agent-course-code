@@ -11,8 +11,6 @@ export const DEFAULT_RETRIEVAL_STRATEGY: RetrievalStrategy = {
   allowWeb: true,
   queryCount: 3,
   chunkContextWindow: 0,
-  parentContext: false,
-  parentContextMaxChars: 2000,
   contextCompression: false,
   lostInMiddle: true,
   reason: '默认使用本地混合检索',
@@ -37,13 +35,6 @@ export function normalizeRetrievalStrategy(
     needRetrieval,
     queryCount: clampInteger(merged.queryCount, 1, 5, 3),
     chunkContextWindow: clampInteger(merged.chunkContextWindow, 0, 2, 0),
-    parentContext: merged.parentContext === true,
-    parentContextMaxChars: clampInteger(
-      merged.parentContextMaxChars,
-      500,
-      4000,
-      2000,
-    ),
     graphMaxHops:
       merged.graphMaxHops === undefined
         ? undefined

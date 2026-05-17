@@ -37,10 +37,6 @@ export interface KnowledgeChunk {
   keyword_backend?: KeywordBackend;
   vector_backend?: VectorBackend;
   context_expanded?: boolean;
-  parent_context?: boolean;
-  parent_context_indexed?: boolean;
-  parent_context_key?: string;
-  parent_context_child_ids?: string[];
 }
 
 export interface RetrieveKnowledgeOptions {

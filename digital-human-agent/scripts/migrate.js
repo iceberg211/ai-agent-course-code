@@ -26,7 +26,6 @@ const MIGRATIONS = [
   '006_rpc_rewrite.sql',
   '007_drop_legacy_shim.sql',
   '008_keyword_retrieval_index.sql',
-  '012_rag_parent_child_index.sql',
   '014_knowledge_document_graph_sync_status.sql',
 ];
 
@@ -185,7 +184,7 @@ function buildDirectUrlWarnings(rawUrl) {
     const url = new URL(rawUrl);
     if (url.hostname.endsWith('.pooler.supabase.com')) {
       return [
-        'DIRECT_URL 当前仍指向 Supabase pooler；migration/backfill 排障建议使用 Dashboard Direct connection，host 形如 db.[PROJECT-REF].supabase.co。',
+        'DIRECT_URL 当前仍指向 Supabase pooler；migration 排障建议使用 Dashboard Direct connection，host 形如 db.[PROJECT-REF].supabase.co。',
       ];
     }
     return [];

@@ -53,8 +53,6 @@ export const PROMPT_REGISTRY = {
       "graphMode：useGraph=true 时优先使用 'path'，只有只需一跳邻接关系时才使用 'neighbors'。",
       'graphMaxHops：useGraph=true 且 graphMode=path 时设为 2，最多 3。',
       'chunkContextWindow：是否把命中段落前后相邻段落带入最终上下文；默认 0，只有需要连续上下文时设为 1，最大 2。',
-      'parentContext：是否把命中的小段扩展为同文档大块上下文；默认 false，只有问题需要连续解释、条款上下文或段落前后因果时设为 true。',
-      'parentContextMaxChars：parentContext 开启时每个命中大块的最大字符数；默认 2000，范围 500 到 4000。',
       'allowWeb：本地证据不足时是否允许联网补充。',
       '不要回答用户问题，只输出符合结构化 schema 的 JSON 策略对象。',
       'JSON 示例：{{"needRetrieval":true,"useVector":true,"useKeyword":true,"useGraph":true,"useExactPhrase":false,"useMultiQuery":true,"useHyDE":false,"allowWeb":true,"queryCount":3,"graphMode":"path","graphMaxHops":2,"reason":"关系类问题需要图谱和混合检索"}}。',
