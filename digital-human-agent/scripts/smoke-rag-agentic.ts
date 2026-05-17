@@ -38,13 +38,18 @@ for (const [key, value] of Object.entries(fileEnv)) {
 
 function readArg(name: string): string | null {
   const prefix = `--${name}=`;
-  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length) ?? null;
+  return (
+    process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length) ??
+    null
+  );
 }
 
 async function main(): Promise<void> {
   process.env.NEO4J_GRAPH_ENABLED = 'true';
   process.env.HYBRID_KEYWORD_BACKEND =
-    readArg('keyword-backend') ?? process.env.HYBRID_KEYWORD_BACKEND ?? 'elastic';
+    readArg('keyword-backend') ??
+    process.env.HYBRID_KEYWORD_BACKEND ??
+    'elastic';
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'warn', 'error'],
@@ -53,7 +58,8 @@ async function main(): Promise<void> {
   try {
     const runtime = app.get(KnowledgeContentRuntimeService);
     const searchService = app.get(KnowledgeSearchService);
-    const personaId = readArg('personaId') ?? (await findMountedPersonaId(runtime));
+    const personaId =
+      readArg('personaId') ?? (await findMountedPersonaId(runtime));
     if (!personaId) {
       throw new Error('未找到已挂载知识库的 persona，请传入 --personaId=...');
     }

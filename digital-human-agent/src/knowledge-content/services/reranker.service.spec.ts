@@ -19,17 +19,10 @@ describe('RerankerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.RERANKER_PROVIDER;
   });
 
-  it('主 provider 失败时会安全回退到 LLM JSON provider', async () => {
-    process.env.RERANKER_PROVIDER = 'dashscope';
+  it('LLM JSON provider 返回分数时按重排结果截断候选', async () => {
     const abortController = new AbortController();
-    const dashscopeProvider = {
-      name: 'dashscope',
-      model: 'qwen3-rerank',
-      rerank: jest.fn().mockRejectedValue(new Error('dashscope timeout')),
-    };
     const llmProvider = {
       name: 'llm-json',
       model: 'qwen-plus',
@@ -38,10 +31,7 @@ describe('RerankerService', () => {
         { index: 0, score: 0.41 },
       ]),
     };
-    const service = new RerankerService(
-      dashscopeProvider as never,
-      llmProvider as never,
-    );
+    const service = new RerankerService(llmProvider as never);
 
     const result = await service.rerank(
       '原始问题',
@@ -50,7 +40,7 @@ describe('RerankerService', () => {
       abortController.signal,
     );
 
-    expect(dashscopeProvider.rerank).toHaveBeenCalledWith(
+    expect(llmProvider.rerank).toHaveBeenCalledWith(
       expect.objectContaining({
         query: '原始问题',
         candidates: [chunk, chunk2],
@@ -58,26 +48,17 @@ describe('RerankerService', () => {
         signal: abortController.signal,
       }),
     );
-    expect(llmProvider.rerank).toHaveBeenCalled();
     expect(result.map((item) => item.id)).toEqual(['chunk-2', 'chunk-1']);
     expect(result[0].rerank_score).toBe(0.92);
   });
 
-  it('所有 provider 失败时回退到 Stage1 排序，不吞掉 AbortError', async () => {
-    const dashscopeProvider = {
-      name: 'dashscope',
-      model: 'qwen3-rerank',
-      rerank: jest.fn().mockRejectedValue(new Error('bad response')),
-    };
+  it('provider 失败时回退到 Stage1 排序，不吞掉 AbortError', async () => {
     const llmProvider = {
       name: 'llm-json',
       model: 'qwen-plus',
       rerank: jest.fn().mockRejectedValue(new Error('json malformed')),
     };
-    const service = new RerankerService(
-      dashscopeProvider as never,
-      llmProvider as never,
-    );
+    const service = new RerankerService(llmProvider as never);
 
     const result = await service.rerank('原始问题', [chunk, chunk2], 2);
 

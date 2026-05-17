@@ -16,7 +16,6 @@ describe('normalizeRetrievalStrategy', () => {
 
   it('默认关闭 chunk 上下文窗口，并把显式窗口限制在可控范围内', () => {
     expect(DEFAULT_RETRIEVAL_STRATEGY.chunkContextWindow).toBe(0);
-    expect(DEFAULT_RETRIEVAL_STRATEGY.parentContext).toBe(false);
 
     expect(
       normalizeRetrievalStrategy({
@@ -28,15 +27,6 @@ describe('normalizeRetrievalStrategy', () => {
         chunkContextWindow: -1,
       }).chunkContextWindow,
     ).toBe(0);
-    expect(
-      normalizeRetrievalStrategy({
-        parentContext: true,
-        parentContextMaxChars: 99999,
-      }),
-    ).toMatchObject({
-      parentContext: true,
-      parentContextMaxChars: 4000,
-    });
   });
 
   it('当前没有 GraphRetriever 时，不把 graph-only 策略当作可执行检索', () => {

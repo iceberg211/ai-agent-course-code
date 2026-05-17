@@ -1,21 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
-import { DashScopeQwenRerankerProvider } from '@/knowledge-content/rerankers/dashscope-qwen-reranker.provider';
 import { LlmJsonRerankerProvider } from '@/knowledge-content/rerankers/llm-json-reranker.provider';
-import type {
-  RerankerProvider,
-  RerankerProviderItem,
-} from '@/knowledge-content/rerankers/reranker-provider.interface';
+import type { RerankerProviderItem } from '@/knowledge-content/rerankers/reranker-provider.interface';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 @Injectable()
 export class RerankerService {
   private readonly logger = new Logger(RerankerService.name);
 
-  constructor(
-    private readonly dashscopeProvider: DashScopeQwenRerankerProvider,
-    private readonly llmJsonProvider: LlmJsonRerankerProvider,
-  ) {}
+  constructor(private readonly llmJsonProvider: LlmJsonRerankerProvider) {}
 
   async rerank(
     query: string,
@@ -30,27 +23,23 @@ export class RerankerService {
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), candidates.length);
-    const providers = this.resolveProviders();
-
-    for (const provider of providers) {
-      try {
-        const parsed = await provider.rerank({
-          query,
-          candidates,
-          topK: safeTopK,
-          signal,
-        });
-        return this.applyScores(candidates, parsed, safeTopK);
-      } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
-        this.logger.warn(
-          `${provider.name} rerank 失败，准备降级：${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+    try {
+      const parsed = await this.llmJsonProvider.rerank({
+        query,
+        candidates,
+        topK: safeTopK,
+        signal,
+      });
+      return this.applyScores(candidates, parsed, safeTopK);
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
       }
+      this.logger.warn(
+        `${this.llmJsonProvider.name} rerank 失败，保留 Stage1 排序：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     return candidates.slice(0, safeTopK);
@@ -86,17 +75,5 @@ export class RerankerService {
     });
 
     return reranked.slice(0, safeTopK);
-  }
-
-  private resolveProviders(): RerankerProvider[] {
-    const provider = String(process.env.RERANKER_PROVIDER ?? 'llm-json')
-      .trim()
-      .toLowerCase();
-
-    if (provider === 'dashscope') {
-      return [this.dashscopeProvider, this.llmJsonProvider];
-    }
-
-    return [this.llmJsonProvider];
   }
 }

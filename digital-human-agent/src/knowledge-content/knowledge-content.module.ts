@@ -28,7 +28,6 @@ import { KnowledgeVectorRetrieverService } from '@/knowledge-content/services/kn
 import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
-import { DashScopeQwenRerankerProvider } from '@/knowledge-content/rerankers/dashscope-qwen-reranker.provider';
 import { LlmJsonRerankerProvider } from '@/knowledge-content/rerankers/llm-json-reranker.provider';
 import { Knowledge } from '@/knowledge/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
@@ -66,7 +65,6 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeSearchService,
     KnowledgeContentService,
     QueryRewriteService,
-    DashScopeQwenRerankerProvider,
     LlmJsonRerankerProvider,
     RerankerService,
   ],

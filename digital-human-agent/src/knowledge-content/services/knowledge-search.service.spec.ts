@@ -131,9 +131,6 @@ describe('KnowledgeSearchService', () => {
 
     const chunkContextExpansionService = {
       expand: jest.fn((chunks: KnowledgeChunk[]) => Promise.resolve(chunks)),
-      expandParentContext: jest.fn((chunks: KnowledgeChunk[]) =>
-        Promise.resolve(chunks),
-      ),
     };
     const stage1RetrievalService = new KnowledgeStage1RetrievalService(
       runtime as never,
@@ -902,55 +899,6 @@ describe('KnowledgeSearchService', () => {
       'chunk-2',
     ]);
     expect(result.stage2).toBe(expandedStage2);
-  });
-
-  it('parentContext 开启时用 parent context 扩展最终 stage2，并优先于相邻窗口', async () => {
-    const { service, chunkContextExpansionService, rerankerService } =
-      createService();
-    const parentStage2 = [
-      {
-        ...stage1Chunk,
-        parent_context: true,
-        content: '上文\n\n雁门关事件相关片段\n\n下文',
-      },
-      {
-        ...stage1Chunk2,
-        parent_context: true,
-        content: '前文\n\n萧峰结局相关片段\n\n后文',
-      },
-    ];
-    chunkContextExpansionService.expandParentContext.mockResolvedValue(
-      parentStage2,
-    );
-
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
-      strategy: {
-        needRetrieval: true,
-        useVector: true,
-        useKeyword: true,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: true,
-        useHyDE: false,
-        allowWeb: true,
-        parentContext: true,
-        parentContextMaxChars: 2000,
-        chunkContextWindow: 1,
-        reason: '测试 parent context',
-      },
-    });
-
-    expect(rerankerService.rerank).toHaveBeenCalledWith(
-      '原始问题',
-      expect.any(Array),
-      5,
-      undefined,
-    );
-    expect(
-      chunkContextExpansionService.expandParentContext,
-    ).toHaveBeenCalledWith([stage1Chunk, stage1Chunk2], 2000);
-    expect(chunkContextExpansionService.expand).not.toHaveBeenCalled();
-    expect(result.stage2).toBe(parentStage2);
   });
 
   it('persona 挂载查询遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
