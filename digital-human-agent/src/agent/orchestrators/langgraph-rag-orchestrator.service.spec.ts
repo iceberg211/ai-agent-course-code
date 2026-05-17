@@ -1,4 +1,4 @@
-import { createAbortError } from '@/agent/agent.utils';
+import { createAbortError } from '@/common/utils';
 import { LangGraphRagOrchestratorService } from '@/agent/orchestrators/langgraph-rag-orchestrator.service';
 
 function createChunk(id: string, content: string) {

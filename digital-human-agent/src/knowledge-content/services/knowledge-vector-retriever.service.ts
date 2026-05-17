@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';

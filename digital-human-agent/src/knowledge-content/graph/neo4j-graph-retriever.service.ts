@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import {
   toNeo4jKnowledgeChunk,
   type Neo4jGraphRetrieveRow,

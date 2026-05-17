@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
-import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
+import { isAbortError, throwIfAborted } from '@/common/utils';
+import { normalizeRetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
@@ -18,7 +18,7 @@ import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import { mergeStage1Results } from '@/knowledge-content/services/knowledge-retrieval-fusion';
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { RetrievalStrategy } from '@/common/rag';
 
 const DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY = 3;
 
@@ -171,16 +171,10 @@ export class KnowledgeSearchService {
     throwIfAborted(options.signal);
 
     const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
-    const hydeQueryEmbedding = await this.resolveHydeEmbedding(
-      normalizedQuery,
-      strategy,
-      options.signal,
-    );
     const stage1Result = await this.stage1RetrievalService.retrieveForKnowledge(
       {
         knowledgeId,
         retrievalQueries,
-        hydeQueryEmbedding,
         strategy,
         threshold: normalizedOptions.threshold,
         globalStage1TopK: normalizedOptions.stage1TopK,
@@ -378,11 +372,6 @@ export class KnowledgeSearchService {
     throwIfAborted(options.signal);
 
     const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
-    const hydeQueryEmbedding = await this.resolveHydeEmbedding(
-      normalizedQuery,
-      strategy,
-      options.signal,
-    );
     throwIfAborted(options.signal);
 
     const stage1Results = await mapWithConcurrency(
@@ -404,7 +393,6 @@ export class KnowledgeSearchService {
             await this.stage1RetrievalService.retrieveForKnowledge({
               knowledgeId: config.knowledgeId,
               retrievalQueries,
-              hydeQueryEmbedding,
               strategy,
               threshold: effectiveThreshold,
               globalStage1TopK: effectiveStage1TopK,
@@ -559,26 +547,6 @@ export class KnowledgeSearchService {
       ...item,
       index,
     }));
-  }
-
-  private async resolveHydeEmbedding(
-    query: string,
-    strategy: RetrievalStrategy,
-    signal?: AbortSignal,
-  ): Promise<number[] | undefined> {
-    if (!strategy.useHyDE || !strategy.useVector) return undefined;
-    const hypotheticalAnswer =
-      await this.queryRewriteService.generateHypotheticalAnswer(query, signal);
-    if (!hypotheticalAnswer.trim()) return undefined;
-
-    return this.runtime.withTransientRetry(
-      'embed hyde query',
-      () => {
-        throwIfAborted(signal);
-        return this.runtime.embeddings.embedQuery(hypotheticalAnswer);
-      },
-      3,
-    );
   }
 
   private async expandStage2Context(

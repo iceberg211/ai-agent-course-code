@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
 import {

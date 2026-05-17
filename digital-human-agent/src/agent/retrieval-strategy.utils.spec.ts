@@ -1,7 +1,7 @@
 import {
   DEFAULT_RETRIEVAL_STRATEGY,
   normalizeRetrievalStrategy,
-} from '@/agent/retrieval-strategy.utils';
+} from '@/common/rag';
 
 describe('normalizeRetrievalStrategy', () => {
   const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;

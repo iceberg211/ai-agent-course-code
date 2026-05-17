@@ -1,4 +1,4 @@
-import { createAbortError } from '@/agent/agent.utils';
+import { createAbortError } from '@/common/utils';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 
 const mockInvoke = jest.fn();

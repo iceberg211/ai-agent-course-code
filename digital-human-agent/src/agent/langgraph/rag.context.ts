@@ -1,5 +1,5 @@
 import { Annotation, type LangGraphRunnableConfig } from '@langchain/langgraph';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import type { RagWorkflowInput } from '@/agent/types/rag-workflow.types';
 
 export const RagGraphContextAnnotation = Annotation.Root({

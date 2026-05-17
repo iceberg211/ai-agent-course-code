@@ -1,5 +1,5 @@
 import { Command } from '@langchain/langgraph';
-import { isAbortError } from '@/agent/agent.utils';
+import { isAbortError } from '@/common/utils';
 import type { WebFallbackService } from '@/agent/services/web-fallback.service';
 import {
   ensureWorkflowNotAborted,

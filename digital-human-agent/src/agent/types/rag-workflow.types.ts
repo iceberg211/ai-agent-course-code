@@ -1,26 +1,19 @@
+import type {
+  RagEvidenceAssessmentContext,
+  RagStopReason,
+  RetrievalStrategy,
+} from '@/common/rag';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 export type RagStrategy = 'simple' | 'complex';
 export type RagOrchestratorName = 'langgraph';
 export type RetrievalChannel = 'vector' | 'keyword' | 'graph' | 'web';
 
-export interface RetrievalStrategy {
-  needRetrieval: boolean;
-  useVector: boolean;
-  useKeyword: boolean;
-  useGraph: boolean;
-  useExactPhrase: boolean;
-  useMultiQuery: boolean;
-  useHyDE: boolean;
-  allowWeb: boolean;
-  queryCount?: number;
-  chunkContextWindow?: number;
-  contextCompression?: boolean;
-  lostInMiddle?: boolean;
-  graphMode?: 'neighbors' | 'path';
-  graphMaxHops?: number;
-  reason: string;
-}
+export type {
+  RagEvidenceAssessmentContext,
+  RagStopReason,
+  RetrievalStrategy,
+} from '@/common/rag';
 
 export interface RetrievalHistoryItem {
   query: string;
@@ -28,13 +21,6 @@ export interface RetrievalHistoryItem {
   skipped?: boolean;
   reason?: string;
   strategy?: RetrievalStrategy;
-}
-
-export interface RagEvidenceAssessmentContext {
-  enough: boolean | null;
-  missingFacts: string[];
-  evaluationReason: string;
-  stopReason: string;
 }
 
 export interface RagKnowledgeCitation extends RetrievedKnowledgeChunk {
@@ -90,7 +76,7 @@ export interface RagWorkflowState {
   webSearchAttempts: number;
   maxWebSearchAttempts: number;
   webSearchQueries: string[];
-  stopReason: string;
+  stopReason: RagStopReason;
   orchestrator: RagOrchestratorName;
 }
 

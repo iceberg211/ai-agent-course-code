@@ -5,7 +5,7 @@ import type {
   RagOrchestrator,
   RagWorkflowResult,
 } from '@/agent/types/rag-workflow.types';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 
 export interface RunAgentParams {
@@ -25,10 +25,10 @@ export class AgentService {
     private readonly ragOrchestrator: RagOrchestrator,
   ) {}
 
-  async run(params: RunAgentParams): Promise<void> {
+  async run(params: RunAgentParams): Promise<RagWorkflowResult> {
     throwIfAborted(params.signal);
 
-    await runInTracedScope(
+    return runInTracedScope(
       {
         name: 'agent_turn',
         runType: 'chain',

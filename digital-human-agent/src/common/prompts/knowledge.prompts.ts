@@ -7,23 +7,12 @@ export const KNOWLEDGE_QUERY_REWRITE_PROMPT = ChatPromptTemplate.fromMessages([
   ['human', PROMPT_REGISTRY.knowledgeQueryRewrite.human],
 ]);
 
-export const KNOWLEDGE_HYDE_PROMPT = ChatPromptTemplate.fromMessages([
-  ['system', PROMPT_REGISTRY.knowledgeHyde.system],
-  ['human', PROMPT_REGISTRY.knowledgeHyde.human],
-]);
-
 export const KNOWLEDGE_RERANK_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.knowledgeRerank.system],
   ['human', PROMPT_REGISTRY.knowledgeRerank.human],
 ]);
 
 export function buildKnowledgeQueryRewritePromptInput(query: string) {
-  return {
-    query,
-  };
-}
-
-export function buildKnowledgeHydePromptInput(query: string) {
   return {
     query,
   };

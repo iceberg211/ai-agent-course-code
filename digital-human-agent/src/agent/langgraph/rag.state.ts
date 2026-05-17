@@ -3,13 +3,14 @@ import {
   DEFAULT_RAG_MAX_HOPS,
   DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
 } from '@/agent/agent.constants';
-import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
+import { DEFAULT_RETRIEVAL_STRATEGY } from '@/common/rag';
 import {
   getCurrentQuery,
   toKnowledgeCitations,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
 import type {
+  RagStopReason,
   RagWorkflowInput,
   RagWorkflowState,
   RetrievalHistoryItem,
@@ -42,7 +43,7 @@ export const RagGraphStateAnnotation = Annotation.Root({
   webSearchAttempts: Annotation<number>(),
   maxWebSearchAttempts: Annotation<number>(),
   webSearchQueries: Annotation<string[]>(),
-  stopReason: Annotation<string>(),
+  stopReason: Annotation<RagStopReason>(),
   orchestrator: Annotation<'langgraph'>(),
   answerText: Annotation<string>(),
   persona: Annotation<Persona | null>(),

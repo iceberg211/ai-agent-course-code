@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import { isAbortError, throwIfAborted } from '@/common/utils';
+import type { RetrievalStrategy } from '@/common/rag';
 import { Neo4jGraphRetrieverService } from '@/knowledge-content/graph/neo4j-graph-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import {
@@ -22,7 +22,6 @@ import type {
 export interface KnowledgeStage1RetrievalParams {
   knowledgeId: string;
   retrievalQueries: RetrievalQueryItem[];
-  hydeQueryEmbedding?: number[];
   strategy: RetrievalStrategy;
   threshold: number;
   globalStage1TopK: number;
@@ -73,7 +72,6 @@ export class KnowledgeStage1RetrievalService {
       const stage1Result = await this.retrieveStage1({
         knowledgeId: params.knowledgeId,
         queryEmbedding,
-        hydeQueryEmbedding: params.hydeQueryEmbedding,
         retrievalQuery: retrievalQuery.query,
         keywordTerms: retrievalQuery.keywords,
         threshold: params.threshold,
@@ -105,7 +103,6 @@ export class KnowledgeStage1RetrievalService {
           ? stage1Result.keywordBackend
           : 'disabled',
         vectorResultCount: stage1Result.vectorResultCount,
-        hydeVectorResultCount: stage1Result.hydeVectorResultCount,
         keywordResultCount: stage1Result.keywordResultCount,
         graphBackend: stage1Result.graphBackend,
         graphResultCount: stage1Result.graphResultCount,
@@ -124,7 +121,6 @@ export class KnowledgeStage1RetrievalService {
   private async retrieveStage1(params: {
     knowledgeId: string;
     queryEmbedding: number[] | undefined;
-    hydeQueryEmbedding: number[] | undefined;
     retrievalQuery: string;
     keywordTerms: string[];
     threshold: number;
@@ -142,7 +138,6 @@ export class KnowledgeStage1RetrievalService {
         ? await this.hybridRetriever.retrieve({
             knowledgeId: params.knowledgeId,
             queryEmbedding: params.queryEmbedding,
-            hydeQueryEmbedding: params.hydeQueryEmbedding,
             retrievalQuery: params.retrievalQuery,
             keywordTerms: params.keywordTerms,
             threshold: params.threshold,
@@ -186,12 +181,9 @@ export class KnowledgeStage1RetrievalService {
   private buildSkippedHybridResult(
     strategy: RetrievalStrategy,
   ): HybridRetrieveResult {
-    const skippedChannels = new Set<'vector' | 'keyword' | 'hyde' | 'graph'>();
+    const skippedChannels = new Set<'vector' | 'keyword' | 'graph'>();
     if (!strategy.useVector) {
       skippedChannels.add('vector');
-      skippedChannels.add('hyde');
-    } else if (!strategy.useHyDE) {
-      skippedChannels.add('hyde');
     }
     if (!strategy.useKeyword) skippedChannels.add('keyword');
 
@@ -199,7 +191,6 @@ export class KnowledgeStage1RetrievalService {
       chunks: [],
       keywordBackend: 'disabled',
       vectorResultCount: 0,
-      hydeVectorResultCount: 0,
       keywordResultCount: 0,
       fallbackToPg: false,
       skippedChannels: Array.from(skippedChannels),
@@ -257,7 +248,7 @@ export class KnowledgeStage1RetrievalService {
     }
 
     const sources = chunk.retrieval_sources ?? [];
-    if (sources.includes('vector') || sources.includes('hyde')) {
+    if (sources.includes('vector')) {
       return 'pgvector';
     }
 

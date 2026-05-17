@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
@@ -8,15 +8,13 @@ import {
   createDefaultLlmFactoryService,
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
-import { DEFAULT_RETRIEVAL_STRATEGY } from '@/agent/retrieval-strategy.utils';
 import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
-import { prepareLocalChunksForAnswer } from '@/agent/services/answer-context.service';
 import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
-import type { RagEvidenceAssessmentContext } from '@/agent/types/rag-workflow.types';
+import type { RetrievalStrategy } from '@/common/rag';
+import type { RagEvidenceAssessmentContext } from '@/common/rag';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
 
@@ -86,11 +84,7 @@ export class AnswerGenerationService {
     const messages = await AGENT_CHAT_PROMPT.formatMessages(
       buildAgentPromptInput(
         params.persona,
-        prepareLocalChunksForAnswer(
-          params.localChunks,
-          params.userMessage,
-          params.retrievalStrategy ?? DEFAULT_RETRIEVAL_STRATEGY,
-        ),
+        params.localChunks,
         params.userMessage,
         params.history,
         {

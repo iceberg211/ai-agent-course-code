@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 

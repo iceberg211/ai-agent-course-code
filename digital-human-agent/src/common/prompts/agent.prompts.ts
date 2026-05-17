@@ -6,7 +6,7 @@ import {
 import { ConversationMessage } from '@/conversation/conversation-message.entity';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import { Persona } from '@/persona/persona.entity';
-import type { RagEvidenceAssessmentContext } from '@/agent/types/rag-workflow.types';
+import type { RagEvidenceAssessmentContext } from '@/common/rag';
 import { PROMPT_REGISTRY } from '@/common/prompts/prompt.registry';
 
 export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
@@ -18,11 +18,6 @@ export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
 export const RAG_ROUTE_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.ragRoute.system],
   ['human', PROMPT_REGISTRY.ragRoute.human],
-]);
-
-export const RAG_RETRIEVAL_STRATEGY_PROMPT = ChatPromptTemplate.fromMessages([
-  ['system', PROMPT_REGISTRY.ragRetrievalStrategy.system],
-  ['human', PROMPT_REGISTRY.ragRetrievalStrategy.human],
 ]);
 
 export const MULTI_HOP_PLANNER_PROMPT = ChatPromptTemplate.fromMessages([
@@ -185,15 +180,6 @@ export function buildRagRoutePromptInput(question: string) {
   return {
     question,
   };
-}
-
-export function buildRagRetrievalStrategyPromptInput(input: {
-  question: string;
-  currentQuery: string;
-  routeStrategy: string;
-  remainingHops: number;
-}) {
-  return input;
 }
 
 export function buildMultiHopPlannerPromptInput(question: string) {

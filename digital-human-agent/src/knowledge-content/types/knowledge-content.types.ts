@@ -1,6 +1,6 @@
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { RetrievalStrategy } from '@/common/rag';
 
-export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'hyde' | 'graph';
+export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'graph';
 export type KeywordBackend = 'pg' | 'elastic';
 export type VectorBackend = 'pgvector';
 export type GraphBackend = 'neo4j';
@@ -82,12 +82,11 @@ export interface RetrieveKnowledgeTraceItem {
   keywordBackend: KeywordBackend | 'disabled';
   graphBackend: GraphBackend | 'disabled';
   vectorResultCount: number;
-  hydeVectorResultCount: number;
   keywordResultCount: number;
   graphResultCount?: number;
   mergedResultCount: number;
   fallbackToPg: boolean;
-  skippedChannels: Array<'vector' | 'keyword' | 'hyde' | 'graph'>;
+  skippedChannels: Array<'vector' | 'keyword' | 'graph'>;
 }
 
 export interface RetrieveKnowledgeDebugResult {

@@ -1,4 +1,4 @@
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { RetrievalStrategy } from '@/common/rag/retrieval-strategy.types';
 
 export const DEFAULT_RETRIEVAL_STRATEGY: RetrievalStrategy = {
   needRetrieval: true,
@@ -7,12 +7,9 @@ export const DEFAULT_RETRIEVAL_STRATEGY: RetrievalStrategy = {
   useGraph: false,
   useExactPhrase: false,
   useMultiQuery: true,
-  useHyDE: false,
   allowWeb: true,
   queryCount: 3,
   chunkContextWindow: 0,
-  contextCompression: false,
-  lostInMiddle: true,
   reason: '默认使用本地混合检索',
 };
 

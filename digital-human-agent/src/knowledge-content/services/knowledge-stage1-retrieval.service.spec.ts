@@ -1,6 +1,6 @@
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { RetrievalStrategy } from '@/common/rag';
 
 describe('KnowledgeStage1RetrievalService', () => {
   const strategy: RetrievalStrategy = {

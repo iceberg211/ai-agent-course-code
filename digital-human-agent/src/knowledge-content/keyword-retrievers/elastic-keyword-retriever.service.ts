@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { estypes } from '@elastic/elasticsearch';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
 import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsearch/elasticsearch.types';
 import { buildElasticKeywordShouldClauses } from '@/knowledge-content/keyword-retrievers/elastic-keyword-query.builder';

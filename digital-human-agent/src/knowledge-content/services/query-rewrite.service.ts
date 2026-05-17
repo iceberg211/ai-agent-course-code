@@ -1,16 +1,14 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/common/utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
   createDefaultLlmFactoryService,
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
 import {
-  buildKnowledgeHydePromptInput,
   buildKnowledgeQueryRewritePromptInput,
-  KNOWLEDGE_HYDE_PROMPT,
   KNOWLEDGE_QUERY_REWRITE_PROMPT,
 } from '@/common/prompts';
 import {
@@ -154,60 +152,6 @@ export class QueryRewriteService {
             normalizedQuery,
             '改写失败，已回退原问题',
           );
-        }
-      },
-    );
-  }
-
-  async generateHypotheticalAnswer(
-    query: string,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    const normalizedQuery = query.trim();
-    throwIfAborted(signal);
-    if (!normalizedQuery) return '';
-
-    return runInTracedScope(
-      {
-        name: 'knowledge_hyde_generation',
-        runType: 'chain',
-        tags: ['knowledge', 'rag', 'hyde'],
-        input: {
-          query: normalizedQuery,
-        },
-        outputProcessor: (output) => ({
-          length: output.length,
-        }),
-      },
-      async () => {
-        try {
-          const response = await this.llm.invoke(
-            await KNOWLEDGE_HYDE_PROMPT.formatMessages(
-              buildKnowledgeHydePromptInput(normalizedQuery),
-            ),
-            {
-              ...buildLangSmithRunnableConfig({
-                runName: 'knowledge_hyde_llm',
-                tags: ['knowledge', 'rag', 'hyde', 'llm'],
-                metadata: {
-                  query: normalizedQuery,
-                },
-              }),
-              signal,
-            },
-          );
-          throwIfAborted(signal);
-          return this.extractText(response.content).slice(0, 600);
-        } catch (error) {
-          if (isAbortError(error)) {
-            throw error;
-          }
-          this.logger.warn(
-            `HyDE 生成失败，跳过 HyDE 召回：${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-          return '';
         }
       },
     );
@@ -368,18 +312,4 @@ export class QueryRewriteService {
     return extractFallbackKeywordTerms(query).slice(0, 6);
   }
 
-  private extractText(content: unknown): string {
-    if (typeof content === 'string') return content.trim();
-    if (!Array.isArray(content)) return '';
-
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        if (!part || typeof part !== 'object') return '';
-        const text = (part as { text?: unknown }).text;
-        return typeof text === 'string' ? text : '';
-      })
-      .join('\n')
-      .trim();
-  }
 }

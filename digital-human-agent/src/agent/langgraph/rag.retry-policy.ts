@@ -1,5 +1,5 @@
 import type { RetryPolicy } from '@langchain/langgraph';
-import { isAbortError } from '@/agent/agent.utils';
+import { isAbortError } from '@/common/utils';
 
 export const RAG_DEPENDENCY_RETRY_MAX_ATTEMPTS = 3;
 

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/common/utils';
 import { LlmJsonRerankerProvider } from '@/knowledge-content/rerankers/llm-json-reranker.provider';
 import type { RerankerProviderItem } from '@/knowledge-content/rerankers/reranker-provider.interface';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';

@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { isAbortError, throwIfAborted } from '@/agent/agent.utils';
+import { isAbortError, throwIfAborted } from '@/common/utils';
 import type {
   RagEvidenceEvaluation,
   RagWebCitation,

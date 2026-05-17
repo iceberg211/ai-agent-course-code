@@ -1,5 +1,5 @@
-import { createAbortError } from '@/agent/agent.utils';
-import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import { createAbortError } from '@/common/utils';
+import type { RetrievalStrategy } from '@/common/rag';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';

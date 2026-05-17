@@ -1,4 +1,4 @@
-import { createAbortError } from '@/agent/agent.utils';
+import { createAbortError } from '@/common/utils';
 import { RetrievalStrategyService } from '@/agent/services/retrieval-strategy.service';
 
 describe('RetrievalStrategyService', () => {

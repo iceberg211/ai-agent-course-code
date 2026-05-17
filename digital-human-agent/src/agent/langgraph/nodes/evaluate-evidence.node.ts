@@ -6,6 +6,7 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
+import type { RagStopReason } from '@/agent/types/rag-workflow.types';
 import {
   canContinueMultiHop,
   extendSubQuestionsWithMissingFacts,
@@ -17,7 +18,7 @@ function resolveStopReason(
   state: RagGraphState,
   enough: boolean,
   webFallbackEnabled: boolean,
-): string {
+): RagStopReason {
   if (enough) {
     if (state.webSearchUsed) {
       return 'web_fallback_enough';

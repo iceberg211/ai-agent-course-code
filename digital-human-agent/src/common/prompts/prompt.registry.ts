@@ -38,32 +38,6 @@ export const PROMPT_REGISTRY = {
     ]),
     human: '用户问题：{question}',
   },
-  ragRetrievalStrategy: {
-    system: lines([
-      '你是数字人 RAG 的检索策略规划器。',
-      '任务：判断当前问题是否需要查知识库，以及应该启用哪些检索通道。',
-      '字段说明：',
-      'needRetrieval：纯寒暄、闲聊、无需知识库事实时为 false。',
-      'useVector：语义模糊匹配、概念性问题、同义表达时为 true。',
-      'useKeyword：包含实体名、术语、文件名、编号、短语时为 true。',
-      'useGraph：问题询问实体关系、层级关系、流程依赖、参与方关系、条款之间的关联时为 true。',
-      'useExactPhrase：包含明确实体、标题、文件名、引用短句时为 true。',
-      'useMultiQuery：问题表述模糊或需要多角度召回时为 true。',
-      'useHyDE：问题偏概念、描述性，适合用假设答案做额外向量召回时为 true。',
-      "graphMode：useGraph=true 时优先使用 'path'，只有只需一跳邻接关系时才使用 'neighbors'。",
-      'graphMaxHops：useGraph=true 且 graphMode=path 时设为 2，最多 3。',
-      'chunkContextWindow：是否把命中段落前后相邻段落带入最终上下文；默认 0，只有需要连续上下文时设为 1，最大 2。',
-      'allowWeb：本地证据不足时是否允许联网补充。',
-      '不要回答用户问题，只输出符合结构化 schema 的 JSON 策略对象。',
-      'JSON 示例：{{"needRetrieval":true,"useVector":true,"useKeyword":true,"useGraph":true,"useExactPhrase":false,"useMultiQuery":true,"useHyDE":false,"allowWeb":true,"queryCount":3,"graphMode":"path","graphMaxHops":2,"reason":"关系类问题需要图谱和混合检索"}}。',
-    ]),
-    human: lines([
-      '原始问题：{question}',
-      '当前检索问题：{currentQuery}',
-      '路线：{routeStrategy}',
-      '剩余跳数：{remainingHops}',
-    ]),
-  },
   multiHopPlanner: {
     system: lines([
       '你是数字人 RAG 的多跳规划器。',
@@ -119,18 +93,6 @@ export const PROMPT_REGISTRY = {
       'JSON 示例：{{"rewrittenQuery":"系统定位和智能检索是什么关系？","keywords":["系统定位","智能检索"],"expandedQueries":[{{"query":"系统定位和智能检索是什么关系？","keywords":["系统定位","智能检索"],"angle":"original"}},{{"query":"系统定位 智能检索 包含子主题","keywords":["系统定位","智能检索","包含子主题"],"angle":"entity"}},{{"query":"系统定位下的智能检索能力说明","keywords":["系统定位","智能检索"],"angle":"semantic"}}],"reason":"保留核心实体并扩展关系检索角度"}}。',
     ]),
     human: '原始问题：{query}',
-  },
-  knowledgeHyde: {
-    system: lines([
-      '你是知识库检索的 HyDE 助手。',
-      '任务：根据用户问题写一段“可能出现在资料里的假设性答案文本”，只用于向量召回。',
-      '要求：',
-      '1. 不要声称这是真实答案。',
-      '2. 保留问题里的实体、时间、约束。',
-      '3. 控制在 120 字以内。',
-      '4. 不要输出 Markdown。',
-    ]),
-    human: '用户问题：{query}',
   },
   knowledgeRerank: {
     system:

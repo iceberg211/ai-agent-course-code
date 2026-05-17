@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
-import { throwIfAborted } from '@/agent/agent.utils';
+import { throwIfAborted } from '@/common/utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
 import {
