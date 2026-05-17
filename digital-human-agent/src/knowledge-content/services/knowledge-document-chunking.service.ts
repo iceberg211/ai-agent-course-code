@@ -111,7 +111,9 @@ function parseHeading(line: string): MarkdownHeading | null {
 }
 
 function formatMarkdownSection(section: MarkdownSection): string {
-  const headingText = section.headings.map((heading) => heading.line).join('\n');
+  const headingText = section.headings
+    .map((heading) => heading.line)
+    .join('\n');
   const bodyText = trimEmptyLines(section.bodyLines).join('\n').trim();
 
   if (!bodyText) return '';

@@ -49,9 +49,7 @@ describe('KnowledgeSearchService', () => {
     similarity: 0.83,
   };
 
-  function createService(
-    graphRetriever?: GraphRetrieverMock,
-  ) {
+  function createService(graphRetriever?: GraphRetrieverMock) {
     const runtime = {
       normalizeRetrieveOptions: jest.fn(
         (
