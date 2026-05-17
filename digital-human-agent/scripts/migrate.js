@@ -28,7 +28,6 @@ const MIGRATIONS = [
   '008_keyword_retrieval_index.sql',
   '009_rag_semantic_cache.sql',
   '012_rag_parent_child_index.sql',
-  '013_rag_raptor_index.sql',
   '014_knowledge_document_graph_sync_status.sql',
 ];
 
