@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import { KnowledgeContextualRetrievalService } from '@/knowledge-content/services/knowledge-contextual-retrieval.service';
 import {
   KnowledgeDocumentIndexSyncService,
   type KnowledgeDocumentChunkRow,
@@ -26,7 +25,6 @@ export class KnowledgeDocumentService {
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
     private readonly runtime: KnowledgeContentRuntimeService,
     private readonly documentIndexSyncService: KnowledgeDocumentIndexSyncService,
-    private readonly contextualRetrievalService: KnowledgeContextualRetrievalService,
   ) {}
 
   async deleteDocument(documentId: string): Promise<void> {
@@ -57,35 +55,19 @@ export class KnowledgeDocumentService {
       const splitDocuments = await splitKnowledgeDocumentContent(
         content,
         this.runtime.splitter,
-        {
-          semanticChunking: {
-            enabled: this.readBoolean('ENABLE_SEMANTIC_CHUNKING', false),
-            embeddings: this.runtime.embeddings,
-            similarityThreshold: this.readNumber(
-              'SEMANTIC_CHUNKING_SIMILARITY_THRESHOLD',
-            ),
-            maxChunkLength: this.readNumber('SEMANTIC_CHUNKING_MAX_CHARS'),
-          },
-        },
       );
       this.logger.log(
         `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
       );
-      const enrichedDocuments =
-        await this.contextualRetrievalService.enrichChunks({
-          filename,
-          documentContent: content,
-          chunks: splitDocuments,
-        });
 
-      const texts = enrichedDocuments.map((item) => item.pageContent);
+      const texts = splitDocuments.map((item) => item.pageContent);
       this.logger.log(
         `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
       );
       const embeddings = await this.runtime.embeddings.embedDocuments(texts);
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
-      const chunkRows = enrichedDocuments.map((item, index) => ({
+      const chunkRows = splitDocuments.map((item, index) => ({
         id: randomUUID(),
         document_id: document.id,
         chunk_index: index,
@@ -107,7 +89,7 @@ export class KnowledgeDocumentService {
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
-        chunkCount: enrichedDocuments.length,
+        chunkCount: splitDocuments.length,
         graphSyncStatus: graphSyncResult.status,
         graphSyncError:
           graphSyncResult.status === 'failed'
@@ -215,14 +197,4 @@ export class KnowledgeDocumentService {
     );
   }
 
-  private readBoolean(key: string, fallback: boolean): boolean {
-    const rawValue = String(process.env[key] ?? '').trim();
-    if (!rawValue) return fallback;
-    return ['1', 'true', 'yes', 'on'].includes(rawValue.toLowerCase());
-  }
-
-  private readNumber(key: string): number | undefined {
-    const value = Number(process.env[key]);
-    return Number.isFinite(value) ? value : undefined;
-  }
 }

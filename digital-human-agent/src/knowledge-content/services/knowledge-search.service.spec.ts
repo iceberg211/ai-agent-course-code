@@ -4,15 +4,12 @@ import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledg
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
-import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
 } from '@/knowledge-content/types/knowledge-content.types';
 
 describe('KnowledgeSearchService', () => {
-  type SemanticCacheStoreMock = Record<string, jest.Mock<unknown, unknown[]>>;
-
   type GraphRetrieverMock = {
     isEnabled: jest.Mock<boolean, []>;
     retrieve: jest.Mock<Promise<KnowledgeChunk[]>, [unknown]>;
@@ -35,20 +32,6 @@ describe('KnowledgeSearchService', () => {
     useKeyword?: boolean;
   };
 
-  type SemanticCacheUpsertCall = {
-    query: string;
-    queryEmbedding: number[];
-    mountedKnowledgeBaseIds: string[];
-    payload: {
-      stage1ChunkIds: string[];
-      stage2ChunkIds: string[];
-      result: {
-        query: string;
-        retrievalQuery: string;
-      };
-    };
-  };
-
   const stage1Chunk: KnowledgeChunk = {
     id: 'chunk-1',
     content: '雁门关事件相关片段',
@@ -67,7 +50,6 @@ describe('KnowledgeSearchService', () => {
   };
 
   function createService(
-    semanticCacheStore?: SemanticCacheStoreMock,
     graphRetriever?: GraphRetrieverMock,
   ) {
     const runtime = {
@@ -160,10 +142,6 @@ describe('KnowledgeSearchService', () => {
       hybridRetriever as never,
       graphRetriever as never,
     );
-    const semanticCacheCoordinator = new RagSemanticCacheCoordinatorService(
-      runtime as never,
-      semanticCacheStore as never,
-    );
     const personaKnowledgeConfigService = new PersonaKnowledgeConfigService(
       runtime as never,
     );
@@ -174,7 +152,6 @@ describe('KnowledgeSearchService', () => {
       rerankerService as never,
       queryRewriteService as never,
       chunkContextExpansionService as never,
-      semanticCacheCoordinator,
       personaKnowledgeConfigService,
     );
 
@@ -186,8 +163,6 @@ describe('KnowledgeSearchService', () => {
       rerankerService,
       queryRewriteService,
       chunkContextExpansionService,
-      semanticCacheStore,
-      semanticCacheCoordinator,
       personaKnowledgeConfigService,
       graphRetriever,
     };
@@ -402,7 +377,7 @@ describe('KnowledgeSearchService', () => {
       hybridRetriever,
       rerankerService,
       queryRewriteService,
-    } = createService(undefined, graphRetriever);
+    } = createService(graphRetriever);
 
     try {
       const result = await service.retrieveWithStages('kb-1', '甲方审计保留', {
@@ -483,10 +458,8 @@ describe('KnowledgeSearchService', () => {
       retrieval_sources: ['graph'],
     };
     const graphRetriever = createGraphRetriever([graphChunk]);
-    const { service, hybridRetriever, rerankerService } = createService(
-      undefined,
-      graphRetriever,
-    );
+    const { service, hybridRetriever, rerankerService } =
+      createService(graphRetriever);
     hybridRetriever.retrieve.mockResolvedValue({
       chunks: [hybridChunk],
       keywordBackend: 'pg',
@@ -980,141 +953,6 @@ describe('KnowledgeSearchService', () => {
     ).toHaveBeenCalledWith([stage1Chunk, stage1Chunk2], 2000);
     expect(chunkContextExpansionService.expand).not.toHaveBeenCalled();
     expect(result.stage2).toBe(parentStage2);
-  });
-
-  it('persona 语义缓存精确命中时直接返回缓存检索结果', async () => {
-    const strategy = buildRetrievalStrategy();
-    const cachedResult = {
-      query: '原始问题',
-      retrievalQuery: '缓存检索问题',
-      retrievalQueries: [],
-      rewrite: {
-        originalQuery: '原始问题',
-        rewrittenQuery: '缓存检索问题',
-        keywords: ['原始问题'],
-        expandedQueries: [],
-        changed: true,
-        reason: '来自缓存',
-      },
-      options: {
-        threshold: 0.6,
-        rerank: true,
-        stage1TopK: 10,
-        finalTopK: 5,
-        skipQueryRewrite: false,
-        strategy,
-      },
-      stage1Trace: [],
-      stage1: [stage1Chunk],
-      stage2: [stage1Chunk],
-    };
-    const semanticCacheStore = {
-      isEnabled: jest.fn().mockReturnValue(true),
-      getByKey: jest.fn().mockResolvedValue({
-        cacheKey: 'rag-semantic:v1:cached',
-        payload: { result: cachedResult },
-        similarity: null,
-        expiresAt: '2026-05-15T13:00:00.000Z',
-      }),
-      findSimilar: jest.fn(),
-      upsert: jest.fn(),
-    };
-    const {
-      service,
-      runtime,
-      hybridRetriever,
-      queryRewriteService,
-      rerankerService,
-    } = createService(semanticCacheStore);
-    mockPersonaMountedKnowledge(runtime);
-
-    const result = await service.retrieveForPersonaWithStages(
-      'persona-1',
-      '原始问题',
-      { strategy },
-    );
-
-    expect(result.stage2).toEqual([stage1Chunk]);
-    expect(result.cache).toMatchObject({
-      enabled: true,
-      lookup: 'exact-hit',
-      cacheKey: 'rag-semantic:v1:cached',
-      written: false,
-    });
-    expect(semanticCacheStore.getByKey).toHaveBeenCalledWith(
-      expect.stringMatching(/^rag-semantic:v1:/),
-    );
-    expect(semanticCacheStore.findSimilar).not.toHaveBeenCalled();
-    expect(semanticCacheStore.upsert).not.toHaveBeenCalled();
-    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
-    expect(hybridRetriever.retrieve).not.toHaveBeenCalled();
-    expect(rerankerService.rerank).not.toHaveBeenCalled();
-  });
-
-  it('persona 语义缓存未命中时走实时检索并写入缓存', async () => {
-    const strategy = buildRetrievalStrategy();
-    const semanticCacheStore = {
-      isEnabled: jest.fn().mockReturnValue(true),
-      getByKey: jest.fn().mockResolvedValue(null),
-      findSimilar: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue({ written: true }),
-    };
-    const {
-      service,
-      runtime,
-      hybridRetriever,
-      queryRewriteService,
-      semanticCacheStore: cacheStore,
-    } = createService(semanticCacheStore);
-    mockPersonaMountedKnowledge(runtime, [
-      {
-        id: 'doc-1',
-        knowledge_base_id: 'kb-1',
-        status: 'completed',
-        chunk_count: 2,
-        created_at: '2026-05-15T11:00:00.000Z',
-      },
-    ]);
-
-    const result = await service.retrieveForPersonaWithStages(
-      'persona-1',
-      '原始问题',
-      { strategy },
-    );
-
-    expect(cacheStore?.findSimilar).toHaveBeenCalledWith(
-      expect.objectContaining({
-        personaId: 'persona-1',
-        queryEmbedding: [0.1, 0.2, 0.3],
-        mountedKnowledgeBaseFingerprints: [
-          expect.stringMatching(/^kb-fingerprint:v1:kb-1:/),
-        ],
-      }),
-    );
-    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(hybridRetriever.retrieve).toHaveBeenCalled();
-    const upsertCall = cacheStore?.upsert.mock.calls[0]?.[0] as
-      | SemanticCacheUpsertCall
-      | undefined;
-    expect(upsertCall).toMatchObject({
-      query: '原始问题',
-      queryEmbedding: [0.1, 0.2, 0.3],
-      mountedKnowledgeBaseIds: ['kb-1'],
-      payload: {
-        stage1ChunkIds: ['chunk-1', 'chunk-2'],
-        stage2ChunkIds: ['chunk-1', 'chunk-2'],
-        result: {
-          query: '原始问题',
-          retrievalQuery: '原始问题',
-        },
-      },
-    });
-    expect(result.cache).toMatchObject({
-      enabled: true,
-      lookup: 'miss',
-      written: true,
-    });
   });
 
   it('persona 挂载查询遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {

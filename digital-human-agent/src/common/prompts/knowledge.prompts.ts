@@ -12,12 +12,6 @@ export const KNOWLEDGE_HYDE_PROMPT = ChatPromptTemplate.fromMessages([
   ['human', PROMPT_REGISTRY.knowledgeHyde.human],
 ]);
 
-export const KNOWLEDGE_CONTEXTUAL_RETRIEVAL_PROMPT =
-  ChatPromptTemplate.fromMessages([
-    ['system', PROMPT_REGISTRY.knowledgeContextualRetrieval.system],
-    ['human', PROMPT_REGISTRY.knowledgeContextualRetrieval.human],
-  ]);
-
 export const KNOWLEDGE_RERANK_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.knowledgeRerank.system],
   ['human', PROMPT_REGISTRY.knowledgeRerank.human],
@@ -32,18 +26,6 @@ export function buildKnowledgeQueryRewritePromptInput(query: string) {
 export function buildKnowledgeHydePromptInput(query: string) {
   return {
     query,
-  };
-}
-
-export function buildKnowledgeContextualRetrievalPromptInput(input: {
-  filename: string;
-  documentContent: string;
-  chunkContent: string;
-}) {
-  return {
-    filename: input.filename,
-    documentExcerpt: input.documentContent.slice(0, 4000),
-    chunkContent: input.chunkContent.slice(0, 1200),
   };
 }
 

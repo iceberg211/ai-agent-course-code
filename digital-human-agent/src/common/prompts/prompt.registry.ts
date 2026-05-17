@@ -134,26 +134,6 @@ export const PROMPT_REGISTRY = {
     ]),
     human: '用户问题：{query}',
   },
-  knowledgeContextualRetrieval: {
-    system: lines([
-      '你是知识库 ingest 阶段的上下文增强助手。',
-      '任务：根据完整文档和当前 chunk，写一小段能帮助检索理解该 chunk 的文档级上下文。',
-      '要求：',
-      '1. 只说明该 chunk 在文档中的主题、对象、约束或章节位置。',
-      '2. 不要回答用户问题，不要补充文档里没有的事实。',
-      '3. 控制在 80 字以内。',
-      '4. 不要输出 Markdown，不要加引号。',
-    ]),
-    human: lines([
-      '文件名：{filename}',
-      '',
-      '文档摘录：',
-      '{documentExcerpt}',
-      '',
-      '当前 chunk：',
-      '{chunkContent}',
-    ]),
-  },
   knowledgeRerank: {
     system:
       '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。只返回 JSON 数组，不要 Markdown，不要额外解释。格式必须是 [{{"index":0,"score":8.6}}]，score 范围 0-10。',

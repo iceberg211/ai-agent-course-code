@@ -94,15 +94,6 @@ export interface RetrieveKnowledgeTraceItem {
   skippedChannels: Array<'vector' | 'keyword' | 'hyde' | 'graph'>;
 }
 
-export interface RetrieveKnowledgeCacheInfo {
-  enabled: boolean;
-  lookup: 'miss' | 'exact-hit' | 'similar-hit';
-  cacheKey: string;
-  similarity?: number | null;
-  written?: boolean;
-  reason?: string;
-}
-
 export interface RetrieveKnowledgeDebugResult {
   query: string;
   retrievalQuery: string;
@@ -112,7 +103,6 @@ export interface RetrieveKnowledgeDebugResult {
   stage1Trace: RetrieveKnowledgeTraceItem[];
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
-  cache?: RetrieveKnowledgeCacheInfo;
 }
 
 export interface IngestKnowledgeDocumentOptions {

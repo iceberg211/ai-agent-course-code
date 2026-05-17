@@ -4,7 +4,6 @@ import { normalizeRetrievalStrategy } from '@/agent/retrieval-strategy.utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
-import { RagSemanticCacheCoordinatorService } from '@/knowledge-content/services/rag-semantic-cache-coordinator.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import type {
@@ -56,7 +55,6 @@ export class KnowledgeSearchService {
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
     private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
-    private readonly semanticCacheCoordinator: RagSemanticCacheCoordinatorService,
     private readonly personaKnowledgeConfigService: PersonaKnowledgeConfigService,
   ) {}
 
@@ -372,19 +370,6 @@ export class KnowledgeSearchService {
       };
     }
 
-    const cacheResolution = await this.semanticCacheCoordinator.resolve({
-      personaId,
-      normalizedQuery,
-      normalizedOptions,
-      strategy,
-      knowledgeConfigs,
-      signal: options.signal,
-    });
-    if (cacheResolution.cachedResult) {
-      return cacheResolution.cachedResult;
-    }
-    const semanticCacheContext = cacheResolution.context;
-
     const rewrite = await this.resolveRetrievalQuery(
       normalizedQuery,
       skipQueryRewrite,
@@ -471,11 +456,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.semanticCacheCoordinator.write(
-        semanticCacheContext,
-        strategy,
-        result,
-      );
+      return result;
     }
 
     try {
@@ -496,11 +477,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.semanticCacheCoordinator.write(
-        semanticCacheContext,
-        strategy,
-        result,
-      );
+      return result;
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -525,11 +502,7 @@ export class KnowledgeSearchService {
         stage1: mergedStage1,
         stage2,
       };
-      return this.semanticCacheCoordinator.write(
-        semanticCacheContext,
-        strategy,
-        result,
-      );
+      return result;
     }
   }
 

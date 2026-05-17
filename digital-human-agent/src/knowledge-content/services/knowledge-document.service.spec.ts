@@ -12,10 +12,6 @@ describe('KnowledgeDocumentService', () => {
     fileSize: number | null;
   };
 
-  type SplitChunk = {
-    pageContent: string;
-  };
-
   type DocumentUpdate = Partial<{
     status: string;
     chunkCount: number;
@@ -36,15 +32,9 @@ describe('KnowledgeDocumentService', () => {
     errorMessage?: string;
   };
 
-  afterEach(() => {
-    delete process.env.ENABLE_SEMANTIC_CHUNKING;
-    delete process.env.SEMANTIC_CHUNKING_SIMILARITY_THRESHOLD;
-  });
-
   function createService(
     options: {
       insertError?: string | null;
-      contextualRetrieval?: boolean;
     } = {},
   ) {
     const document: MockDocument = {
@@ -130,19 +120,6 @@ describe('KnowledgeDocumentService', () => {
     const knowledgeChunkIndexQueryService = {
       findByChunkId: jest.fn(),
     };
-    const contextualRetrievalService = {
-      enrichChunks: jest.fn(
-        ({ chunks }: { chunks: SplitChunk[] }): Promise<SplitChunk[]> =>
-          Promise.resolve(
-            options.contextualRetrieval
-              ? chunks.map((chunk) => ({
-                  ...chunk,
-                  pageContent: `[文档上下文] 服务协议试用数据删除要求\n${chunk.pageContent}`,
-                }))
-              : chunks,
-          ),
-      ),
-    };
     const documentIndexSyncService = new KnowledgeDocumentIndexSyncService(
       elasticsearchSyncService as never,
       graphExtractorService as never,
@@ -155,7 +132,6 @@ describe('KnowledgeDocumentService', () => {
       chunkRepo as never,
       runtime as never,
       documentIndexSyncService,
-      contextualRetrievalService as never,
     );
 
     return {
@@ -166,7 +142,6 @@ describe('KnowledgeDocumentService', () => {
       insert,
       update,
       updateEq,
-      contextualRetrievalService,
       documentIndexSyncService,
       elasticsearchSyncService,
       graphExtractorService,

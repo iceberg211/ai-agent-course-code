@@ -55,64 +55,6 @@ describe('splitKnowledgeDocumentContent', () => {
     expect(chunks).toHaveLength(2);
   });
 
-  it('开启语义分块时会用相邻句子 embedding 相似度寻找主题断点', async () => {
-    const splitter = createSplitter();
-    const embeddings = {
-      embedDocuments: jest.fn().mockResolvedValue([
-        [1, 0],
-        [0.96, 0.04],
-        [0, 1],
-        [0.04, 0.96],
-      ]),
-    };
-    const chunks = await splitKnowledgeDocumentContent(
-      '试用期结束后需要删除数据。乙方七日内完成删除。付款在验收后十日内完成。发票随付款流程开具。',
-      splitter,
-      {
-        semanticChunking: {
-          enabled: true,
-          embeddings,
-          similarityThreshold: 0.8,
-        },
-      },
-    );
-
-    expect(embeddings.embedDocuments).toHaveBeenCalledWith([
-      '试用期结束后需要删除数据。',
-      '乙方七日内完成删除。',
-      '付款在验收后十日内完成。',
-      '发票随付款流程开具。',
-    ]);
-    expect(chunks.map((chunk) => chunk.pageContent)).toEqual([
-      '试用期结束后需要删除数据。乙方七日内完成删除。',
-      '付款在验收后十日内完成。发票随付款流程开具。',
-    ]);
-    expect(splitter.createDocuments).not.toHaveBeenCalled();
-  });
-
-  it('语义分块失败时会回退到现有递归分块器', async () => {
-    const splitter = createSplitter();
-    const embeddings = {
-      embedDocuments: jest.fn().mockRejectedValue(new Error('embed failed')),
-    };
-    const chunks = await splitKnowledgeDocumentContent(
-      '第一句介绍背景。第二句继续背景。第三句切到新主题。',
-      splitter,
-      {
-        semanticChunking: {
-          enabled: true,
-          embeddings,
-          similarityThreshold: 0.8,
-        },
-      },
-    );
-
-    expect(splitter.createDocuments).toHaveBeenCalledWith([
-      '第一句介绍背景。第二句继续背景。第三句切到新主题。',
-    ]);
-    expect(chunks).toHaveLength(2);
-  });
-
   it('单个结构化章节过长时会回退到现有递归分块器', async () => {
     const splitter = createSplitter();
     const longParagraph = '长期服务条款。'.repeat(200);
