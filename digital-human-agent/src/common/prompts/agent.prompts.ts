@@ -6,6 +6,7 @@ import {
 import { ConversationMessage } from '@/conversation/conversation-message.entity';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import { Persona } from '@/persona/persona.entity';
+import type { RagEvidenceAssessmentContext } from '@/agent/types/rag-workflow.types';
 
 export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   [
@@ -19,6 +20,7 @@ export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
 {knowledgeBlock}
 ---
 {webKnowledgeSection}
+{evidenceAssessmentSection}
 
 要求：
 1. 始终以{personaName}的身份回答
@@ -142,18 +144,16 @@ export function formatKnowledgeBlock(chunks: KnowledgeChunk[]): string {
   }
 
   return chunks
-    .map(
-      (chunk) => {
-        const graphEvidenceBlock = formatGraphEvidenceBlock(chunk);
-        return [
-          `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]`,
-          graphEvidenceBlock,
-          chunk.content,
-        ]
-          .filter(Boolean)
-          .join('\n');
-      },
-    )
+    .map((chunk) => {
+      const graphEvidenceBlock = formatGraphEvidenceBlock(chunk);
+      return [
+        `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]`,
+        graphEvidenceBlock,
+        chunk.content,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    })
     .join('\n---\n');
 }
 
@@ -217,6 +217,45 @@ export function formatWebKnowledgeBlock(webContextBlock?: string): string {
   ].join('\n');
 }
 
+export function formatEvidenceAssessmentBlock(
+  assessment?: RagEvidenceAssessmentContext,
+): string {
+  if (!assessment) {
+    return '';
+  }
+
+  if (assessment.enough === true) {
+    return [
+      '',
+      '证据评估：当前证据被评估为足够回答问题。',
+      assessment.evaluationReason
+        ? `评估理由：${assessment.evaluationReason}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  const missingFacts = assessment.missingFacts
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return [
+    '',
+    '证据评估：当前证据不足或无法完全确认答案。',
+    assessment.stopReason ? `停止原因：${assessment.stopReason}` : '',
+    assessment.evaluationReason
+      ? `评估理由：${assessment.evaluationReason}`
+      : '',
+    missingFacts.length > 0
+      ? `缺失信息：${missingFacts.slice(0, 6).join('；')}`
+      : '',
+    '回答要求：如果缺失信息会影响结论，必须明确说明无法从当前上下文确认，不要给确定性结论。',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function buildAgentPromptInput(
   persona: Persona,
   chunks: KnowledgeChunk[],
@@ -224,6 +263,7 @@ export function buildAgentPromptInput(
   history: ConversationMessage[],
   options?: {
     webContextBlock?: string;
+    evidenceAssessment?: RagEvidenceAssessmentContext;
   },
 ) {
   return {
@@ -233,6 +273,9 @@ export function buildAgentPromptInput(
     expertise: (persona.expertise ?? []).join('、'),
     knowledgeBlock: formatKnowledgeBlock(chunks),
     webKnowledgeSection: formatWebKnowledgeBlock(options?.webContextBlock),
+    evidenceAssessmentSection: formatEvidenceAssessmentBlock(
+      options?.evidenceAssessment,
+    ),
     systemPromptExtraSection: persona.systemPromptExtra
       ? `\n${persona.systemPromptExtra}`
       : '',

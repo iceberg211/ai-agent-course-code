@@ -22,6 +22,22 @@ import { KnowledgeSearchDto } from '@/knowledge-content/dto/knowledge-search.dto
 import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
+const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+function isSupportedKnowledgeUpload(file: {
+  originalname?: string;
+  mimetype?: string;
+}): boolean {
+  const ext = extname(file.originalname ?? '').toLowerCase();
+  const mime = String(file.mimetype ?? '').toLowerCase();
+  return (
+    ext === '.pdf' ||
+    mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE ||
+    mime.startsWith('text/') ||
+    KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)
+  );
+}
+
 @ApiTags('knowledge-content')
 @Controller('knowledge-bases')
 export class KnowledgeContentController {
@@ -35,7 +51,18 @@ export class KnowledgeContentController {
   }
 
   @Post(':kbId/documents')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: KNOWLEDGE_UPLOAD_MAX_FILE_SIZE },
+      fileFilter: (_req, file, cb) => {
+        if (isSupportedKnowledgeUpload(file)) {
+          cb(null, true);
+          return;
+        }
+        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+      },
+    }),
+  )
   async uploadDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @UploadedFile() file: Express.Multer.File,

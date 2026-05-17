@@ -12,6 +12,7 @@ import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 
 describe('Persona API (e2e)', () => {
   let app: INestApplication;
+  const personaId = '44444444-4444-4444-8444-444444444444';
   const service = {
     create: jest.fn(),
     findAll: jest.fn(),
@@ -168,18 +169,23 @@ describe('Persona API (e2e)', () => {
 
   it('DELETE /personas/:id 删除角色', async () => {
     service.remove.mockResolvedValue({
-      id: 'p-3',
+      id: personaId,
       deleted: true,
     });
 
     const res = await request(app.getHttpServer())
-      .delete('/personas/p-3')
+      .delete(`/personas/${personaId}`)
       .expect(200);
 
     expect(res.body).toEqual({
-      id: 'p-3',
+      id: personaId,
       deleted: true,
     });
-    expect(service.remove).toHaveBeenCalledWith('p-3');
+    expect(service.remove).toHaveBeenCalledWith(personaId);
+  });
+
+  it('GET /personas/:id 非 UUID 返回 400', async () => {
+    await request(app.getHttpServer()).get('/personas/not-a-uuid').expect(400);
+    expect(service.findOne).not.toHaveBeenCalled();
   });
 });

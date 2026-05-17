@@ -24,6 +24,12 @@ function normalizeEnvValue(value: string | undefined): string {
         entities: [__dirname + '/../**/*.entity{.ts,.js}'],
         synchronize: false,
         ssl: { rejectUnauthorized: false },
+        extra: {
+          connectionTimeoutMillis: 5000,
+          idleTimeoutMillis: 30000,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10000,
+        },
         logging:
           process.env.TYPEORM_LOGGING === 'true'
             ? ['error', 'warn', 'query']

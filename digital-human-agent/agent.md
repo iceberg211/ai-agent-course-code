@@ -1,100 +1,261 @@
-# digital-human-agent / Agent 协作说明
+# digital-human-agent Agent 接手说明
 
-## 1. 项目定位
+这份文件给后续接手本项目的 Agent 使用。目标是先理解主链路，再做最小必要改动；不要把学习型项目直接扩大成生产级改造。
 
-- 技术栈：`NestJS 11 + TypeORM + PostgreSQL(Supabase) + ws + LangChain/LangGraph`
-- 职责：角色管理、知识库检索、ASR/TTS、会话网关、文本流接口、语音克隆、数字人模式编排
-- 默认端口：`3001`
+## 项目定位
 
-## 2. 常用命令
+`digital-human-agent` 是一个数字人问答后端，核心能力是：
 
-- 安装依赖：`pnpm install`
-- 开发启动：`pnpm start:dev`
-- 构建：`pnpm build`
-- 单测：`pnpm test`
-- E2E：`pnpm test:e2e`
-- 数据库迁移：`pnpm db:migrate`
-- 启动 ES/Kibana：`pnpm es:up`
-- 关闭 ES/Kibana：`pnpm es:down`
-- ES 回填：`pnpm es:backfill`
+- 角色管理与知识库挂载
+- 文本问答与 WebSocket 会话
+- ASR / TTS / 语音克隆
+- 基于 LangGraph 的 RAG 编排
+- 知识库文档摄入、向量检索、关键词检索、图谱检索
 
-## 3. 关键目录
+技术栈：
 
-- `src/gateway`：WebSocket 会话主链路（语音/数字人模式分流）
-- `src/chat`：`/chat` 文本流接口（AI SDK 协议）
-- `src/knowledge`：知识库定义、检索配置、persona 挂载关系
-- `src/knowledge-content`：文档摄入、chunk 管理、向量检索、BM25、rerank
-- `src/asr` / `src/tts`：阿里兼容模式语音能力
-- `src/voice-clone`：语音样本上传与训练状态
-- `src/digital-human`：数字人会话与 WebRTC 信令抽象
-- `supabase/migrations`：数据库 DDL 和 RPC
+- `NestJS 11`
+- `TypeORM`
+- `PostgreSQL / Supabase / pgvector`
+- `Elasticsearch`
+- `Neo4j`
+- `LangChain / LangGraph`
+- `ws`
 
-## 4. 环境变量（最小集）
+默认服务端口：`3001`
 
-- `DATABASE_URL`：TypeORM 连接串
+## 当前 RAG 主链路
+
+当前项目的 RAG 主线已经跑通，三路检索都接入了：
+
+- `pgvector`：语义相似度检索
+- `Elasticsearch`：关键词、术语、标题、编号等精确匹配
+- `Neo4j`：实体关系、层级关系、多跳关系补充
+
+主流程可以按这条线理解：
+
+```text
+用户问题
+-> ChatController / ConversationGateway
+-> AgentService
+-> LangGraph RAG Orchestrator
+-> retrieval strategy / route / evidence evaluation
+-> KnowledgeSearchService
+-> query rewrite / HyDE
+-> pgvector + Elasticsearch + Neo4j
+-> fusion / rerank / context expansion
+-> answer generation
+-> 返回答案、引用和调试信息
+```
+
+读代码时建议按这个顺序：
+
+1. `src/chat/chat.controller.ts`
+2. `src/gateway/conversation.gateway.ts`
+3. `src/agent/agent.service.ts`
+4. `src/agent/orchestrators/langgraph-rag-orchestrator.service.ts`
+5. `src/agent/langgraph/rag.graph.ts`
+6. `src/knowledge-content/services/knowledge-search.service.ts`
+7. `src/knowledge-content/services/knowledge-stage1-retrieval.service.ts`
+8. `src/knowledge-content/elasticsearch`
+9. `src/knowledge-content/graph`
+
+## 常用命令
+
+安装与启动：
+
+```bash
+pnpm install
+pnpm start:dev
+```
+
+测试与构建：
+
+```bash
+pnpm test --runInBand
+pnpm build
+```
+
+数据库：
+
+```bash
+pnpm db:migrate
+```
+
+RAG 基础设施：
+
+```bash
+pnpm rag:infra:up
+pnpm rag:infra:down
+```
+
+也可以单独启停：
+
+```bash
+pnpm es:up
+pnpm es:down
+pnpm neo4j:up
+pnpm neo4j:down
+```
+
+索引初始化与回填：
+
+```bash
+pnpm es:index:ensure
+pnpm es:backfill
+pnpm neo4j:backfill
+```
+
+Neo4j 本地镜像不存在时再构建：
+
+```bash
+pnpm neo4j:prepare-image
+pnpm neo4j:build
+```
+
+RAG 运行检查：
+
+```bash
+pnpm rag:preflight
+NEO4J_GRAPH_ENABLED=true HYBRID_KEYWORD_BACKEND=elastic pnpm rag:smoke:agentic -- --query=React组件设计讲义
+```
+
+`package.json` 里只保留日常入口。低频脚本仍保留在 `scripts/` 目录，需要时可直接用 `node -r ts-node/register -r tsconfig-paths/register ./scripts/<file>.ts` 执行。
+
+## 本地 Docker 约定
+
+当前项目需要的镜像是：
+
+- `digital-human-agent-neo4j:5.26.26`
+- `digital-human-agent-elasticsearch-ik:9.3.3`
+- `docker.m.daocloud.io/kibana:9.3.3`
+- `docker.m.daocloud.io/elasticsearch:9.3.3`
+
+`docker/neo4j/vendor` 是本地构建 Neo4j 镜像时的临时目录，不应提交。已有镜像时，不需要保留 Neo4j 官方压缩包。
+
+不要随手删除 Docker volume。Neo4j 和 ES 的数据在 volume 里，不在镜像里。
+
+## 关键目录
+
+- `src/agent`：Agent 编排、LangGraph RAG、答案生成、证据评估
+- `src/chat`：HTTP 文本问答入口
+- `src/gateway`：WebSocket 会话入口，处理语音、打断和流式返回
+- `src/conversation`：会话与消息持久化
+- `src/persona`：角色定义
+- `src/knowledge`：知识库定义、检索配置、角色挂载关系
+- `src/knowledge-content`：文档摄入、chunk、检索、回填、评估
+- `src/knowledge-content/elasticsearch`：ES 索引、同步、回填、alias 工具
+- `src/knowledge-content/graph`：Neo4j 图谱抽取、写入、检索
+- `src/knowledge-content/cache`：RAG 语义缓存
+- `src/asr`：ASR 能力
+- `src/tts`：TTS 能力
+- `src/voice-clone`：语音克隆接口
+- `src/digital-human`：数字人 provider 抽象
+- `supabase/migrations`：数据库迁移
+- `scripts`：低频运维、回填、验证脚本
+
+## 环境变量重点
+
+最小运行需要：
+
+- `DATABASE_URL`
+- `DIRECT_URL`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`（阿里兼容地址）
-- `ASR_MODEL=paraformer-realtime-v2`
-- `TTS_MODEL=cosyvoice-v3.5-plus`
-- `TTS_DEFAULT_VOICE=longxiaochun`
+- `OPENAI_BASE_URL`
+- `MODEL_NAME`
+- `EMBEDDINGS_MODEL_NAME`
 
-可选：
+RAG 相关：
 
-- `ELASTICSEARCH_ENABLED=false`
-- `ELASTICSEARCH_URL=http://localhost:9200`
-- `ELASTICSEARCH_INDEX_PREFIX=digital-human`
-- `HYBRID_KEYWORD_BACKEND=pg`
-- `VOICE_CLONE_MOCK_DELAY_MS`（语音克隆 mock 训练时长，毫秒）
-- `SESSION_HISTORY_LIMIT`（会话恢复历史条数）
-- `TYPEORM_LOGGING=true`（联调排障时打开）
-- `LANGSMITH_TRACING=true`（开启 LangSmith trace）
-- `LANGSMITH_API_KEY`（LangSmith API Key）
-- `LANGSMITH_PROJECT`（可选，LangSmith 项目名）
-- `LANGCHAIN_CALLBACKS_BACKGROUND=true`（本地常驻服务建议开启，减少 trace 上传阻塞）
+- `ELASTICSEARCH_ENABLED`
+- `ELASTICSEARCH_URL`
+- `ELASTICSEARCH_INDEX_PREFIX`
+- `ELASTICSEARCH_INDEX_VERSION`
+- `HYBRID_KEYWORD_BACKEND`
+- `NEO4J_GRAPH_ENABLED`
+- `NEO4J_URL`
+- `NEO4J_USERNAME`
+- `NEO4J_PASSWORD`
+- `NEO4J_DATABASE`
+- `RAG_SEMANTIC_CACHE_ENABLED`
 
-## 5. 联调入口
+默认情况下，关键词检索可以走 PostgreSQL。只有 ES 已启动、索引已初始化并完成回填后，再切到 `HYBRID_KEYWORD_BACKEND=elastic`。
 
-- Swagger：`http://localhost:3001/api/docs`
-- 文本对话：`POST /chat`
-- 角色：`/personas`
-- 知识库：`/knowledge-bases`、`/personas/:personaId/knowledge-bases`
-- 检索调试：`/knowledge-bases/:kbId/search`、`/personas/:personaId/search`
-- 语音克隆：`POST /voice-clone/:personaId`、`GET /voice-clone/:personaId/status`
-- WS：`ws://localhost:3001/ws/conversation`
+## 研发约定
 
-## 6. 研发约定
+- 默认使用中文沟通和中文文档。
+- 先看真实代码和命令结果，再给判断。
+- 默认用 `rg` / `rg --files` 搜索。
+- 导入路径优先使用 `@/`。
+- 不要新增大而全的 service；超过明显可读范围时优先按职责拆分。
+- Controller 只处理协议层，业务逻辑放 Service。
+- 外部依赖接入用 provider / service 包一层，不在 Controller 里直连。
+- 提示词统一放在 `src/common/prompts`，优先使用 LangChain prompt template。
+- 新接口需要 DTO 校验和 Swagger 注解。
+- RAG 检索失败默认不能阻断基础对话流程，除非当前任务明确要求严格失败。
+- PostgreSQL / Supabase 是主数据源；ES 和 Neo4j 是派生索引。
+- ES 数据可以重建，Neo4j 图谱可以回填；不要把派生索引当成主数据。
+- 改会话协议时，同时检查后端 gateway、session 类型和前端协议处理。
 
-- 导入路径统一使用根别名 `@/`，不要继续新增 `../../` 形式的相对导入。
-- 单文件目标长度 `<= 300` 行，硬上限 `400` 行；超过必须拆分服务、控制器或辅助模块。
-- 新接口必须补充 Swagger 注解与 DTO 校验。
-- 常量管理统一收口到 `src/common/constants`，但只放两类内容：
-  - 跨模块复用的系统级常量，例如 DI token、Provider 名称、默认模型名、共享文件类型、共享默认配置。
-  - 被多个模块共同依赖、需要单点维护的映射或默认值。
-- 不要把单文件内的局部数字阈值、一次性边界值硬抽到 `common/constants`；这类值应就近放在所属文件，保证可读性。
-- 提示词统一放在 `src/common/prompts`，并且必须使用 LangChain 的 `ChatPromptTemplate` / `PromptTemplate` 管理。
-- Service / Controller 中不要再直接内联大段 `SystemMessage`、`HumanMessage` 提示词字符串；统一从 `@/common/prompts` 引入。
-- `knowledge-content` 模块目录保持 `controllers / dto / entities / services / types / knowledge-content.module.ts` 结构，不要再回到平铺写法。
-- 网关改动优先保证打断语义：`interrupt -> LLM 停止 -> 播报停止 -> 状态回收`。
-- 检索链路默认 fail-open：外部依赖失败不阻断对话主流程。
-- PostgreSQL / Supabase 仍是唯一主数据源；ElasticSearch 只是派生索引，ES 失败必须自动回退 PG。
-- ES 索引统一走 alias：
-  - 读：`${ELASTICSEARCH_INDEX_PREFIX}-knowledge-chunk-read`
-  - 写：`${ELASTICSEARCH_INDEX_PREFIX}-knowledge-chunk-write`
-- 本地验证 BM25 时，先执行：
-  - `pnpm es:up`
-  - `pnpm es:backfill`
-  - 再把 `HYBRID_KEYWORD_BACKEND=elastic`
-- Kibana 仅用于查看 mapping、文档和 Dev Tools 排障，不进入业务链路。
-- 会话结构字段变更时，同步更新：
-  - `src/realtime-session/realtime-session.interface.ts`
-  - `src/gateway/conversation.gateway.ts`
-  - 前端 `useAppController.ts` 的协议处理
+## 做任务时的范围控制
 
-## 7. 当前阶段状态（简）
+这个项目容易因为 RAG、Docker、ES、Neo4j、LangGraph 混在一起而扩大任务范围。接手时先判断本轮任务类型：
 
-- 第一/二阶段已落地（语音主链路 + RAG 两阶段 + 引用 + 知识库管理）。
-- 第三/四阶段已接入可运行版本：
-  - 语音克隆：当前为 mock 训练流程，完成后写入 `persona.voiceId`
-  - 数字人：当前为 mock provider，信令链路可跑，真实视频流待接入厂商 SDK
+- 只是解释：只沿主链路讲清楚，不顺手改代码。
+- 只是验证：只跑必要命令，先给通过或失败的结论。
+- 只是清理：只删缓存、镜像或命令入口，不改业务链路。
+- 只是修 bug：先复现，再最小修改，再验证。
+- 只是优化：先确认是否影响当前主链路，再决定是否动手。
+
+遇到旁支问题时，先记录为后续项。除非它阻塞当前目标，不要直接拉进本轮任务。
+
+## 当前已知注意点
+
+- RAG 主链路已经能接入 `pgvector + Elasticsearch + Neo4j`。
+- persona 多知识库检索目前是并行执行，知识库数量很多时可能需要限流。
+- Neo4j path 查询在图变大后可能需要优化查询方式。
+- RAG 语义缓存恢复校验仍偏轻量。
+- `KnowledgeSearchService` 已拆分过一部分职责，但仍承担 persona 知识库查询。
+- `@elastic/elasticsearch` 当前是 `8.17.0`，本地 ES 镜像是 `9.3.3`；能连通，但后续最好统一主版本。
+- `neo4j-driver` 是 Node 客户端依赖，不是 Neo4j 服务端本体。
+
+## 推荐验证顺序
+
+一般代码改动：
+
+```bash
+pnpm test --runInBand
+pnpm build
+git diff --check
+```
+
+RAG 检索改动：
+
+```bash
+pnpm rag:preflight
+pnpm test --runInBand -- knowledge-content/services/knowledge-search.service.spec.ts knowledge-content/services/knowledge-stage1-retrieval.service.spec.ts
+NEO4J_GRAPH_ENABLED=true HYBRID_KEYWORD_BACKEND=elastic pnpm rag:smoke:agentic -- --query=React组件设计讲义
+```
+
+ES 改动：
+
+```bash
+pnpm es:index:ensure
+pnpm es:backfill -- --dry-run
+```
+
+Neo4j 改动：
+
+```bash
+pnpm neo4j:backfill -- --dry-run
+pnpm test --runInBand -- knowledge-content/graph/neo4j-graph-retriever.service.spec.ts
+```
+
+文档或脚本入口改动：
+
+```bash
+node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8')); console.log('package.json ok')"
+git diff --check
+```

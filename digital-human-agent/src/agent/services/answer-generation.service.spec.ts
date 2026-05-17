@@ -113,4 +113,45 @@ describe('AnswerGenerationService', () => {
     expect(messages[0].content).toContain('图谱证据：');
     expect(messages[0].content).toContain('甲方 --提及--> 验收');
   });
+
+  it('会把证据不足评估传入最终回答提示词', async () => {
+    const service = new AnswerGenerationService();
+    const streamMock = jest.fn().mockResolvedValue(createStream(['好']));
+
+    Reflect.set(service, 'llm', {
+      stream: streamMock,
+    });
+
+    await service.generate({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      turnId: 'turn-1',
+      userMessage: '合同是否允许公开训练？',
+      signal: new AbortController().signal,
+      persona: {
+        id: 'persona-1',
+        name: '法务顾问',
+        description: '审慎',
+        speakingStyle: '先说结论',
+        expertise: ['合同'],
+        voiceId: null,
+        avatarId: null,
+        systemPromptExtra: null,
+      } as never,
+      history: [],
+      localChunks: [],
+      evidenceAssessment: {
+        enough: false,
+        missingFacts: ['缺少公开训练条款原文'],
+        evaluationReason: '当前证据没有覆盖训练用途限制',
+        stopReason: 'single_hop_insufficient',
+      },
+      onToken: jest.fn(),
+    });
+
+    const messages = streamMock.mock.calls[0][0] as Array<{ content: string }>;
+    expect(messages[0].content).toContain('证据评估：当前证据不足');
+    expect(messages[0].content).toContain('缺少公开训练条款原文');
+    expect(messages[0].content).toContain('不要给确定性结论');
+  });
 });

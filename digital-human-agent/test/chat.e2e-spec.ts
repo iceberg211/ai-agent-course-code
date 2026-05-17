@@ -203,4 +203,18 @@ describe('Chat API (e2e)', () => {
     );
     expect(agentService.run).not.toHaveBeenCalled();
   });
+
+  it('POST /chat personaId 非 UUID 时返回 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/chat')
+      .send({ personaId: 'not-a-uuid', message: '你好' })
+      .expect(400);
+
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        message: '请求参数校验失败',
+      }),
+    );
+    expect(agentService.run).not.toHaveBeenCalled();
+  });
 });

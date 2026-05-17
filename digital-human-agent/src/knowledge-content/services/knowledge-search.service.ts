@@ -22,6 +22,31 @@ import { mergeStage1Results } from '@/knowledge-content/services/knowledge-retri
 import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
 
+const DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) return;
+        results[index] = await mapper(items[index], index);
+      }
+    }),
+  );
+
+  return results;
+}
+
 @Injectable()
 export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
@@ -372,8 +397,10 @@ export class KnowledgeSearchService {
     );
     throwIfAborted(options.signal);
 
-    const stage1Results = await Promise.all(
-      knowledgeConfigs.map(async (config) => {
+    const stage1Results = await mapWithConcurrency(
+      knowledgeConfigs,
+      this.resolvePersonaKnowledgeConcurrency(),
+      async (config) => {
         try {
           throwIfAborted(options.signal);
 
@@ -402,6 +429,9 @@ export class KnowledgeSearchService {
           if (this.isAbortError(error)) {
             throw error;
           }
+          if (this.isTransientRetrievalError(error)) {
+            throw error;
+          }
 
           this.logger.warn(
             `stage1 失败（knowledge=${config.knowledgeId}）：${
@@ -413,7 +443,7 @@ export class KnowledgeSearchService {
             trace: [] as RetrieveKnowledgeTraceItem[],
           };
         }
-      }),
+      },
     );
 
     const mergedStage1 = mergeStage1Results(
@@ -503,17 +533,23 @@ export class KnowledgeSearchService {
   private async listMountedKnowledgeConfigs(
     personaId: string,
   ): Promise<MountedKnowledgeConfig[]> {
-    const { data: mounts, error: mountError } = await this.runtime.supabase
-      .from('persona_knowledge_base')
-      .select('knowledge_base_id')
-      .eq('persona_id', personaId);
-
-    if (mountError) {
-      this.logger.warn(
-        `查询 persona ${personaId} 挂载失败：${mountError.message}`,
-      );
-      return [];
-    }
+    const { data: mounts } = await this.runtime.withTransientRetry(
+      `查询 persona ${personaId} 挂载知识库`,
+      async () => {
+        const result = await this.runtime.supabase
+          .from('persona_knowledge_base')
+          .select('knowledge_base_id')
+          .eq('persona_id', personaId);
+        if (result.error) {
+          throw this.createSupabaseQueryError(
+            `查询 persona ${personaId} 挂载失败`,
+            result.error,
+          );
+        }
+        return result;
+      },
+      3,
+    );
 
     if (!mounts || mounts.length === 0) {
       this.logger.log(`persona ${personaId} 未挂载任何知识库`);
@@ -521,16 +557,25 @@ export class KnowledgeSearchService {
     }
 
     const knowledgeIds = mounts.map((item) => item.knowledge_base_id as string);
-    const { data: knowledgeRows, error: knowledgeError } =
-      await this.runtime.supabase
-        .from('knowledge_base')
-        .select('id, retrieval_config, updated_at')
-        .in('id', knowledgeIds);
+    const { data: knowledgeRows } = await this.runtime.withTransientRetry(
+      '查询已挂载知识库配置',
+      async () => {
+        const result = await this.runtime.supabase
+          .from('knowledge_base')
+          .select('id, retrieval_config, updated_at')
+          .in('id', knowledgeIds);
+        if (result.error) {
+          throw this.createSupabaseQueryError(
+            '查询知识库配置失败',
+            result.error,
+          );
+        }
+        return result;
+      },
+      3,
+    );
 
-    if (knowledgeError || !knowledgeRows || knowledgeRows.length === 0) {
-      if (knowledgeError) {
-        this.logger.warn(`查询知识库配置失败：${knowledgeError.message}`);
-      }
+    if (!knowledgeRows || knowledgeRows.length === 0) {
       return [];
     }
 
@@ -665,5 +710,35 @@ export class KnowledgeSearchService {
 
   private isAbortError(error: unknown): boolean {
     return (error as { name?: string })?.name === 'AbortError';
+  }
+
+  private resolvePersonaKnowledgeConcurrency(): number {
+    return this.runtime.toBoundedNumber(
+      process.env.RAG_PERSONA_KB_CONCURRENCY,
+      DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY,
+      1,
+      8,
+    );
+  }
+
+  private createSupabaseQueryError(
+    message: string,
+    error: { message?: string; code?: string },
+  ): Error {
+    const suffix = [error.code, error.message].filter(Boolean).join(' ');
+    return new Error(suffix ? `${message}: ${suffix}` : message);
+  }
+
+  private isTransientRetrievalError(error: unknown): boolean {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : '';
+
+    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly|socket hang up|ECONNREFUSED|too many clients|502|503|504|429|temporary .* failure/i.test(
+      message,
+    );
   }
 }

@@ -32,6 +32,13 @@ export interface RetrievalHistoryItem {
   strategy?: RetrievalStrategy;
 }
 
+export interface RagEvidenceAssessmentContext {
+  enough: boolean | null;
+  missingFacts: string[];
+  evaluationReason: string;
+  stopReason: string;
+}
+
 export interface RagKnowledgeCitation extends RetrievedKnowledgeChunk {
   kind: 'knowledge';
 }

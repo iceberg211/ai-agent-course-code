@@ -75,7 +75,12 @@ describe('Knowledge API (e2e)', () => {
       {
         id: kbId,
         name: '产品 FAQ',
-        retrievalConfig: { threshold: 0.6, stage1TopK: 20, finalTopK: 5, rerank: true },
+        retrievalConfig: {
+          threshold: 0.6,
+          stage1TopK: 20,
+          finalTopK: 5,
+          rerank: true,
+        },
       },
     ]);
 
@@ -88,7 +93,12 @@ describe('Knowledge API (e2e)', () => {
       {
         id: kbId,
         name: '产品 FAQ',
-        retrievalConfig: { threshold: 0.6, stage1TopK: 20, finalTopK: 5, rerank: true },
+        retrievalConfig: {
+          threshold: 0.6,
+          stage1TopK: 20,
+          finalTopK: 5,
+          rerank: true,
+        },
       },
     ]);
   });
@@ -138,6 +148,28 @@ describe('Knowledge API (e2e)', () => {
     expect(res.body.message).toContain('缺少上传文件');
   });
 
+  it('POST /knowledge-bases/:kbId/documents 不支持的文件类型会在上传入口返回 400', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/knowledge-bases/${kbId}/documents`)
+      .attach('file', Buffer.from('not text'), {
+        filename: 'payload.exe',
+        contentType: 'application/octet-stream',
+      })
+      .expect(400);
+
+    expect(knowledgeContentService.ingestDocument).not.toHaveBeenCalled();
+    expect(String(res.body.message)).toContain('仅支持 txt、md、pdf 文档上传');
+  });
+
+  it('GET /knowledge-bases/:kbId/documents 非 UUID 返回 400', async () => {
+    await request(app.getHttpServer())
+      .get('/knowledge-bases/not-a-uuid/documents')
+      .expect(400);
+    expect(
+      knowledgeContentService.listDocumentsByKnowledgeId,
+    ).not.toHaveBeenCalled();
+  });
+
   it('GET /knowledge-bases/:kbId/documents 返回文档列表', async () => {
     knowledgeContentService.listDocumentsByKnowledgeId.mockResolvedValue([
       {
@@ -154,9 +186,7 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeContentService.listDocumentsByKnowledgeId,
-    ).toHaveBeenCalledWith(
-      kbId,
-    );
+    ).toHaveBeenCalledWith(kbId);
     expect(res.body).toEqual([
       {
         id: docId,
@@ -192,9 +222,9 @@ describe('Knowledge API (e2e)', () => {
       .get(`/knowledge-bases/${kbId}/documents/${docId}/chunks`)
       .expect(200);
 
-    expect(
-      knowledgeContentService.listChunksByDocumentId,
-    ).toHaveBeenCalledWith(docId);
+    expect(knowledgeContentService.listChunksByDocumentId).toHaveBeenCalledWith(
+      docId,
+    );
     expect(res.body).toEqual([
       {
         id: chunkId,

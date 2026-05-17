@@ -12,6 +12,7 @@ import {
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
 import type { RetrievalStrategy } from '@/agent/types/rag-workflow.types';
+import type { RagEvidenceAssessmentContext } from '@/agent/types/rag-workflow.types';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
 
@@ -26,6 +27,7 @@ export interface GenerateAnswerParams {
   localChunks: RetrievedKnowledgeChunk[];
   retrievalStrategy?: RetrievalStrategy;
   webCitations?: RagWebCitation[];
+  evidenceAssessment?: RagEvidenceAssessmentContext;
   onToken: (token: string) => void;
 }
 
@@ -89,6 +91,7 @@ export class AnswerGenerationService {
           webContextBlock: this.formatWebContextBlock(
             params.webCitations ?? [],
           ),
+          evidenceAssessment: params.evidenceAssessment,
         },
       ),
     );

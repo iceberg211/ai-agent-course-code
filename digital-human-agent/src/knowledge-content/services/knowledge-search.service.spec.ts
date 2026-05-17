@@ -266,6 +266,48 @@ describe('KnowledgeSearchService', () => {
     };
   }
 
+  function mockPersonaMountedKnowledgeIds(
+    runtime: ReturnType<typeof createService>['runtime'],
+    knowledgeIds: string[],
+  ) {
+    const mountEq = jest.fn().mockResolvedValue({
+      data: knowledgeIds.map((knowledgeId) => ({
+        knowledge_base_id: knowledgeId,
+      })),
+      error: null,
+    });
+    const mountSelect = jest.fn().mockReturnValue({ eq: mountEq });
+    const knowledgeIn = jest.fn().mockResolvedValue({
+      data: knowledgeIds.map((knowledgeId) => ({
+        id: knowledgeId,
+        retrieval_config: {
+          threshold: 0.6,
+          stage1TopK: 10,
+          finalTopK: 5,
+          rerank: true,
+        },
+        updated_at: '2026-05-15T10:00:00.000Z',
+      })),
+      error: null,
+    });
+    const knowledgeSelect = jest.fn().mockReturnValue({ in: knowledgeIn });
+
+    runtime.supabase.from.mockImplementation((table: string) => {
+      if (table === 'persona_knowledge_base') {
+        return { select: mountSelect };
+      }
+      if (table === 'knowledge_base') {
+        return { select: knowledgeSelect };
+      }
+      throw new Error(`未模拟的数据表：${table}`);
+    });
+
+    return {
+      mountEq,
+      knowledgeIn,
+    };
+  }
+
   function buildRetrievalStrategy(): RetrievalStrategy {
     return {
       needRetrieval: true,
@@ -1067,6 +1109,84 @@ describe('KnowledgeSearchService', () => {
       lookup: 'miss',
       written: true,
     });
+  });
+
+  it('persona 挂载查询遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
+    const { service, runtime } = createService();
+    const mountEq = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'fetch failed' },
+    });
+    const mountSelect = jest.fn().mockReturnValue({ eq: mountEq });
+    runtime.supabase.from.mockReturnValue({ select: mountSelect });
+
+    await expect(
+      service.retrieveForPersonaWithStages('persona-1', '原始问题', {
+        strategy: buildRetrievalStrategy(),
+      }),
+    ).rejects.toThrow(/fetch failed/);
+  });
+
+  it('persona stage1 单库临时错误会向上抛出，避免被当成无结果', async () => {
+    const { service, runtime, stage1RetrievalService } = createService();
+    mockPersonaMountedKnowledge(runtime);
+    jest
+      .spyOn(stage1RetrievalService, 'retrieveForKnowledge')
+      .mockRejectedValue(new Error('ECONNRESET'));
+
+    await expect(
+      service.retrieveForPersonaWithStages('persona-1', '原始问题', {
+        strategy: buildRetrievalStrategy(),
+      }),
+    ).rejects.toThrow(/ECONNRESET/);
+  });
+
+  it('persona 多知识库检索会限制并发数量', async () => {
+    const originalConcurrency = process.env.RAG_PERSONA_KB_CONCURRENCY;
+    process.env.RAG_PERSONA_KB_CONCURRENCY = '2';
+    const { service, runtime, stage1RetrievalService, rerankerService } =
+      createService();
+    mockPersonaMountedKnowledgeIds(runtime, ['kb-1', 'kb-2', 'kb-3', 'kb-4']);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    jest
+      .spyOn(stage1RetrievalService, 'retrieveForKnowledge')
+      .mockImplementation(async ({ knowledgeId }: { knowledgeId: string }) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        inFlight -= 1;
+        return {
+          chunks: [
+            {
+              ...stage1Chunk,
+              id: `chunk-${knowledgeId}`,
+              knowledge_base_id: knowledgeId,
+            },
+          ],
+          trace: [],
+        };
+      });
+
+    try {
+      await service.retrieveForPersonaWithStages('persona-1', '原始问题', {
+        rerank: false,
+        strategy: buildRetrievalStrategy(),
+      });
+
+      expect(maxInFlight).toBeLessThanOrEqual(2);
+      expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledTimes(
+        4,
+      );
+      expect(rerankerService.rerank).not.toHaveBeenCalled();
+    } finally {
+      if (originalConcurrency === undefined) {
+        delete process.env.RAG_PERSONA_KB_CONCURRENCY;
+      } else {
+        process.env.RAG_PERSONA_KB_CONCURRENCY = originalConcurrency;
+      }
+    }
   });
 
   it('retrieve 收到已中断信号时会抛出 AbortError，不会降级为空知识', async () => {

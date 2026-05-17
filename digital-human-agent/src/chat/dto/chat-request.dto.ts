@@ -15,6 +15,7 @@ export class ChatRequestDto {
     example: '491a6f8f-739a-47ff-94fa-6382ed79baf9',
   })
   @IsString()
+  @IsUUID()
   personaId: string;
 
   @ApiPropertyOptional({

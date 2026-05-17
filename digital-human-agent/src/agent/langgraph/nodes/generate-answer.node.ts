@@ -26,6 +26,15 @@ export function createGenerateAnswerNode(
       localChunks: state.evidenceChunks,
       retrievalStrategy: state.retrievalStrategy,
       webCitations: state.webCitations,
+      evidenceAssessment:
+        state.enough === null
+          ? undefined
+          : {
+              enough: state.enough,
+              missingFacts: state.missingFacts,
+              evaluationReason: state.evaluationReason,
+              stopReason: state.stopReason,
+            },
       onToken: input.onToken,
     });
 
