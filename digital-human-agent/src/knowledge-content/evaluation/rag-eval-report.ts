@@ -22,7 +22,9 @@ export function parseRagEvalMode(value: string | undefined): RagEvalMode {
     return mode as RagEvalMode;
   }
 
-  throw new Error(`不支持的 eval mode：${mode}，可选值：${RAG_EVAL_MODES.join(', ')}`);
+  throw new Error(
+    `不支持的 eval mode：${mode}，可选值：${RAG_EVAL_MODES.join(', ')}`,
+  );
 }
 
 export interface RagEvalRuntimeMetadataInput {
@@ -102,8 +104,11 @@ export function buildRagEvalRuntimeMetadata(
   return {
     backend: {
       vector: input.mode === 'live-keyword-only' ? 'disabled' : 'pgvector',
-      keyword: envValue(input.env, 'HYBRID_KEYWORD_BACKEND') || DEFAULT_HYBRID_KEYWORD_BACKEND,
-      elasticsearchEnabled: envValue(input.env, 'ELASTICSEARCH_ENABLED') || 'false',
+      keyword:
+        envValue(input.env, 'HYBRID_KEYWORD_BACKEND') ||
+        DEFAULT_HYBRID_KEYWORD_BACKEND,
+      elasticsearchEnabled:
+        envValue(input.env, 'ELASTICSEARCH_ENABLED') || 'false',
       mode: input.mode,
     },
     models: {
@@ -171,7 +176,9 @@ export function formatRagEvalError(error: unknown): string {
     }
   }
 
-  return parts.length > 0 ? parts.join(' ') : String(error);
+  return parts.length > 0
+    ? parts.join(' ')
+    : (JSON.stringify(error) ?? 'unknown error');
 }
 
 export function buildRagEvalBlockerReport(input: {
@@ -263,7 +270,7 @@ function buildRagEvalBlockerNextCommands(mode: RagEvalMode): string[] {
     return [
       'pnpm es:up',
       'pnpm es:index:ensure',
-      'pnpm eval:rag -- --mode=elastic-only --indexVersion=v1',
+      'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=elastic-only --indexVersion=v1',
     ];
   }
 
@@ -271,7 +278,7 @@ function buildRagEvalBlockerNextCommands(mode: RagEvalMode): string[] {
     return [
       'pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates',
       'pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest',
-      'pnpm eval:rag:live-keyword',
+      'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=live-keyword-only',
     ];
   }
 
@@ -279,14 +286,17 @@ function buildRagEvalBlockerNextCommands(mode: RagEvalMode): string[] {
     'pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates',
     'pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest',
     'pnpm db:migrate -- --dry-run',
-    'pnpm eval:rag:live-keyword',
+    'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=live-keyword-only',
     'pnpm es:backfill',
-    'pnpm es:alias:switch -- --from=v1 --to=v2 --dry-run',
-    'pnpm eval:rag -- --allow-model-calls',
+    'node -r ts-node/register -r tsconfig-paths/register ./scripts/switch-elasticsearch-alias.ts --from=v1 --to=v2 --dry-run',
+    'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --allow-model-calls',
   ];
 }
 
-function envValue(env: Record<string, string | undefined>, key: string): string {
+function envValue(
+  env: Record<string, string | undefined>,
+  key: string,
+): string {
   return String(env[key] ?? '').trim();
 }
 
@@ -371,7 +381,11 @@ function safeDecodeURIComponent(value: string): string {
   }
 }
 
-function replaceLiteral(value: string, search: string, replacement: string): string {
+function replaceLiteral(
+  value: string,
+  search: string,
+  replacement: string,
+): string {
   if (!search) return value;
   return value.split(search).join(replacement);
 }

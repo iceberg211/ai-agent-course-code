@@ -61,6 +61,8 @@ pnpm es:up
 pnpm es:down
 pnpm neo4j:up
 pnpm neo4j:down
+pnpm rag:infra:up
+pnpm rag:infra:down
 ```
 
 回填与验证：
@@ -68,7 +70,6 @@ pnpm neo4j:down
 ```bash
 pnpm es:index:ensure
 pnpm es:backfill
-pnpm es:alias:switch -- --from=v1 --to=v2
 pnpm neo4j:prepare-image
 pnpm neo4j:build
 pnpm neo4j:backfill

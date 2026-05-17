@@ -145,50 +145,50 @@ describe('buildRagEvalRuntimeMetadata', () => {
   });
 
   it('构建 live eval blocker report 时只写入脱敏数据库形态和下一步命令', () => {
-    expect(
-      buildRagEvalBlockerReport({
-        mode: 'live',
-        generatedAt: '2026-05-15T00:00:00.000Z',
-        reason:
-          'database blocked: tenant/user postgres.project-ref not found with password pw-value',
-        env: {
-          DATABASE_URL:
-            'postgresql://postgres.project-ref:pw-value@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true',
-          HYBRID_KEYWORD_BACKEND: 'pg',
-          RERANKER_PROVIDER: 'dashscope',
-          RERANKER_MODEL: 'qwen3-rerank',
-        },
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        generatedAt: '2026-05-15T00:00:00.000Z',
-        status: 'blocked',
-        mode: 'live',
-        reason:
-          'database blocked: tenant/user post...-ref not found with password ***',
-        database: {
-          protocol: 'postgresql:',
-          host: 'aws-1-ap-southeast-1.pooler.supabase.com',
-          port: '6543',
-          database: 'postgres',
-          username: 'post...-ref',
-          hasPassword: true,
-          hasSearchParams: true,
-        },
-        models: expect.objectContaining({
-          rerankerProvider: 'dashscope',
-          rerankerModel: 'qwen3-rerank',
-        }),
-        nextCommands: expect.arrayContaining([
-          'pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates',
-          'pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest',
-          'pnpm db:migrate -- --dry-run',
-          'pnpm eval:rag:live-keyword',
-          'pnpm es:backfill',
-          'pnpm es:alias:switch -- --from=v1 --to=v2 --dry-run',
-          'pnpm eval:rag -- --allow-model-calls',
-        ]),
-      }),
+    const report = buildRagEvalBlockerReport({
+      mode: 'live',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+      reason:
+        'database blocked: tenant/user postgres.project-ref not found with password pw-value',
+      env: {
+        DATABASE_URL:
+          'postgresql://postgres.project-ref:pw-value@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true',
+        HYBRID_KEYWORD_BACKEND: 'pg',
+        RERANKER_PROVIDER: 'dashscope',
+        RERANKER_MODEL: 'qwen3-rerank',
+      },
+    });
+
+    expect(report).toMatchObject({
+      generatedAt: '2026-05-15T00:00:00.000Z',
+      status: 'blocked',
+      mode: 'live',
+      reason:
+        'database blocked: tenant/user post...-ref not found with password ***',
+      database: {
+        protocol: 'postgresql:',
+        host: 'aws-1-ap-southeast-1.pooler.supabase.com',
+        port: '6543',
+        database: 'postgres',
+        username: 'post...-ref',
+        hasPassword: true,
+        hasSearchParams: true,
+      },
+      models: {
+        rerankerProvider: 'dashscope',
+        rerankerModel: 'qwen3-rerank',
+      },
+    });
+    expect(report.nextCommands).toEqual(
+      expect.arrayContaining([
+        'pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates',
+        'pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest',
+        'pnpm db:migrate -- --dry-run',
+        'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=live-keyword-only',
+        'pnpm es:backfill',
+        'node -r ts-node/register -r tsconfig-paths/register ./scripts/switch-elasticsearch-alias.ts --from=v1 --to=v2 --dry-run',
+        'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --allow-model-calls',
+      ]),
     );
   });
 
@@ -253,7 +253,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
     expect(report.nextCommands).toEqual([
       'pnpm rag:preflight -- --skip-es --check-derived-direct --check-pooler-candidates',
       'pnpm rag:preflight -- --skip-db --skip-es --check-supabase-rest',
-      'pnpm eval:rag:live-keyword',
+      'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=live-keyword-only',
     ]);
   });
 
@@ -293,7 +293,7 @@ describe('buildRagEvalRuntimeMetadata', () => {
     expect(report.nextCommands).toEqual([
       'pnpm es:up',
       'pnpm es:index:ensure',
-      'pnpm eval:rag -- --mode=elastic-only --indexVersion=v1',
+      'node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=elastic-only --indexVersion=v1',
     ]);
   });
 

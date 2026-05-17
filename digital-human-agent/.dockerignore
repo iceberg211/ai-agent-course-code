@@ -3,3 +3,6 @@ dist
 reports
 coverage
 docker/neo4j/vendor/*.tar.gz
+docker/neo4j/vendor/neo4j-community-*/data
+docker/neo4j/vendor/neo4j-community-*/logs
+docker/neo4j/vendor/neo4j-community-*/run

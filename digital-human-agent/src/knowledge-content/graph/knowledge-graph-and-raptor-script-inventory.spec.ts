@@ -22,9 +22,11 @@ describe('Neo4j Graph/RAPTOR script inventory', () => {
     expect(packageJson.scripts['rag:smoke:graph']).toBeUndefined();
     expect(packageJson.scripts['rag:smoke:graph-flow']).toBeUndefined();
     expect(packageJson.scripts['rag:smoke:graph-answer']).toBeUndefined();
-    expect(packageJson.scripts['raptor:backfill']).toBe(
-      'node -r ts-node/register -r tsconfig-paths/register ./scripts/backfill-raptor-index.ts',
-    );
+    expect(packageJson.scripts['raptor:backfill']).toBeUndefined();
+    expect(packageJson.scripts['parent-child:backfill']).toBeUndefined();
+    expect(packageJson.scripts['eval:rag']).toBeUndefined();
+    expect(packageJson.scripts['es:alias:switch']).toBeUndefined();
+    expect(packageJson.scripts['es:alias:rollback']).toBeUndefined();
   });
 
   it('Neo4j backfill 脚本使用 Neo4jGraphSyncService，不再写 PostgreSQL 图谱表', () => {

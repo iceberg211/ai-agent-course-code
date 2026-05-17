@@ -20,6 +20,9 @@ if [[ ! -d "${source_dir}" ]]; then
   tar -xzf "${archive}" -C "${vendor_dir}"
 fi
 
+rm -rf "${source_dir}/data" "${source_dir}/logs" "${source_dir}/run"
+rm -f "${archive}"
+
 if [[ ! -f "${source_dir}/labs/apoc-${version}-core.jar" ]]; then
   echo "缺少 APOC 插件：${source_dir}/labs/apoc-${version}-core.jar" >&2
   exit 1

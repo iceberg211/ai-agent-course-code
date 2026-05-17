@@ -46,7 +46,9 @@ const requireFromScript = createRequire(__filename);
 
 function readArg(name: string): string | undefined {
   const prefix = `--${name}=`;
-  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+  return process.argv
+    .find((arg) => arg.startsWith(prefix))
+    ?.slice(prefix.length);
 }
 
 function readFlag(name: string): boolean {
@@ -160,8 +162,12 @@ async function runElasticOnlyEval(params: {
   );
   const indexVersion =
     readArg('indexVersion') ||
-    envValue('ELASTICSEARCH_INDEX_VERSION', DEFAULT_ELASTICSEARCH_INDEX_VERSION);
-  const indexName = readArg('index') ?? `${indexPrefix}-knowledge-chunk-${indexVersion}`;
+    envValue(
+      'ELASTICSEARCH_INDEX_VERSION',
+      DEFAULT_ELASTICSEARCH_INDEX_VERSION,
+    );
+  const indexName =
+    readArg('index') ?? `${indexPrefix}-knowledge-chunk-${indexVersion}`;
   const client = new ElasticsearchClient({
     node,
     maxRetries: 0,
@@ -288,7 +294,9 @@ async function writeReport(report: {
     ...report,
     cases: report.cases.map((item) => ({
       ...item,
-      metrics: report.metrics.caseResults.find((metric) => metric.id === item.id),
+      metrics: report.metrics.caseResults.find(
+        (metric) => metric.id === item.id,
+      ),
     })),
   };
 
@@ -328,16 +336,15 @@ async function main(): Promise<void> {
   const goldenPath = readArg('golden') ?? 'eval/rag-golden-set.json';
   const mode = parseRagEvalMode(readArg('mode'));
   const fixtureDir =
-    readArg('fixtureDir') ?? (mode === 'fixture-only' ? 'eval/fixtures' : undefined);
+    readArg('fixtureDir') ??
+    (mode === 'fixture-only' ? 'eval/fixtures' : undefined);
   const personaFilter = readArg('personaId');
   const loadedGoldenSet = await loadGoldenSet(goldenPath);
   const goldenSetIssues = validateRagGoldenSet(loadedGoldenSet, {
     fixtureDir,
   });
   if (goldenSetIssues.length > 0) {
-    throw new Error(
-      `golden set 校验失败：${goldenSetIssues.join('; ')}`,
-    );
+    throw new Error(`golden set 校验失败：${goldenSetIssues.join('; ')}`);
   }
 
   const goldenSet = loadedGoldenSet.filter((item) =>
@@ -391,19 +398,16 @@ async function main(): Promise<void> {
     !readFlag('allow-model-calls')
   ) {
     throw new Error(
-      '完整 live eval 需要显式 --allow-model-calls，确认允许真实知识库候选内容调用当前模型服务；可先运行 pnpm eval:rag:live-keyword',
+      '完整 live eval 需要显式 --allow-model-calls，确认允许真实知识库候选内容调用当前模型服务；可先运行 node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-retrieval.ts --mode=live-keyword-only',
     );
   }
 
   await assertLiveEvalPreflight(mode);
 
   const evalModule = await resolveLiveEvalModule(liveKeywordOnly);
-  const app = await NestFactory.createApplicationContext(
-    evalModule,
-    {
-      logger: ['log', 'warn', 'error'],
-    },
-  );
+  const app = await NestFactory.createApplicationContext(evalModule, {
+    logger: ['log', 'warn', 'error'],
+  });
 
   try {
     const knowledgeSearchService = app.get(KnowledgeSearchService);
