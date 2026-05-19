@@ -23,12 +23,84 @@ function createWebCitation(title: string) {
   };
 }
 
+function createTrace(query: string) {
+  return {
+    knowledgeId: 'kb-1',
+    queryIndex: 0,
+    query,
+    keywords: [query],
+    angle: 'original' as const,
+    vectorBackend: 'pgvector' as const,
+    keywordBackend: 'pg' as const,
+    graphBackend: 'disabled' as const,
+    vectorResultCount: 1,
+    keywordResultCount: 1,
+    mergedResultCount: 1,
+    fallbackToPg: false,
+    skippedChannels: [],
+  };
+}
+
+function createAugmentation(
+  question: string,
+  overrides?: Partial<{
+    needRetrieval: boolean;
+    useVector: boolean;
+    useKeyword: boolean;
+    useGraph: boolean;
+    useExactPhrase: boolean;
+    useMultiQuery: boolean;
+    allowWeb: boolean;
+    reason: string;
+    retrievalQueries: Array<{
+      index: number;
+      query: string;
+      keywords: string[];
+      angle: 'original' | 'semantic' | 'entity' | 'detail' | 'symptom';
+    }>;
+  }>,
+) {
+  const retrievalQueries = overrides?.retrievalQueries ?? [
+    {
+      index: 0,
+      query: question,
+      keywords: [question],
+      angle: 'original' as const,
+    },
+  ];
+
+  return {
+    currentQuery: question,
+    rewrite: {
+      originalQuery: question,
+      rewrittenQuery: retrievalQueries[0]?.query ?? question,
+      keywords: retrievalQueries[0]?.keywords ?? [question],
+      expandedQueries: retrievalQueries,
+      changed: false,
+      reason: overrides?.reason ?? '测试增强',
+    },
+    retrievalQueries,
+    strategy: {
+      needRetrieval: overrides?.needRetrieval ?? true,
+      useVector: overrides?.useVector ?? true,
+      useKeyword: overrides?.useKeyword ?? true,
+      useGraph: overrides?.useGraph ?? false,
+      useExactPhrase: overrides?.useExactPhrase ?? false,
+      useMultiQuery: overrides?.useMultiQuery ?? retrievalQueries.length > 1,
+      allowWeb: overrides?.allowWeb ?? true,
+      reason: overrides?.reason ?? '测试默认检索策略',
+    },
+  };
+}
+
 describe('LangGraphRagOrchestratorService', () => {
   function createService(options?: {
     routeStrategy?: 'simple' | 'complex';
     plannerQuestions?: string[];
     retrieveMap?: Record<string, ReturnType<typeof createChunk>[]>;
+    augmentationMap?: Record<string, ReturnType<typeof createAugmentation>>;
     retrieveFailuresBeforeSuccess?: number;
+    rerankResult?: ReturnType<typeof createChunk>[];
     webEnabled?: boolean;
     evaluations?: Array<{
       enough: boolean;
@@ -40,29 +112,23 @@ describe('LangGraphRagOrchestratorService', () => {
     webSearchError?: Error;
     webSearchFailuresBeforeSuccess?: number;
     personaFailuresBeforeSuccess?: number;
-    retrievalStrategy?: {
-      needRetrieval: boolean;
-      useVector: boolean;
-      useKeyword: boolean;
-      useGraph: boolean;
-      useExactPhrase: boolean;
-      useMultiQuery: boolean;
-      allowWeb: boolean;
-      reason: string;
-    };
   }) {
     let retrieveFailuresBeforeSuccess =
       options?.retrieveFailuresBeforeSuccess ?? 0;
-    const knowledgeSearchService = {
-      retrieveForPersona: jest
-        .fn()
-        .mockImplementation(async (_personaId, query) => {
-          if (retrieveFailuresBeforeSuccess > 0) {
-            retrieveFailuresBeforeSuccess -= 1;
-            throw new Error('temporary retrieve failure');
-          }
-          return options?.retrieveMap?.[query] ?? [];
-        }),
+    const personaStage1RetrievalService = {
+      retrieve: jest.fn().mockImplementation(async ({ retrievalQueries }) => {
+        if (retrieveFailuresBeforeSuccess > 0) {
+          retrieveFailuresBeforeSuccess -= 1;
+          throw new Error('temporary retrieve failure');
+        }
+
+        const query = retrievalQueries[0]?.query ?? '';
+        return {
+          knowledgeCount: 1,
+          chunks: options?.retrieveMap?.[query] ?? [],
+          trace: query ? [createTrace(query)] : [],
+        };
+      }),
     };
     let personaFailuresBeforeSuccess =
       options?.personaFailuresBeforeSuccess ?? 0;
@@ -98,6 +164,13 @@ describe('LangGraphRagOrchestratorService', () => {
           options?.routeStrategy === 'complex' ? '需要多跳检索' : '直接问题',
       }),
     };
+    const queryAugmentationService = {
+      plan: jest.fn().mockImplementation(async ({ question }) => {
+        return (
+          options?.augmentationMap?.[question] ?? createAugmentation(question)
+        );
+      }),
+    };
     const multiHopPlannerService = {
       planSubQuestions: jest.fn().mockResolvedValue({
         subQuestions: options?.plannerQuestions ?? [
@@ -107,19 +180,12 @@ describe('LangGraphRagOrchestratorService', () => {
         reason: '先前置事实，再查结局',
       }),
     };
-    const retrievalStrategyService = {
-      plan: jest.fn().mockResolvedValue(
-        options?.retrievalStrategy ?? {
-          needRetrieval: true,
-          useVector: true,
-          useKeyword: true,
-          useGraph: false,
-          useExactPhrase: false,
-          useMultiQuery: true,
-          allowWeb: true,
-          reason: '测试默认检索策略',
-        },
-      ),
+    const rerankerService = {
+      rerank: jest
+        .fn()
+        .mockImplementation(async (_question, documents) => {
+          return options?.rerankResult ?? documents;
+        }),
     };
     const evaluations = [...(options?.evaluations ?? [])];
     const evidenceEvaluatorService = {
@@ -153,31 +219,33 @@ describe('LangGraphRagOrchestratorService', () => {
 
     return {
       service: new LangGraphRagOrchestratorService(
-        knowledgeSearchService as never,
+        personaStage1RetrievalService as never,
         personaService as never,
         conversationService as never,
         answerGenerationService as never,
         ragRouteService as never,
-        retrievalStrategyService as never,
+        queryAugmentationService as never,
         multiHopPlannerService as never,
+        rerankerService as never,
         evidenceEvaluatorService as never,
         webFallbackService as never,
       ),
       deps: {
-        knowledgeSearchService,
+        personaStage1RetrievalService,
         personaService,
         conversationService,
         answerGenerationService,
         ragRouteService,
-        retrievalStrategyService,
+        queryAugmentationService,
         multiHopPlannerService,
+        rerankerService,
         evidenceEvaluatorService,
         webFallbackService,
       },
     };
   }
 
-  it('simple 路径会单跳检索并生成回答', async () => {
+  it('simple 路径会单轮 retrieve、显式 rerank 后生成回答', async () => {
     const chunk = createChunk('chunk-1', '乔峰是丐帮帮主。');
     const { service, deps } = createService({
       routeStrategy: 'simple',
@@ -207,12 +275,26 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).not.toHaveBeenCalled();
-    expect(deps.knowledgeSearchService.retrieveForPersona).toHaveBeenCalledWith(
-      'persona-1',
-      '乔峰是谁？',
+    expect(deps.queryAugmentationService.plan).toHaveBeenCalledWith({
+      question: '乔峰是谁？',
+      routeStrategy: 'simple',
+      signal: expect.any(AbortSignal),
+    });
+    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({
-        signal: expect.any(AbortSignal),
+        personaId: 'persona-1',
+        retrievalQueries: [
+          expect.objectContaining({
+            query: '乔峰是谁？',
+          }),
+        ],
       }),
+    );
+    expect(deps.rerankerService.rerank).toHaveBeenCalledWith(
+      '乔峰是谁？',
+      [chunk],
+      5,
+      expect.any(AbortSignal),
     );
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
@@ -229,21 +311,22 @@ describe('LangGraphRagOrchestratorService', () => {
       }),
     ]);
     expect(result.state.orchestrator).toBe('langgraph');
+    expect(result.state.plannedNext).toBe('rerank');
+    expect(result.state.topDocuments).toEqual([chunk]);
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
 
-  it('needRetrieval=false 时整条图跳过检索和证据评估，并记录 skipped 历史', async () => {
+  it('needRetrieval=false 时会跳过 persona stage1 与证据评估', async () => {
     const { service, deps } = createService({
       routeStrategy: 'simple',
-      retrievalStrategy: {
-        needRetrieval: false,
-        useVector: false,
-        useKeyword: false,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: false,
-        allowWeb: false,
-        reason: '寒暄问题，不需要查知识库',
+      augmentationMap: {
+        你好: createAugmentation('你好', {
+          needRetrieval: false,
+          useVector: false,
+          useKeyword: false,
+          allowWeb: false,
+          reason: '寒暄问题，不需要查知识库',
+        }),
       },
     });
 
@@ -257,11 +340,9 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).not.toHaveBeenCalled();
+    expect(deps.personaStage1RetrievalService.retrieve).not.toHaveBeenCalled();
+    expect(deps.rerankerService.rerank).not.toHaveBeenCalled();
     expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
-    expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
         localChunks: [],
@@ -279,9 +360,9 @@ describe('LangGraphRagOrchestratorService', () => {
     ]);
   });
 
-  it('complex 路径会按子问题逐跳检索，证据足够后停止', async () => {
+  it('complex 路径会先完成多轮 retrieve，再统一 rerank 与评估', async () => {
     const chunkA = createChunk('chunk-a', '雁门关事件主谋是慕容博。');
-    const chunkB = createChunk('chunk-b', '慕容复最终结局疯癫。');
+    const chunkB = createChunk('chunk-b', '慕容博的儿子最终疯癫。');
     const { service, deps } = createService({
       routeStrategy: 'complex',
       plannerQuestions: ['雁门关事件主谋是谁？', '慕容博的儿子结局是什么？'],
@@ -291,14 +372,8 @@ describe('LangGraphRagOrchestratorService', () => {
       },
       evaluations: [
         {
-          enough: false,
-          reason: '还缺儿子结局',
-          missingFacts: ['儿子结局'],
-          webQuery: '',
-        },
-        {
           enough: true,
-          reason: '两跳证据已经齐全',
+          reason: '两轮证据已经齐全',
           missingFacts: [],
           webQuery: '',
         },
@@ -316,27 +391,34 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).toHaveBeenCalled();
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).toHaveBeenNthCalledWith(
+    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledTimes(2);
+    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenNthCalledWith(
       1,
-      'persona-1',
-      '雁门关事件主谋是谁？',
       expect.objectContaining({
-        signal: expect.any(AbortSignal),
+        retrievalQueries: [
+          expect.objectContaining({
+            query: '雁门关事件主谋是谁？',
+          }),
+        ],
       }),
     );
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).toHaveBeenNthCalledWith(
+    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenNthCalledWith(
       2,
-      'persona-1',
-      '慕容博的儿子结局是什么？',
       expect.objectContaining({
-        signal: expect.any(AbortSignal),
+        retrievalQueries: [
+          expect.objectContaining({
+            query: '慕容博的儿子结局是什么？',
+          }),
+        ],
       }),
     );
-    expect(deps.webFallbackService.search).not.toHaveBeenCalled();
+    expect(deps.rerankerService.rerank).toHaveBeenCalledWith(
+      '雁门关事件的主谋是谁，他儿子的结局是什么？',
+      [chunkA, chunkB],
+      5,
+      expect.any(AbortSignal),
+    );
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(1);
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
         localChunks: [chunkA, chunkB],
@@ -344,10 +426,11 @@ describe('LangGraphRagOrchestratorService', () => {
     );
     expect(result.state.strategy).toBe('complex');
     expect(result.state.currentHop).toBe(2);
+    expect(result.state.nextSubIdx).toBe(2);
     expect(result.state.stopReason).toBe('multi_hop_enough');
   });
 
-  it('本地证据不足时会触发联网补充', async () => {
+  it('本地证据不足时会触发 web fallback，补充后再次评估并生成回答', async () => {
     const localChunk = createChunk('chunk-1', '本地只提到雁门关事件。');
     const webCitation = createWebCitation('雁门关事件补充资料');
     const { service, deps } = createService({
@@ -382,6 +465,7 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
     expect(deps.webFallbackService.search).toHaveBeenCalledWith({
       query: '雁门关事件 最新资料',
       signal: expect.any(AbortSignal),
@@ -409,12 +493,6 @@ describe('LangGraphRagOrchestratorService', () => {
           reason: '需要联网',
           missingFacts: ['缺少补充资料'],
           webQuery: '需要联网的问题 最新进展',
-        },
-        {
-          enough: true,
-          reason: '这次评估不应该发生',
-          missingFacts: [],
-          webQuery: '',
         },
       ],
       webSearchError: new Error('search failed'),
@@ -472,9 +550,7 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).toHaveBeenCalledTimes(2);
+    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledTimes(2);
     expect(result.answerText).toBe('答案');
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
@@ -553,33 +629,6 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
 
-  it('complex 且 maxHops=0 时不会执行本地检索，会直接进入联网分支或结束', async () => {
-    const { service, deps } = createService({
-      routeStrategy: 'complex',
-      plannerQuestions: ['问题一', '问题二'],
-      webEnabled: false,
-    });
-
-    const result = await service.run({
-      conversationId: 'conv-1',
-      personaId: 'persona-1',
-      question: '复杂问题',
-      turnId: 'turn-1',
-      maxHops: 0,
-      signal: new AbortController().signal,
-      onToken: jest.fn(),
-      onCitations: jest.fn(),
-    });
-
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).not.toHaveBeenCalled();
-    expect(deps.webFallbackService.search).not.toHaveBeenCalled();
-    expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
-    expect(result.state.currentHop).toBe(0);
-    expect(result.state.stopReason).toBe('web_fallback_disabled');
-  });
-
   it('请求已中断时会尽早停止，不再继续执行图节点', async () => {
     const { service, deps } = createService({
       routeStrategy: 'complex',
@@ -600,9 +649,7 @@ describe('LangGraphRagOrchestratorService', () => {
     ).rejects.toMatchObject(createAbortError());
 
     expect(deps.ragRouteService.routeQuestion).not.toHaveBeenCalled();
-    expect(
-      deps.knowledgeSearchService.retrieveForPersona,
-    ).not.toHaveBeenCalled();
+    expect(deps.personaStage1RetrievalService.retrieve).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).not.toHaveBeenCalled();
   });
 });

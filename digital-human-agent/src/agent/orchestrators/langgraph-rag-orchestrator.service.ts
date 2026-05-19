@@ -9,8 +9,8 @@ import {
 import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
 import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
+import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
 import { RagRouteService } from '@/agent/services/rag-route.service';
-import { RetrievalStrategyService } from '@/agent/services/retrieval-strategy.service';
 import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import type {
   RagOrchestrator,
@@ -22,7 +22,8 @@ import {
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
 import { ConversationService } from '@/conversation/conversation.service';
-import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { RerankerService } from '@/knowledge-content/services/reranker.service';
+import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
 import { PersonaService } from '@/persona/persona.service';
 
 @Injectable()
@@ -30,24 +31,26 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
   private readonly graph: RagGraph;
 
   constructor(
-    private readonly knowledgeSearchService: KnowledgeSearchService,
+    private readonly personaStage1RetrievalService: PersonaStage1RetrievalService,
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
     private readonly answerGenerationService: AnswerGenerationService,
     private readonly ragRouteService: RagRouteService,
-    private readonly retrievalStrategyService: RetrievalStrategyService,
+    private readonly queryAugmentationService: QueryAugmentationService,
     private readonly multiHopPlannerService: MultiHopPlannerService,
+    private readonly rerankerService: RerankerService,
     private readonly evidenceEvaluatorService: EvidenceEvaluatorService,
     private readonly webFallbackService: WebFallbackService,
   ) {
     this.graph = buildRagGraph({
-      knowledgeSearchService: this.knowledgeSearchService,
+      personaStage1RetrievalService: this.personaStage1RetrievalService,
       personaService: this.personaService,
       conversationService: this.conversationService,
       answerGenerationService: this.answerGenerationService,
       ragRouteService: this.ragRouteService,
-      retrievalStrategyService: this.retrievalStrategyService,
+      queryAugmentationService: this.queryAugmentationService,
       multiHopPlannerService: this.multiHopPlannerService,
+      rerankerService: this.rerankerService,
       evidenceEvaluatorService: this.evidenceEvaluatorService,
       webFallbackService: this.webFallbackService,
     });
@@ -76,12 +79,15 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
           strategy: output.state.strategy,
           routeReason: output.state.routeReason,
           currentHop: output.state.currentHop,
+          nextSubIdx: output.state.nextSubIdx,
           subQuestionCount: output.state.subQuestions.length,
           subQuestions: output.state.subQuestions,
+          localDocumentCount: output.state.topDocuments.length,
           citationCount: output.citations.length,
           webCitationCount: output.state.webCitations.length,
           webSearchUsed: output.state.webSearchUsed,
           stopReason: output.state.stopReason,
+          plannedNext: output.state.plannedNext,
           orchestrator: output.state.orchestrator,
         }),
       },

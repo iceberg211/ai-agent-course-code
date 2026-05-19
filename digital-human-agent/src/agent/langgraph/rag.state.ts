@@ -27,11 +27,17 @@ export const RagGraphStateAnnotation = Annotation.Root({
   strategy: Annotation<'simple' | 'complex'>(),
   routeReason: Annotation<string>(),
   subQuestions: Annotation<string[]>(),
+  nextSubIdx: Annotation<number>(),
+  currentQuery: Annotation<string>(),
   currentHop: Annotation<number>(),
   maxHops: Annotation<number>(),
+  documents: Annotation<RetrievedKnowledgeChunk[]>(),
+  topDocuments: Annotation<RetrievedKnowledgeChunk[]>(),
   evidenceChunks: Annotation<RetrievedKnowledgeChunk[]>(),
   webCitations: Annotation<RagWorkflowState['webCitations']>(),
   retrievalHistory: Annotation<RetrievalHistoryItem[]>(),
+  retrievalTrace: Annotation<RagWorkflowState['retrievalTrace']>(),
+  plannedNext: Annotation<RagWorkflowState['plannedNext']>(),
   retrievalStrategy: Annotation<RagWorkflowState['retrievalStrategy']>(),
   retrievalStrategyReason: Annotation<string>(),
   enough: Annotation<boolean | null>(),
@@ -53,7 +59,7 @@ export const RagGraphStateAnnotation = Annotation.Root({
 export type RagGraphState = typeof RagGraphStateAnnotation.State;
 
 export function getRagWorkflowCitations(
-  state: Pick<RagGraphState, 'evidenceChunks' | 'webCitations'>,
+  state: Pick<RagGraphState, 'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'>,
 ) {
   return toWorkflowCitations(state);
 }
@@ -69,11 +75,17 @@ export function buildInitialRagGraphState(
     strategy: 'simple',
     routeReason: '尚未执行路由',
     subQuestions: [],
+    nextSubIdx: 0,
+    currentQuery: '',
     currentHop: 0,
     maxHops: input.maxHops ?? DEFAULT_RAG_MAX_HOPS,
+    documents: [],
+    topDocuments: [],
     evidenceChunks: [],
     webCitations: [],
     retrievalHistory: [],
+    retrievalTrace: [],
+    plannedNext: '',
     retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY,
     retrievalStrategyReason: DEFAULT_RETRIEVAL_STRATEGY.reason,
     enough: null,
@@ -104,7 +116,13 @@ export function toRagWorkflowState(state: RagGraphState): RagWorkflowState {
   return {
     ...workflowState,
     currentQuery: getCurrentQuery(state),
-    localCitations: toKnowledgeCitations(state.evidenceChunks),
+    evidenceChunks:
+      state.topDocuments.length > 0
+        ? state.topDocuments
+        : state.evidenceChunks,
+    localCitations: toKnowledgeCitations(
+      state.topDocuments.length > 0 ? state.topDocuments : state.evidenceChunks,
+    ),
     citations: getRagWorkflowCitations(state),
   };
 }

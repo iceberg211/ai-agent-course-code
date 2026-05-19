@@ -8,8 +8,6 @@ import {
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { RagStopReason } from '@/agent/types/rag-workflow.types';
 import {
-  canContinueMultiHop,
-  extendSubQuestionsWithMissingFacts,
   getPlannedQuestions,
   shouldUseWebFallback,
 } from '@/agent/langgraph/rag.utils';
@@ -37,11 +35,7 @@ function resolveStopReason(
   }
 
   if (!shouldUseWebFallback(state, webFallbackEnabled)) {
-    if (
-      !state.webSearchAttempted &&
-      !webFallbackEnabled &&
-      (state.strategy === 'simple' || !canContinueMultiHop(state))
-    ) {
+    if (!state.webSearchAttempted && !webFallbackEnabled) {
       return 'web_fallback_disabled';
     }
 
@@ -58,7 +52,7 @@ function resolveStopReason(
     if (state.currentHop >= state.maxHops) {
       return 'max_hops_reached';
     }
-    if (state.currentHop >= getPlannedQuestions(state).length) {
+    if (state.nextSubIdx >= getPlannedQuestions(state).length) {
       return 'sub_questions_exhausted';
     }
     return 'multi_hop_insufficient';
@@ -104,7 +98,7 @@ export function createEvaluateEvidenceNode(
         : 0;
     const evaluation = await evidenceEvaluatorService.evaluate({
       question: state.question,
-      localChunks: state.evidenceChunks,
+      localChunks: state.topDocuments,
       webCitations: state.webCitations,
       currentHop: state.currentHop,
       maxHops: state.maxHops,
@@ -114,21 +108,13 @@ export function createEvaluateEvidenceNode(
 
     const webFallbackEnabled =
       webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
-    const subQuestions = extendSubQuestionsWithMissingFacts(
-      state,
-      evaluation.missingFacts,
-    );
     const update = {
       enough: evaluation.enough,
       missingFacts: evaluation.missingFacts,
       evaluationReason: evaluation.reason,
       webQuery: evaluation.webQuery,
-      subQuestions,
       stopReason: resolveStopReason(
-        {
-          ...state,
-          subQuestions,
-        },
+        state,
         evaluation.enough,
         webFallbackEnabled,
       ),
@@ -139,15 +125,10 @@ export function createEvaluateEvidenceNode(
       ...update,
     };
 
-    let goto: 'prepare_query' | 'web_fallback' | 'load_context' =
-      'load_context';
+    let goto: 'web_fallback' | 'load_context' = 'load_context';
     if (nextState.enough) {
       goto = 'load_context';
-    } else if (canContinueMultiHop(nextState)) {
-      goto = 'prepare_query';
-    } else if (
-      shouldUseWebFallback(nextState, webFallbackEnabled)
-    ) {
+    } else if (shouldUseWebFallback(nextState, webFallbackEnabled)) {
       goto = 'web_fallback';
     }
 

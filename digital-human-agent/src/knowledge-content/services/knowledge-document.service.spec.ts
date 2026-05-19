@@ -320,10 +320,19 @@ describe('KnowledgeDocumentService', () => {
     expect(completedUpdate).toMatchObject({
       status: 'completed',
       chunkCount: 2,
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+    });
+    expect(completedUpdate?.graphSyncedAt).toBeNull();
+    const graphIndexedUpdate = documentRepo.update.mock.calls.find(
+      ([documentId, payload]) =>
+        documentId === 'doc-1' && payload.graphSyncStatus === 'indexed',
+    )?.[1];
+    expect(graphIndexedUpdate).toMatchObject({
       graphSyncStatus: 'indexed',
       graphSyncError: null,
     });
-    expect(completedUpdate?.graphSyncedAt).toBeInstanceOf(Date);
+    expect(graphIndexedUpdate?.graphSyncedAt).toBeInstanceOf(Date);
   });
 
   it('Neo4j 图谱写入失败时主文档仍完成，但会记录图谱同步失败状态', async () => {
@@ -335,15 +344,20 @@ describe('KnowledgeDocumentService', () => {
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
 
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      status: 'completed',
+      chunkCount: 1,
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+      graphSyncedAt: null,
+    });
     expect(documentRepo.update).toHaveBeenCalledWith(
       'doc-1',
-      expect.objectContaining({
-        status: 'completed',
-        chunkCount: 1,
+      {
         graphSyncStatus: 'failed',
         graphSyncError: 'neo4j unavailable',
         graphSyncedAt: null,
-      }),
+      },
     );
   });
 
@@ -361,15 +375,20 @@ describe('KnowledgeDocumentService', () => {
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
 
     expect(neo4jGraphSyncService.safeUpsertDocument).not.toHaveBeenCalled();
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      status: 'completed',
+      chunkCount: 1,
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+      graphSyncedAt: null,
+    });
     expect(documentRepo.update).toHaveBeenCalledWith(
       'doc-1',
-      expect.objectContaining({
-        status: 'completed',
-        chunkCount: 1,
+      {
         graphSyncStatus: 'failed',
         graphSyncError: 'extract failed',
         graphSyncedAt: null,
-      }),
+      },
     );
   });
 
@@ -386,15 +405,20 @@ describe('KnowledgeDocumentService', () => {
 
     expect(graphExtractorService.extract).not.toHaveBeenCalled();
     expect(neo4jGraphSyncService.safeUpsertDocument).not.toHaveBeenCalled();
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      status: 'completed',
+      chunkCount: 1,
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+      graphSyncedAt: null,
+    });
     expect(documentRepo.update).toHaveBeenCalledWith(
       'doc-1',
-      expect.objectContaining({
-        status: 'completed',
-        chunkCount: 1,
+      {
         graphSyncStatus: 'skipped',
         graphSyncError: null,
         graphSyncedAt: null,
-      }),
+      },
     );
   });
 });

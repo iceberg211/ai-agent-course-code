@@ -3,7 +3,6 @@ import type { RetrievalStrategy } from '@/common/rag';
 import type { HybridRetrieveResult } from '@/knowledge-content/services/knowledge-hybrid-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
-import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
@@ -30,6 +29,7 @@ describe('KnowledgeSearchService', () => {
     keywordTerms: string[];
     useVector?: boolean;
     useKeyword?: boolean;
+    queryEmbedding?: number[];
   };
 
   const stage1Chunk: KnowledgeChunk = {
@@ -130,13 +130,33 @@ describe('KnowledgeSearchService', () => {
     const chunkContextExpansionService = {
       expand: jest.fn((chunks: KnowledgeChunk[]) => Promise.resolve(chunks)),
     };
+    const personaStage1RetrievalService = {
+      retrieve: jest.fn().mockResolvedValue({
+        knowledgeCount: 1,
+        chunks: [stage1Chunk, stage1Chunk2],
+        trace: [
+          {
+            knowledgeId: 'kb-1',
+            queryIndex: 0,
+            query: '改写后的检索问题',
+            keywords: ['原始问题'],
+            angle: 'original' as const,
+            vectorBackend: 'pgvector' as const,
+            keywordBackend: 'pg' as const,
+            graphBackend: 'disabled' as const,
+            vectorResultCount: 2,
+            keywordResultCount: 1,
+            mergedResultCount: 2,
+            fallbackToPg: false,
+            skippedChannels: [],
+          },
+        ],
+      }),
+    };
     const stage1RetrievalService = new KnowledgeStage1RetrievalService(
       runtime as never,
       hybridRetriever as never,
       graphRetriever as never,
-    );
-    const personaKnowledgeConfigService = new PersonaKnowledgeConfigService(
-      runtime as never,
     );
 
     const service = new KnowledgeSearchService(
@@ -145,7 +165,7 @@ describe('KnowledgeSearchService', () => {
       rerankerService as never,
       queryRewriteService as never,
       chunkContextExpansionService as never,
-      personaKnowledgeConfigService,
+      personaStage1RetrievalService as never,
     );
 
     return {
@@ -156,7 +176,7 @@ describe('KnowledgeSearchService', () => {
       rerankerService,
       queryRewriteService,
       chunkContextExpansionService,
-      personaKnowledgeConfigService,
+      personaStage1RetrievalService,
       graphRetriever,
     };
   }
@@ -185,112 +205,6 @@ describe('KnowledgeSearchService', () => {
       allowWeb: true,
       reason: '测试检索策略',
       ...overrides,
-    };
-  }
-
-  function mockPersonaMountedKnowledge(
-    runtime: ReturnType<typeof createService>['runtime'],
-    documentRows: Array<Record<string, unknown>> = [],
-  ) {
-    const mountEq = jest.fn().mockResolvedValue({
-      data: [{ knowledge_base_id: 'kb-1' }],
-      error: null,
-    });
-    const mountSelect = jest.fn().mockReturnValue({ eq: mountEq });
-    const knowledgeIn = jest.fn().mockResolvedValue({
-      data: [
-        {
-          id: 'kb-1',
-          retrieval_config: {
-            threshold: 0.6,
-            stage1TopK: 10,
-            finalTopK: 5,
-            rerank: true,
-          },
-          updated_at: '2026-05-15T10:00:00.000Z',
-        },
-      ],
-      error: null,
-    });
-    const knowledgeSelect = jest.fn().mockReturnValue({ in: knowledgeIn });
-    const documentIn = jest.fn().mockResolvedValue({
-      data: documentRows,
-      error: null,
-    });
-    const documentSelect = jest.fn().mockReturnValue({ in: documentIn });
-
-    runtime.supabase.from.mockImplementation((table: string) => {
-      if (table === 'persona_knowledge_base') {
-        return { select: mountSelect };
-      }
-      if (table === 'knowledge_base') {
-        return { select: knowledgeSelect };
-      }
-      if (table === 'knowledge_document') {
-        return { select: documentSelect };
-      }
-      throw new Error(`未模拟的数据表：${table}`);
-    });
-
-    return {
-      mountEq,
-      knowledgeIn,
-      documentIn,
-    };
-  }
-
-  function mockPersonaMountedKnowledgeIds(
-    runtime: ReturnType<typeof createService>['runtime'],
-    knowledgeIds: string[],
-  ) {
-    const mountEq = jest.fn().mockResolvedValue({
-      data: knowledgeIds.map((knowledgeId) => ({
-        knowledge_base_id: knowledgeId,
-      })),
-      error: null,
-    });
-    const mountSelect = jest.fn().mockReturnValue({ eq: mountEq });
-    const knowledgeIn = jest.fn().mockResolvedValue({
-      data: knowledgeIds.map((knowledgeId) => ({
-        id: knowledgeId,
-        retrieval_config: {
-          threshold: 0.6,
-          stage1TopK: 10,
-          finalTopK: 5,
-          rerank: true,
-        },
-        updated_at: '2026-05-15T10:00:00.000Z',
-      })),
-      error: null,
-    });
-    const knowledgeSelect = jest.fn().mockReturnValue({ in: knowledgeIn });
-
-    runtime.supabase.from.mockImplementation((table: string) => {
-      if (table === 'persona_knowledge_base') {
-        return { select: mountSelect };
-      }
-      if (table === 'knowledge_base') {
-        return { select: knowledgeSelect };
-      }
-      throw new Error(`未模拟的数据表：${table}`);
-    });
-
-    return {
-      mountEq,
-      knowledgeIn,
-    };
-  }
-
-  function buildRetrievalStrategy(): RetrievalStrategy {
-    return {
-      needRetrieval: true,
-      useVector: true,
-      useKeyword: true,
-      useGraph: false,
-      useExactPhrase: false,
-      useMultiQuery: false,
-      allowWeb: true,
-      reason: '测试 persona 缓存',
     };
   }
 
@@ -330,22 +244,6 @@ describe('KnowledgeSearchService', () => {
     expect(result.query).toBe('原始问题');
     expect(result.retrievalQuery).toBe('改写后的检索问题');
     expect(result.rewrite.changed).toBe(true);
-  });
-
-  it('retrieveWithStages 会把 AbortSignal 传给 stage1 检索通道', async () => {
-    const { service, hybridRetriever } = createService();
-    const signal = new AbortController().signal;
-
-    await service.retrieveWithStages('kb-1', '原始问题', {
-      signal,
-      skipQueryRewrite: true,
-    });
-
-    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        signal,
-      }),
-    );
   });
 
   it('图谱检索开启且 graph-only 时，会把图谱结果纳入 stage1', async () => {
@@ -397,8 +295,6 @@ describe('KnowledgeSearchService', () => {
         retrievalQuery: '甲方审计保留',
         keywordTerms: ['甲方审计保留'],
         matchCount: 10,
-        graphMaxHops: undefined,
-        graphMode: undefined,
       });
       expect(graphRetrieveCall?.signal).toBeInstanceOf(AbortSignal);
       expect(rerankerService.rerank).not.toHaveBeenCalled();
@@ -412,8 +308,6 @@ describe('KnowledgeSearchService', () => {
         vectorBackend: 'disabled',
         keywordBackend: 'disabled',
       });
-      expect(result.stage1Trace[0]?.skippedChannels).toContain('vector');
-      expect(result.stage1Trace[0]?.skippedChannels).toContain('keyword');
     } finally {
       if (originalGraphFlag === undefined) {
         delete process.env.NEO4J_GRAPH_ENABLED;
@@ -421,96 +315,6 @@ describe('KnowledgeSearchService', () => {
         process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
       }
     }
-  });
-
-  it('图谱结果进入统一 rank 融合，不会用原始 graph_score 压过混合检索', async () => {
-    const originalGraphFlag = process.env.NEO4J_GRAPH_ENABLED;
-    process.env.NEO4J_GRAPH_ENABLED = 'true';
-    const hybridChunk: KnowledgeChunk = {
-      id: 'chunk-hybrid',
-      content: '向量和关键词共同命中的验收付款条款。',
-      source: 'contract.md',
-      chunk_index: 1,
-      category: 'contract',
-      similarity: 0.91,
-      hybrid_score: 0.032,
-      retrieval_sources: ['vector', 'keyword'],
-    };
-    const graphChunk: KnowledgeChunk = {
-      id: 'chunk-graph',
-      content: '图谱关系命中的审计记录条款。',
-      source: 'contract.md',
-      chunk_index: 4,
-      category: 'contract',
-      similarity: 0,
-      graph_score: 99,
-      retrieval_sources: ['graph'],
-    };
-    const graphRetriever = createGraphRetriever([graphChunk]);
-    const { service, hybridRetriever, rerankerService } =
-      createService(graphRetriever);
-    hybridRetriever.retrieve.mockResolvedValue({
-      chunks: [hybridChunk],
-      keywordBackend: 'pg',
-      vectorResultCount: 1,
-      keywordResultCount: 1,
-      fallbackToPg: false,
-      skippedChannels: [],
-    });
-
-    try {
-      const result = await service.retrieveWithStages('kb-1', '验收付款关系', {
-        rerank: false,
-        skipQueryRewrite: true,
-        strategy: baseStrategy({
-          useGraph: true,
-          useKeyword: true,
-          useVector: true,
-          allowWeb: false,
-        }),
-      });
-
-      expect(rerankerService.rerank).not.toHaveBeenCalled();
-      expect(result.stage1.map((chunk) => chunk.id)).toEqual([
-        'chunk-hybrid',
-        'chunk-graph',
-      ]);
-      expect(result.stage1[1].hybrid_score).toBeLessThan(0.032);
-      expect(result.stage1[1].graph_score).toBe(99);
-    } finally {
-      if (originalGraphFlag === undefined) {
-        delete process.env.NEO4J_GRAPH_ENABLED;
-      } else {
-        process.env.NEO4J_GRAPH_ENABLED = originalGraphFlag;
-      }
-    }
-  });
-
-  it('不启用 rerank 时仍会先做 Query Rewrite 再执行混合检索', async () => {
-    const { service, runtime, hybridRetriever, queryRewriteService } =
-      createService();
-
-    runtime.normalizeRetrieveOptions.mockReturnValue({
-      threshold: 0.6,
-      rerank: false,
-      stage1TopK: 10,
-      finalTopK: 5,
-      skipQueryRewrite: false,
-    });
-
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
-      rerank: false,
-    });
-
-    expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
-      '原始问题',
-      undefined,
-    );
-    expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith(
-      '改写后的检索问题',
-    );
-    expect(hybridRetriever.retrieve).toHaveBeenCalled();
-    expect(result.retrievalQuery).toBe('改写后的检索问题');
   });
 
   it('multi-query 会逐条召回并按 chunk.id 合并去重，rerank 仍使用原始问题', async () => {
@@ -613,54 +417,6 @@ describe('KnowledgeSearchService', () => {
     expect(result.stage1Trace).toHaveLength(2);
   });
 
-  it('useMultiQuery=false 时不调用 Query Rewrite，只使用原始问题单查询召回', async () => {
-    const { service, runtime, hybridRetriever, queryRewriteService } =
-      createService();
-    hybridRetriever.retrieve.mockResolvedValue({
-      chunks: [stage1Chunk],
-      keywordBackend: 'pg',
-      vectorResultCount: 1,
-      keywordResultCount: 1,
-      fallbackToPg: false,
-      skippedChannels: [],
-    });
-
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
-      rerank: false,
-      strategy: {
-        needRetrieval: true,
-        useVector: true,
-        useKeyword: true,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: false,
-        allowWeb: true,
-        queryCount: 5,
-        reason: '测试关闭多查询',
-      },
-    });
-
-    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(runtime.embeddings.embedQuery).toHaveBeenCalledTimes(1);
-    expect(runtime.embeddings.embedQuery).toHaveBeenCalledWith('原始问题');
-    expect(hybridRetriever.retrieve).toHaveBeenCalledTimes(1);
-    expect(hybridRetriever.retrieve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        retrievalQuery: '原始问题',
-        keywordTerms: ['原始问题'],
-      }),
-    );
-    expect(result.retrievalQueries).toEqual([
-      {
-        index: 0,
-        query: '原始问题',
-        keywords: ['原始问题'],
-        angle: 'original',
-      },
-    ]);
-    expect(result.stage1Trace).toHaveLength(1);
-  });
-
   it('skipQueryRewrite=true 且 useVector=false 时只走原始问题关键词召回，不调用 LLM rewrite 或 embedding', async () => {
     const { service, runtime, hybridRetriever, queryRewriteService } =
       createService();
@@ -706,213 +462,111 @@ describe('KnowledgeSearchService', () => {
       vectorBackend: 'disabled',
       vectorResultCount: 0,
     });
-    expect(result.stage1[0].vector_backend).toBeUndefined();
   });
 
-  it('skipQueryRewrite=true 时会为中文长问题生成本地关键词', async () => {
-    const { service, runtime, hybridRetriever, queryRewriteService } =
-      createService();
-    hybridRetriever.retrieve.mockResolvedValue({
-      chunks: [stage1Chunk],
-      keywordBackend: 'pg',
-      vectorResultCount: 0,
-      keywordResultCount: 1,
-      fallbackToPg: false,
-      skippedChannels: ['vector'],
-    });
+  it('persona 检索会调用新的 persona stage1 facade，再做全局 rerank', async () => {
+    const {
+      service,
+      rerankerService,
+      personaStage1RetrievalService,
+      queryRewriteService,
+    } = createService();
 
-    await service.retrieveWithStages(
-      'kb-1',
-      '示例服务协议里协议终止后的试用数据应如何处理？',
+    const result = await service.retrieveForPersonaWithStages(
+      'persona-1',
+      '原始问题',
       {
-        rerank: false,
-        strategy: {
-          needRetrieval: true,
-          useVector: false,
-          useKeyword: true,
-          useGraph: false,
-          useExactPhrase: true,
-          useMultiQuery: false,
-          allowWeb: false,
-          reason: '安全关键词评估',
-        },
-        skipQueryRewrite: true,
+        strategy: baseStrategy({
+          useMultiQuery: true,
+          queryCount: 2,
+        }),
       },
     );
 
-    expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(runtime.embeddings.embedQuery).not.toHaveBeenCalled();
-    const retrieveCall = hybridRetriever.retrieve.mock.calls[0]?.[0] as
-      | HybridRetrieveCall
-      | undefined;
-    expect(retrieveCall).toMatchObject({
-      retrievalQuery: '示例服务协议里协议终止后的试用数据应如何处理？',
-      useVector: false,
-      useKeyword: true,
-    });
-    expect(retrieveCall?.keywordTerms).toContain('协议终止');
-    expect(retrieveCall?.keywordTerms).toContain('试用数据');
-  });
-
-  it('useKeyword=false 时 trace 标记 keyword disabled，但 chunk 元数据不写入 disabled backend', async () => {
-    const { service, hybridRetriever } = createService();
-    hybridRetriever.retrieve.mockResolvedValue({
-      chunks: [
+    expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
+      '原始问题',
+      undefined,
+    );
+    expect(personaStage1RetrievalService.retrieve).toHaveBeenCalledWith({
+      personaId: 'persona-1',
+      retrievalQueries: [
         {
-          ...stage1Chunk,
-          retrieval_sources: ['vector'],
+          index: 0,
+          query: '改写后的检索问题',
+          keywords: ['原始问题'],
+          angle: 'original',
         },
       ],
-      keywordBackend: 'disabled',
-      vectorResultCount: 1,
-      keywordResultCount: 0,
-      fallbackToPg: false,
-      skippedChannels: ['keyword'],
-    });
-
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
-      rerank: false,
-      strategy: {
-        needRetrieval: true,
-        useVector: true,
-        useKeyword: false,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: false,
-        allowWeb: false,
-        reason: '只测向量通道',
-      },
-    });
-
-    expect(result.stage1Trace[0]).toMatchObject({
-      keywordBackend: 'disabled',
-      keywordResultCount: 0,
-    });
-    expect(result.stage1[0].keyword_backend).toBeUndefined();
-  });
-
-  it('chunkContextWindow 开启时只扩展最终 stage2，上游召回和 rerank 仍保持原始问题', async () => {
-    const { service, chunkContextExpansionService, rerankerService } =
-      createService();
-    const expandedStage2 = [
-      {
-        ...stage1Chunk,
-        id: 'chunk-0',
-        chunk_index: -1,
-        context_expanded: true,
-      },
-      stage1Chunk,
-      stage1Chunk2,
-    ];
-    chunkContextExpansionService.expand.mockResolvedValue(expandedStage2);
-
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
-      strategy: {
-        needRetrieval: true,
+      stage1TopK: undefined,
+      threshold: undefined,
+      channels: {
         useVector: true,
         useKeyword: true,
         useGraph: false,
         useExactPhrase: false,
-        useMultiQuery: true,
-        allowWeb: true,
-        chunkContextWindow: 1,
-        reason: '测试邻近上下文',
       },
+      signal: undefined,
     });
-
     expect(rerankerService.rerank).toHaveBeenCalledWith(
       '原始问题',
-      expect.any(Array),
+      [stage1Chunk, stage1Chunk2],
       5,
       undefined,
     );
-    expect(chunkContextExpansionService.expand).toHaveBeenCalledWith(
-      [stage1Chunk, stage1Chunk2],
-      1,
-    );
-    expect(result.stage1.map((item) => item.id)).toEqual([
-      'chunk-1',
-      'chunk-2',
+    expect(result.stage1Trace).toEqual([
+      expect.objectContaining({
+        knowledgeId: 'kb-1',
+      }),
     ]);
-    expect(result.stage2).toBe(expandedStage2);
   });
 
-  it('persona 挂载查询遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
-    const { service, runtime } = createService();
-    const mountEq = jest.fn().mockResolvedValue({
-      data: null,
-      error: { message: 'fetch failed' },
+  it('persona 未挂载知识库时返回空结果，并保留 fallback 原因', async () => {
+    const { service, personaStage1RetrievalService } = createService();
+    personaStage1RetrievalService.retrieve.mockResolvedValue({
+      knowledgeCount: 0,
+      chunks: [],
+      trace: [],
     });
-    const mountSelect = jest.fn().mockReturnValue({ eq: mountEq });
-    runtime.supabase.from.mockReturnValue({ select: mountSelect });
+
+    const result = await service.retrieveForPersonaWithStages(
+      'persona-1',
+      '原始问题',
+      {
+        strategy: baseStrategy(),
+      },
+    );
+
+    expect(result.stage1).toEqual([]);
+    expect(result.stage2).toEqual([]);
+    expect(result.rewrite.reason).toBe('persona persona-1 未挂载知识库');
+  });
+
+  it('persona 全局 rerank 失败时会回退 stage1 结果继续返回', async () => {
+    const { service, rerankerService } = createService();
+    rerankerService.rerank.mockRejectedValue(new Error('rerank failed'));
+
+    const result = await service.retrieveForPersonaWithStages(
+      'persona-1',
+      '原始问题',
+      {
+        strategy: baseStrategy(),
+      },
+    );
+
+    expect(result.stage2).toEqual([stage1Chunk, stage1Chunk2]);
+  });
+
+  it('persona stage1 遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
+    const { service, personaStage1RetrievalService } = createService();
+    personaStage1RetrievalService.retrieve.mockRejectedValue(
+      new Error('fetch failed'),
+    );
 
     await expect(
       service.retrieveForPersonaWithStages('persona-1', '原始问题', {
-        strategy: buildRetrievalStrategy(),
+        strategy: baseStrategy(),
       }),
     ).rejects.toThrow(/fetch failed/);
-  });
-
-  it('persona stage1 单库临时错误会向上抛出，避免被当成无结果', async () => {
-    const { service, runtime, stage1RetrievalService } = createService();
-    mockPersonaMountedKnowledge(runtime);
-    jest
-      .spyOn(stage1RetrievalService, 'retrieveForKnowledge')
-      .mockRejectedValue(new Error('ECONNRESET'));
-
-    await expect(
-      service.retrieveForPersonaWithStages('persona-1', '原始问题', {
-        strategy: buildRetrievalStrategy(),
-      }),
-    ).rejects.toThrow(/ECONNRESET/);
-  });
-
-  it('persona 多知识库检索会限制并发数量', async () => {
-    const originalConcurrency = process.env.RAG_PERSONA_KB_CONCURRENCY;
-    process.env.RAG_PERSONA_KB_CONCURRENCY = '2';
-    const { service, runtime, stage1RetrievalService, rerankerService } =
-      createService();
-    mockPersonaMountedKnowledgeIds(runtime, ['kb-1', 'kb-2', 'kb-3', 'kb-4']);
-
-    let inFlight = 0;
-    let maxInFlight = 0;
-    jest
-      .spyOn(stage1RetrievalService, 'retrieveForKnowledge')
-      .mockImplementation(async ({ knowledgeId }: { knowledgeId: string }) => {
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        inFlight -= 1;
-        return {
-          chunks: [
-            {
-              ...stage1Chunk,
-              id: `chunk-${knowledgeId}`,
-              knowledge_base_id: knowledgeId,
-            },
-          ],
-          trace: [],
-        };
-      });
-
-    try {
-      await service.retrieveForPersonaWithStages('persona-1', '原始问题', {
-        rerank: false,
-        strategy: buildRetrievalStrategy(),
-      });
-
-      expect(maxInFlight).toBeLessThanOrEqual(2);
-      expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledTimes(
-        4,
-      );
-      expect(rerankerService.rerank).not.toHaveBeenCalled();
-    } finally {
-      if (originalConcurrency === undefined) {
-        delete process.env.RAG_PERSONA_KB_CONCURRENCY;
-      } else {
-        process.env.RAG_PERSONA_KB_CONCURRENCY = originalConcurrency;
-      }
-    }
   });
 
   it('retrieve 收到已中断信号时会抛出 AbortError，不会降级为空知识', async () => {

@@ -23,7 +23,7 @@ export function createGenerateAnswerNode(
       signal: input.signal,
       persona: state.persona,
       history: state.history,
-      localChunks: state.evidenceChunks,
+      localChunks: state.topDocuments,
       retrievalStrategy: state.retrievalStrategy,
       webCitations: state.webCitations,
       evidenceAssessment:

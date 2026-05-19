@@ -19,10 +19,7 @@ export function createRouteQuestionNode(ragRouteService: RagRouteService) {
         strategy: route.strategy,
         routeReason: route.reason,
       } satisfies Partial<RagGraphState>,
-      goto:
-        route.strategy === 'complex'
-          ? 'plan_sub_questions'
-          : 'plan_retrieval_strategy',
+      goto: route.strategy === 'complex' ? 'plan_sub_questions' : 'retrieve',
     });
   };
 }

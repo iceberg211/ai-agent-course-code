@@ -5,6 +5,14 @@ describe('createGenerateAnswerNode', () => {
     const answerGenerationService = {
       generate: jest.fn().mockResolvedValue('回答'),
     };
+    const topChunk = {
+      id: 'chunk-1',
+      content: '合同原文',
+      source: 'contract.md',
+      chunk_index: 0,
+      category: null,
+      similarity: 0.9,
+    };
     const node = createGenerateAnswerNode(answerGenerationService as never);
     const input = {
       conversationId: 'conv-1',
@@ -20,6 +28,7 @@ describe('createGenerateAnswerNode', () => {
       {
         persona: { id: 'persona-1', name: '法务顾问' },
         history: [],
+        topDocuments: [topChunk],
         evidenceChunks: [],
         retrievalStrategy: { needRetrieval: true },
         webCitations: [],
@@ -37,6 +46,7 @@ describe('createGenerateAnswerNode', () => {
 
     expect(answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
+        localChunks: [topChunk],
         evidenceAssessment: {
           enough: false,
           missingFacts: ['缺少原文'],

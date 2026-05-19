@@ -67,9 +67,11 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
       publishCitations(
         input,
         toWorkflowCitations({
-          evidenceChunks: state.evidenceChunks,
+          documents: state.documents,
+          topDocuments: state.topDocuments,
+          evidenceChunks: state.topDocuments,
           webCitations: mergedWebCitations,
-        } as Pick<RagGraphState, 'evidenceChunks' | 'webCitations'>),
+        }),
       );
 
       return new Command({

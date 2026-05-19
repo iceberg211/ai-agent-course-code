@@ -30,17 +30,24 @@ export class KnowledgeDocumentIndexSyncService {
     private readonly knowledgeChunkIndexQueryService: KnowledgeChunkIndexQueryService,
   ) {}
 
+  async syncDocumentIndex(input: {
+    documentId: string;
+    knowledgeId: string;
+    rows: KnowledgeDocumentChunkRow[];
+  }): Promise<void> {
+    await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
+      input.rows.map((row) => this.toIndexDocument(row, input.knowledgeId)),
+      `写入文档 ${input.documentId}`,
+    );
+  }
+
   async syncCreatedDocument(input: {
     documentId: string;
     knowledgeId: string;
     source: string;
     rows: KnowledgeDocumentChunkRow[];
   }): Promise<Neo4jGraphSyncResult> {
-    await this.elasticsearchSyncService.safeBulkUpsertChunkDocuments(
-      input.rows.map((row) => this.toIndexDocument(row, input.knowledgeId)),
-      `写入文档 ${input.documentId}`,
-    );
-
+    await this.syncDocumentIndex(input);
     return this.syncDocumentGraph({
       documentId: input.documentId,
       knowledgeId: input.knowledgeId,
@@ -84,7 +91,7 @@ export class KnowledgeDocumentIndexSyncService {
     );
   }
 
-  private async syncDocumentGraph(input: {
+  async syncDocumentGraph(input: {
     documentId: string;
     knowledgeId: string;
     source: string;

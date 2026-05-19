@@ -82,7 +82,6 @@ async function main(): Promise<void> {
           useGraph: true,
           useExactPhrase: true,
           useMultiQuery: false,
-          useHyDE: false,
           allowWeb: false,
           graphMode: 'neighbors',
           graphMaxHops: 1,

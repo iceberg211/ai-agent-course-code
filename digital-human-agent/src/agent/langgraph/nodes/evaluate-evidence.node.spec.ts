@@ -9,9 +9,31 @@ describe('createEvaluateEvidenceNode', () => {
     turnId: 'turn-1',
     strategy: 'complex',
     routeReason: '需要多跳检索',
-    subQuestions: ['合同删除条款是什么？'],
+    subQuestions: ['合同删除条款是什么？', '审计要求是什么？'],
+    nextSubIdx: 2,
+    currentQuery: '审计要求是什么？',
     currentHop: 1,
     maxHops: 3,
+    documents: [
+      {
+        id: 'chunk-1',
+        content: '合同第七条说明试用数据删除时限。',
+        source: 'contract.md',
+        chunk_index: 7,
+        category: null,
+        similarity: 0.9,
+      },
+    ],
+    topDocuments: [
+      {
+        id: 'chunk-1',
+        content: '合同第七条说明试用数据删除时限。',
+        source: 'contract.md',
+        chunk_index: 7,
+        category: null,
+        similarity: 0.9,
+      },
+    ],
     evidenceChunks: [
       {
         id: 'chunk-1',
@@ -29,6 +51,8 @@ describe('createEvaluateEvidenceNode', () => {
         resultCount: 1,
       },
     ],
+    retrievalTrace: [],
+    plannedNext: 'rerank',
     retrievalStrategy: {
       needRetrieval: true,
       useVector: true,
@@ -56,7 +80,7 @@ describe('createEvaluateEvidenceNode', () => {
     history: [],
   } satisfies RagGraphState;
 
-  it('证据不足且还有跳数时，把 missingFacts 追加为下一条本地检索问题', async () => {
+  it('证据不足时不再回到本地检索节点，而是根据策略进入 web fallback', async () => {
     const evidenceEvaluatorService = {
       evaluate: jest.fn().mockResolvedValue({
         enough: false,
@@ -81,12 +105,17 @@ describe('createEvaluateEvidenceNode', () => {
       },
     } as never);
 
-    expect(command.goto).toEqual(['prepare_query']);
+    expect(evidenceEvaluatorService.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localChunks: baseState.topDocuments,
+        remainingSubQuestionCount: 1,
+      }),
+    );
+    expect(command.goto).toEqual(['web_fallback']);
     expect(command.update).toMatchObject({
       enough: false,
       missingFacts: ['审计保留要求是什么？'],
-      subQuestions: ['合同删除条款是什么？', '审计保留要求是什么？'],
-      stopReason: 'multi_hop_insufficient',
+      stopReason: 'sub_questions_exhausted',
     });
   });
 
@@ -134,6 +163,109 @@ describe('createEvaluateEvidenceNode', () => {
       enough: false,
       webQuery: '合同 审计 监管 更新时间',
       stopReason: 'web_fallback_retry',
+    });
+  });
+
+  it('allowWeb=false 时不会进入 web_fallback，而是直接带着评估结果进入回答', async () => {
+    const evidenceEvaluatorService = {
+      evaluate: jest.fn().mockResolvedValue({
+        enough: false,
+        missingFacts: ['缺少外部事实'],
+        reason: '本地证据不足',
+        webQuery: '外部事实查询',
+      }),
+    };
+    const node = createEvaluateEvidenceNode(
+      evidenceEvaluatorService as never,
+      {
+        isEnabled: jest.fn(() => true),
+      } as never,
+    );
+
+    const command = await node(
+      {
+        ...baseState,
+        strategy: 'simple',
+        subQuestions: [],
+        nextSubIdx: 1,
+        currentHop: 1,
+        maxHops: 1,
+        retrievalStrategy: {
+          ...baseState.retrievalStrategy,
+          allowWeb: false,
+          reason: '禁止联网补充',
+        },
+        retrievalStrategyReason: '禁止联网补充',
+      } as RagGraphState,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(command.goto).toEqual(['load_context']);
+    expect(command.update).toMatchObject({
+      enough: false,
+      stopReason: 'web_fallback_disabled',
+      webQuery: '外部事实查询',
+    });
+  });
+
+  it('needRetrieval=false 时不评估空证据，直接进入 load_context', async () => {
+    const evidenceEvaluatorService = {
+      evaluate: jest.fn(),
+    };
+    const node = createEvaluateEvidenceNode(
+      evidenceEvaluatorService as never,
+      {
+        isEnabled: jest.fn(() => true),
+      } as never,
+    );
+
+    const command = await node(
+      {
+        ...baseState,
+        question: '你好',
+        strategy: 'simple',
+        subQuestions: [],
+        nextSubIdx: 1,
+        currentQuery: '你好',
+        currentHop: 1,
+        documents: [],
+        topDocuments: [],
+        evidenceChunks: [],
+        retrievalStrategy: {
+          needRetrieval: false,
+          useVector: false,
+          useKeyword: false,
+          useGraph: false,
+          useExactPhrase: false,
+          useMultiQuery: false,
+          allowWeb: false,
+          reason: '寒暄问题，不需要查知识库',
+        },
+        retrievalStrategyReason: '寒暄问题，不需要查知识库',
+        stopReason: 'retrieval_skipped',
+      } as RagGraphState,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
+    expect(command.goto).toEqual(['load_context']);
+    expect(command.update).toMatchObject({
+      enough: true,
+      missingFacts: [],
+      evaluationReason: '寒暄问题，不需要查知识库',
+      stopReason: 'retrieval_skipped',
     });
   });
 });

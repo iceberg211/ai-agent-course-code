@@ -18,9 +18,19 @@ export function getPlannedQuestions(
 export function getCurrentQuery(
   state: Pick<
     RagGraphState,
-    'strategy' | 'subQuestions' | 'question' | 'currentHop' | 'retrievalHistory'
+    | 'strategy'
+    | 'subQuestions'
+    | 'question'
+    | 'currentHop'
+    | 'retrievalHistory'
+    | 'currentQuery'
   >,
 ): string {
+  const currentQuery = state.currentQuery?.trim();
+  if (currentQuery) {
+    return currentQuery;
+  }
+
   const latestQuery = state.retrievalHistory.at(-1)?.query?.trim();
   if (latestQuery) {
     return latestQuery;
@@ -34,24 +44,36 @@ export function getCurrentQuery(
 export function getNextQuery(
   state: Pick<
     RagGraphState,
-    'strategy' | 'subQuestions' | 'question' | 'currentHop'
+    'strategy' | 'subQuestions' | 'question' | 'currentHop' | 'nextSubIdx'
   >,
 ): string {
   const plannedQuestions = getPlannedQuestions(state);
-  return plannedQuestions[state.currentHop]?.trim() || state.question.trim();
+  const nextIndex = Number.isFinite(state.nextSubIdx)
+    ? state.nextSubIdx
+    : state.currentHop;
+  return plannedQuestions[nextIndex]?.trim() || state.question.trim();
 }
 
 export function toWorkflowCitations(
-  state: Pick<RagGraphState, 'evidenceChunks' | 'webCitations'>,
+  state: Pick<
+    RagGraphState,
+    'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'
+  >,
 ): RagCitation[] {
+  const localChunks =
+    state.topDocuments.length > 0
+      ? state.topDocuments
+      : state.evidenceChunks.length > 0
+        ? state.evidenceChunks
+        : state.documents;
   return mergeCitations(
-    toKnowledgeCitations(state.evidenceChunks),
+    toKnowledgeCitations(localChunks),
     state.webCitations,
   );
 }
 
 export function canContinueMultiHop(
-  state: Pick<RagGraphState, 'strategy' | 'currentHop' | 'maxHops'> & {
+  state: Pick<RagGraphState, 'strategy' | 'currentHop' | 'maxHops' | 'nextSubIdx'> & {
     subQuestions: string[];
     question: string;
   },
@@ -61,8 +83,8 @@ export function canContinueMultiHop(
   }
 
   return (
-    state.currentHop < state.maxHops &&
-    state.currentHop < getPlannedQuestions(state).length
+    state.nextSubIdx < state.maxHops &&
+    state.nextSubIdx < getPlannedQuestions(state).length
   );
 }
 

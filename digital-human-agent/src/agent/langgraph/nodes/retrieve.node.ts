@@ -1,6 +1,4 @@
-import { Command } from '@langchain/langgraph';
-import type { WebFallbackService } from '@/agent/services/web-fallback.service';
-import type { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,
@@ -8,136 +6,98 @@ import {
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import {
   getNextQuery,
-  getPlannedQuestions,
   mergeEvidenceChunks,
   publishCitations,
-  shouldUseWebFallback,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
+import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
 
-function shouldRetrieve(state: RagGraphState): boolean {
-  if (!state.retrievalStrategy.needRetrieval) {
-    return false;
-  }
-
-  const nextQuery = getNextQuery(state);
-  if (!nextQuery) {
-    return false;
-  }
-
-  if (state.strategy === 'simple') {
-    return true;
-  }
-
-  return (
-    state.currentHop < state.maxHops &&
-    state.currentHop < getPlannedQuestions(state).length
-  );
-}
-
-export function createPrepareQueryNode(webFallbackService: WebFallbackService) {
-  return (state: RagGraphState) => {
-    const plannedQuestions = getPlannedQuestions(state);
-
-    if (state.strategy === 'simple') {
-      return new Command({
-        goto: 'retrieve_evidence',
-      });
-    }
-
-    const webFallbackEnabled =
-      webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
-    let stopReason = state.stopReason;
-
-    if (state.currentHop >= state.maxHops) {
-      stopReason = webFallbackEnabled
-        ? 'max_hops_reached'
-        : 'web_fallback_disabled';
-    } else if (state.currentHop >= plannedQuestions.length) {
-      stopReason = webFallbackEnabled
-        ? 'sub_questions_exhausted'
-        : 'web_fallback_disabled';
-    }
-
-    const update = {
-      stopReason,
-    } satisfies Partial<RagGraphState>;
-
-    if (shouldRetrieve(state)) {
-      return new Command({
-        update,
-        goto: 'retrieve_evidence',
-      });
-    }
-
-    if (shouldUseWebFallback(state, webFallbackEnabled)) {
-      return new Command({
-        update,
-        goto: 'web_fallback',
-      });
-    }
-
-    return new Command({
-      update,
-      goto: 'load_context',
-    });
-  };
-}
-
-export function createRetrieveEvidenceNode(
-  knowledgeSearchService: KnowledgeSearchService,
+export function createRetrieveNode(
+  queryAugmentationService: QueryAugmentationService,
+  personaStage1RetrievalService: PersonaStage1RetrievalService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
-    const query = getNextQuery(state);
-    if (!query) {
+    const currentQuery = getNextQuery(state);
+
+    if (!currentQuery) {
       return {};
     }
-    if (!state.retrievalStrategy.needRetrieval) {
+
+    const augmentation = await queryAugmentationService.plan({
+      question: currentQuery,
+      routeStrategy: state.strategy,
+      signal: input.signal,
+    });
+
+    const update = {
+      currentQuery,
+      retrievalStrategy: augmentation.strategy,
+      retrievalStrategyReason: augmentation.strategy.reason,
+      currentHop: state.currentHop + 1,
+      nextSubIdx: state.nextSubIdx + 1,
+      topDocuments: [],
+      plannedNext: '',
+    } satisfies Partial<RagGraphState>;
+
+    if (
+      !augmentation.strategy.needRetrieval ||
+      augmentation.retrievalQueries.length === 0
+    ) {
       return {
+        ...update,
         retrievalHistory: [
           ...state.retrievalHistory,
           {
-            query,
+            query: currentQuery,
             resultCount: 0,
             skipped: true,
-            reason: state.retrievalStrategy.reason,
-            strategy: state.retrievalStrategy,
+            reason: augmentation.strategy.reason,
+            strategy: augmentation.strategy,
           },
         ],
         stopReason: 'retrieval_skipped',
       } satisfies Partial<RagGraphState>;
     }
 
-    const chunks = await knowledgeSearchService.retrieveForPersona(
-      input.personaId,
-      query,
-      {
-        signal: input.signal,
-        strategy: state.retrievalStrategy,
+    const stage1Result = await personaStage1RetrievalService.retrieve({
+      personaId: input.personaId,
+      retrievalQueries: augmentation.retrievalQueries,
+      channels: {
+        useVector: augmentation.strategy.useVector,
+        useKeyword: augmentation.strategy.useKeyword,
+        useGraph: augmentation.strategy.useGraph,
+        useExactPhrase: augmentation.strategy.useExactPhrase,
       },
-    );
+      signal: input.signal,
+    });
 
-    const evidenceChunks = mergeEvidenceChunks(state.evidenceChunks, chunks);
+    const documents = mergeEvidenceChunks(state.documents, stage1Result.chunks);
+
     publishCitations(
       input,
       toWorkflowCitations({
-        evidenceChunks,
+        documents,
+        topDocuments: [],
+        evidenceChunks: documents,
         webCitations: state.webCitations,
-      } as Pick<RagGraphState, 'evidenceChunks' | 'webCitations'>),
+      }),
     );
 
     return {
-      currentHop: state.currentHop + 1,
-      evidenceChunks,
+      ...update,
+      documents,
+      evidenceChunks: documents,
+      retrievalTrace: [...state.retrievalTrace, ...stage1Result.trace],
       retrievalHistory: [
         ...state.retrievalHistory,
         {
-          query,
-          resultCount: chunks.length,
-          strategy: state.retrievalStrategy,
+          query: currentQuery,
+          resultCount: stage1Result.chunks.length,
+          strategy: augmentation.strategy,
         },
       ],
+      stopReason: '',
     } satisfies Partial<RagGraphState>;
   };
 }

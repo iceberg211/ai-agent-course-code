@@ -5,11 +5,10 @@ import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
-import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
+import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
-  RetrieveKnowledgeTraceItem,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
   RetrievalQueryItem,
@@ -17,33 +16,7 @@ import type {
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
 import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
-import { mergeStage1Results } from '@/knowledge-content/services/knowledge-retrieval-fusion';
 import type { RetrievalStrategy } from '@/common/rag';
-
-const DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY = 3;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex;
-        nextIndex += 1;
-        if (index >= items.length) return;
-        results[index] = await mapper(items[index], index);
-      }
-    }),
-  );
-
-  return results;
-}
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -55,7 +28,7 @@ export class KnowledgeSearchService {
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
     private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
-    private readonly personaKnowledgeConfigService: PersonaKnowledgeConfigService,
+    private readonly personaStage1RetrievalService: PersonaStage1RetrievalService,
   ) {}
 
   async retrieve(
@@ -341,13 +314,32 @@ export class KnowledgeSearchService {
       };
     }
 
-    const knowledgeConfigs =
-      await this.personaKnowledgeConfigService.listMountedKnowledgeConfigs(
-        personaId,
-      );
+    const rewrite = await this.resolveRetrievalQuery(
+      normalizedQuery,
+      skipQueryRewrite,
+      options.signal,
+    );
     throwIfAborted(options.signal);
 
-    if (knowledgeConfigs.length === 0) {
+    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
+    throwIfAborted(options.signal);
+
+    const stage1Result = await this.personaStage1RetrievalService.retrieve({
+      personaId,
+      retrievalQueries,
+      stage1TopK: options.stage1TopK,
+      threshold: options.threshold,
+      channels: {
+        useVector: strategy.useVector,
+        useKeyword: strategy.useKeyword,
+        useGraph: strategy.useGraph,
+        useExactPhrase: strategy.useExactPhrase,
+      },
+      signal: options.signal,
+    });
+    throwIfAborted(options.signal);
+
+    if (stage1Result.knowledgeCount === 0) {
       const fallbackRewrite = this.buildFallbackRewrite(
         normalizedQuery,
         `persona ${personaId} 未挂载知识库`,
@@ -364,71 +356,8 @@ export class KnowledgeSearchService {
       };
     }
 
-    const rewrite = await this.resolveRetrievalQuery(
-      normalizedQuery,
-      skipQueryRewrite,
-      options.signal,
-    );
-    throwIfAborted(options.signal);
-
-    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
-    throwIfAborted(options.signal);
-
-    const stage1Results = await mapWithConcurrency(
-      knowledgeConfigs,
-      this.resolvePersonaKnowledgeConcurrency(),
-      async (config) => {
-        try {
-          throwIfAborted(options.signal);
-
-          const effectiveThreshold =
-            options.threshold === undefined
-              ? config.threshold
-              : normalizedOptions.threshold;
-          const effectiveStage1TopK =
-            options.stage1TopK === undefined
-              ? config.stage1TopK
-              : normalizedOptions.stage1TopK;
-          const stage1Result =
-            await this.stage1RetrievalService.retrieveForKnowledge({
-              knowledgeId: config.knowledgeId,
-              retrievalQueries,
-              strategy,
-              threshold: effectiveThreshold,
-              globalStage1TopK: effectiveStage1TopK,
-              signal: options.signal,
-            });
-          throwIfAborted(options.signal);
-
-          return stage1Result;
-        } catch (error) {
-          if (isAbortError(error)) {
-            throw error;
-          }
-          if (this.isTransientRetrievalError(error)) {
-            throw error;
-          }
-
-          this.logger.warn(
-            `stage1 失败（knowledge=${config.knowledgeId}）：${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-          return {
-            chunks: [] as KnowledgeChunk[],
-            trace: [] as RetrieveKnowledgeTraceItem[],
-          };
-        }
-      },
-    );
-
-    const mergedStage1 = mergeStage1Results(
-      stage1Results.map((result) => result.chunks),
-      options.stage1TopK === undefined
-        ? Math.max(20, ...knowledgeConfigs.map((config) => config.stage1TopK))
-        : normalizedOptions.stage1TopK,
-    );
-    const stage1Trace = stage1Results.flatMap((result) => result.trace);
+    const mergedStage1 = stage1Result.chunks;
+    const stage1Trace = stage1Result.trace;
     if (mergedStage1.length <= 1 || !normalizedOptions.rerank) {
       const stage2 = await this.expandStage2Context(
         mergedStage1.slice(0, normalizedOptions.finalTopK),
@@ -570,25 +499,4 @@ export class KnowledgeSearchService {
     }
   }
 
-  private resolvePersonaKnowledgeConcurrency(): number {
-    return this.runtime.toBoundedNumber(
-      process.env.RAG_PERSONA_KB_CONCURRENCY,
-      DEFAULT_PERSONA_KNOWLEDGE_RETRIEVAL_CONCURRENCY,
-      1,
-      8,
-    );
-  }
-
-  private isTransientRetrievalError(error: unknown): boolean {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : '';
-
-    return /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|Connection terminated unexpectedly|socket hang up|ECONNREFUSED|too many clients|502|503|504|429|temporary .* failure/i.test(
-      message,
-    );
-  }
 }

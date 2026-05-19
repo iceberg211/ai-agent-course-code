@@ -79,23 +79,25 @@ export class KnowledgeDocumentService {
       })) satisfies InsertChunkRow[];
 
       await this.insertChunkRows(document.id, chunkRows);
-      const graphSyncResult =
-        await this.documentIndexSyncService.syncCreatedDocument({
-          documentId: document.id,
-          knowledgeId,
-          source: filename,
-          rows: chunkRows,
-        });
+      await this.documentIndexSyncService.syncDocumentIndex({
+        documentId: document.id,
+        knowledgeId,
+        rows: chunkRows,
+      });
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
         chunkCount: splitDocuments.length,
-        graphSyncStatus: graphSyncResult.status,
-        graphSyncError:
-          graphSyncResult.status === 'failed'
-            ? graphSyncResult.errorMessage
-            : null,
-        graphSyncedAt: graphSyncResult.status === 'indexed' ? new Date() : null,
+        graphSyncStatus: 'pending',
+        graphSyncError: null,
+        graphSyncedAt: null,
+      });
+
+      await this.syncGraphBestEffort({
+        documentId: document.id,
+        knowledgeId,
+        source: filename,
+        rows: chunkRows,
       });
 
       return this.documentRepo.findOneByOrFail({ id: document.id });
@@ -178,6 +180,48 @@ export class KnowledgeDocumentService {
     this.logger.log(
       `[Insert 完成] doc=${documentId} batches=${Math.ceil(rows.length / batchSize)}`,
     );
+  }
+
+  private async syncGraphBestEffort(input: {
+    documentId: string;
+    knowledgeId: string;
+    source: string;
+    rows: InsertChunkRow[];
+  }): Promise<void> {
+    try {
+      const graphSyncResult = await this.documentIndexSyncService.syncDocumentGraph({
+        documentId: input.documentId,
+        knowledgeId: input.knowledgeId,
+        source: input.source,
+        chunks: input.rows.map((row) => ({
+          id: row.id,
+          chunkIndex: row.chunk_index,
+          source: row.source,
+          category: row.category,
+          content: row.content,
+        })),
+      });
+
+      await this.documentRepo.update(input.documentId, {
+        graphSyncStatus: graphSyncResult.status,
+        graphSyncError:
+          graphSyncResult.status === 'failed'
+            ? graphSyncResult.errorMessage
+            : null,
+        graphSyncedAt: graphSyncResult.status === 'indexed' ? new Date() : null,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `图谱后置同步失败（doc=${input.documentId}）：${errorMessage}`,
+      );
+      await this.documentRepo.update(input.documentId, {
+        graphSyncStatus: 'failed',
+        graphSyncError: errorMessage,
+        graphSyncedAt: null,
+      });
+    }
   }
 
   private async cleanupFailedIngest(documentId: string): Promise<void> {

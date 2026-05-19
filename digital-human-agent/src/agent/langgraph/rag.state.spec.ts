@@ -1,14 +1,23 @@
 import { toRagWorkflowState } from '@/agent/langgraph/rag.state';
 
 describe('toRagWorkflowState', () => {
-  it('会从原始证据和检索历史推导派生字段，而不是直接信任 state 中的缓存值', () => {
-    const chunk = {
+  it('会优先把 rerank 后的 topDocuments 作为最终本地证据与引用', () => {
+    const stage1Chunk = {
       id: 'chunk-1',
       content: '乔峰是丐帮帮主。',
       source: 'chunk-1.md',
       chunk_index: 0,
       category: null,
       similarity: 0.9,
+    };
+    const topChunk = {
+      id: 'chunk-2',
+      content: '乔峰原名萧峰。',
+      source: 'chunk-2.md',
+      chunk_index: 1,
+      category: null,
+      similarity: 0.95,
+      rerank_score: 0.98,
     };
     const webCitation = {
       kind: 'web' as const,
@@ -27,11 +36,17 @@ describe('toRagWorkflowState', () => {
       strategy: 'simple',
       routeReason: '直接问题',
       subQuestions: [],
+      nextSubIdx: 1,
+      currentQuery: '',
       currentHop: 1,
       maxHops: 3,
-      evidenceChunks: [chunk],
+      documents: [stage1Chunk, topChunk],
+      topDocuments: [topChunk],
+      evidenceChunks: [stage1Chunk],
       webCitations: [webCitation],
       retrievalHistory: [{ query: '乔峰是谁？', resultCount: 1 }],
+      retrievalTrace: [],
+      plannedNext: 'rerank',
       retrievalStrategy: {
         needRetrieval: true,
         useVector: true,
@@ -63,13 +78,14 @@ describe('toRagWorkflowState', () => {
     expect(workflowState.localCitations).toEqual([
       {
         kind: 'knowledge',
-        ...chunk,
+        ...topChunk,
       },
     ]);
+    expect(workflowState.evidenceChunks).toEqual([topChunk]);
     expect(workflowState.citations).toEqual([
       {
         kind: 'knowledge',
-        ...chunk,
+        ...topChunk,
       },
       webCitation,
     ]);

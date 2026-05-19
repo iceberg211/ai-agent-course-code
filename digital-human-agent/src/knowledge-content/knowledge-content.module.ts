@@ -25,6 +25,7 @@ import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/k
 import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
 import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import { KnowledgeVectorRetrieverService } from '@/knowledge-content/services/knowledge-vector-retriever.service';
+import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
@@ -62,6 +63,7 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     KnowledgeHybridRetrieverService,
     KnowledgeStage1RetrievalService,
     PersonaKnowledgeConfigService,
+    PersonaStage1RetrievalService,
     KnowledgeSearchService,
     KnowledgeContentService,
     QueryRewriteService,
@@ -69,6 +71,12 @@ import { PersonaKnowledge } from '@/knowledge/persona-knowledge.entity';
     RerankerService,
   ],
   controllers: [KnowledgeContentController, PersonaKnowledgeSearchController],
-  exports: [KnowledgeContentService, KnowledgeSearchService],
+  exports: [
+    KnowledgeContentService,
+    KnowledgeSearchService,
+    QueryRewriteService,
+    RerankerService,
+    PersonaStage1RetrievalService,
+  ],
 })
 export class KnowledgeContentModule {}

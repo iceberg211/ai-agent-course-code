@@ -4,6 +4,11 @@ import type {
   RetrievalStrategy,
 } from '@/common/rag';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type {
+  KnowledgeQueryRewriteResult,
+  RetrieveKnowledgeTraceItem,
+  RetrievalQueryItem,
+} from '@/knowledge-content/types/knowledge-content.types';
 
 export type RagStrategy = 'simple' | 'complex';
 export type RagOrchestratorName = 'langgraph';
@@ -57,14 +62,19 @@ export interface RagWorkflowState {
   strategy: RagStrategy;
   routeReason: string;
   subQuestions: string[];
+  nextSubIdx: number;
   currentQuery: string;
   currentHop: number;
   maxHops: number;
+  documents: RetrievedKnowledgeChunk[];
+  topDocuments: RetrievedKnowledgeChunk[];
   evidenceChunks: RetrievedKnowledgeChunk[];
   localCitations: RagKnowledgeCitation[];
   webCitations: RagWebCitation[];
   citations: RagCitation[];
   retrievalHistory: RetrievalHistoryItem[];
+  retrievalTrace: RetrieveKnowledgeTraceItem[];
+  plannedNext: '' | 'retrieve' | 'rerank';
   retrievalStrategy: RetrievalStrategy;
   retrievalStrategyReason: string;
   enough: boolean | null;
@@ -104,6 +114,13 @@ export interface RagEvidenceEvaluation {
 }
 
 export interface RagRetrievalStrategyDecision extends RetrievalStrategy {}
+
+export interface RagQueryAugmentationPlan {
+  rewrite: KnowledgeQueryRewriteResult;
+  retrievalQueries: RetrievalQueryItem[];
+  strategy: RetrievalStrategy;
+  currentQuery: string;
+}
 
 export interface RagOrchestrator {
   run(input: RagWorkflowInput): Promise<RagWorkflowResult>;
