@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { Client } from '@elastic/elasticsearch';
+import { KNOWLEDGE_INDEX_SETTINGS, KNOWLEDGE_INDEX_MAPPINGS } from './elasticsearch.config';
 import {
   DEFAULT_ELASTICSEARCH_INDEX_PREFIX,
   DEFAULT_ELASTICSEARCH_INDEX_VERSION,
@@ -101,72 +102,8 @@ export class ElasticsearchIndexService implements OnModuleInit {
     if (!exists) {
       await this.client.indices.create({
         index: indexName,
-        settings: {
-          index: {
-            max_ngram_diff: 4,
-          },
-          analysis: {
-            filter: {
-              knowledge_content_ngram_filter: {
-                type: 'ngram',
-                min_gram: 2,
-                max_gram: 6,
-                preserve_original: true,
-              },
-            },
-            analyzer: {
-              knowledge_content_ik_analyzer: {
-                type: 'custom',
-                tokenizer: 'ik_max_word',
-                filter: ['lowercase'],
-              },
-              knowledge_content_ik_search_analyzer: {
-                type: 'custom',
-                tokenizer: 'ik_smart',
-                filter: ['lowercase'],
-              },
-              knowledge_content_ngram_analyzer: {
-                type: 'custom',
-                tokenizer: 'standard',
-                filter: ['lowercase', 'knowledge_content_ngram_filter'],
-              },
-            },
-          },
-        },
-        mappings: {
-          dynamic: 'strict',
-          properties: {
-            id: { type: 'keyword' },
-            document_id: { type: 'keyword' },
-            knowledge_base_id: { type: 'keyword' },
-            chunk_index: { type: 'integer' },
-            enabled: { type: 'boolean' },
-            content: {
-              type: 'text',
-              analyzer: 'knowledge_content_ik_analyzer',
-              search_analyzer: 'knowledge_content_ik_search_analyzer',
-              fields: {
-                ngram: {
-                  type: 'text',
-                  analyzer: 'knowledge_content_ngram_analyzer',
-                  search_analyzer: 'standard',
-                },
-              },
-            },
-            source: {
-              type: 'text',
-              fields: {
-                keyword: { type: 'keyword', ignore_above: 512 },
-              },
-            },
-            category: {
-              type: 'text',
-              fields: {
-                keyword: { type: 'keyword', ignore_above: 256 },
-              },
-            },
-          },
-        },
+        settings: KNOWLEDGE_INDEX_SETTINGS,
+        mappings: KNOWLEDGE_INDEX_MAPPINGS,
       });
       this.logger.log(`ES 索引已创建：${indexName}`);
     }

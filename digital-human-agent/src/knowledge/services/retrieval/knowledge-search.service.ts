@@ -21,13 +21,7 @@ import type {
 import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
 import type { RetrievalStrategy } from '@/common/rag';
-
-interface ResolvedSearchInput {
-  query: string;
-  options: NormalizedRetrieveKnowledgeOptions;
-  strategy: RetrievalStrategy;
-  skipQueryRewrite: boolean;
-}
+import { resolveSearchInput, buildEmptyResult } from './knowledge-search.utils';
 
 interface HybridLoaderParams {
   strategy: RetrievalStrategy;
@@ -228,11 +222,13 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions,
     hybridLoader: (params: HybridLoaderParams) => Promise<HybridLoadResult>,
   ): Promise<RetrieveKnowledgeDebugResult> {
-    const searchInput = this.resolveSearchInput(query, options);
+    const searchInput = resolveSearchInput(query, options, (opts) =>
+      this.runtime.normalizeRetrieveOptions(opts),
+    );
     throwIfAborted(options.signal);
 
     if (!searchInput.query) {
-      return this.buildEmptyResult(
+      return buildEmptyResult(
         searchInput.query,
         '原始问题为空，跳过检索',
         searchInput.options,
@@ -240,7 +236,7 @@ export class KnowledgeSearchService {
     }
 
     if (!searchInput.strategy.needRetrieval) {
-      return this.buildEmptyResult(
+      return buildEmptyResult(
         searchInput.query,
         searchInput.strategy.reason,
         searchInput.options,
@@ -267,7 +263,7 @@ export class KnowledgeSearchService {
     throwIfAborted(options.signal);
 
     if (loadResult.knowledgeCount === 0) {
-      return this.buildEmptyResult(
+      return buildEmptyResult(
         searchInput.query,
         loadResult.emptyReason ?? '未找到可用知识库',
         searchInput.options,
@@ -291,27 +287,6 @@ export class KnowledgeSearchService {
       retrievalTrace: loadResult.hybridResult.trace,
       hybridChunks,
       rerankedChunks,
-    };
-  }
-
-  private resolveSearchInput(
-    query: string,
-    options: RetrieveKnowledgeOptions,
-  ): ResolvedSearchInput {
-    const normalizedQuery = query.trim();
-    const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
-    const strategy = normalizeRetrievalStrategy(options.strategy);
-    const skipQueryRewrite =
-      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
-
-    normalizedOptions.strategy = strategy;
-    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
-
-    return {
-      query: normalizedQuery,
-      options: normalizedOptions,
-      strategy,
-      skipQueryRewrite,
     };
   }
 
@@ -371,27 +346,5 @@ export class KnowledgeSearchService {
       },
     );
   }
-
-  private buildEmptyResult(
-    query: string,
-    reason: string,
-    options: NormalizedRetrieveKnowledgeOptions,
-  ): RetrieveKnowledgeDebugResult {
-    const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(query, reason);
-    return {
-      query,
-      retrievalQuery: query,
-      retrievalQueries: query
-        ? this.queryRewriteService.resolveRetrievalQueries(fallbackRewrite, 1, {
-            useMultiQuery: false,
-            preferOriginal: false,
-          })
-        : [],
-      rewrite: fallbackRewrite,
-      options,
-      retrievalTrace: [],
-      hybridChunks: [],
-      rerankedChunks: [],
-    };
-  }
+}
 }

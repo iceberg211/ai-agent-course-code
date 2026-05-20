@@ -147,6 +147,60 @@ function mergeGraphEvidence(
   });
 }
 
+export function fuseVectorAndKeywordResults(
+  vectorResults: KnowledgeChunk[],
+  keywordResults: KnowledgeChunk[],
+): KnowledgeChunk[] {
+  const merged = new Map<string, KnowledgeChunk>();
+  const vectorRanks = new Map<string, number>();
+  const keywordRanks = new Map<string, number>();
+
+  vectorResults.forEach((chunk, index) => {
+    vectorRanks.set(chunk.id, index + 1);
+    const existing = merged.get(chunk.id);
+    merged.set(
+      chunk.id,
+      existing
+        ? {
+            ...existing,
+            similarity: Math.max(
+              existing.similarity ?? 0,
+              chunk.similarity ?? 0,
+            ),
+            retrieval_sources: Array.from(new Set([...(existing.retrieval_sources ?? []), 'vector' as const])),
+          }
+        : { ...chunk, retrieval_sources: ['vector' as const] },
+    );
+  });
+
+  keywordResults.forEach((chunk, index) => {
+    keywordRanks.set(chunk.id, index + 1);
+    const existing = merged.get(chunk.id);
+    merged.set(
+      chunk.id,
+      existing
+        ? {
+            ...existing,
+            keyword_score: Math.max(
+              existing.keyword_score ?? 0,
+              chunk.keyword_score ?? 0,
+            ),
+            retrieval_sources: Array.from(new Set([...(existing.retrieval_sources ?? []), 'keyword' as const])),
+          }
+        : { ...chunk, retrieval_sources: ['keyword' as const] },
+    );
+  });
+
+  return Array.from(merged.values())
+    .map((chunk) => ({
+      ...chunk,
+      hybrid_score:
+        rrf(vectorRanks.get(chunk.id)) +
+        rrf(keywordRanks.get(chunk.id)),
+    }))
+    .sort((left, right) => compareRetrievalChunks(right, left));
+}
+
 function rrf(rank?: number): number {
   if (!rank) return 0;
   return 1 / (HYBRID_FUSION_RRF_K + rank);

@@ -42,65 +42,6 @@ describe('HybridRetrieverService', () => {
       }),
     };
 
-    const defaultElasticResult = {
-      hits: {
-        hits: [
-          {
-            _id: sampleChunk.id,
-            _source: {
-              id: sampleChunk.id,
-              content: sampleChunk.content,
-              source: sampleChunk.source,
-              chunk_index: sampleChunk.chunk_index,
-              category: sampleChunk.category,
-              knowledge_base_id: 'kb-1',
-            },
-            _score: 12,
-          },
-        ],
-      },
-    };
-
-    const elasticsearchClient = {
-      search: options?.elasticError
-        ? jest.fn().mockRejectedValue(options.elasticError)
-        : jest.fn().mockResolvedValue(options?.elasticResult ?? defaultElasticResult),
-    };
-
-    const elasticsearchService = {
-      isEnabled: jest
-        .fn()
-        .mockReturnValue(options?.elasticsearchEnabled ?? false),
-      getClient: jest.fn().mockReturnValue(elasticsearchClient),
-      ensureKnowledgeChunkIndex: jest.fn().mockResolvedValue(undefined),
-      getKnowledgeChunkReadAlias: jest
-        .fn()
-        .mockReturnValue('digital-human-knowledge-chunk-read'),
-    };
-
-    const queryBuilder = {
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      innerJoin: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      addOrderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      setParameters: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockResolvedValue(options?.pgResult ?? [sampleChunk]),
-      getRawMany: jest.fn().mockResolvedValue(options?.pgResult ?? [sampleChunk]),
-    };
-
-    const chunkRepo = {
-      createQueryBuilder: jest.fn(() => queryBuilder),
-    };
-
-    const rpcMock = jest.fn().mockResolvedValue({
-      data: options?.vectorResult ?? [],
-      error: null,
-    });
-
     const runtime = {
       withTransientRetry: jest.fn(
         <T>(_operation: string, fn: () => Promise<T>): Promise<T> => fn(),
@@ -108,9 +49,39 @@ describe('HybridRetrieverService', () => {
       embeddings: {
         embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
       },
-      supabase: {
-        rpc: rpcMock,
-      },
+    };
+
+    const vectorRetriever = {
+      retrieve: jest.fn().mockImplementation((params) => {
+        return Promise.resolve((options?.vectorResult ?? []).map((chunk: any) => ({
+          ...chunk,
+          retrieval_sources: ['vector'],
+        })));
+      })
+    };
+
+    const fulltextRetriever = {
+      retrieve: jest.fn().mockImplementation((params) => {
+        if (options?.backend === 'elastic' && (options?.elasticsearchEnabled ?? false)) {
+          if (options?.elasticError) {
+            return Promise.resolve({
+              chunks: (options?.pgResult ?? [sampleChunk]) as KnowledgeChunk[],
+              backend: 'pg' as const,
+              fallbackToPg: true,
+            });
+          }
+          return Promise.resolve({
+            chunks: [sampleChunk],
+            backend: 'elastic' as const,
+            fallbackToPg: false,
+          });
+        }
+        return Promise.resolve({
+          chunks: (options?.pgResult ?? [sampleChunk]) as KnowledgeChunk[],
+          backend: 'pg' as const,
+          fallbackToPg: options?.backend === 'elastic' && !(options?.elasticsearchEnabled ?? false),
+        });
+      })
     };
 
     const graphRetriever = {
@@ -121,19 +92,16 @@ describe('HybridRetrieverService', () => {
     const service = new HybridRetrieverService(
       runtime as never,
       configService as never,
-      elasticsearchService as never,
-      chunkRepo as never,
+      vectorRetriever as never,
+      fulltextRetriever as never,
       graphRetriever as never,
     );
 
     return {
       service,
       configService,
-      elasticsearchService,
-      elasticsearchClient,
-      chunkRepo,
-      queryBuilder,
-      rpcMock,
+      vectorRetriever,
+      fulltextRetriever,
       graphRetriever,
     };
   }
@@ -229,7 +197,7 @@ describe('HybridRetrieverService', () => {
   });
 
   it('配置为 elastic 且 ES 可用时优先走 ES', async () => {
-    const { service, queryBuilder, elasticsearchClient } = createService({
+    const { service, fulltextRetriever } = createService({
       backend: 'elastic',
       elasticsearchEnabled: true,
     });
@@ -254,14 +222,13 @@ describe('HybridRetrieverService', () => {
       globalRetrievalLimit: 5,
     });
 
-    expect(elasticsearchClient.search).toHaveBeenCalled();
-    expect(queryBuilder.getRawMany).not.toHaveBeenCalled();
+    expect(fulltextRetriever.retrieve).toHaveBeenCalled();
     expect(result.trace[0].keywordBackend).toBe('elastic');
     expect(result.trace[0].fallbackToPg).toBe(false);
   });
 
   it('配置为 elastic 但 ES 未启用时会直接回退 PG', async () => {
-    const { service, queryBuilder, elasticsearchClient } = createService({
+    const { service, fulltextRetriever } = createService({
       backend: 'elastic',
       elasticsearchEnabled: false,
     });
@@ -286,14 +253,13 @@ describe('HybridRetrieverService', () => {
       globalRetrievalLimit: 5,
     });
 
-    expect(elasticsearchClient.search).not.toHaveBeenCalled();
-    expect(queryBuilder.getRawMany).toHaveBeenCalled();
+    expect(fulltextRetriever.retrieve).toHaveBeenCalled();
     expect(result.trace[0].keywordBackend).toBe('pg');
     expect(result.trace[0].fallbackToPg).toBe(true);
   });
 
   it('ES 检索抛错时会自动回退 PG', async () => {
-    const { service, queryBuilder, elasticsearchClient } = createService({
+    const { service, fulltextRetriever } = createService({
       backend: 'elastic',
       elasticsearchEnabled: true,
       elasticError: new Error('es unavailable'),
@@ -319,8 +285,7 @@ describe('HybridRetrieverService', () => {
       globalRetrievalLimit: 5,
     });
 
-    expect(elasticsearchClient.search).toHaveBeenCalled();
-    expect(queryBuilder.getRawMany).toHaveBeenCalled();
+    expect(fulltextRetriever.retrieve).toHaveBeenCalled();
     expect(result.trace[0].keywordBackend).toBe('pg');
     expect(result.trace[0].fallbackToPg).toBe(true);
   });
