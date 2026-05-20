@@ -1,4 +1,4 @@
-import { createRerankNode } from '@/agent/langgraph/nodes/rerank.node';
+import { createRerankNode } from '@/agent/langgraph/nodes/evaluation/rerank.node';
 
 describe('createRerankNode', () => {
   const documents = [

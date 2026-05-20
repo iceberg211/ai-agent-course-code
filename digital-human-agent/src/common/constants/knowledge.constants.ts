@@ -2,8 +2,8 @@ import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 
 export const DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG: KnowledgeRetrievalConfig = {
   threshold: 0.6,
-  stage1TopK: 20,
-  finalTopK: 5,
+  retrievalLimit: 20,
+  rerankLimit: 5,
   rerank: true,
 };
 

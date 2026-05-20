@@ -25,16 +25,16 @@ interface ResolvedSearchInput {
   skipQueryRewrite: boolean;
 }
 
-interface Stage1LoaderParams {
+interface HybridLoaderParams {
   strategy: RetrievalStrategy;
   retrievalQueries: RetrievalQueryItem[];
   options: NormalizedRetrieveKnowledgeOptions;
   signal?: AbortSignal;
 }
 
-interface Stage1LoadResult {
+interface HybridLoadResult {
   knowledgeCount: number;
-  stage1Result: KnowledgeHybridRetrievalResult;
+  hybridResult: KnowledgeHybridRetrievalResult;
   emptyReason?: string;
 }
 
@@ -56,7 +56,7 @@ export class KnowledgeSearchService {
   ): Promise<KnowledgeChunk[]> {
     try {
       const result = await this.retrieveWithStages(knowledgeId, query, options);
-      return result.stage2;
+      return result.rerankedChunks;
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -88,28 +88,28 @@ export class KnowledgeSearchService {
           knowledgeId,
           query,
           rerank: options.rerank,
-          stage1TopK: options.stage1TopK,
-          finalTopK: options.finalTopK,
+          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
+          rerankLimit: options.rerankLimit ?? options.finalTopK,
           threshold: options.threshold,
           skipQueryRewrite: options.skipQueryRewrite,
         },
         outputProcessor: (output) => ({
           query: output.query,
           retrievalQuery: output.retrievalQuery,
-          stage1Count: output.stage1.length,
-          stage2Count: output.stage2.length,
-          stage1TraceCount: output.stage1Trace.length,
+          hybridCount: output.hybridChunks.length,
+          rerankedCount: output.rerankedChunks.length,
+          retrievalTraceCount: output.retrievalTrace.length,
         }),
       },
       () =>
         this.retrieveWithSharedPipeline(query, options, async (params) => ({
           knowledgeCount: 1,
-          stage1Result: await this.hybridRetrieverService.retrieveForKnowledge({
+          hybridResult: await this.hybridRetrieverService.retrieveForKnowledge({
             knowledgeId,
             retrievalQueries: params.retrievalQueries,
             strategy: params.strategy,
             threshold: params.options.threshold,
-            globalStage1TopK: params.options.stage1TopK,
+            globalRetrievalLimit: params.options.retrievalLimit,
             signal: params.signal,
           }),
         })),
@@ -133,8 +133,8 @@ export class KnowledgeSearchService {
           personaId,
           query,
           rerank: options.rerank,
-          stage1TopK: options.stage1TopK,
-          finalTopK: options.finalTopK,
+          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
+          rerankLimit: options.rerankLimit ?? options.finalTopK,
           threshold: options.threshold,
         },
         outputProcessor: (output) => ({
@@ -148,7 +148,7 @@ export class KnowledgeSearchService {
             query,
             options,
           )
-        ).stage2,
+        ).rerankedChunks,
     );
   }
 
@@ -169,8 +169,8 @@ export class KnowledgeSearchService {
           personaId,
           query,
           rerank: options.rerank,
-          stage1TopK: options.stage1TopK,
-          finalTopK: options.finalTopK,
+          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
+          rerankLimit: options.rerankLimit ?? options.finalTopK,
           threshold: options.threshold,
           strategy: options.strategy
             ? JSON.stringify(options.strategy)
@@ -178,9 +178,9 @@ export class KnowledgeSearchService {
           skipQueryRewrite: options.skipQueryRewrite,
         },
         outputProcessor: (output) => ({
-          stage1Count: output.stage1.length,
-          stage2Count: output.stage2.length,
-          stage1TraceCount: output.stage1Trace.length,
+          hybridCount: output.hybridChunks.length,
+          rerankedCount: output.rerankedChunks.length,
+          retrievalTraceCount: output.retrievalTrace.length,
         }),
       },
       () =>
@@ -194,10 +194,10 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     return this.retrieveWithSharedPipeline(query, options, async (params) => {
-      const stage1Result = await this.hybridRetrieverService.retrieveForPersona({
+      const hybridResult = await this.hybridRetrieverService.retrieveForPersona({
         personaId,
         retrievalQueries: params.retrievalQueries,
-        stage1TopK: params.options.stage1TopK,
+        retrievalLimit: params.options.retrievalLimit,
         threshold: params.options.threshold,
         channels: {
           useVector: params.strategy.useVector,
@@ -209,11 +209,11 @@ export class KnowledgeSearchService {
       });
 
       return {
-        knowledgeCount: stage1Result.knowledgeCount,
+        knowledgeCount: hybridResult.knowledgeCount,
         emptyReason: `persona ${personaId} 未挂载知识库`,
-        stage1Result: {
-          chunks: stage1Result.chunks,
-          trace: stage1Result.trace,
+        hybridResult: {
+          chunks: hybridResult.chunks,
+          trace: hybridResult.trace,
         },
       };
     });
@@ -222,7 +222,7 @@ export class KnowledgeSearchService {
   private async retrieveWithSharedPipeline(
     query: string,
     options: RetrieveKnowledgeOptions,
-    stage1Loader: (params: Stage1LoaderParams) => Promise<Stage1LoadResult>,
+    hybridLoader: (params: HybridLoaderParams) => Promise<HybridLoadResult>,
   ): Promise<RetrieveKnowledgeDebugResult> {
     const searchInput = this.resolveSearchInput(query, options);
     throwIfAborted(options.signal);
@@ -254,7 +254,7 @@ export class KnowledgeSearchService {
       rewrite,
       searchInput.strategy,
     );
-    const loadResult = await stage1Loader({
+    const loadResult = await hybridLoader({
       strategy: searchInput.strategy,
       retrievalQueries,
       options: searchInput.options,
@@ -270,10 +270,10 @@ export class KnowledgeSearchService {
       );
     }
 
-    const stage1 = loadResult.stage1Result.chunks;
-    const stage2 = await this.selectStage2(
+    const hybridChunks = loadResult.hybridResult.chunks;
+    const rerankedChunks = await this.selectRerankedChunks(
       searchInput.query,
-      stage1,
+      hybridChunks,
       searchInput.options,
       options.signal,
     );
@@ -284,9 +284,9 @@ export class KnowledgeSearchService {
       retrievalQueries,
       rewrite,
       options: searchInput.options,
-      stage1Trace: loadResult.stage1Result.trace,
-      stage1,
-      stage2,
+      retrievalTrace: loadResult.hybridResult.trace,
+      hybridChunks,
+      rerankedChunks,
     };
   }
 
@@ -311,22 +311,22 @@ export class KnowledgeSearchService {
     };
   }
 
-  private async selectStage2(
+  private async selectRerankedChunks(
     query: string,
-    stage1: KnowledgeChunk[],
+    hybridChunks: KnowledgeChunk[],
     options: NormalizedRetrieveKnowledgeOptions,
     signal?: AbortSignal,
   ): Promise<KnowledgeChunk[]> {
-    const fallbackStage2 = stage1.slice(0, options.finalTopK);
-    if (!options.rerank || stage1.length <= 1) {
-      return fallbackStage2;
+    const fallbackRerankedChunks = hybridChunks.slice(0, options.rerankLimit);
+    if (!options.rerank || hybridChunks.length <= 1) {
+      return fallbackRerankedChunks;
     }
 
     try {
       return await this.rerankerService.rerank(
         query,
-        stage1,
-        options.finalTopK,
+        hybridChunks,
+        options.rerankLimit,
         signal,
       );
     } catch (error) {
@@ -339,7 +339,7 @@ export class KnowledgeSearchService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return fallbackStage2;
+      return fallbackRerankedChunks;
     }
   }
 
@@ -391,9 +391,9 @@ export class KnowledgeSearchService {
       retrievalQueries: query ? fallbackRewrite.expandedQueries : [],
       rewrite: fallbackRewrite,
       options,
-      stage1Trace: [],
-      stage1: [],
-      stage2: [],
+      retrievalTrace: [],
+      hybridChunks: [],
+      rerankedChunks: [],
     };
   }
 

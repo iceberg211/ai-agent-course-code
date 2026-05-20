@@ -77,7 +77,7 @@ export class RerankerService {
         throw error;
       }
       this.logger.warn(
-        `LLM Rerank 失败，保留 Stage1 排序：${
+        `LLM Rerank 失败，保留原有排序：${
           error instanceof Error ? error.message : String(error)
         }`,
       );

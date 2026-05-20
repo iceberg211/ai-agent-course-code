@@ -104,7 +104,7 @@ describe('KnowledgeHybridRetrieverService', () => {
       ],
       strategy,
       threshold: 0.6,
-      globalStage1TopK: 10,
+      globalRetrievalLimit: 10,
     });
 
     expect(result.chunks.map((chunk) => chunk.id)).toEqual([

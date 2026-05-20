@@ -1,14 +1,14 @@
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
-const STAGE_FUSION_RRF_K = 60;
+const HYBRID_FUSION_RRF_K = 60;
 
-export function mergeStage1Results(
-  stage1Results: KnowledgeChunk[][],
-  globalStage1TopK: number,
+export function mergeHybridResults(
+  hybridResults: KnowledgeChunk[][],
+  globalRetrievalLimit: number,
 ): KnowledgeChunk[] {
   const dedupedChunks = new Map<string, KnowledgeChunk>();
 
-  for (const chunks of stage1Results) {
+  for (const chunks of hybridResults) {
     for (const chunk of chunks) {
       const current = dedupedChunks.get(chunk.id);
       dedupedChunks.set(
@@ -20,13 +20,13 @@ export function mergeStage1Results(
 
   return Array.from(dedupedChunks.values())
     .sort((left, right) => compareRetrievalChunks(right, left))
-    .slice(0, globalStage1TopK);
+    .slice(0, globalRetrievalLimit);
 }
 
-export function fuseStage1Channels(
+export function fuseHybridAndGraphChannels(
   hybridChunks: KnowledgeChunk[],
   graphChunks: KnowledgeChunk[],
-  globalStage1TopK: number,
+  globalRetrievalLimit: number,
 ): KnowledgeChunk[] {
   const dedupedChunks = new Map<string, KnowledgeChunk>();
   const hybridRanks = new Map<string, number>();
@@ -53,17 +53,17 @@ export function fuseStage1Channels(
   return Array.from(dedupedChunks.values())
     .map((chunk) => ({
       ...chunk,
-      hybrid_score: resolveStage1FusionScore(
+      hybrid_score: resolveHybridFusionScore(
         chunk,
         hybridRanks.get(chunk.id),
         graphRanks.get(chunk.id),
       ),
     }))
     .sort((left, right) => compareRetrievalChunks(right, left))
-    .slice(0, globalStage1TopK);
+    .slice(0, globalRetrievalLimit);
 }
 
-function resolveStage1FusionScore(
+function resolveHybridFusionScore(
   chunk: KnowledgeChunk,
   hybridRank?: number,
   graphRank?: number,
@@ -149,5 +149,5 @@ function mergeGraphEvidence(
 
 function rrf(rank?: number): number {
   if (!rank) return 0;
-  return 1 / (STAGE_FUSION_RRF_K + rank);
+  return 1 / (HYBRID_FUSION_RRF_K + rank);
 }

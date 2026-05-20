@@ -43,15 +43,26 @@ export interface KnowledgeChunk {
 export interface RetrieveKnowledgeOptions {
   threshold?: number;
   rerank?: boolean;
-  stage1TopK?: number;
-  finalTopK?: number;
+  retrievalLimit?: number;
+  rerankLimit?: number;
   strategy?: RetrievalStrategy;
   skipQueryRewrite?: boolean;
   signal?: AbortSignal;
+  /** @deprecated 旧字段兼容 */
+  stage1TopK?: number;
+  /** @deprecated 旧字段兼容 */
+  finalTopK?: number;
 }
 
 export type NormalizedRetrieveKnowledgeOptions = Required<
-  Omit<RetrieveKnowledgeOptions, 'signal' | 'strategy' | 'skipQueryRewrite'>
+  Omit<
+    RetrieveKnowledgeOptions,
+    | 'signal'
+    | 'strategy'
+    | 'skipQueryRewrite'
+    | 'stage1TopK'
+    | 'finalTopK'
+  >
 > & {
   strategy?: RetrievalStrategy;
   skipQueryRewrite: boolean;
@@ -96,15 +107,15 @@ export interface RetrieveKnowledgeDebugResult {
   retrievalQueries: RetrievalQueryItem[];
   rewrite: KnowledgeQueryRewriteResult;
   options: NormalizedRetrieveKnowledgeOptions;
-  stage1Trace: RetrieveKnowledgeTraceItem[];
-  stage1: KnowledgeChunk[];
-  stage2: KnowledgeChunk[];
+  retrievalTrace: RetrieveKnowledgeTraceItem[];
+  hybridChunks: KnowledgeChunk[];
+  rerankedChunks: KnowledgeChunk[];
 }
 
 export interface MountedKnowledgeConfig {
   knowledgeId: string;
   threshold: number;
-  stage1TopK: number;
+  retrievalLimit: number;
   retrievalConfig: Partial<KnowledgeRetrievalConfig>;
   updatedAt: string | null;
 }
@@ -134,7 +145,7 @@ export interface KnowledgeHybridRetrievalParams {
   retrievalQueries: RetrievalQueryItem[];
   strategy: RetrievalStrategy;
   threshold: number;
-  globalStage1TopK: number;
+  globalRetrievalLimit: number;
   signal?: AbortSignal;
 }
 
@@ -155,7 +166,7 @@ export interface PersonaHybridRetrievalInput {
   retrievalQueries: RetrievalQueryItem[];
   channels: PersonaHybridRetrievalChannels;
   threshold?: number;
-  stage1TopK?: number;
+  retrievalLimit?: number;
   signal?: AbortSignal;
 }
 

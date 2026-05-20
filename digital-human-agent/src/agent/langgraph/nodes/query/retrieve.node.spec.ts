@@ -1,4 +1,4 @@
-import { createRetrieveNode } from '@/agent/langgraph/nodes/retrieve.node';
+import { createRetrieveNode } from '@/agent/langgraph/nodes/query/retrieve.node';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createRetrieveNode', () => {
@@ -96,7 +96,7 @@ describe('createRetrieveNode', () => {
       }),
     };
     const personaStage1RetrievalService = {
-      retrieve: jest.fn(),
+      retrieveForPersona: jest.fn(),
     };
     const node = createRetrieveNode(
       queryAugmentationService as never,
@@ -118,7 +118,7 @@ describe('createRetrieveNode', () => {
       routeStrategy: 'simple',
       signal: expect.any(AbortSignal),
     });
-    expect(personaStage1RetrievalService.retrieve).not.toHaveBeenCalled();
+    expect(personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
     expect(update).toMatchObject({
       currentQuery: '你好',
       currentHop: 1,
@@ -187,7 +187,7 @@ describe('createRetrieveNode', () => {
       }),
     };
     const personaStage1RetrievalService = {
-      retrieve: jest.fn().mockResolvedValue({
+      retrieveForPersona: jest.fn().mockResolvedValue({
         knowledgeCount: 1,
         chunks: [chunk],
         trace: [
@@ -235,7 +235,7 @@ describe('createRetrieveNode', () => {
       } as never,
     );
 
-    expect(personaStage1RetrievalService.retrieve).toHaveBeenCalledWith({
+    expect(personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith({
       personaId: 'persona-1',
       retrievalQueries: [
         {

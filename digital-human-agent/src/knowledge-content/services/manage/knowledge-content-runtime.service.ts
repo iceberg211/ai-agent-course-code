@@ -51,18 +51,21 @@ export class KnowledgeContentRuntimeService {
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,
   ): NormalizedRetrieveKnowledgeOptions {
-    const finalTopK = this.toBoundedNumber(
-      options.finalTopK,
-      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+    const rawRerankLimit = options.rerankLimit ?? options.finalTopK;
+    const rerankLimit = this.toBoundedNumber(
+      rawRerankLimit,
+      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
       1,
       20,
     );
     const rerank = options.rerank !== false;
-    const stage1Default = rerank ? Math.max(20, finalTopK) : finalTopK;
-    const stage1TopK = this.toBoundedNumber(
-      options.stage1TopK,
-      stage1Default,
-      finalTopK,
+    const retrievalDefault = rerank ? Math.max(20, rerankLimit) : rerankLimit;
+
+    const rawRetrievalLimit = options.retrievalLimit ?? options.stage1TopK;
+    const retrievalLimit = this.toBoundedNumber(
+      rawRetrievalLimit,
+      retrievalDefault,
+      rerankLimit,
       50,
     );
     const threshold = this.toBoundedNumber(
@@ -74,8 +77,8 @@ export class KnowledgeContentRuntimeService {
     return {
       threshold,
       rerank,
-      stage1TopK,
-      finalTopK,
+      retrievalLimit,
+      rerankLimit,
       skipQueryRewrite: options.skipQueryRewrite === true,
     };
   }

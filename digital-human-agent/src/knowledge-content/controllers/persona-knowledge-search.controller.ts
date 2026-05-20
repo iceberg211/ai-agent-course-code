@@ -25,8 +25,8 @@ export class PersonaKnowledgeSearchController {
       {
         rerank: body.rerank,
         threshold: body.threshold,
-        stage1TopK: body.stage1TopK,
-        finalTopK: body.finalTopK,
+        retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
+        rerankLimit: body.rerankLimit ?? body.finalTopK,
       },
     );
     return { query: normalizedQuery, results };

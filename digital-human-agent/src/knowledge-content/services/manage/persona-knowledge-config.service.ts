@@ -67,7 +67,12 @@ export class PersonaKnowledgeConfigService {
       return {
         knowledgeId: knowledge.id as string,
         threshold: this.runtime.toBoundedNumber(config.threshold, 0.6, 0, 1),
-        stage1TopK: this.runtime.toBoundedNumber(config.stage1TopK, 20, 1, 50),
+        retrievalLimit: this.runtime.toBoundedNumber(
+          config.retrievalLimit ?? config.stage1TopK,
+          20,
+          1,
+          50,
+        ),
         retrievalConfig: config,
         updatedAt:
           typeof knowledge.updated_at === 'string'

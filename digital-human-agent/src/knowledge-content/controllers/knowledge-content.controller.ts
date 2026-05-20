@@ -112,7 +112,7 @@ export class KnowledgeContentController {
   }
 
   @Post(':kbId/search')
-  @ApiOperation({ summary: '命中测试（stage1 + stage2，单 KB）' })
+  @ApiOperation({ summary: '命中测试（混合检索召回 + 重排，单 KB）' })
   search(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Body() body: KnowledgeSearchDto,
@@ -120,8 +120,8 @@ export class KnowledgeContentController {
     return this.knowledgeContentService.retrieveWithStages(kbId, body.query, {
       rerank: body.rerank,
       threshold: body.threshold,
-      stage1TopK: body.stage1TopK,
-      finalTopK: body.finalTopK,
+      retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
+      rerankLimit: body.rerankLimit ?? body.finalTopK,
     });
   }
 

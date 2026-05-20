@@ -8,9 +8,13 @@ import {
 
 export interface KnowledgeRetrievalConfig {
   threshold: number;
-  stage1TopK: number;
-  finalTopK: number;
+  retrievalLimit: number;
+  rerankLimit: number;
   rerank: boolean;
+  /** @deprecated 旧版字段兼容 */
+  stage1TopK?: number;
+  /** @deprecated 旧版字段兼容 */
+  finalTopK?: number;
 }
 
 @Entity('knowledge_base')

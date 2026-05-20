@@ -24,7 +24,7 @@ export class KnowledgeSearchDto {
   query: string;
 
   @ApiPropertyOptional({
-    description: '是否启用第二阶段 Rerank',
+    description: '是否启用 Rerank 重排',
     default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerank,
   })
   @IsOptional()
@@ -33,8 +33,8 @@ export class KnowledgeSearchDto {
   rerank?: boolean;
 
   @ApiPropertyOptional({
-    description: '第一阶段向量召回条数',
-    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.stage1TopK,
+    description: '混合检索召回条数限制',
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.retrievalLimit,
     minimum: 1,
     maximum: 50,
   })
@@ -43,11 +43,11 @@ export class KnowledgeSearchDto {
   @IsInt()
   @Min(1)
   @Max(50)
-  stage1TopK?: number;
+  retrievalLimit?: number;
 
   @ApiPropertyOptional({
-    description: '最终返回条数',
-    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+    description: '重排后最终返回条数限制',
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
     minimum: 1,
     maximum: 20,
   })
@@ -56,6 +56,16 @@ export class KnowledgeSearchDto {
   @IsInt()
   @Min(1)
   @Max(20)
+  rerankLimit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  stage1TopK?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   finalTopK?: number;
 
   @ApiPropertyOptional({

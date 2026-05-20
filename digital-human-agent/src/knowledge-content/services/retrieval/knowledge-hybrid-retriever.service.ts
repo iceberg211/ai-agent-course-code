@@ -10,8 +10,8 @@ import { KnowledgeGraphService } from '@/knowledge-content/graph/knowledge-graph
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
 import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
 import {
-  fuseStage1Channels,
-  mergeStage1Results,
+  fuseHybridAndGraphChannels,
+  mergeHybridResults,
 } from '@/knowledge-content/services/retrieval/knowledge-retrieval-fusion';
 import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/manage/persona-knowledge-config.service';
 import type {
@@ -93,7 +93,7 @@ export class KnowledgeHybridRetrieverService {
     const perQueryTopK = Math.max(
       4,
       Math.ceil(
-        params.globalStage1TopK / Math.max(params.retrievalQueries.length, 1),
+        params.globalRetrievalLimit / Math.max(params.retrievalQueries.length, 1),
       ),
     );
     const results: KnowledgeChunk[][] = [];
@@ -112,7 +112,7 @@ export class KnowledgeHybridRetrieverService {
           )
         : undefined;
 
-      const stage1Result = await this.retrieveStage1({
+      const hybridResult = await this.retrieveHybridChannels({
         knowledgeId: params.knowledgeId,
         queryEmbedding,
         retrievalQuery: retrievalQuery.query,
@@ -124,11 +124,11 @@ export class KnowledgeHybridRetrieverService {
       });
 
       const keywordBackend: KeywordBackend | undefined =
-        stage1Result.keywordBackend === 'disabled'
+        hybridResult.keywordBackend === 'disabled'
           ? undefined
-          : stage1Result.keywordBackend;
+          : hybridResult.keywordBackend;
 
-      const chunks = stage1Result.chunks.map((chunk) => ({
+      const chunks = hybridResult.chunks.map((chunk) => ({
         ...chunk,
         matched_queries: Array.from(
           new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
@@ -146,20 +146,20 @@ export class KnowledgeHybridRetrieverService {
         angle: retrievalQuery.angle,
         vectorBackend: params.strategy.useVector ? 'pgvector' : 'disabled',
         keywordBackend: params.strategy.useKeyword
-          ? stage1Result.keywordBackend
+          ? hybridResult.keywordBackend
           : 'disabled',
-        vectorResultCount: stage1Result.vectorResultCount,
-        keywordResultCount: stage1Result.keywordResultCount,
-        graphBackend: stage1Result.graphBackend,
-        graphResultCount: stage1Result.graphResultCount,
+        vectorResultCount: hybridResult.vectorResultCount,
+        keywordResultCount: hybridResult.keywordResultCount,
+        graphBackend: hybridResult.graphBackend,
+        graphResultCount: hybridResult.graphResultCount,
         mergedResultCount: chunks.length,
-        fallbackToPg: stage1Result.fallbackToPg,
-        skippedChannels: stage1Result.skippedChannels,
+        fallbackToPg: hybridResult.fallbackToPg,
+        skippedChannels: hybridResult.skippedChannels,
       });
     }
 
     return {
-      chunks: mergeStage1Results(results, params.globalStage1TopK),
+      chunks: mergeHybridResults(results, params.globalRetrievalLimit),
       trace,
     };
   }
@@ -194,7 +194,7 @@ export class KnowledgeHybridRetrieverService {
     }
 
     const strategy = this.buildPersonaStrategy(input);
-    const stage1Results = await mapWithConcurrency(
+    const hybridResults = await mapWithConcurrency(
       knowledgeConfigs,
       this.resolvePersonaConcurrency(),
       async (config) => {
@@ -205,7 +205,7 @@ export class KnowledgeHybridRetrieverService {
             retrievalQueries: input.retrievalQueries,
             strategy,
             threshold: this.resolveThreshold(input.threshold, config),
-            globalStage1TopK: this.resolveStage1TopK(input.stage1TopK, config),
+            globalRetrievalLimit: this.resolveRetrievalLimit(input.retrievalLimit, config),
             signal: input.signal,
           });
         } catch (error) {
@@ -217,7 +217,7 @@ export class KnowledgeHybridRetrieverService {
           }
 
           this.logger.warn(
-            `persona stage1 失败（knowledge=${config.knowledgeId}）：${
+            `persona 检索失败（knowledge=${config.knowledgeId}）：${
               error instanceof Error ? error.message : String(error)
             }`,
           );
@@ -231,20 +231,20 @@ export class KnowledgeHybridRetrieverService {
 
     return {
       knowledgeCount: knowledgeConfigs.length,
-      chunks: mergeStage1Results(
-        stage1Results.map((result) => result.chunks),
-        input.stage1TopK === undefined
-          ? Math.max(20, ...knowledgeConfigs.map((config) => config.stage1TopK))
-          : this.runtime.toBoundedNumber(input.stage1TopK, 20, 1, 50),
+      chunks: mergeHybridResults(
+        hybridResults.map((result) => result.chunks),
+        input.retrievalLimit === undefined
+          ? Math.max(20, ...knowledgeConfigs.map((config) => config.retrievalLimit))
+          : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
       ),
-      trace: stage1Results.flatMap((result) => result.trace),
+      trace: hybridResults.flatMap((result) => result.trace),
     };
   }
 
   // ==========================================
   // 混合召回与图谱融合核心
   // ==========================================
-  private async retrieveStage1(params: {
+  private async retrieveHybridChannels(params: {
     knowledgeId: string;
     queryEmbedding: number[] | undefined;
     retrievalQuery: string;
@@ -294,7 +294,7 @@ export class KnowledgeHybridRetrieverService {
 
     return {
       ...hybridResult,
-      chunks: fuseStage1Channels(
+      chunks: fuseHybridAndGraphChannels(
         hybridResult.chunks,
         graphChunks,
         params.matchCount,
@@ -635,7 +635,7 @@ export class KnowledgeHybridRetrieverService {
       allowWeb: false,
       queryCount: input.retrievalQueries.length,
       chunkContextWindow: 0,
-      reason: 'persona stage1 检索',
+      reason: 'persona 检索',
     };
   }
 
@@ -659,13 +659,13 @@ export class KnowledgeHybridRetrieverService {
       : this.runtime.toBoundedNumber(threshold, config.threshold, 0, 1);
   }
 
-  private resolveStage1TopK(
-    stage1TopK: number | undefined,
+  private resolveRetrievalLimit(
+    retrievalLimit: number | undefined,
     config: MountedKnowledgeConfig,
   ): number {
-    return stage1TopK === undefined
-      ? config.stage1TopK
-      : this.runtime.toBoundedNumber(stage1TopK, config.stage1TopK, 1, 50);
+    return retrievalLimit === undefined
+      ? config.retrievalLimit
+      : this.runtime.toBoundedNumber(retrievalLimit, config.retrievalLimit, 1, 50);
   }
 
   private resolvePersonaConcurrency(): number {

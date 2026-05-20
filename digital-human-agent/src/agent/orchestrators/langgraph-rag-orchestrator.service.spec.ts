@@ -116,7 +116,7 @@ describe('LangGraphRagOrchestratorService', () => {
     let retrieveFailuresBeforeSuccess =
       options?.retrieveFailuresBeforeSuccess ?? 0;
     const personaStage1RetrievalService = {
-      retrieve: jest.fn().mockImplementation(async ({ retrievalQueries }) => {
+      retrieveForPersona: jest.fn().mockImplementation(async ({ retrievalQueries }) => {
         if (retrieveFailuresBeforeSuccess > 0) {
           retrieveFailuresBeforeSuccess -= 1;
           throw new Error('temporary retrieve failure');
@@ -280,7 +280,7 @@ describe('LangGraphRagOrchestratorService', () => {
       routeStrategy: 'simple',
       signal: expect.any(AbortSignal),
     });
-    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledWith(
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith(
       expect.objectContaining({
         personaId: 'persona-1',
         retrievalQueries: [
@@ -340,7 +340,7 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(deps.personaStage1RetrievalService.retrieve).not.toHaveBeenCalled();
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
     expect(deps.rerankerService.rerank).not.toHaveBeenCalled();
     expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
@@ -391,8 +391,8 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).toHaveBeenCalled();
-    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledTimes(2);
-    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenNthCalledWith(
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledTimes(2);
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         retrievalQueries: [
@@ -402,7 +402,7 @@ describe('LangGraphRagOrchestratorService', () => {
         ],
       }),
     );
-    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenNthCalledWith(
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         retrievalQueries: [
@@ -550,7 +550,7 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(deps.personaStage1RetrievalService.retrieve).toHaveBeenCalledTimes(2);
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledTimes(2);
     expect(result.answerText).toBe('答案');
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
@@ -649,7 +649,7 @@ describe('LangGraphRagOrchestratorService', () => {
     ).rejects.toMatchObject(createAbortError());
 
     expect(deps.ragRouteService.routeQuestion).not.toHaveBeenCalled();
-    expect(deps.personaStage1RetrievalService.retrieve).not.toHaveBeenCalled();
+    expect(deps.personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).not.toHaveBeenCalled();
   });
 });

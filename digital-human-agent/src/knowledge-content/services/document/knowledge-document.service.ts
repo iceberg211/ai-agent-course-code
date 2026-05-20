@@ -435,8 +435,25 @@ export class KnowledgeDocumentService {
   }
 
   private async cleanupDocument(documentId: string, reason: string): Promise<void> {
-    await this.elasticsearchService.safeDeleteByDocumentId(documentId, reason);
-    await this.graphService.safeDeleteByDocumentId(documentId, reason);
+    try {
+      await this.elasticsearchService.safeDeleteByDocumentId(documentId, reason);
+    } catch (error) {
+      this.logger.warn(
+        `清理 ES 索引失败（doc=${documentId}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    try {
+      await this.graphService.safeDeleteByDocumentId(documentId, reason);
+    } catch (error) {
+      this.logger.warn(
+        `清理图谱节点失败（doc=${documentId}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async cleanupFailedIngest(documentId: string): Promise<void> {
@@ -450,9 +467,17 @@ export class KnowledgeDocumentService {
       );
     }
 
-    await this.cleanupDocument(
-      documentId,
-      `导入失败清理文档 ${documentId}`,
-    );
+    try {
+      await this.cleanupDocument(
+        documentId,
+        `导入失败清理文档 ${documentId}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `导入失败清理文档索引与图谱失败（doc=${documentId}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

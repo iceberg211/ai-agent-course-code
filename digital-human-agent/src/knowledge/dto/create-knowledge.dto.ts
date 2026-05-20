@@ -30,7 +30,7 @@ export class RetrievalConfigDto {
   threshold?: number;
 
   @ApiPropertyOptional({
-    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.stage1TopK,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.retrievalLimit,
     minimum: 1,
     maximum: 50,
   })
@@ -39,10 +39,10 @@ export class RetrievalConfigDto {
   @IsInt()
   @Min(1)
   @Max(50)
-  stage1TopK?: number;
+  retrievalLimit?: number;
 
   @ApiPropertyOptional({
-    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+    default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
     minimum: 1,
     maximum: 20,
   })
@@ -51,6 +51,16 @@ export class RetrievalConfigDto {
   @IsInt()
   @Min(1)
   @Max(20)
+  rerankLimit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  stage1TopK?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   finalTopK?: number;
 
   @ApiPropertyOptional({ default: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerank })

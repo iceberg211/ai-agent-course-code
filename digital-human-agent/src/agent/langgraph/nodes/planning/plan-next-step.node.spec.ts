@@ -1,4 +1,4 @@
-import { createPlanNextStepNode } from '@/agent/langgraph/nodes/plan-next-step.node';
+import { createPlanNextStepNode } from '@/agent/langgraph/nodes/planning/plan-next-step.node';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createPlanNextStepNode', () => {

@@ -7,7 +7,7 @@ import type {
 } from '@/knowledge-content/types/knowledge-content.types';
 
 describe('KnowledgeSearchService', () => {
-  const stage1Chunk: KnowledgeChunk = {
+  const hybridChunk: KnowledgeChunk = {
     id: 'chunk-1',
     content: '雁门关事件相关片段',
     source: 'test.md',
@@ -15,7 +15,7 @@ describe('KnowledgeSearchService', () => {
     category: null,
     similarity: 0.92,
   };
-  const stage1Chunk2: KnowledgeChunk = {
+  const hybridChunk2: KnowledgeChunk = {
     id: 'chunk-2',
     content: '萧峰结局相关片段',
     source: 'test.md',
@@ -31,7 +31,9 @@ describe('KnowledgeSearchService', () => {
           options: Pick<
             RetrieveKnowledgeOptions,
             | 'rerank'
+            | 'retrievalLimit'
             | 'stage1TopK'
+            | 'rerankLimit'
             | 'finalTopK'
             | 'threshold'
             | 'skipQueryRewrite'
@@ -39,8 +41,8 @@ describe('KnowledgeSearchService', () => {
         ) => ({
           threshold: options.threshold ?? 0.6,
           rerank: options.rerank !== false,
-          stage1TopK: options.stage1TopK ?? 10,
-          finalTopK: options.finalTopK ?? 5,
+          retrievalLimit: options.retrievalLimit ?? options.stage1TopK ?? 10,
+          rerankLimit: options.rerankLimit ?? options.finalTopK ?? 5,
           skipQueryRewrite: options.skipQueryRewrite === true,
         }),
       ),
@@ -65,7 +67,7 @@ describe('KnowledgeSearchService', () => {
           Promise<KnowledgeChunk[]>,
           [string, KnowledgeChunk[], number, AbortSignal?]
         >()
-        .mockResolvedValue([stage1Chunk, stage1Chunk2]),
+        .mockResolvedValue([hybridChunk, hybridChunk2]),
     };
 
     const queryRewriteService = {
@@ -92,7 +94,7 @@ describe('KnowledgeSearchService', () => {
 
     const hybridRetrieverService = {
       retrieveForKnowledge: jest.fn().mockResolvedValue({
-        chunks: [stage1Chunk, stage1Chunk2],
+        chunks: [hybridChunk, hybridChunk2],
         trace: [
           {
             knowledgeId: 'kb-1',
@@ -113,7 +115,7 @@ describe('KnowledgeSearchService', () => {
       }),
       retrieveForPersona: jest.fn().mockResolvedValue({
         knowledgeCount: 1,
-        chunks: [stage1Chunk, stage1Chunk2],
+        chunks: [hybridChunk, hybridChunk2],
         trace: [
           {
             knowledgeId: 'kb-1',
@@ -139,7 +141,6 @@ describe('KnowledgeSearchService', () => {
       hybridRetrieverService as never,
       rerankerService as never,
       queryRewriteService as never,
-      chunkContextExpansionService as never,
     );
 
     return {
@@ -148,7 +149,6 @@ describe('KnowledgeSearchService', () => {
       hybridRetrieverService,
       rerankerService,
       queryRewriteService,
-      chunkContextExpansionService,
     };
   }
 
@@ -207,7 +207,7 @@ describe('KnowledgeSearchService', () => {
     expect(result.rewrite.changed).toBe(true);
   });
 
-  it('图谱检索开启且 graph-only 时，会把图谱结果纳入 stage1', async () => {
+  it('图谱检索开启且 graph-only 时，会把图谱结果纳入混合检索结果', async () => {
     const graphChunk: KnowledgeChunk = {
       id: 'chunk-graph',
       content: '甲方应保留审计记录。',
@@ -271,10 +271,10 @@ describe('KnowledgeSearchService', () => {
         }),
       );
       expect(rerankerService.rerank).not.toHaveBeenCalled();
-      expect(result.stage1).toEqual([
+      expect(result.hybridChunks).toEqual([
         expect.objectContaining({ id: 'chunk-graph' }),
       ]);
-      expect(result.stage1Trace[0]).toMatchObject({
+      expect(result.retrievalTrace[0]).toMatchObject({
         knowledgeId: 'kb-1',
         graphResultCount: 1,
         graphBackend: 'neo4j',
@@ -321,10 +321,10 @@ describe('KnowledgeSearchService', () => {
     hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
       chunks: [
         {
-          ...stage1Chunk,
+          ...hybridChunk,
           matched_queries: [0, 1],
         },
-        stage1Chunk2,
+        hybridChunk2,
       ],
       trace: [
         {
@@ -389,18 +389,18 @@ describe('KnowledgeSearchService', () => {
       5,
       undefined,
     );
-    expect(result.stage1.map((item) => item.id)).toEqual([
+    expect(result.hybridChunks.map((item) => item.id)).toEqual([
       'chunk-1',
       'chunk-2',
     ]);
-    expect(result.stage1Trace).toHaveLength(2);
+    expect(result.retrievalTrace).toHaveLength(2);
   });
 
   it('skipQueryRewrite=true 且 useVector=false 时只走原始问题关键词召回，不调用 LLM rewrite 或 embedding', async () => {
     const { service, hybridRetrieverService, queryRewriteService } =
       createService();
     hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
-      chunks: [stage1Chunk],
+      chunks: [hybridChunk],
       trace: [
         {
           knowledgeId: 'kb-1',
@@ -454,13 +454,13 @@ describe('KnowledgeSearchService', () => {
     );
     expect(result.rewrite.reason).toBe('显式跳过 Query Rewrite');
     expect(result.options.skipQueryRewrite).toBe(true);
-    expect(result.stage1Trace[0]).toMatchObject({
+    expect(result.retrievalTrace[0]).toMatchObject({
       vectorBackend: 'disabled',
       vectorResultCount: 0,
     });
   });
 
-  it('persona 检索会调用新的 persona stage1 facade，再做全局 rerank', async () => {
+  it('persona 检索会调用新的 persona 混合检索，再做全局重排', async () => {
     const {
       service,
       rerankerService,
@@ -493,7 +493,7 @@ describe('KnowledgeSearchService', () => {
           angle: 'original',
         },
       ],
-      stage1TopK: 10,
+      retrievalLimit: 10,
       threshold: 0.6,
       channels: {
         useVector: true,
@@ -505,11 +505,11 @@ describe('KnowledgeSearchService', () => {
     });
     expect(rerankerService.rerank).toHaveBeenCalledWith(
       '原始问题',
-      [stage1Chunk, stage1Chunk2],
+      [hybridChunk, hybridChunk2],
       5,
       undefined,
     );
-    expect(result.stage1Trace).toEqual([
+    expect(result.retrievalTrace).toEqual([
       expect.objectContaining({
         knowledgeId: 'kb-1',
       }),
@@ -532,12 +532,12 @@ describe('KnowledgeSearchService', () => {
       },
     );
 
-    expect(result.stage1).toEqual([]);
-    expect(result.stage2).toEqual([]);
+    expect(result.hybridChunks).toEqual([]);
+    expect(result.rerankedChunks).toEqual([]);
     expect(result.rewrite.reason).toBe('persona persona-1 未挂载知识库');
   });
 
-  it('persona 全局 rerank 失败时会回退 stage1 结果继续返回', async () => {
+  it('persona 全局 rerank 失败时会回退混合检索结果继续返回', async () => {
     const { service, rerankerService } = createService();
     rerankerService.rerank.mockRejectedValue(new Error('rerank failed'));
 
@@ -549,10 +549,10 @@ describe('KnowledgeSearchService', () => {
       },
     );
 
-    expect(result.stage2).toEqual([stage1Chunk, stage1Chunk2]);
+    expect(result.rerankedChunks).toEqual([hybridChunk, hybridChunk2]);
   });
 
-  it('persona stage1 遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
+  it('persona 混合检索遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
     const { service, hybridRetrieverService } = createService();
     hybridRetrieverService.retrieveForPersona.mockRejectedValue(
       new Error('fetch failed'),

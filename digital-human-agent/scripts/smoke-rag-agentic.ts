@@ -73,8 +73,8 @@ async function main(): Promise<void> {
       {
         rerank: false,
         skipQueryRewrite: true,
-        stage1TopK: 12,
-        finalTopK: 6,
+        retrievalLimit: 12,
+        rerankLimit: 6,
         strategy: {
           needRetrieval: true,
           useVector: true,
@@ -90,8 +90,8 @@ async function main(): Promise<void> {
       },
     );
 
-    const summary = summarize(result.stage1Trace);
-    const graphEvidenceCount = result.stage2.reduce(
+    const summary = summarize(result.retrievalTrace);
+    const graphEvidenceCount = result.rerankedChunks.reduce(
       (count, chunk) => count + (chunk.graph_evidence?.length ?? 0),
       0,
     );
@@ -111,10 +111,10 @@ async function main(): Promise<void> {
           vectorResultCount: summary.vectorResultCount,
           keywordResultCount: summary.keywordResultCount,
           graphResultCount: summary.graphResultCount,
-          stage1Count: result.stage1.length,
-          stage2Count: result.stage2.length,
+          hybridCount: result.hybridChunks.length,
+          rerankedCount: result.rerankedChunks.length,
           graphEvidenceCount,
-          trace: result.stage1Trace,
+          trace: result.retrievalTrace,
         },
         null,
         2,
