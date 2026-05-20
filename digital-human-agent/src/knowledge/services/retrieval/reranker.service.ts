@@ -34,6 +34,9 @@ export class RerankerService {
   private readonly model: string;
   private readonly llm: ChatOpenAI;
 
+  private static readonly MIN_RELEVANCE_SCORE = 3.0;
+  private static readonly MAX_RERANK_CANDIDATES = 12;
+
   constructor(@Optional() llmFactory?: LlmFactoryService) {
     const factory = llmFactory ?? createDefaultLlmFactoryService();
     this.model = factory.resolveModel({
@@ -58,12 +61,20 @@ export class RerankerService {
       return [];
     }
 
-    const safeTopK = Math.min(Math.max(topK, 1), candidates.length);
+    // 1. Rerank 前粗筛截断 (Pre-rerank Pruning)
+    let rerankCandidates = candidates;
+    if (candidates.length > RerankerService.MAX_RERANK_CANDIDATES) {
+      rerankCandidates = [...candidates]
+        .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
+        .slice(0, RerankerService.MAX_RERANK_CANDIDATES);
+    }
+
+    const safeTopK = Math.min(Math.max(topK, 1), rerankCandidates.length);
     try {
       const rewriter = this.llm.withStructuredOutput(RerankResultSchema);
       const result = await rewriter.invoke(
         await KNOWLEDGE_RERANK_PROMPT.formatMessages(
-          buildKnowledgeRerankPromptInput(query, candidates),
+          buildKnowledgeRerankPromptInput(query, rerankCandidates),
         ),
         {
           ...buildLangSmithRunnableConfig({
@@ -71,7 +82,7 @@ export class RerankerService {
             tags: ['knowledge', 'rag', 'rerank', 'llm'],
             metadata: {
               query,
-              candidateCount: candidates.length,
+              candidateCount: rerankCandidates.length,
               topK: safeTopK,
             },
           }),
@@ -82,7 +93,7 @@ export class RerankerService {
       throwIfAborted(signal);
 
       const parsed = result?.scores ?? [];
-      return this.applyScores(candidates, parsed, safeTopK);
+      return this.applyScores(rerankCandidates, parsed, safeTopK);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -115,10 +126,19 @@ export class RerankerService {
       }
     }
 
-    const reranked = candidates.map((chunk, index) => ({
-      ...chunk,
-      rerank_score: scoreMap.get(index) ?? 0,
-    }));
+    const maxScore = parsed.length > 0 ? Math.max(...parsed.map(p => p.score)) : 0;
+    const isDecimalScale = maxScore <= 1.0;
+    const threshold = isDecimalScale
+      ? RerankerService.MIN_RELEVANCE_SCORE * 0.1
+      : RerankerService.MIN_RELEVANCE_SCORE;
+
+    const reranked = candidates
+      .map((chunk, index) => ({
+        ...chunk,
+        rerank_score: scoreMap.get(index) ?? 0,
+      }))
+      // 2. Rerank 后分数阈值精滤 (Post-rerank Filtering)
+      .filter((chunk) => (chunk.rerank_score ?? 0) >= threshold);
 
     reranked.sort((a, b) => {
       const scoreDiff = (b.rerank_score ?? 0) - (a.rerank_score ?? 0);

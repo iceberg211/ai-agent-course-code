@@ -10,7 +10,7 @@ import type {
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
 
-export type RagStrategy = 'simple' | 'complex';
+export type RagStrategy = 'simple' | 'complex' | 'none';
 export type RagOrchestratorName = 'langgraph';
 export type RetrievalChannel = 'vector' | 'keyword' | 'graph' | 'web';
 

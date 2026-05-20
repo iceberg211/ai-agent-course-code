@@ -24,7 +24,6 @@ import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { VectorRetrieverService } from '@/knowledge/services/retrieval/vector-retriever.service';
 import { FulltextRetrieverService } from '@/knowledge/services/retrieval/fulltext-retriever.service';
 
 @Module({
@@ -51,7 +50,6 @@ import { FulltextRetrieverService } from '@/knowledge/services/retrieval/fulltex
     HybridRetrieverService,
     QueryRewriteService,
     RerankerService,
-    VectorRetrieverService,
     FulltextRetrieverService,
   ],
   controllers: [

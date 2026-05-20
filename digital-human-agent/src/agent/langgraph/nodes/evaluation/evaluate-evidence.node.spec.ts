@@ -75,6 +75,7 @@ describe('createEvaluateEvidenceNode', () => {
     webSearchQueries: [],
     stopReason: '',
     orchestrator: 'langgraph',
+    rerankLimit: 5,
     answerText: '',
     persona: null,
     history: [],

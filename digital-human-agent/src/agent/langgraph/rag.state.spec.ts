@@ -69,6 +69,7 @@ describe('toRagWorkflowState', () => {
       webSearchQueries: ['乔峰资料'],
       stopReason: 'web_fallback_enough',
       orchestrator: 'langgraph',
+      rerankLimit: 5,
       answerText: '答案',
       persona: null,
       history: [],

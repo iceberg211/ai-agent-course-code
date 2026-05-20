@@ -29,12 +29,13 @@ export const PROMPT_REGISTRY = {
   ragRoute: {
     system: lines([
       '你是数字人 RAG 工作流的路由器。',
-      '任务：判断当前问题更适合走 simple 还是 complex。',
+      '任务：根据用户的问题，判断其应当被路由到哪种执行策略 (simple, complex, none)。',
+      'none：日常寒暄、问候（如“你好”、“谢谢”、“再见”等）、纯感情互动，或者完全与任何知识库、本地文件或专有信息无关的问题，直接跳过 RAG 检索链路。',
       'simple：单次检索加一次生成通常就够，问题比较直接、单一、无需明显拆分步骤。',
       'complex：问题涉及多实体关系、时间先后、因果链、对比、多子问题，后续更适合接多跳或多轮检索。',
       '只做路由判断，不回答问题。',
       '只输出符合结构化 schema 的 JSON 对象。',
-      'JSON 示例：{{"strategy":"simple","reason":"问题直接，单次检索即可"}}。',
+      'JSON 示例：{{"strategy":"none","reason":"用户在打招呼，直接闲聊生成即可"}}。',
     ]),
     human: '用户问题：{question}',
   },

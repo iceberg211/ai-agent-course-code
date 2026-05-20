@@ -2,7 +2,7 @@ import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-re
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { RetrievalStrategy } from '@/common/rag';
 
-const sampleChunk = {
+const sampleChunk: KnowledgeChunk = {
   id: 'chunk-keyword',
   content: '合同中关于删除时限的条款',
   source: 'contract.md',
@@ -10,7 +10,7 @@ const sampleChunk = {
   category: 'legal',
   similarity: 0,
   keyword_score: 12,
-  retrieval_sources: ['keyword'] as const,
+  retrieval_sources: ['keyword'],
 };
 
 describe('HybridRetrieverService', () => {
@@ -29,9 +29,9 @@ describe('HybridRetrieverService', () => {
     backend?: string;
     elasticsearchEnabled?: boolean;
     elasticResult?: unknown;
-    pgResult?: unknown[];
+    pgResult?: KnowledgeChunk[];
     elasticError?: Error;
-    vectorResult?: unknown[];
+    vectorResult?: KnowledgeChunk[];
   }) {
     const configService = {
       get: jest.fn((key: string) => {
@@ -49,23 +49,26 @@ describe('HybridRetrieverService', () => {
       embeddings: {
         embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
       },
-    };
-
-    const vectorRetriever = {
-      retrieve: jest.fn().mockImplementation((params) => {
-        return Promise.resolve((options?.vectorResult ?? []).map((chunk: any) => ({
-          ...chunk,
-          retrieval_sources: ['vector'],
-        })));
-      })
+      supabase: {
+        rpc: jest.fn().mockReturnValue({
+          abortSignal: jest.fn().mockResolvedValue({
+            data: (options?.vectorResult ?? []).map((chunk) => ({
+              ...chunk,
+              retrieval_sources: ['vector'],
+            })),
+            error: null,
+          }),
+        }),
+      },
+      toBoundedNumber: jest.fn((value: any, defaultValue: number) => defaultValue),
     };
 
     const fulltextRetriever = {
-      retrieve: jest.fn().mockImplementation((params) => {
+      retrieve: jest.fn().mockImplementation(() => {
         if (options?.backend === 'elastic' && (options?.elasticsearchEnabled ?? false)) {
           if (options?.elasticError) {
             return Promise.resolve({
-              chunks: (options?.pgResult ?? [sampleChunk]) as KnowledgeChunk[],
+              chunks: options?.pgResult ?? [sampleChunk],
               backend: 'pg' as const,
               fallbackToPg: true,
             });
@@ -77,11 +80,12 @@ describe('HybridRetrieverService', () => {
           });
         }
         return Promise.resolve({
-          chunks: (options?.pgResult ?? [sampleChunk]) as KnowledgeChunk[],
+          chunks: options?.pgResult ?? [sampleChunk],
           backend: 'pg' as const,
-          fallbackToPg: options?.backend === 'elastic' && !(options?.elasticsearchEnabled ?? false),
+          fallbackToPg:
+            options?.backend === 'elastic' && !(options?.elasticsearchEnabled ?? false),
         });
-      })
+      }),
     };
 
     const graphRetriever = {
@@ -92,7 +96,6 @@ describe('HybridRetrieverService', () => {
     const service = new HybridRetrieverService(
       runtime as never,
       configService as never,
-      vectorRetriever as never,
       fulltextRetriever as never,
       graphRetriever as never,
     );
@@ -100,7 +103,7 @@ describe('HybridRetrieverService', () => {
     return {
       service,
       configService,
-      vectorRetriever,
+      runtime,
       fulltextRetriever,
       graphRetriever,
     };
@@ -116,7 +119,7 @@ describe('HybridRetrieverService', () => {
       similarity: 0.91,
       retrieval_sources: ['vector'],
     };
-    const keywordChunk = {
+    const keywordChunk: KnowledgeChunk = {
       id: 'chunk-hybrid',
       content: '向量关键词命中的条款。',
       source: 'contract.md',
@@ -137,31 +140,9 @@ describe('HybridRetrieverService', () => {
       retrieval_sources: ['graph'],
     };
 
-    const { service, graphRetriever } = createService({
-      vectorResult: [
-        {
-          id: vectorChunk.id,
-          document_id: 'doc-1',
-          knowledge_base_id: 'kb-1',
-          content: vectorChunk.content,
-          source: vectorChunk.source,
-          chunk_index: vectorChunk.chunk_index,
-          category: vectorChunk.category,
-          similarity: vectorChunk.similarity,
-        },
-      ],
-      pgResult: [
-        {
-          id: keywordChunk.id,
-          content: keywordChunk.content,
-          source: keywordChunk.source,
-          chunk_index: keywordChunk.chunk_index,
-          category: keywordChunk.category,
-          similarity: 0,
-          knowledge_base_id: 'kb-1',
-          keyword_score: keywordChunk.keyword_score,
-        },
-      ],
+    const { service, graphRetriever, runtime } = createService({
+      vectorResult: [vectorChunk],
+      pgResult: [keywordChunk],
     });
 
     graphRetriever.isEnabled.mockReturnValue(true);

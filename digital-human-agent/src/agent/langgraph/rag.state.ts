@@ -25,7 +25,7 @@ export const RagGraphStateAnnotation = Annotation.Root({
   personaId: Annotation<string>(),
   question: Annotation<string>(),
   turnId: Annotation<string>(),
-  strategy: Annotation<'simple' | 'complex'>(),
+  strategy: Annotation<'simple' | 'complex' | 'none'>(),
   routeReason: Annotation<string>(),
   subQuestions: Annotation<string[]>(),
   nextSubIdx: Annotation<number>(),

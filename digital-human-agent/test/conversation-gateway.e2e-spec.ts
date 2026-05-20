@@ -14,6 +14,7 @@ import { ConversationGateway } from '@/gateway/conversation.gateway';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
 import { PersonaService } from '@/persona/persona.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
+import { ConfigService } from '@nestjs/config';
 
 type JsonMessage = Record<string, unknown>;
 

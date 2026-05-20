@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { isAbortError, throwIfAborted } from '@/common/utils';
-import { normalizeRetrievalStrategy } from '@/common/rag';
+import { normalizeRetrievalStrategy, type RetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
   DEFAULT_FALLBACK_KEYWORD_LIMIT,
 } from '@/common/constants';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/retrieval-utils';
+import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/fulltext-retriever.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import type {
@@ -18,10 +18,83 @@ import type {
   RetrievalQueryItem,
   KnowledgeHybridRetrievalResult,
 } from '@/knowledge/types/knowledge-content.types';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
+import { QueryRewriteService, normalizeKeywords } from '@/knowledge/services/retrieval/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import type { RetrievalStrategy } from '@/common/rag';
-import { resolveSearchInput, buildEmptyResult } from './knowledge-search.utils';
+
+// ==========================================
+// 辅助函数（原 knowledge-search.utils.ts 内容）
+// ==========================================
+
+interface ResolvedSearchInput {
+  query: string;
+  options: NormalizedRetrieveKnowledgeOptions;
+  strategy: RetrievalStrategy;
+  skipQueryRewrite: boolean;
+}
+
+function resolveSearchInput(
+  query: string,
+  options: RetrieveKnowledgeOptions,
+  normalizeRetrieveOptions: (opts: RetrieveKnowledgeOptions) => NormalizedRetrieveKnowledgeOptions,
+): ResolvedSearchInput {
+  const normalizedQuery = query.trim();
+  const normalizedOptions = normalizeRetrieveOptions(options);
+  const strategy = normalizeRetrievalStrategy(options.strategy);
+  const skipQueryRewrite =
+    normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
+
+  normalizedOptions.strategy = strategy;
+  normalizedOptions.skipQueryRewrite = skipQueryRewrite;
+
+  return {
+    query: normalizedQuery,
+    options: normalizedOptions,
+    strategy,
+    skipQueryRewrite,
+  };
+}
+
+function buildEmptyResult(
+  query: string,
+  reason: string,
+  options: NormalizedRetrieveKnowledgeOptions,
+): RetrieveKnowledgeDebugResult {
+  const fallbackKeywords = normalizeKeywords([], query);
+  const fallbackQueries = extractFallbackKeywordTerms(query);
+  const fallbackRewrite = {
+    originalQuery: query,
+    rewrittenQuery: query,
+    keywords: fallbackKeywords,
+    expandedQueries: query
+      ? [
+          {
+            index: 0,
+            query,
+            keywords: fallbackKeywords,
+            angle: 'original' as const,
+          },
+        ]
+      : [],
+    changed: false,
+    reason,
+  };
+  return {
+    query,
+    retrievalQuery: query,
+    retrievalQueries: query
+      ? [{ index: 0, query, keywords: fallbackKeywords, angle: 'original' as const }]
+      : [],
+    rewrite: fallbackRewrite,
+    options,
+    retrievalTrace: [],
+    hybridChunks: [],
+    rerankedChunks: [],
+  };
+}
+
+// ==========================================
+// 内部接口类型
+// ==========================================
 
 interface HybridLoaderParams {
   strategy: RetrievalStrategy;
@@ -35,6 +108,10 @@ interface HybridLoadResult {
   hybridResult: KnowledgeHybridRetrievalResult;
   emptyReason?: string;
 }
+
+// ==========================================
+// KnowledgeSearchService
+// ==========================================
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -79,9 +156,7 @@ export class KnowledgeSearchService {
         name: 'knowledge_retrieve_with_stages',
         runType: 'chain',
         tags: ['knowledge', 'rag', 'retrieve', 'single-kb'],
-        metadata: {
-          knowledgeId,
-        },
+        metadata: { knowledgeId },
         input: {
           knowledgeId,
           query,
@@ -124,9 +199,7 @@ export class KnowledgeSearchService {
         name: 'persona_knowledge_retrieve',
         runType: 'chain',
         tags: ['knowledge', 'rag', 'retrieve', 'persona'],
-        metadata: {
-          personaId,
-        },
+        metadata: { personaId },
         input: {
           personaId,
           query,
@@ -141,11 +214,7 @@ export class KnowledgeSearchService {
       },
       async () =>
         (
-          await this.retrieveForPersonaWithStagesInternal(
-            personaId,
-            query,
-            options,
-          )
+          await this.retrieveForPersonaWithStagesInternal(personaId, query, options)
         ).rerankedChunks,
     );
   }
@@ -160,9 +229,7 @@ export class KnowledgeSearchService {
         name: 'persona_knowledge_retrieve_with_stages',
         runType: 'chain',
         tags: ['knowledge', 'rag', 'retrieve', 'persona', 'debug'],
-        metadata: {
-          personaId,
-        },
+        metadata: { personaId },
         input: {
           personaId,
           query,
@@ -170,9 +237,7 @@ export class KnowledgeSearchService {
           retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
           rerankLimit: options.rerankLimit ?? options.finalTopK,
           threshold: options.threshold,
-          strategy: options.strategy
-            ? JSON.stringify(options.strategy)
-            : undefined,
+          strategy: options.strategy ? JSON.stringify(options.strategy) : undefined,
           skipQueryRewrite: options.skipQueryRewrite,
         },
         outputProcessor: (output) => ({
@@ -181,8 +246,7 @@ export class KnowledgeSearchService {
           retrievalTraceCount: output.retrievalTrace.length,
         }),
       },
-      () =>
-        this.retrieveForPersonaWithStagesInternal(personaId, query, options),
+      () => this.retrieveForPersonaWithStagesInternal(personaId, query, options),
     );
   }
 
@@ -228,19 +292,11 @@ export class KnowledgeSearchService {
     throwIfAborted(options.signal);
 
     if (!searchInput.query) {
-      return buildEmptyResult(
-        searchInput.query,
-        '原始问题为空，跳过检索',
-        searchInput.options,
-      );
+      return buildEmptyResult(searchInput.query, '原始问题为空，跳过检索', searchInput.options);
     }
 
     if (!searchInput.strategy.needRetrieval) {
-      return buildEmptyResult(
-        searchInput.query,
-        searchInput.strategy.reason,
-        searchInput.options,
-      );
+      return buildEmptyResult(searchInput.query, searchInput.strategy.reason, searchInput.options);
     }
 
     const rewrite = await this.resolveRetrievalQuery(
@@ -250,10 +306,7 @@ export class KnowledgeSearchService {
     );
     throwIfAborted(options.signal);
 
-    const retrievalQueries = this.resolveRetrievalQueries(
-      rewrite,
-      searchInput.strategy,
-    );
+    const retrievalQueries = this.resolveRetrievalQueries(rewrite, searchInput.strategy);
     const loadResult = await hybridLoader({
       strategy: searchInput.strategy,
       retrievalQueries,
@@ -302,12 +355,7 @@ export class KnowledgeSearchService {
     }
 
     try {
-      return await this.rerankerService.rerank(
-        query,
-        hybridChunks,
-        options.rerankLimit,
-        signal,
-      );
+      return await this.rerankerService.rerank(query, hybridChunks, options.rerankLimit, signal);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -340,11 +388,7 @@ export class KnowledgeSearchService {
     return this.queryRewriteService.resolveRetrievalQueries(
       rewrite,
       strategy.queryCount ?? DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
-      {
-        useMultiQuery: strategy.useMultiQuery,
-        preferOriginal: false,
-      },
+      { useMultiQuery: strategy.useMultiQuery },
     );
   }
-}
 }

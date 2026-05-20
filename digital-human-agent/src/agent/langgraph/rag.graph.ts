@@ -38,7 +38,7 @@ export interface RagGraphDeps {
 export function buildRagGraph(deps: RagGraphDeps) {
   return new StateGraph(RagGraphStateAnnotation, RagGraphContextAnnotation)
     .addNode('route_question', createRouteQuestionNode(deps.ragRouteService), {
-      ends: ['retrieve', 'plan_sub_questions'],
+      ends: ['retrieve', 'plan_sub_questions', 'generate_answer'],
     })
     .addNode(
       'plan_sub_questions',

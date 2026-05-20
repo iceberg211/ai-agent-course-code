@@ -18,7 +18,7 @@ import type {
 } from '@/agent/types/rag-workflow.types';
 
 const RagRouteSchema = z.object({
-  strategy: z.enum(['simple', 'complex']),
+  strategy: z.enum(['simple', 'complex', 'none']),
   reason: z.string().min(1).max(200),
 });
 
@@ -45,8 +45,23 @@ export class RagRouteService {
     const normalizedQuestion = question.trim();
     if (!normalizedQuestion) {
       return {
-        strategy: 'simple',
-        reason: '问题为空，默认按 simple 处理',
+        strategy: 'none',
+        reason: '问题为空，默认按 none 处理',
+      };
+    }
+
+    const chatPatterns = [
+      /^(?:你好|您好|哈喽|hello|hi|hey|在吗|早上好|中午好|下午好|晚上好)$/i,
+      /^(?:谢谢|非常感谢|拜拜|再见|再会|晚安)$/i,
+    ];
+    if (
+      chatPatterns.some((pattern) =>
+        pattern.test(normalizedQuestion.replace(/\s+/g, '')),
+      )
+    ) {
+      return {
+        strategy: 'none',
+        reason: '命中快捷闲聊特征，无需检索',
       };
     }
 
@@ -108,6 +123,17 @@ export class RagRouteService {
 
   private buildFallbackDecision(question: string): RagRouteDecision {
     const normalized = question.replace(/\s+/g, '');
+    const chatPatterns = [
+      /^(?:你好|您好|哈喽|hello|hi|hey|在吗|早上好|中午好|下午好|晚上好)$/i,
+      /^(?:谢谢|非常感谢|拜拜|再见|再会|晚安)$/i,
+    ];
+    if (chatPatterns.some((pattern) => pattern.test(normalized))) {
+      return {
+        strategy: 'none',
+        reason: '启发式判断为普通问候或告别',
+      };
+    }
+
     const multiStepPatterns = [
       /先.*再/u,
       /然后/u,

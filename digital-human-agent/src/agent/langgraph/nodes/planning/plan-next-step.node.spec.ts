@@ -43,6 +43,7 @@ describe('createPlanNextStepNode', () => {
     webSearchQueries: [],
     stopReason: '',
     orchestrator: 'langgraph',
+    rerankLimit: 5,
     answerText: '',
     persona: null,
     history: [],

@@ -14,12 +14,19 @@ export function createRouteQuestionNode(ragRouteService: RagRouteService) {
       input.signal,
     );
 
+    let goto: 'plan_sub_questions' | 'retrieve' | 'generate_answer' = 'retrieve';
+    if (route.strategy === 'none') {
+      goto = 'generate_answer';
+    } else if (route.strategy === 'complex') {
+      goto = 'plan_sub_questions';
+    }
+
     return new Command({
       update: {
         strategy: route.strategy,
         routeReason: route.reason,
       } satisfies Partial<RagGraphState>,
-      goto: route.strategy === 'complex' ? 'plan_sub_questions' : 'retrieve',
+      goto,
     });
   };
 }

@@ -5,7 +5,7 @@ export const KNOWLEDGE_INDEX_SETTINGS = {
   analysis: {
     filter: {
       knowledge_content_ngram_filter: {
-        type: 'ngram',
+        type: 'ngram' as const,
         min_gram: 2,
         max_gram: 6,
         preserve_original: true,
@@ -13,17 +13,17 @@ export const KNOWLEDGE_INDEX_SETTINGS = {
     },
     analyzer: {
       knowledge_content_ik_analyzer: {
-        type: 'custom',
+        type: 'custom' as const,
         tokenizer: 'ik_max_word',
         filter: ['lowercase'],
       },
       knowledge_content_ik_search_analyzer: {
-        type: 'custom',
+        type: 'custom' as const,
         tokenizer: 'ik_smart',
         filter: ['lowercase'],
       },
       knowledge_content_ngram_analyzer: {
-        type: 'custom',
+        type: 'custom' as const,
         tokenizer: 'standard',
         filter: ['lowercase', 'knowledge_content_ngram_filter'],
       },

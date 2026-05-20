@@ -18,7 +18,6 @@ import {
   fuseVectorAndKeywordResults,
 } from '@/knowledge/services/retrieval/knowledge-retrieval-fusion';
 import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
-import { VectorRetrieverService } from './vector-retriever.service';
 import { FulltextRetrieverService } from './fulltext-retriever.service';
 import type {
   GraphBackend,
@@ -75,7 +74,6 @@ export class HybridRetrieverService {
   constructor(
     private readonly runtime: ContentRuntimeService,
     private readonly configService: ConfigService,
-    private readonly vectorRetriever: VectorRetrieverService,
     private readonly fulltextRetriever: FulltextRetrieverService,
     @Optional()
     private readonly graphRetriever?: KnowledgeGraphService,
@@ -273,9 +271,9 @@ export class HybridRetrieverService {
       graphResultCount: number;
     }
   > {
-    const hybridResult =
+    const hybridPromise =
       params.strategy.useVector || params.strategy.useKeyword
-        ? await this.hybridRetrieve({
+        ? this.hybridRetrieve({
             knowledgeId: params.knowledgeId,
             queryEmbedding: params.queryEmbedding,
             retrievalQuery: params.retrievalQuery,
@@ -287,9 +285,9 @@ export class HybridRetrieverService {
             useExactPhrase: params.strategy.useExactPhrase,
             signal: params.signal,
           })
-        : this.buildSkippedHybridResult(params.strategy);
+        : Promise.resolve(this.buildSkippedHybridResult(params.strategy));
 
-    const graphChunks = await this.retrieveGraphChunks(
+    const graphPromise = this.retrieveGraphChunks(
       params.knowledgeId,
       params.retrievalQuery,
       params.keywordTerms,
@@ -297,6 +295,11 @@ export class HybridRetrieverService {
       params.strategy,
       params.signal,
     );
+
+    const [hybridResult, graphChunks] = await Promise.all([
+      hybridPromise,
+      graphPromise,
+    ]);
 
     const skippedChannels = new Set(hybridResult.skippedChannels);
     const graphBackend = this.isGraphRetrieverEnabled(params.strategy)
@@ -425,7 +428,51 @@ export class HybridRetrieverService {
     matchCount: number;
     signal?: AbortSignal;
   }): Promise<KnowledgeChunk[]> {
-    return this.vectorRetriever.retrieve(params);
+    return runInTracedScope(
+      {
+        name: 'knowledge_vector_retrieve',
+        runType: 'retriever',
+        tags: ['knowledge', 'rag', 'retrieve', 'vector'],
+        metadata: {
+          knowledgeId: params.knowledgeId,
+          threshold: params.threshold,
+          matchCount: params.matchCount,
+        },
+        outputProcessor: (output) => ({ resultCount: output.length }),
+      },
+      async () => {
+        throwIfAborted(params.signal);
+        const { data, error } = await this.runtime.withTransientRetry<{
+          data: KnowledgeChunk[] | null;
+          error: { message: string } | null;
+        }>(
+          'match_knowledge rpc',
+          async () => {
+            throwIfAborted(params.signal);
+            const query = this.runtime.supabase.rpc('match_knowledge', {
+              query_embedding: params.queryEmbedding,
+              p_kb_id: params.knowledgeId,
+              match_threshold: params.threshold,
+              match_count: params.matchCount,
+            });
+            const result = params.signal
+              ? await query.abortSignal(params.signal)
+              : await query;
+            return {
+              data: (result.data as KnowledgeChunk[] | null) ?? null,
+              error: result.error ? { message: result.error.message } : null,
+            };
+          },
+          3,
+        );
+        throwIfAborted(params.signal);
+        if (error) throw new Error(error.message);
+        return (data ?? []).map((chunk) => ({
+          ...chunk,
+          retrieval_sources: ['vector' as const],
+        }));
+      },
+    );
   }
 
   private async keywordRetrieve(params: {

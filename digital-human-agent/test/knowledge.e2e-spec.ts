@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { KnowledgeContentController } from '@/knowledge/controllers/knowledge-content.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
-import { KnowledgeContentService } from '@/knowledge/services/manage/knowledge-content.service';
+import { ContentRuntimeService as KnowledgeContentService } from '@/knowledge/services/manage/content-runtime.service';
 import { KnowledgeController } from '@/knowledge/controllers/knowledge.controller';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
