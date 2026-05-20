@@ -1,4 +1,4 @@
-import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
+import { KnowledgeDocumentService } from '@/knowledge-content/services/document/knowledge-document.service';
 
 describe('KnowledgeDocumentService', () => {
   type MockDocument = {

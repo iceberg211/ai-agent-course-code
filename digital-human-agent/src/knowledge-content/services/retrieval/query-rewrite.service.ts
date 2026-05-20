@@ -15,7 +15,7 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryAngle,

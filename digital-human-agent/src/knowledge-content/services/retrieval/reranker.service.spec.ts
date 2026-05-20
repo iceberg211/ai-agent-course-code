@@ -1,4 +1,4 @@
-import { RerankerService } from '@/knowledge-content/services/reranker.service';
+import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 
 describe('RerankerService', () => {

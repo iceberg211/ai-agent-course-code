@@ -1,4 +1,4 @@
-import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
+import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
 
 const sampleChunk = {
   id: 'chunk-1',

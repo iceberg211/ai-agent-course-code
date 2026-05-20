@@ -4,7 +4,7 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
-import { RerankerService } from '@/knowledge-content/services/reranker.service';
+import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
 
 export function createRerankNode(rerankerService: RerankerService) {
   return async (state: RagGraphState, config: RagGraphConfig) => {

@@ -147,19 +147,21 @@ export interface PersonaHybridRetrievalChannels {
   useVector: boolean;
   useKeyword: boolean;
   useGraph: boolean;
+  useExactPhrase?: boolean;
 }
 
 export interface PersonaHybridRetrievalInput {
   personaId: string;
-  query: string;
-  terms: string[];
-  matchCount: number;
+  retrievalQueries: RetrievalQueryItem[];
   channels: PersonaHybridRetrievalChannels;
+  threshold?: number;
+  stage1TopK?: number;
   signal?: AbortSignal;
 }
 
 export interface PersonaHybridRetrievalResult {
   chunks: KnowledgeChunk[];
   trace: RetrieveKnowledgeTraceItem[];
+  knowledgeCount: number;
 }
 

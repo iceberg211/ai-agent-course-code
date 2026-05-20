@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
 import type {
   MountedKnowledgeConfig,
 } from '@/knowledge-content/types/knowledge-content.types';

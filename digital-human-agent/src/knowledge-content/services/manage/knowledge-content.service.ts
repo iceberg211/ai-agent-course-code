@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
-import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { KnowledgeDocumentService } from '@/knowledge-content/services/document/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge-content/services/retrieval/knowledge-search.service';
 import type {
   IngestKnowledgeDocumentOptions,
   KnowledgeChunk,

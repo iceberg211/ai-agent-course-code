@@ -1,4 +1,4 @@
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
 
 describe('KnowledgeContentRuntimeService', () => {
   it('normalizeRetrieveOptions 会保留 skipQueryRewrite 观测字段', () => {

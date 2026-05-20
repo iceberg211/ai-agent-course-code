@@ -630,7 +630,7 @@ export class KnowledgeHybridRetrieverService {
       useVector: input.channels.useVector,
       useKeyword: input.channels.useKeyword,
       useGraph: input.channels.useGraph,
-      useExactPhrase: input.channels.useExactPhrase,
+      useExactPhrase: input.channels.useExactPhrase ?? false,
       useMultiQuery: input.retrievalQueries.length > 1,
       allowWeb: false,
       queryCount: input.retrievalQueries.length,

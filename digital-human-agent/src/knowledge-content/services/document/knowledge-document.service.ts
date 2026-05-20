@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge-content/graph/knowledge-graph.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';

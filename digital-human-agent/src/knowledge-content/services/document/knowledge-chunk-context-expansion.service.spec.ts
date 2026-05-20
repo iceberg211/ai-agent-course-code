@@ -1,4 +1,4 @@
-import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
+import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/document/knowledge-chunk-context-expansion.service';
 
 describe('KnowledgeChunkContextExpansionService', () => {
   function createService() {
