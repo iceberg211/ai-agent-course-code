@@ -1,5 +1,10 @@
 import type { RetryPolicy } from '@langchain/langgraph';
 import { isAbortError } from '@/common/utils';
+import {
+  DEFAULT_RAG_RETRY_INITIAL_INTERVAL_MS,
+  DEFAULT_RAG_RETRY_BACKOFF_FACTOR,
+  DEFAULT_RAG_RETRY_MAX_INTERVAL_MS,
+} from '@/agent/agent.constants';
 
 export const RAG_DEPENDENCY_RETRY_MAX_ATTEMPTS = 3;
 
@@ -26,9 +31,9 @@ export function isBeforeFinalRetryAttempt(nodeAttempt?: number): boolean {
 
 export const RAG_DEPENDENCY_RETRY_POLICY: RetryPolicy = {
   maxAttempts: RAG_DEPENDENCY_RETRY_MAX_ATTEMPTS,
-  initialInterval: 200,
-  backoffFactor: 2,
-  maxInterval: 1000,
+  initialInterval: DEFAULT_RAG_RETRY_INITIAL_INTERVAL_MS,
+  backoffFactor: DEFAULT_RAG_RETRY_BACKOFF_FACTOR,
+  maxInterval: DEFAULT_RAG_RETRY_MAX_INTERVAL_MS,
   jitter: false,
   retryOn: isTransientRagDependencyError,
 };

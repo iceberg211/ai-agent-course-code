@@ -43,7 +43,7 @@
           />
 
           <div v-if="showPlaceholder" class="stage-placeholder">
-            <SparklesIcon :size="26" aria-hidden="true" />
+            <SparklesIcon :size="26" class="sparkle-icon" aria-hidden="true" />
             <p class="stage-placeholder__title">{{ placeholderTitle }}</p>
             <p class="stage-placeholder__desc">{{ placeholderDesc }}</p>
             <div class="stage-placeholder__actions">
@@ -721,19 +721,24 @@ watch(
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(15, 23, 42, 0.26);
-  backdrop-filter: blur(10px);
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
 .config-drawer {
-  width: 100vw;
-  height: 100vh;
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.9), transparent 30%),
-    linear-gradient(180deg, rgba(249, 251, 255, 0.99), rgba(244, 248, 255, 0.99));
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
+  width: 100%;
+  max-width: 500px;
+  height: auto;
+  max-height: min(650px, calc(100vh - 32px));
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -743,39 +748,35 @@ watch(
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 22px 28px 18px;
+  padding: 18px 24px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.86);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: rgba(249, 251, 255, 0.9);
-  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
 }
 
 .config-drawer__head h4 {
   margin: 0;
-  font-size: 28px;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
   color: var(--text);
 }
 
 .drawer-close {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  background: #f8fafc;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: #fff;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font: inherit;
-  line-height: 1;
-  appearance: none;
-  -webkit-appearance: none;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition: all 0.2s ease;
 }
 
 .drawer-close:hover {
@@ -787,23 +788,38 @@ watch(
 .config-drawer__body {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 28px 36px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
   gap: 18px;
-  align-content: start;
 }
 
 .config-section {
-  padding: 18px 20px;
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.98));
-  border: 1px solid rgba(226, 232, 240, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 
-.config-section:first-child {
-  grid-column: 1 / -1;
+.sparkle-icon {
+  color: var(--primary);
+  animation: sparkle-float 3s ease-in-out infinite;
+}
+
+@keyframes sparkle-float {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.2));
+  }
+  50% {
+    transform: translateY(-4px) scale(1.1) rotate(15deg);
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.45));
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.2));
+  }
 }
 
 .section-header h5 {

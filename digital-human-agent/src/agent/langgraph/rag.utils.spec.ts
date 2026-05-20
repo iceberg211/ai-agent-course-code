@@ -1,5 +1,5 @@
 import { mergeEvidenceChunks } from '@/agent/langgraph/rag.utils';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 describe('rag.utils', () => {
   it('合并重复证据时保留图谱分数和图谱证据', () => {

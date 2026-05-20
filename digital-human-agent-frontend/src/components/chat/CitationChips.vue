@@ -45,19 +45,32 @@ function resolveKnowledgeBaseName(citation: Citation): string {
 </script>
 
 <style scoped>
-.citations { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.citations { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 5px; 
+  margin-top: 8px; 
+  margin-bottom: 2px;
+}
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 3px 9px;
-  background: var(--primary-bg);
-  border: 1px solid var(--border-muted);
-  color: var(--primary);
-  border-radius: 20px;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1.5px 7px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
   cursor: default;
   white-space: nowrap;
+  transition: all 0.2s var(--ease-out);
+}
+.chip:hover {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: var(--primary);
+  transform: translateY(-0.5px);
 }
 </style>

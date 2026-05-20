@@ -3,10 +3,10 @@ import { WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { PersonaService } from '@/persona/persona.service';
-import { ConversationService } from '@/conversation/conversation.service';
+import { ConversationService } from '@/conversation/services/conversation.service';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
-import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
-import { SessionMode } from '@/realtime-session/realtime-session.interface';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
+import { SessionMode } from '@/conversation/interfaces/realtime-session.interface';
 import {
   SessionHistoryMessage,
   WsSessionStartMessage,

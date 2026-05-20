@@ -1,5 +1,5 @@
 import { ChatPromptTemplate } from '@langchain/core/prompts';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import { PROMPT_REGISTRY } from '@/common/prompts/prompt.registry';
 
 export const KNOWLEDGE_QUERY_REWRITE_PROMPT = ChatPromptTemplate.fromMessages([

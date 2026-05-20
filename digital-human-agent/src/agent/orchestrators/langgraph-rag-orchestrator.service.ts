@@ -21,9 +21,9 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import { ConversationService } from '@/conversation/conversation.service';
-import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-hybrid-retriever.service';
+import { ConversationService } from '@/conversation/services/conversation.service';
+import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
+import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
 import { PersonaService } from '@/persona/persona.service';
 
 @Injectable()

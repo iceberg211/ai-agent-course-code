@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
-import type { RealtimeSession } from '@/realtime-session/realtime-session.interface';
+import type { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 
 describe('AgentPipelineService', () => {
   function createSession(): RealtimeSession {

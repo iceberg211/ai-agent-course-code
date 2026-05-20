@@ -10,7 +10,7 @@ import {
   publishCitations,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
-import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-hybrid-retriever.service';
+import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
 
 export function createRetrieveNode(
   queryAugmentationService: QueryAugmentationService,

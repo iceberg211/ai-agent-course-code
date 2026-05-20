@@ -1,4 +1,4 @@
-import { createEvaluateEvidenceNode } from '@/agent/langgraph/nodes/evaluate-evidence.node';
+import { createEvaluateEvidenceNode } from '@/agent/langgraph/nodes/evaluation/evaluate-evidence.node';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createEvaluateEvidenceNode', () => {

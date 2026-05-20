@@ -17,9 +17,9 @@ import { createRetrieveNode } from '@/agent/langgraph/nodes/query/retrieve.node'
 import { createRouteQuestionNode } from '@/agent/langgraph/nodes/planning/route.node';
 import { createWebFallbackNode } from '@/agent/langgraph/nodes/query/web-fallback.node';
 import { RagGraphStateAnnotation } from '@/agent/langgraph/rag.state';
-import type { ConversationService } from '@/conversation/conversation.service';
-import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-hybrid-retriever.service';
+import type { ConversationService } from '@/conversation/services/conversation.service';
+import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
+import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
 import type { PersonaService } from '@/persona/persona.service';
 
 export interface RagGraphDeps {

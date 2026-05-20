@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { formatElasticsearchError } from '@/knowledge-content/elasticsearch/elasticsearch-error-format';
-import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
+import { formatElasticsearchError } from '@/knowledge/elasticsearch/elasticsearch-error-format';
+import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { ElasticsearchScriptModule } from './elasticsearch-script.module';
 
 async function main(): Promise<void> {

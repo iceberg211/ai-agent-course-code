@@ -72,6 +72,7 @@ defineProps<{
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.3s var(--ease-out);
 }
 .panel-header {
   display: flex;

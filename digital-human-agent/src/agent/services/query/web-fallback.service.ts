@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
+import {
+  DEFAULT_BOCHA_SEARCH_COUNT,
+  DEFAULT_BOCHA_SEARCH_URL,
+} from '@/common/constants';
 
 interface SearchWebParams {
   query: string;
@@ -50,7 +54,7 @@ export class WebFallbackService {
         tags: ['agent', 'rag', 'web', 'fallback'],
         metadata: {
           queryLength: normalizedQuery.length,
-          count: params.count ?? 8,
+          count: params.count ?? DEFAULT_BOCHA_SEARCH_COUNT,
         },
         input: {
           query: normalizedQuery,
@@ -66,11 +70,11 @@ export class WebFallbackService {
   private async searchInternal(
     query: string,
     signal?: AbortSignal,
-    count = 8,
+    count = DEFAULT_BOCHA_SEARCH_COUNT,
   ): Promise<RagWebCitation[]> {
     throwIfAborted(signal);
 
-    const response = await fetch('https://api.bochaai.com/v1/web-search', {
+    const response = await fetch(DEFAULT_BOCHA_SEARCH_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${String(process.env.BOCHA_API_KEY ?? '').trim()}`,

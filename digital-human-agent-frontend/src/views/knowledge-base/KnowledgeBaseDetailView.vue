@@ -99,70 +99,114 @@ function goToChatValidation() {
 </script>
 
 <style scoped>
-.kb-detail { padding: 24px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.kb-detail { 
+  padding: 32px 24px; 
+  height: 100%; 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; 
+  background: var(--page-bg-accent);
+}
 .kb-detail--empty { align-items: center; justify-content: center; color: var(--text-muted); }
 .kb-detail__head {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
 }
 .back {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text-muted);
   text-decoration: none;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
 }
-.back:hover { color: var(--text); }
-.kb-detail__head h2 { margin: 0 0 4px; font-size: 20px; }
-.kb-detail__desc { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.back:hover { 
+  color: var(--primary); 
+  transform: translateX(-2px);
+}
+.kb-detail__head h2 { 
+  margin: 0 0 6px; 
+  font-size: 24px; 
+  font-weight: 800; 
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.kb-detail__desc { 
+  margin: 0; 
+  color: var(--text-secondary); 
+  font-size: 13px; 
+  line-height: 1.6;
+}
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 112px;
-  height: 38px;
-  padding: 0 16px;
+  height: 40px;
+  padding: 0 20px;
   border: none;
-  border-radius: 8px;
-  background: var(--primary);
+  border-radius: var(--radius-md);
+  background: var(--primary-gradient);
   color: #fff;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  box-shadow: var(--shadow-btn);
+  transition: all 0.2s ease;
 }
 .btn-primary:hover {
   background: var(--primary-hover);
-  box-shadow: var(--shadow-btn);
+  box-shadow: var(--shadow-btn-hover);
+  transform: translateY(-1px);
 }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tabs { 
+  display: flex; 
+  gap: 8px; 
+  border-bottom: 1px solid var(--border); 
+  margin-bottom: 20px; 
+}
 .tab {
-  padding: 8px 14px;
+  padding: 8px 16px;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 150ms, border-color 150ms;
+  transition: all 0.2s ease;
+  margin-bottom: -1px;
 }
-.tab:hover { color: var(--text); }
+.tab:hover { 
+  color: var(--text); 
+}
 .tab--active {
   color: var(--primary);
   border-bottom-color: var(--primary);
-  font-weight: 600;
+  font-weight: 700;
 }
-.tab-body { flex: 1; overflow-y: auto; min-height: 0; }
+.tab-body { 
+  flex: 1; 
+  overflow-y: auto; 
+  min-height: 0; 
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.015);
+  padding: 20px;
+}
 
 @media (max-width: 720px) {
   .kb-detail__head {
     flex-direction: column;
+    align-items: stretch;
   }
   .btn-primary {
     width: 100%;

@@ -4,7 +4,8 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
-import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
+import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
+import { publishCitations, toWorkflowCitations } from '../../rag.utils';
 
 export function createRerankNode(rerankerService: RerankerService) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
@@ -21,8 +22,18 @@ export function createRerankNode(rerankerService: RerankerService) {
     const topDocuments = await rerankerService.rerank(
       state.question,
       documents,
-      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.finalTopK,
+      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
       input.signal,
+    );
+
+    publishCitations(
+      input,
+      toWorkflowCitations({
+        documents: state.documents,
+        topDocuments,
+        evidenceChunks: topDocuments,
+        webCitations: state.webCitations,
+      }),
     );
 
     return {

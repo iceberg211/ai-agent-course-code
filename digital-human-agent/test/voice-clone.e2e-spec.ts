@@ -1,8 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { VoiceCloneController } from '@/voice-clone/voice-clone.controller';
-import { VoiceCloneService } from '@/voice-clone/voice-clone.service';
+import { VoiceCloneController } from '@/speech/voice-clone/voice-clone.controller';
+import { VoiceCloneService } from '@/speech/voice-clone/voice-clone.service';
 
 describe('VoiceClone API (e2e)', () => {
   let app: INestApplication;

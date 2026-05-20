@@ -413,8 +413,8 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
 }
 
 .chat-main {
@@ -431,18 +431,19 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   display: flex;
 }
 
+/* 核心：数字人分栏独立滚动布局 */
 .chat-body--digital {
-  position: relative;
   display: flex;
-  padding: 12px 16px 0;
+  flex-direction: row;
+  gap: 20px;
+  padding: 16px 20px 0;
+  position: relative;
+  width: 100%;
 }
 
 .chat-body--digital .chat-body__stage {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 3;
-  width: min(300px, calc(100% - 32px));
+  width: 320px;
+  flex-shrink: 0;
 }
 
 .chat-body--digital :deep(.message-list) {
@@ -450,55 +451,45 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   margin: 0;
   min-height: 0;
   height: 100%;
-  padding-right: 348px;
+  padding-right: 0;
 }
 
 .chat-body--digital :deep(.chat-empty) {
   flex: 1;
   min-height: 0;
-  margin: 0 348px 0 0;
+  margin: 0;
 }
 
 /* ── 知识库抽屉滑入动画 ─────────────────────────────────────────────────────── */
 .slide-drawer-enter-active {
-  transition: transform 220ms cubic-bezier(0.34, 1.26, 0.64, 1), opacity 180ms ease-out;
+  transition: transform 300ms var(--ease-spring), opacity 200ms ease-out;
 }
 
 .slide-drawer-leave-active {
-  transition: transform 180ms ease-in, opacity 160ms ease-in;
+  transition: transform 200ms ease-in, opacity 180ms ease-in;
 }
 
 .slide-drawer-enter-from,
 .slide-drawer-leave-to {
-  transform: translateX(24px);
+  transform: translateX(30px);
   opacity: 0;
 }
 
 @media (max-width: 1024px) {
   .app-shell {
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
 
   .chat-body--digital {
     display: flex;
-    padding: 10px 12px 0;
     flex-direction: column;
+    padding: 12px 14px 0;
+    gap: 16px;
   }
 
   .chat-body--digital .chat-body__stage {
-    position: relative;
-    top: auto;
-    right: auto;
     width: 100%;
-    margin-bottom: 12px;
-  }
-
-  .chat-body--digital :deep(.message-list) {
-    padding-right: 24px;
-  }
-
-  .chat-body--digital :deep(.chat-empty) {
-    margin-right: 0;
+    margin-bottom: 0;
   }
 }
 </style>

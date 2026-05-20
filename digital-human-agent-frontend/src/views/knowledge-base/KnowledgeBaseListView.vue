@@ -77,38 +77,59 @@ async function onCreate(payload: { name: string; description?: string }) {
 </script>
 
 <style scoped>
-.kb-list { padding: 24px; height: 100%; overflow-y: auto; }
+.kb-list { 
+  padding: 32px 24px; 
+  height: 100%; 
+  overflow-y: auto; 
+  background: var(--page-bg-accent);
+}
 .kb-list__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
-.kb-list__head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.kb-list__head h2 { 
+  margin: 0; 
+  font-size: 24px; 
+  font-weight: 800; 
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
 .btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  background: var(--primary);
+  padding: 8px 16px;
+  background: var(--primary-gradient);
   color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: var(--shadow-btn);
+  transition: all 0.2s ease;
 }
-.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:hover { 
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-btn-hover);
+  transform: translateY(-1px);
+}
 .kb-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 20px;
 }
 .empty {
-  padding: 48px;
+  padding: 64px 32px;
   text-align: center;
   color: var(--text-muted);
-  border: 1px dashed var(--border);
-  border-radius: 12px;
+  border: 1px dashed rgba(226, 232, 240, 0.9);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 14px;
 }
 </style>

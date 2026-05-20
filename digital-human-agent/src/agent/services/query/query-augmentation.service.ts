@@ -1,16 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
+  DEFAULT_FALLBACK_KEYWORD_LIMIT,
+} from '@/common/constants';
 import { isAbortError } from '@/common/utils';
 import { normalizeRetrievalStrategy } from '@/common/rag';
 import type {
   RagQueryAugmentationPlan,
   RagStrategy,
 } from '@/agent/types/rag-workflow.types';
-import { QueryRewriteService } from '@/knowledge-content/services/retrieval/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,
-} from '@/knowledge-content/types/knowledge-content.types';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
+} from '@/knowledge/types/knowledge-content.types';
+import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
 import {
   containsGraphTerms,
   isGreeting,
@@ -80,7 +84,9 @@ export class QueryAugmentationService {
     const exactLike = isExactLookup(normalizedQuestion);
     const graphLike = isGraphQuestion(normalizedQuestion);
     const maxQueries =
-      input.routeStrategy === 'complex' && !exactLike ? 3 : 1;
+      input.routeStrategy === 'complex' && !exactLike
+        ? DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS
+        : 1;
     const rewrite =
       maxQueries > 1
         ? await this.tryRewrite(normalizedQuestion, fallbackRewrite, input.signal)
@@ -205,7 +211,7 @@ export class QueryAugmentationService {
   }
 
   private extractKeywords(query: string): string[] {
-    return extractFallbackKeywordTerms(query).slice(0, 6);
+    return extractFallbackKeywordTerms(query).slice(0, DEFAULT_FALLBACK_KEYWORD_LIMIT);
   }
 
   private async tryRewrite(

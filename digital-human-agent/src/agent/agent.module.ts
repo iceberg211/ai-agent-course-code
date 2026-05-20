@@ -9,16 +9,14 @@ import { QueryAugmentationService } from '@/agent/services/query/query-augmentat
 import { RagRouteService } from '@/agent/services/planning/rag-route.service';
 import { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 import { CommonModule } from '@/common/common.module';
-import { ConversationModule } from '@/conversation/conversation.module';
-import { KnowledgeContentModule } from '@/knowledge-content/knowledge-content.module';
+import { KnowledgeModule } from '@/knowledge/knowledge.module';
 import { PersonaModule } from '@/persona/persona.module';
 
 @Module({
   imports: [
     CommonModule,
-    KnowledgeContentModule,
+    KnowledgeModule,
     PersonaModule,
-    ConversationModule,
   ],
   providers: [
     AnswerGenerationService,

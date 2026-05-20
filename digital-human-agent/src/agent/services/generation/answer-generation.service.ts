@@ -2,7 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
-import type { ConversationMessage } from '@/conversation/conversation-message.entity';
+import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
   createDefaultLlmFactoryService,
@@ -15,7 +15,7 @@ import {
 } from '@/common/langsmith/langsmith.utils';
 import type { RetrievalStrategy } from '@/common/rag';
 import type { RagEvidenceAssessmentContext } from '@/common/rag';
-import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
 
 export interface GenerateAnswerParams {

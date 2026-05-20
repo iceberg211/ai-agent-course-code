@@ -4,8 +4,8 @@ import { Test } from '@nestjs/testing';
 import { WsAdapter } from '@nestjs/platform-ws';
 import WebSocket, { RawData } from 'ws';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
-import { ConversationService } from '@/conversation/conversation.service';
-import { AsrService } from '@/asr/asr.service';
+import { ConversationService } from '@/conversation/services/conversation.service';
+import { AsrService } from '@/speech/asr/asr.service';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';
 import { TextHandler } from '@/gateway/handlers/text.handler';
@@ -13,7 +13,7 @@ import { InterruptHandler } from '@/gateway/handlers/interrupt.handler';
 import { ConversationGateway } from '@/gateway/conversation.gateway';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
 import { PersonaService } from '@/persona/persona.service';
-import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 
 type JsonMessage = Record<string, unknown>;
 

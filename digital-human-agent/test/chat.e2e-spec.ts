@@ -7,9 +7,9 @@ import {
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AgentService } from '@/agent/agent.service';
-import { ChatController } from '@/chat/chat.controller';
+import { ChatController } from '@/conversation/controllers/chat.controller';
 import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
-import { ConversationService } from '@/conversation/conversation.service';
+import { ConversationService } from '@/conversation/services/conversation.service';
 import { PersonaService } from '@/persona/persona.service';
 
 jest.mock('uuid', () => {

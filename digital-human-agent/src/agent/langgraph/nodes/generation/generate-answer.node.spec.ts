@@ -1,4 +1,4 @@
-import { createGenerateAnswerNode } from '@/agent/langgraph/nodes/generate-answer.node';
+import { createGenerateAnswerNode } from '@/agent/langgraph/nodes/generation/generate-answer.node';
 
 describe('createGenerateAnswerNode', () => {
   it('会把证据评估结果传给回答生成服务', async () => {

@@ -3,7 +3,7 @@ import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
-import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';

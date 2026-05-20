@@ -3,12 +3,12 @@ import type {
   RagStopReason,
   RetrievalStrategy,
 } from '@/common/rag';
-import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type {
   KnowledgeQueryRewriteResult,
   RetrieveKnowledgeTraceItem,
   RetrievalQueryItem,
-} from '@/knowledge-content/types/knowledge-content.types';
+} from '@/knowledge/types/knowledge-content.types';
 
 export type RagStrategy = 'simple' | 'complex';
 export type RagOrchestratorName = 'langgraph';

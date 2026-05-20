@@ -1,4 +1,4 @@
-import { createLoadContextNode } from '@/agent/langgraph/nodes/load-context.node';
+import { createLoadContextNode } from '@/agent/langgraph/nodes/generation/load-context.node';
 
 describe('createLoadContextNode', () => {
   function buildWorkflowInput(turnId: string) {

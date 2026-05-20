@@ -19,7 +19,7 @@ import {
   createDefaultLlmFactoryService,
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 const RagEvidenceEvaluationSchema = z.object({
   enough: z.boolean(),

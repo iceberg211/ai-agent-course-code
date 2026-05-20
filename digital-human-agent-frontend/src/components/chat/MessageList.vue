@@ -10,7 +10,6 @@
     <!-- 骨架屏 -->
     <div v-if="loading" class="loading-list" role="status" aria-label="正在加载对话">
       <div v-for="i in 4" :key="i" class="loading-row" :class="{ right: i % 2 === 0 }">
-        <span class="loading-avatar" />
         <span class="loading-bubble" :style="{ width: `${45 + (i * 7) % 20}%` }" />
       </div>
     </div>
@@ -124,20 +123,16 @@ defineExpose({ listEl })
 
 /* ── 骨架屏 ──────────────────────────────────────────────────────── */
 .loading-list {
-  display: flex; flex-direction: column; gap: 16px; padding-top: 4px;
+  display: flex; flex-direction: column; gap: 20px; padding-top: 4px;
 }
 .loading-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center;
 }
-.loading-row.right { flex-direction: row-reverse; }
+.loading-row.right { justify-content: flex-end; }
 
-.loading-avatar {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-  background: linear-gradient(135deg, #dde8ff, #ccdcff);
-}
 .loading-bubble {
-  height: 38px; border-radius: 14px;
-  background: linear-gradient(90deg, #eef4ff 20%, #e2ecff 40%, #eef4ff 60%);
+  height: 20px; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, #f1f5f9 20%, #e2e8f0 40%, #f1f5f9 60%);
   background-size: 300% 100%;
   animation: shimmer 1.4s linear infinite;
 }

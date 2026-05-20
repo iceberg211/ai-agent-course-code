@@ -1,5 +1,5 @@
-import type { ConversationService } from '@/conversation/conversation.service';
-import type { ConversationMessage } from '@/conversation/conversation-message.entity';
+import type { ConversationService } from '@/conversation/services/conversation.service';
+import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import type { PersonaService } from '@/persona/persona.service';
 import {
   ensureWorkflowNotAborted,

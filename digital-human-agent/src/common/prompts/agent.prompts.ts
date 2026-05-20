@@ -3,8 +3,8 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from '@langchain/core/prompts';
-import { ConversationMessage } from '@/conversation/conversation-message.entity';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import { Persona } from '@/persona/persona.entity';
 import type { RagEvidenceAssessmentContext } from '@/common/rag';
 import { PROMPT_REGISTRY } from '@/common/prompts/prompt.registry';

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
-import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
 import { WsInterruptMessage } from '@/gateway/gateway.types';

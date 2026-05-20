@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { ConversationService } from '@/conversation/conversation.service';
-import { RealtimeSessionRegistry } from '@/realtime-session/realtime-session.registry';
+import { ConversationService } from '@/conversation/services/conversation.service';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
 import { WsTextInputMessage } from '@/gateway/gateway.types';
 

@@ -5,7 +5,7 @@ import type {
   RagWorkflowInput,
 } from '@/agent/types/rag-workflow.types';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
-import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 export function getPlannedQuestions(
   state: Pick<RagGraphState, 'strategy' | 'subQuestions' | 'question'>,
@@ -255,18 +255,18 @@ export function toKnowledgeCitations(
 
 export function mergeCitations(
   localCitations: RagKnowledgeCitation[],
-  webCitations: RagWebCitation[],
+  webCitations?: RagWebCitation[],
 ): RagCitation[] {
-  return [...localCitations, ...webCitations];
+  return [...localCitations, ...(webCitations ?? [])];
 }
 
 export function mergeWebCitations(
-  existing: RagWebCitation[],
-  incoming: RagWebCitation[],
+  existing?: RagWebCitation[],
+  incoming?: RagWebCitation[],
 ): RagWebCitation[] {
   const merged = new Map<string, RagWebCitation>();
 
-  for (const citation of [...existing, ...incoming]) {
+  for (const citation of [...(existing ?? []), ...(incoming ?? [])]) {
     const key = citation.url.trim() || citation.title.trim();
     if (!key || merged.has(key)) continue;
     merged.set(key, citation);
@@ -279,7 +279,7 @@ export function publishCitations(
   input: RagWorkflowInput,
   citations: RagCitation[],
 ): void {
-  if (citations.length > 0) {
+  if (citations.length > 0 && typeof input?.onCitations === 'function') {
     input.onCitations(citations);
   }
 }

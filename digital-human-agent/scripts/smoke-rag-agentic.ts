@@ -2,8 +2,8 @@ import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
-import { KnowledgeSearchService } from '@/knowledge-content/services/retrieval/knowledge-search.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 
 function readDotEnv(): Record<string, string> {
   const env: Record<string, string> = {};

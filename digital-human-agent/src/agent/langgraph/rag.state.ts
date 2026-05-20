@@ -15,8 +15,8 @@ import type {
   RagWorkflowState,
   RetrievalHistoryItem,
 } from '@/agent/types/rag-workflow.types';
-import type { ConversationMessage } from '@/conversation/conversation-message.entity';
-import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
+import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
 
 export const RagGraphStateAnnotation = Annotation.Root({

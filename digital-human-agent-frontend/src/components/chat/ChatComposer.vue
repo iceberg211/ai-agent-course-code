@@ -1,99 +1,85 @@
 <template>
   <div class="composer-wrap">
-    <div class="composer-shell" :class="shellState">
-      <div class="composer-meta">
-        <div class="composer-status" :class="shellState">
-          <span class="status-dot" aria-hidden="true" />
-          <span class="status-text">{{ stateLabel }}</span>
-        </div>
-        <span v-if="shortcutText" class="composer-shortcut" aria-hidden="true">
-          {{ shortcutText }}
-        </span>
-      </div>
+    <div class="composer-pill" :class="shellState">
+      <!-- 极简三色状态指示呼吸点 -->
+      <div 
+        class="status-indicator-dot" 
+        :class="shellState" 
+        :title="stateLabel" 
+        aria-hidden="true" 
+      />
 
-      <div
-        class="composer-panel"
-        :class="{
-          'has-draft': canSend,
-          'panel-disabled': inputDisabled,
-        }"
+      <!-- 麦克风录音按钮 -->
+      <button
+        class="voice-btn"
+        :class="[voiceButtonClass, { disabled: voiceDisabled }]"
+        type="button"
+        :disabled="voiceDisabled"
+        :aria-label="resolvedVoiceAriaLabel"
+        :aria-pressed="voiceState === 'recording'"
+        :aria-busy="voicePreparing || voiceState === 'thinking'"
+        @click="$emit('mic-toggle')"
       >
-        <textarea
-          ref="inputEl"
-          v-model="draft"
-          class="composer-input"
-          :placeholder="resolvedPlaceholder"
-          :disabled="inputDisabled"
-          rows="1"
-          @keydown="onKeydown"
-          @input="resize"
+        <LoaderCircleIcon
+          v-if="voicePreparing || voiceState === 'thinking'"
+          :size="15"
+          class="spin"
+          aria-hidden="true"
         />
+        <SendHorizonalIcon
+          v-else-if="voiceState === 'recording'"
+          :size="15"
+          aria-hidden="true"
+        />
+        <Volume2Icon
+          v-else-if="voiceState === 'speaking'"
+          :size="15"
+          aria-hidden="true"
+        />
+        <MicIcon v-else :size="15" aria-hidden="true" />
+      </button>
 
-        <div class="composer-toolbar">
-          <p v-if="helperText" class="composer-hint">{{ helperText }}</p>
+      <!-- 单行文本输入框 -->
+      <textarea
+        ref="inputEl"
+        v-model="draft"
+        class="composer-input"
+        :placeholder="resolvedPlaceholder"
+        :disabled="inputDisabled"
+        rows="1"
+        @keydown="onKeydown"
+        @input="resize"
+      />
 
-          <div class="composer-actions">
-            <button
-              class="voice-btn"
-              :class="[voiceButtonClass, { disabled: voiceDisabled }]"
-              type="button"
-              :disabled="voiceDisabled"
-              :aria-label="resolvedVoiceAriaLabel"
-              :aria-pressed="voiceState === 'recording'"
-              :aria-busy="voicePreparing || voiceState === 'thinking'"
-              @click="$emit('mic-toggle')"
-            >
-              <LoaderCircleIcon
-                v-if="voicePreparing || voiceState === 'thinking'"
-                :size="18"
-                class="spin"
-                aria-hidden="true"
-              />
-              <SendHorizonalIcon
-                v-else-if="voiceState === 'recording'"
-                :size="18"
-                aria-hidden="true"
-              />
-              <Volume2Icon
-                v-else-if="voiceState === 'speaking'"
-                :size="18"
-                aria-hidden="true"
-              />
-              <MicIcon v-else :size="18" aria-hidden="true" />
-            </button>
-
-            <button
-              v-if="canStop"
-              class="action-btn stop-btn"
-              type="button"
-              @mousedown.stop
-              @mouseup.stop
-              @touchstart.stop.prevent
-              @touchend.stop.prevent
-              @click.stop.prevent="$emit('stop')"
-              aria-label="停止生成"
-            >
-              <StopCircleIcon :size="16" aria-hidden="true" />
-              <span>停止</span>
-            </button>
-            <button
-              v-else
-              class="action-btn send-btn"
-              type="button"
-              :disabled="sendDisabled"
-              @mousedown.stop
-              @mouseup.stop
-              @touchstart.stop.prevent
-              @touchend.stop.prevent
-              @click.stop.prevent="submit"
-              aria-label="发送文本消息"
-            >
-              <SendHorizonalIcon :size="16" aria-hidden="true" />
-              <span>{{ sendLabel }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- 停止生成按钮 -->
+      <button
+        v-if="canStop"
+        class="circle-action-btn stop"
+        type="button"
+        @mousedown.stop
+        @mouseup.stop
+        @touchstart.stop.prevent
+        @touchend.stop.prevent
+        @click.stop.prevent="$emit('stop')"
+        aria-label="停止生成"
+      >
+        <StopCircleIcon :size="15" aria-hidden="true" />
+      </button>
+      <!-- 发送按钮 -->
+      <button
+        v-else
+        class="circle-action-btn send"
+        type="button"
+        :disabled="sendDisabled"
+        @mousedown.stop
+        @mouseup.stop
+        @touchstart.stop.prevent
+        @touchend.stop.prevent
+        @click.stop.prevent="submit"
+        aria-label="发送文本消息"
+      >
+        <SendHorizonalIcon :size="14" aria-hidden="true" />
+      </button>
     </div>
   </div>
 </template>
@@ -233,333 +219,253 @@ onMounted(() => nextTick(resize))
 
 <style scoped>
 .composer-wrap {
-  padding: 12px 18px 10px;
-  border-top: 1px solid var(--border-muted, #edf2f9);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(248,251,255,0.93) 100%);
+  padding: 8px 16px 12px;
+  background: transparent;
 }
 
-.composer-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.92);
-  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,250,255,0.96) 100%);
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background 180ms ease;
-}
-
-.composer-shell:focus-within {
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow:
-    0 0 0 4px rgba(37, 99, 235, 0.08),
-    0 18px 38px rgba(37, 99, 235, 0.08);
-}
-
-.composer-shell.busy,
-.composer-shell.stoppable {
-  background: linear-gradient(180deg, rgba(250,252,255,0.99) 0%, rgba(246,249,255,0.98) 100%);
-}
-
-.composer-shell.disabled {
-  background: linear-gradient(180deg, rgba(250,251,253,0.98) 0%, rgba(247,249,252,0.98) 100%);
-}
-
-.composer-meta {
+/* 一体式极简控制台胶囊长条 */
+.composer-pill {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 
+    0 4px 18px rgba(15, 23, 42, 0.03),
+    0 1px 3px rgba(15, 23, 42, 0.02);
+  transition: all 0.25s var(--ease-out);
+  max-width: 840px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.composer-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: var(--radius-full, 9999px);
-  border: 1px solid rgba(226, 232, 240, 0.84);
-  background: rgba(248, 250, 252, 0.78);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary, #334155);
-  transition:
-    color 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease;
+.composer-pill:focus-within {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: #ffffff;
+  box-shadow: 
+    0 8px 24px rgba(59, 130, 246, 0.08),
+    0 1px 2px rgba(59, 130, 246, 0.02);
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
+/* 极简内嵌三色状态指示呼吸点 */
+.status-indicator-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #94a3b8;
   flex-shrink: 0;
-  transition: background 180ms ease, box-shadow 180ms ease;
+  transition: all 0.25s ease;
 }
 
-.composer-status.ready {
-  color: var(--primary, #2563eb);
-  border-color: rgba(191, 219, 254, 0.9);
-  background: rgba(239, 246, 255, 0.9);
+.status-indicator-dot.ready {
+  background: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  animation: dot-pulse-primary 2s infinite;
 }
 
-.composer-status.ready .status-dot {
-  background: var(--primary, #2563eb);
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+.status-indicator-dot.busy {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+  animation: dot-pulse-warning 2s infinite;
 }
 
-.composer-status.busy {
-  color: var(--warning, #b45309);
-  border-color: rgba(251, 191, 36, 0.26);
-  background: rgba(255, 251, 235, 0.94);
+.status-indicator-dot.stoppable {
+  background: var(--error);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  animation: dot-pulse-error 2s infinite;
 }
 
-.composer-status.busy .status-dot {
-  background: var(--warning, #d97706);
-  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.12);
-}
-
-.composer-status.stoppable {
-  color: var(--error, #dc2626);
-  border-color: rgba(248, 113, 113, 0.28);
-  background: rgba(254, 242, 242, 0.94);
-}
-
-.composer-status.stoppable .status-dot {
-  background: var(--error, #dc2626);
-  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
-}
-
-.composer-status.disabled {
-  color: var(--text-muted, #94a3b8);
-  border-color: rgba(226, 232, 240, 0.86);
-  background: rgba(248, 250, 252, 0.9);
-}
-
-.composer-status.disabled .status-dot {
+.status-indicator-dot.disabled {
   background: #cbd5e1;
+  box-shadow: none;
+  animation: none;
 }
 
-.status-text {
-  white-space: nowrap;
+@keyframes dot-pulse-primary {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.25); }
+  70% { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+@keyframes dot-pulse-warning {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); }
+  70% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+@keyframes dot-pulse-error {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.25); }
+  70% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
-.composer-shortcut {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-muted, #94a3b8);
-  white-space: nowrap;
-}
-
-.composer-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px 14px 12px;
-  border-radius: 18px;
-  border: 1px solid rgba(226, 232, 240, 0.76);
-  background: linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(248,251,255,0.96) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  transition:
-    border-color 180ms ease,
-    background 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.composer-panel:focus-within {
-  border-color: rgba(37, 99, 235, 0.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    0 10px 24px rgba(37, 99, 235, 0.06);
-}
-
-.composer-panel.has-draft {
-  border-color: rgba(191, 219, 254, 0.9);
-  background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(243,248,255,0.98) 100%);
-}
-
-.composer-panel.panel-disabled {
-  background: linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(245,247,250,0.96) 100%);
-}
-
-.composer-input {
-  width: 100%;
-  min-height: 84px;
-  max-height: 160px;
-  resize: none;
-  border: none;
-  border-radius: 0;
-  padding: 2px 0 0;
-  outline: none;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--text, #0f172a);
-  background: transparent;
-  font-family: inherit;
-  overflow-y: auto;
-  transition: color 180ms ease;
-}
-
-.composer-input::placeholder {
-  color: rgba(100, 116, 139, 0.78);
-}
-
-.composer-input:focus {
-  background: transparent;
-}
-
-.composer-input:disabled {
-  background: transparent;
-  color: var(--text-secondary, #64748b);
-  cursor: not-allowed;
-}
-
-.composer-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(226, 232, 240, 0.78);
-}
-
-.composer-hint {
-  min-width: 0;
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
-  line-height: 1.55;
-  white-space: normal;
-}
-
-.composer-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.voice-btn,
-.action-btn {
-  min-height: 42px;
-  border-radius: var(--radius-full, 9999px);
+/* 极简麦克风录音按钮 */
+.voice-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: #fafbfc;
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition:
-    background 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 120ms ease;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
 }
 
-.voice-btn:active:not(:disabled),
-.action-btn:active:not(:disabled) {
-  transform: scale(0.95);
+.voice-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--primary);
+  border-color: var(--primary-muted);
 }
 
-.voice-btn {
-  width: 42px;
-  border: 1px solid rgba(226, 232, 240, 0.88);
-  background: rgba(255, 255, 255, 0.84);
-  color: var(--primary, #2563eb);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
-}
-
-.voice-btn:hover:not(:disabled),
-.action-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
+.voice-btn:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .voice-btn.idle,
 .voice-btn.closed {
-  color: var(--primary, #2563eb);
-  border-color: rgba(191, 219, 254, 0.92);
-  background: rgba(239, 246, 255, 0.94);
+  color: var(--primary);
+  background: rgba(59, 130, 246, 0.04);
+  border-color: rgba(59, 130, 246, 0.12);
 }
 
 .voice-btn.preparing,
 .voice-btn.thinking {
-  color: var(--warning, #d97706);
-  border-color: rgba(251, 191, 36, 0.28);
-  background: rgba(255, 251, 235, 0.96);
-}
-
-.voice-btn.recording {
-  color: var(--error, #dc2626);
-  border-color: rgba(248, 113, 113, 0.34);
-  background: rgba(254, 242, 242, 1);
-  box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.24);
-  animation: voice-record-pulse 1.2s ease-out infinite;
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.04);
+  border-color: rgba(245, 158, 11, 0.15);
 }
 
 .voice-btn.speaking {
-  color: var(--success, #059669);
-  border-color: rgba(52, 211, 153, 0.28);
-  background: rgba(240, 253, 244, 0.94);
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.04);
+  border-color: rgba(16, 185, 129, 0.15);
 }
 
 .voice-btn.disabled {
-  color: var(--text-muted, #94a3b8);
-  border-color: rgba(226, 232, 240, 0.92);
-  background: rgba(248, 250, 252, 0.92);
-  box-shadow: none;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  border-color: #e2e8f0;
   cursor: not-allowed;
-  animation: none;
 }
 
-.action-btn {
-  min-width: 96px;
-  padding: 0 16px;
+.voice-btn.recording {
+  color: #fff !important;
+  border-color: var(--error) !important;
+  background: var(--error) !important;
+  position: relative;
+  z-index: 1;
+}
+
+.voice-btn.recording::before,
+.voice-btn.recording::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 1px solid var(--error);
+  animation: pulse-ring 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  opacity: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.voice-btn.recording::after {
+  animation-delay: 0.6s;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { opacity: 0.35; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* 单行输入框 */
+.composer-input {
+  flex: 1;
+  min-height: 24px;
+  max-height: 90px;
+  height: 24px;
+  resize: none;
   border: none;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
+  outline: none;
+  padding: 2px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  background: transparent;
+  font-family: inherit;
+  overflow-y: auto;
 }
 
-.send-btn {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+.composer-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.composer-input:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+/* 圆形操作按钮 */
+.circle-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
+}
+
+.circle-action-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.circle-action-btn.send {
+  background: var(--primary-gradient);
   color: #fff;
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+  box-shadow: var(--shadow-btn);
 }
 
-.send-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.24);
+.circle-action-btn.send:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-btn-hover);
+  transform: translateY(-0.5px);
 }
 
-.send-btn:disabled {
-  background: rgba(226, 232, 240, 0.9);
-  color: var(--text-muted, #94a3b8);
+.circle-action-btn.send:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
   box-shadow: none;
   cursor: not-allowed;
 }
 
-.stop-btn {
-  background: linear-gradient(180deg, #fff 0%, #fff6f6 100%);
-  color: var(--error, #dc2626);
-  border: 1px solid rgba(248, 113, 113, 0.38);
-  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.08);
+.circle-action-btn.stop {
+  background: #fee2e2;
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  animation: stop-pulse 2s infinite;
 }
 
-.stop-btn:hover {
-  background: linear-gradient(180deg, #fff 0%, #fee2e2 100%);
-  border-color: rgba(220, 38, 38, 0.4);
-  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.12);
+.circle-action-btn.stop:hover {
+  background: var(--error);
+  color: #fff;
+}
+
+@keyframes stop-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
 .spin {
@@ -571,49 +477,13 @@ onMounted(() => nextTick(resize))
   to { transform: rotate(360deg); }
 }
 
-@keyframes voice-record-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.24); }
-  70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-}
-
-@media (max-width: 960px) {
+@media (max-width: 600px) {
   .composer-wrap {
-    padding: 12px 12px 8px;
+    padding: 6px 10px 10px;
   }
-
-  .composer-shell {
-    padding: 12px;
-    border-radius: 18px;
-  }
-
-  .composer-meta,
-  .composer-toolbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .composer-panel {
-    padding: 12px;
-    border-radius: 16px;
-  }
-
-  .composer-shortcut {
-    white-space: normal;
-  }
-
-  .composer-toolbar {
-    gap: 10px;
-  }
-
-  .composer-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .action-btn {
-    flex: 1;
-    min-width: 0;
+  .composer-pill {
+    padding: 5px 6px 5px 10px;
+    gap: 8px;
   }
 }
 </style>

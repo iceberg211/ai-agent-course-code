@@ -4,9 +4,9 @@ import {
   buildSwitchAliasActions,
   buildSwitchAliasRefusalReasons,
   replaceElasticsearchIndexVersion,
-} from '@/knowledge-content/elasticsearch/elasticsearch-alias-actions';
-import { formatElasticsearchError } from '@/knowledge-content/elasticsearch/elasticsearch-error-format';
-import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/elasticsearch-index.service';
+} from '@/knowledge/elasticsearch/elasticsearch-alias-actions';
+import { formatElasticsearchError } from '@/knowledge/elasticsearch/elasticsearch-error-format';
+import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { ElasticsearchScriptModule } from './elasticsearch-script.module';
 
 function readRequiredArg(name: string): string {

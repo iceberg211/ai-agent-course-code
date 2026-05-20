@@ -4,7 +4,7 @@ import {
   RAG_EVIDENCE_EVALUATOR_PROMPT,
   RAG_ROUTE_PROMPT,
 } from '@/common/prompts/agent.prompts';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 describe('agent.prompts', () => {
   it('formatKnowledgeBlock 会把图谱检索证据格式化为 LLM 可读上下文', () => {
