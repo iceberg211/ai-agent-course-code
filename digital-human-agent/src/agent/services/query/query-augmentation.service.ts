@@ -6,7 +6,7 @@ import type {
   RagQueryAugmentationPlan,
   RagStrategy,
 } from '@/agent/types/rag-workflow.types';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,

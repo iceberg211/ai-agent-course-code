@@ -1,5 +1,5 @@
 import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 
 describe('QueryAugmentationService', () => {
   const realQueryRewrite = new QueryRewriteService(null as any);

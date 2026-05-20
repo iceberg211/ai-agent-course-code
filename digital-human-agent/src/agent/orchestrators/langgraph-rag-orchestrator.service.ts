@@ -22,8 +22,8 @@ import {
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
 import { ConversationService } from '@/conversation/services/conversation.service';
-import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import { PersonaService } from '@/persona/persona.service';
 
 @Injectable()

@@ -6,9 +6,9 @@ import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
   DEFAULT_FALLBACK_KEYWORD_LIMIT,
 } from '@/common/constants';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/fulltext-retriever.service';
+import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
@@ -18,8 +18,8 @@ import type {
   RetrievalQueryItem,
   KnowledgeHybridRetrievalResult,
 } from '@/knowledge/types/knowledge-content.types';
-import { QueryRewriteService, normalizeKeywords } from '@/knowledge/services/retrieval/query-rewrite.service';
-import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
+import { QueryRewriteService, normalizeKeywords } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 
 // ==========================================
 // 辅助函数（原 knowledge-search.utils.ts 内容）

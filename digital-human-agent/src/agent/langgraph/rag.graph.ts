@@ -18,8 +18,8 @@ import { createRouteQuestionNode } from '@/agent/langgraph/nodes/planning/route.
 import { createWebFallbackNode } from '@/agent/langgraph/nodes/query/web-fallback.node';
 import { RagGraphStateAnnotation } from '@/agent/langgraph/rag.state';
 import type { ConversationService } from '@/conversation/services/conversation.service';
-import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type { PersonaService } from '@/persona/persona.service';
 
 export interface RagGraphDeps {

@@ -4,7 +4,7 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
-import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 import { publishCitations, toWorkflowCitations } from '../../rag.utils';
 
 export function createRerankNode(rerankerService: RerankerService) {

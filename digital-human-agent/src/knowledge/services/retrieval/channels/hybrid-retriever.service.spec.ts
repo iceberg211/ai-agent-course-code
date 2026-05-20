@@ -1,4 +1,4 @@
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { RetrievalStrategy } from '@/common/rag';
 

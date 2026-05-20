@@ -20,7 +20,7 @@ import {
 } from '@/common/constants';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
-import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;

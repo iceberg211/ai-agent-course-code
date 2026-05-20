@@ -16,7 +16,7 @@ import {
   fuseHybridAndGraphChannels,
   mergeHybridResults,
   fuseVectorAndKeywordResults,
-} from '@/knowledge/services/retrieval/knowledge-retrieval-fusion';
+} from '@/knowledge/services/retrieval/channels/knowledge-retrieval-fusion';
 import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
 import { FulltextRetrieverService } from './fulltext-retriever.service';
 import type {

@@ -20,11 +20,11 @@ import { ChunkExpansionService } from '@/knowledge/services/document/chunk-expan
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
-import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
-import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { FulltextRetrieverService } from '@/knowledge/services/retrieval/fulltext-retriever.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
+import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
 
 @Module({
   imports: [

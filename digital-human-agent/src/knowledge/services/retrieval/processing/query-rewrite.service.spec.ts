@@ -1,5 +1,5 @@
 import { createAbortError } from '@/common/utils';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 
 const mockInvoke = jest.fn();
 const mockWithStructuredOutput = jest.fn(() => ({

@@ -1,7 +1,7 @@
 import { createAbortError } from '@/common/utils';
 import type { RetrievalStrategy } from '@/common/rag';
-import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
-import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
