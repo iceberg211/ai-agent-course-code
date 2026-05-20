@@ -154,4 +154,30 @@ describe('AnswerGenerationService', () => {
     expect(messages[0].content).toContain('缺少公开训练条款原文');
     expect(messages[0].content).toContain('不要给确定性结论');
   });
+
+  it('generateDirect 会使用轻量闲聊提示词并流式输出', async () => {
+    const service = new AnswerGenerationService();
+    const streamMock = jest.fn().mockResolvedValue(createStream(['你', '好']));
+
+    Reflect.set(service, 'llm', {
+      stream: streamMock,
+    });
+
+    const tokens: string[] = [];
+    const output = await service.generateDirect({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      turnId: 'turn-1',
+      userMessage: '你好',
+      signal: new AbortController().signal,
+      onToken: (token) => tokens.push(token),
+    });
+
+    const messages = streamMock.mock.calls[0][0] as Array<{ content: string }>;
+    expect(messages[0].content).toContain('无需知识库检索');
+    expect(messages[0].content).toContain('不要提到知识库');
+    expect(messages[messages.length - 1].content).toBe('你好');
+    expect(tokens).toEqual(['你', '好']);
+    expect(output).toBe('你好');
+  });
 });

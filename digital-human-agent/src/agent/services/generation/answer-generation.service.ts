@@ -8,7 +8,12 @@ import {
   createDefaultLlmFactoryService,
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
-import { AGENT_CHAT_PROMPT, buildAgentPromptInput } from '@/common/prompts';
+import {
+  AGENT_CHAT_PROMPT,
+  DIRECT_CHAT_PROMPT,
+  buildAgentPromptInput,
+  buildDirectChatPromptInput,
+} from '@/common/prompts';
 import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
@@ -30,6 +35,15 @@ export interface GenerateAnswerParams {
   retrievalStrategy?: RetrievalStrategy;
   webCitations?: RagWebCitation[];
   evidenceAssessment?: RagEvidenceAssessmentContext;
+  onToken: (token: string) => void;
+}
+
+export interface GenerateDirectAnswerParams {
+  conversationId: string;
+  personaId: string;
+  turnId: string;
+  userMessage: string;
+  signal: AbortSignal;
   onToken: (token: string) => void;
 }
 
@@ -74,6 +88,67 @@ export class AnswerGenerationService {
       },
       () => this.generateInternal(params),
     );
+  }
+
+  async generateDirect(params: GenerateDirectAnswerParams): Promise<string> {
+    return runInTracedScope(
+      {
+        name: 'rag_generate_direct_answer',
+        runType: 'chain',
+        tags: ['agent', 'rag', 'generate', 'direct'],
+        metadata: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+        },
+        input: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+          userMessage: params.userMessage,
+        },
+        outputProcessor: (output) => ({
+          answerLength: output.length,
+        }),
+      },
+      () => this.generateDirectInternal(params),
+    );
+  }
+
+  private async generateDirectInternal(
+    params: GenerateDirectAnswerParams,
+  ): Promise<string> {
+    throwIfAborted(params.signal);
+
+    const messages = await DIRECT_CHAT_PROMPT.formatMessages(
+      buildDirectChatPromptInput(params.userMessage),
+    );
+
+    throwIfAborted(params.signal);
+
+    const stream = await this.llm.stream(messages, {
+      ...buildLangSmithRunnableConfig({
+        runName: 'agent_generate_direct',
+        tags: ['agent', 'rag', 'generate', 'direct', 'llm'],
+        metadata: {
+          conversationId: params.conversationId,
+          personaId: params.personaId,
+          turnId: params.turnId,
+        },
+      }),
+      signal: params.signal,
+    });
+
+    let answerText = '';
+    for await (const chunk of stream) {
+      throwIfAborted(params.signal);
+      const token = typeof chunk.content === 'string' ? chunk.content : '';
+      if (!token) continue;
+      answerText += token;
+      params.onToken(token);
+    }
+
+    return answerText;
   }
 
   private async generateInternal(

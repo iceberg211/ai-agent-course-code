@@ -60,4 +60,21 @@ describe('RagRouteService', () => {
       reason: '启发式判断为直接实体关系问题',
     });
   });
+
+  it('日常问候会直接判定为 none 且不调用 LLM', async () => {
+    const service = new RagRouteService();
+    const invoke = jest.fn();
+    const withStructuredOutput = jest.fn().mockReturnValue({ invoke });
+
+    Reflect.set(service, 'llm', {
+      withStructuredOutput,
+    });
+
+    await expect(service.routeQuestion('你好')).resolves.toEqual({
+      strategy: 'none',
+      reason: '命中快捷闲聊特征，无需检索',
+    });
+    expect(withStructuredOutput).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });

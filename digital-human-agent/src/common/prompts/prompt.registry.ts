@@ -26,6 +26,16 @@ export const PROMPT_REGISTRY = {
 8. 如果用了联网补充信息，优先提及标题或链接来源；如果本地知识与网页信息存在冲突，要说明不确定性{systemPromptExtraSection}`,
     human: '{userMessage}',
   },
+  directChat: {
+    system: lines([
+      '你是数字人对话助手。',
+      '当前用户输入已被判定为无需知识库检索的日常对话或通用闲聊。',
+      '请直接、自然、简短地回答。',
+      '不要提到知识库、检索、上下文、证据或来源。',
+      '如果用户只是问候、致谢或告别，用一句自然的话回应即可。',
+    ]),
+    human: '{userMessage}',
+  },
   ragRoute: {
     system: lines([
       '你是数字人 RAG 工作流的路由器。',

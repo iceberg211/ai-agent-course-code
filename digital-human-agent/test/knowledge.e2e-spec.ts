@@ -3,7 +3,8 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { KnowledgeContentController } from '@/knowledge/controllers/knowledge-content.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
-import { ContentRuntimeService as KnowledgeContentService } from '@/knowledge/services/manage/content-runtime.service';
+import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { KnowledgeController } from '@/knowledge/controllers/knowledge.controller';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
@@ -16,13 +17,15 @@ describe('Knowledge API (e2e)', () => {
   const chunkId = '33333333-3333-4333-8333-333333333333';
   const personaId = '44444444-4444-4444-8444-444444444444';
 
-  const knowledgeContentService = {
-    ingestDocument: jest.fn(),
+  const knowledgeDocumentService = {
+    parseAndIngestDocument: jest.fn(),
     listDocumentsByKnowledgeId: jest.fn(),
     deleteDocument: jest.fn(),
     listChunksByDocumentId: jest.fn(),
     updateChunkEnabled: jest.fn(),
-    retrieveWithStages: jest.fn(),
+  };
+
+  const knowledgeSearchService = {
     retrieveForPersona: jest.fn(),
   };
 
@@ -48,8 +51,12 @@ describe('Knowledge API (e2e)', () => {
       ],
       providers: [
         {
-          provide: KnowledgeContentService,
-          useValue: knowledgeContentService,
+          provide: KnowledgeDocumentService,
+          useValue: knowledgeDocumentService,
+        },
+        {
+          provide: KnowledgeSearchService,
+          useValue: knowledgeSearchService,
         },
         {
           provide: KnowledgeService,
@@ -104,7 +111,7 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('POST /knowledge-bases/:kbId/documents 上传文档成功', async () => {
-    knowledgeContentService.ingestDocument.mockResolvedValue({
+    knowledgeDocumentService.parseAndIngestDocument.mockResolvedValue({
       id: docId,
       knowledgeBaseId: kbId,
       filename: 'readme.txt',
@@ -120,15 +127,16 @@ describe('Knowledge API (e2e)', () => {
       })
       .expect(201);
 
-    expect(knowledgeContentService.ingestDocument).toHaveBeenCalledWith(
+    expect(
+      knowledgeDocumentService.parseAndIngestDocument,
+    ).toHaveBeenCalledWith(
       kbId,
-      'readme.txt',
-      '这是测试文档内容',
       expect.objectContaining({
-        mimeType: 'text/plain',
-        fileSize: expect.any(Number),
-        category: 'faq',
+        originalname: 'readme.txt',
+        mimetype: 'text/plain',
+        buffer: expect.any(Buffer),
       }),
+      'faq',
     );
     expect(res.body).toEqual({
       id: docId,
@@ -144,7 +152,9 @@ describe('Knowledge API (e2e)', () => {
       .field('category', 'faq')
       .expect(400);
 
-    expect(knowledgeContentService.ingestDocument).not.toHaveBeenCalled();
+    expect(
+      knowledgeDocumentService.parseAndIngestDocument,
+    ).not.toHaveBeenCalled();
     expect(res.body.message).toContain('缺少上传文件');
   });
 
@@ -157,7 +167,9 @@ describe('Knowledge API (e2e)', () => {
       })
       .expect(400);
 
-    expect(knowledgeContentService.ingestDocument).not.toHaveBeenCalled();
+    expect(
+      knowledgeDocumentService.parseAndIngestDocument,
+    ).not.toHaveBeenCalled();
     expect(String(res.body.message)).toContain('仅支持 txt、md、pdf 文档上传');
   });
 
@@ -166,12 +178,12 @@ describe('Knowledge API (e2e)', () => {
       .get('/knowledge-bases/not-a-uuid/documents')
       .expect(400);
     expect(
-      knowledgeContentService.listDocumentsByKnowledgeId,
+      knowledgeDocumentService.listDocumentsByKnowledgeId,
     ).not.toHaveBeenCalled();
   });
 
   it('GET /knowledge-bases/:kbId/documents 返回文档列表', async () => {
-    knowledgeContentService.listDocumentsByKnowledgeId.mockResolvedValue([
+    knowledgeDocumentService.listDocumentsByKnowledgeId.mockResolvedValue([
       {
         id: docId,
         knowledgeBaseId: kbId,
@@ -185,7 +197,7 @@ describe('Knowledge API (e2e)', () => {
       .expect(200);
 
     expect(
-      knowledgeContentService.listDocumentsByKnowledgeId,
+      knowledgeDocumentService.listDocumentsByKnowledgeId,
     ).toHaveBeenCalledWith(kbId);
     expect(res.body).toEqual([
       {
@@ -198,17 +210,17 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('DELETE /knowledge-bases/:kbId/documents/:docId 删除文档', async () => {
-    knowledgeContentService.deleteDocument.mockResolvedValue(undefined);
+    knowledgeDocumentService.deleteDocument.mockResolvedValue(undefined);
 
     await request(app.getHttpServer())
       .delete(`/knowledge-bases/${kbId}/documents/${docId}`)
       .expect(200);
 
-    expect(knowledgeContentService.deleteDocument).toHaveBeenCalledWith(docId);
+    expect(knowledgeDocumentService.deleteDocument).toHaveBeenCalledWith(docId);
   });
 
   it('GET /knowledge-bases/:kbId/documents/:docId/chunks 返回 chunk 列表', async () => {
-    knowledgeContentService.listChunksByDocumentId.mockResolvedValue([
+    knowledgeDocumentService.listChunksByDocumentId.mockResolvedValue([
       {
         id: chunkId,
         documentId: docId,
@@ -222,9 +234,9 @@ describe('Knowledge API (e2e)', () => {
       .get(`/knowledge-bases/${kbId}/documents/${docId}/chunks`)
       .expect(200);
 
-    expect(knowledgeContentService.listChunksByDocumentId).toHaveBeenCalledWith(
-      docId,
-    );
+    expect(
+      knowledgeDocumentService.listChunksByDocumentId,
+    ).toHaveBeenCalledWith(docId);
     expect(res.body).toEqual([
       {
         id: chunkId,
@@ -237,14 +249,14 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('PATCH /knowledge-bases/:kbId/chunks/:chunkId 切换 chunk 状态', async () => {
-    knowledgeContentService.updateChunkEnabled.mockResolvedValue(undefined);
+    knowledgeDocumentService.updateChunkEnabled.mockResolvedValue(undefined);
 
     const res = await request(app.getHttpServer())
       .patch(`/knowledge-bases/${kbId}/chunks/${chunkId}`)
       .send({ enabled: false })
       .expect(200);
 
-    expect(knowledgeContentService.updateChunkEnabled).toHaveBeenCalledWith(
+    expect(knowledgeDocumentService.updateChunkEnabled).toHaveBeenCalledWith(
       chunkId,
       false,
     );
@@ -312,7 +324,7 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('POST /personas/:personaId/search 返回 persona 聚合检索结果', async () => {
-    knowledgeContentService.retrieveForPersona.mockResolvedValue([
+    knowledgeSearchService.retrieveForPersona.mockResolvedValue([
       {
         id: chunkId,
         source: '产品 FAQ',
@@ -327,7 +339,7 @@ describe('Knowledge API (e2e)', () => {
       .send({ query: '产品如何部署？' })
       .expect(201);
 
-    expect(knowledgeContentService.retrieveForPersona).toHaveBeenCalledWith(
+    expect(knowledgeSearchService.retrieveForPersona).toHaveBeenCalledWith(
       personaId,
       '产品如何部署？',
       {

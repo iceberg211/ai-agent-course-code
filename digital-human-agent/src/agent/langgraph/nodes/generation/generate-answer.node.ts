@@ -11,6 +11,21 @@ export function createGenerateAnswerNode(
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
 
+    if (state.strategy === 'none') {
+      const answerText = await answerGenerationService.generateDirect({
+        conversationId: input.conversationId,
+        personaId: input.personaId,
+        turnId: input.turnId,
+        userMessage: input.question,
+        signal: input.signal,
+        onToken: input.onToken,
+      });
+
+      return {
+        answerText,
+      } satisfies Partial<RagGraphState>;
+    }
+
     if (!state.persona) {
       throw new Error('回答生成前缺少 persona 上下文');
     }

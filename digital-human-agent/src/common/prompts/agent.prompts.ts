@@ -15,6 +15,11 @@ export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   ['human', PROMPT_REGISTRY.agentChat.human],
 ]);
 
+export const DIRECT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
+  ['system', PROMPT_REGISTRY.directChat.system],
+  ['human', PROMPT_REGISTRY.directChat.human],
+]);
+
 export const RAG_ROUTE_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.ragRoute.system],
   ['human', PROMPT_REGISTRY.ragRoute.human],
@@ -172,6 +177,12 @@ export function buildAgentPromptInput(
       ? `\n${persona.systemPromptExtra}`
       : '',
     history: mapConversationHistoryToPromptMessages(history),
+    userMessage,
+  };
+}
+
+export function buildDirectChatPromptInput(userMessage: string) {
+  return {
     userMessage,
   };
 }

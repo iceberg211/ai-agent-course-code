@@ -75,6 +75,12 @@ describe('Conversation Gateway (e2e)', () => {
         { provide: AsrService, useValue: asrService },
         { provide: AgentPipelineService, useValue: agentPipeline },
         { provide: DIGITAL_HUMAN_PROVIDER, useValue: digitalHumanProvider },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue(undefined),
+          },
+        },
       ],
     }).compile();
 

@@ -57,4 +57,48 @@ describe('createGenerateAnswerNode', () => {
     );
     expect(result).toEqual({ answerText: '回答' });
   });
+
+  it('none 策略会直接生成闲聊回答，不要求 persona 上下文', async () => {
+    const answerGenerationService = {
+      generate: jest.fn(),
+      generateDirect: jest.fn().mockResolvedValue('你好，有什么想聊的？'),
+    };
+    const node = createGenerateAnswerNode(answerGenerationService as never);
+    const input = {
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      question: '你好',
+      turnId: 'turn-1',
+      signal: new AbortController().signal,
+      onToken: jest.fn(),
+      onCitations: jest.fn(),
+    };
+
+    const result = await node(
+      {
+        strategy: 'none',
+        persona: null,
+        history: [],
+        topDocuments: [],
+        webCitations: [],
+        enough: null,
+      } as never,
+      {
+        context: {
+          workflowInput: input,
+        },
+      } as never,
+    );
+
+    expect(answerGenerationService.generate).not.toHaveBeenCalled();
+    expect(answerGenerationService.generateDirect).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      turnId: 'turn-1',
+      userMessage: '你好',
+      signal: input.signal,
+      onToken: input.onToken,
+    });
+    expect(result).toEqual({ answerText: '你好，有什么想聊的？' });
+  });
 });

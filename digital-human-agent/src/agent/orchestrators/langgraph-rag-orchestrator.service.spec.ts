@@ -95,7 +95,7 @@ function createAugmentation(
 
 describe('LangGraphRagOrchestratorService', () => {
   function createService(options?: {
-    routeStrategy?: 'simple' | 'complex';
+    routeStrategy?: 'simple' | 'complex' | 'none';
     plannerQuestions?: string[];
     retrieveMap?: Record<string, ReturnType<typeof createChunk>[]>;
     augmentationMap?: Record<string, ReturnType<typeof createAugmentation>>;
@@ -116,19 +116,21 @@ describe('LangGraphRagOrchestratorService', () => {
     let retrieveFailuresBeforeSuccess =
       options?.retrieveFailuresBeforeSuccess ?? 0;
     const personaStage1RetrievalService = {
-      retrieveForPersona: jest.fn().mockImplementation(async ({ retrievalQueries }) => {
-        if (retrieveFailuresBeforeSuccess > 0) {
-          retrieveFailuresBeforeSuccess -= 1;
-          throw new Error('temporary retrieve failure');
-        }
+      retrieveForPersona: jest
+        .fn()
+        .mockImplementation(async ({ retrievalQueries }) => {
+          if (retrieveFailuresBeforeSuccess > 0) {
+            retrieveFailuresBeforeSuccess -= 1;
+            throw new Error('temporary retrieve failure');
+          }
 
-        const query = retrievalQueries[0]?.query ?? '';
-        return {
-          knowledgeCount: 1,
-          chunks: options?.retrieveMap?.[query] ?? [],
-          trace: query ? [createTrace(query)] : [],
-        };
-      }),
+          const query = retrievalQueries[0]?.query ?? '';
+          return {
+            knowledgeCount: 1,
+            chunks: options?.retrieveMap?.[query] ?? [],
+            trace: query ? [createTrace(query)] : [],
+          };
+        }),
     };
     let personaFailuresBeforeSuccess =
       options?.personaFailuresBeforeSuccess ?? 0;
@@ -156,12 +158,20 @@ describe('LangGraphRagOrchestratorService', () => {
         params.onToken('答');
         return '答案';
       }),
+      generateDirect: jest.fn().mockImplementation(async (params) => {
+        params.onToken('闲');
+        return '闲聊回答';
+      }),
     };
     const ragRouteService = {
       routeQuestion: jest.fn().mockResolvedValue({
         strategy: options?.routeStrategy ?? 'simple',
         reason:
-          options?.routeStrategy === 'complex' ? '需要多跳检索' : '直接问题',
+          options?.routeStrategy === 'complex'
+            ? '需要多跳检索'
+            : options?.routeStrategy === 'none'
+              ? '无需检索的闲聊'
+              : '直接问题',
       }),
     };
     const queryAugmentationService = {
@@ -181,11 +191,9 @@ describe('LangGraphRagOrchestratorService', () => {
       }),
     };
     const rerankerService = {
-      rerank: jest
-        .fn()
-        .mockImplementation(async (_question, documents) => {
-          return options?.rerankResult ?? documents;
-        }),
+      rerank: jest.fn().mockImplementation(async (_question, documents) => {
+        return options?.rerankResult ?? documents;
+      }),
     };
     const evaluations = [...(options?.evaluations ?? [])];
     const evidenceEvaluatorService = {
@@ -280,7 +288,9 @@ describe('LangGraphRagOrchestratorService', () => {
       routeStrategy: 'simple',
       signal: expect.any(AbortSignal),
     });
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith(
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         personaId: 'persona-1',
         retrievalQueries: [
@@ -340,7 +350,9 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).not.toHaveBeenCalled();
     expect(deps.rerankerService.rerank).not.toHaveBeenCalled();
     expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
@@ -358,6 +370,49 @@ describe('LangGraphRagOrchestratorService', () => {
         reason: '寒暄问题，不需要查知识库',
       }),
     ]);
+  });
+
+  it('none 路由会直达轻量回答并跳过检索、评估和上下文加载', async () => {
+    const { service, deps } = createService({
+      routeStrategy: 'none',
+    });
+    const tokens: string[] = [];
+    const onCitations = jest.fn();
+
+    const result = await service.run({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      question: '你好',
+      turnId: 'turn-1',
+      signal: new AbortController().signal,
+      onToken: (token) => tokens.push(token),
+      onCitations,
+    });
+
+    expect(deps.multiHopPlannerService.planSubQuestions).not.toHaveBeenCalled();
+    expect(deps.queryAugmentationService.plan).not.toHaveBeenCalled();
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).not.toHaveBeenCalled();
+    expect(deps.rerankerService.rerank).not.toHaveBeenCalled();
+    expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
+    expect(deps.personaService.findOne).not.toHaveBeenCalled();
+    expect(
+      deps.conversationService.getCompletedMessages,
+    ).not.toHaveBeenCalled();
+    expect(deps.answerGenerationService.generate).not.toHaveBeenCalled();
+    expect(deps.answerGenerationService.generateDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: '你好',
+        personaId: 'persona-1',
+      }),
+    );
+    expect(tokens).toEqual(['闲']);
+    expect(onCitations).not.toHaveBeenCalled();
+    expect(result.answerText).toBe('闲聊回答');
+    expect(result.state.strategy).toBe('none');
+    expect(result.state.retrievalTrace).toEqual([]);
+    expect(result.citations).toEqual([]);
   });
 
   it('complex 路径会先完成多轮 retrieve，再统一 rerank 与评估', async () => {
@@ -391,8 +446,12 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).toHaveBeenCalled();
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledTimes(2);
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenNthCalledWith(
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledTimes(2);
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         retrievalQueries: [
@@ -402,7 +461,9 @@ describe('LangGraphRagOrchestratorService', () => {
         ],
       }),
     );
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenNthCalledWith(
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         retrievalQueries: [
@@ -550,7 +611,9 @@ describe('LangGraphRagOrchestratorService', () => {
       onCitations: jest.fn(),
     });
 
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledTimes(2);
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledTimes(2);
     expect(result.answerText).toBe('答案');
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
@@ -649,7 +712,9 @@ describe('LangGraphRagOrchestratorService', () => {
     ).rejects.toMatchObject(createAbortError());
 
     expect(deps.ragRouteService.routeQuestion).not.toHaveBeenCalled();
-    expect(deps.personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,8 @@
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '@/app.module';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
-import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 
 function readDotEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -46,11 +45,17 @@ function readArg(name: string): string | null {
 
 async function main(): Promise<void> {
   process.env.NEO4J_GRAPH_ENABLED = 'true';
+  process.env.NEO4J_URL ??= 'bolt://localhost:7687';
+  process.env.NEO4J_USERNAME ??= 'neo4j';
+  process.env.NEO4J_PASSWORD ??= '12345678';
+  process.env.NEO4J_DATABASE ??= 'neo4j';
   process.env.HYBRID_KEYWORD_BACKEND =
     readArg('keyword-backend') ??
     process.env.HYBRID_KEYWORD_BACKEND ??
     'elastic';
 
+  const { AppModule } =
+    require('@/app.module') as typeof import('@/app.module');
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
@@ -65,7 +70,7 @@ async function main(): Promise<void> {
     }
 
     const query =
-      readArg('query') ?? '这个知识库里有哪些关键实体、关系和对应证据？';
+      readArg('query') ?? '系统是否允许把甲方上传的合同直接用于公开训练？';
 
     const result = await searchService.retrieveForPersonaWithStages(
       personaId,
@@ -134,15 +139,80 @@ async function main(): Promise<void> {
 async function findMountedPersonaId(
   runtime: ContentRuntimeService,
 ): Promise<string | null> {
-  const { data, error } = await runtime.supabase
+  const { data: mountedRows, error: mountedError } = await runtime.supabase
     .from('persona_knowledge_base')
-    .select('persona_id')
-    .limit(1);
-  if (error) {
-    throw new Error(error.message);
+    .select('persona_id, knowledge_base_id')
+    .limit(50);
+  if (mountedError) {
+    throw new Error(mountedError.message);
   }
-  const row = data?.[0] as { persona_id?: string } | undefined;
-  return row?.persona_id ?? null;
+
+  const mounted = (mountedRows ?? []) as Array<{
+    persona_id?: string;
+    knowledge_base_id?: string;
+  }>;
+  if (mounted.length === 0) return null;
+
+  const knowledgeIds = Array.from(
+    new Set(mounted.map((row) => row.knowledge_base_id).filter(Boolean)),
+  ) as string[];
+  const { data: documents, error: documentError } = await runtime.supabase
+    .from('knowledge_document')
+    .select('id, knowledge_base_id')
+    .in('knowledge_base_id', knowledgeIds);
+  if (documentError) {
+    throw new Error(documentError.message);
+  }
+
+  const documentRows = (documents ?? []) as Array<{
+    id?: string;
+    knowledge_base_id?: string;
+  }>;
+  const documentToKnowledge = new Map<string, string>();
+  for (const document of documentRows) {
+    if (document.id && document.knowledge_base_id) {
+      documentToKnowledge.set(document.id, document.knowledge_base_id);
+    }
+  }
+
+  const documentIds = Array.from(documentToKnowledge.keys());
+  if (documentIds.length === 0) {
+    return mounted[0]?.persona_id ?? null;
+  }
+
+  const { data: chunks, error: chunkError } = await runtime.supabase
+    .from('knowledge_chunk')
+    .select('document_id')
+    .eq('enabled', true)
+    .in('document_id', documentIds);
+  if (chunkError) {
+    throw new Error(chunkError.message);
+  }
+
+  const chunkCountByKnowledge = new Map<string, number>();
+  for (const chunk of (chunks ?? []) as Array<{ document_id?: string }>) {
+    const knowledgeId = chunk.document_id
+      ? documentToKnowledge.get(chunk.document_id)
+      : undefined;
+    if (!knowledgeId) continue;
+    chunkCountByKnowledge.set(
+      knowledgeId,
+      (chunkCountByKnowledge.get(knowledgeId) ?? 0) + 1,
+    );
+  }
+
+  let selectedPersonaId = mounted[0]?.persona_id ?? null;
+  let selectedChunkCount = -1;
+  for (const row of mounted) {
+    if (!row.persona_id || !row.knowledge_base_id) continue;
+    const chunkCount = chunkCountByKnowledge.get(row.knowledge_base_id) ?? 0;
+    if (chunkCount > selectedChunkCount) {
+      selectedPersonaId = row.persona_id;
+      selectedChunkCount = chunkCount;
+    }
+  }
+
+  return selectedPersonaId;
 }
 
 function summarize(
