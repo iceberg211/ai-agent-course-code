@@ -88,6 +88,7 @@ export interface RagWorkflowState {
   webSearchQueries: string[];
   stopReason: RagStopReason;
   orchestrator: RagOrchestratorName;
+  rerankLimit: number;
 }
 
 export interface RagWorkflowResult {

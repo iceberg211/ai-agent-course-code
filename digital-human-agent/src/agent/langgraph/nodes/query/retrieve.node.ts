@@ -98,6 +98,7 @@ export function createRetrieveNode(
         },
       ],
       stopReason: '',
+      rerankLimit: stage1Result.rerankLimit ?? state.rerankLimit,
     } satisfies Partial<RagGraphState>;
   };
 }

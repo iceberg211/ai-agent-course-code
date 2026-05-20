@@ -3,6 +3,7 @@ import {
   DEFAULT_RAG_MAX_HOPS,
   DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
 } from '@/agent/agent.constants';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 import { DEFAULT_RETRIEVAL_STRATEGY } from '@/common/rag';
 import {
   getCurrentQuery,
@@ -51,6 +52,7 @@ export const RagGraphStateAnnotation = Annotation.Root({
   webSearchQueries: Annotation<string[]>(),
   stopReason: Annotation<RagStopReason>(),
   orchestrator: Annotation<'langgraph'>(),
+  rerankLimit: Annotation<number>(),
   answerText: Annotation<string>(),
   persona: Annotation<Persona | null>(),
   history: Annotation<ConversationMessage[]>(),
@@ -99,6 +101,7 @@ export function buildInitialRagGraphState(
     webSearchQueries: [],
     stopReason: '',
     orchestrator: 'langgraph',
+    rerankLimit: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
     answerText: '',
     persona: null,
     history: [],

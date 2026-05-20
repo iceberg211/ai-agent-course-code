@@ -22,7 +22,7 @@ export function createRerankNode(rerankerService: RerankerService) {
     const topDocuments = await rerankerService.rerank(
       state.question,
       documents,
-      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
+      state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
       input.signal,
     );
 

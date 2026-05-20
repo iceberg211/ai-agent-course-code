@@ -78,4 +78,38 @@ describe('createRerankNode', () => {
       evidenceChunks: [],
     });
   });
+
+  it('如果 state 中有动态配置的 rerankLimit，则会优先使用它', async () => {
+    const rerankerService = {
+      rerank: jest.fn().mockResolvedValue([documents[1]]),
+    };
+    const node = createRerankNode(rerankerService as never);
+
+    const update = await node(
+      {
+        question: '当前问题',
+        documents,
+        rerankLimit: 10,
+      } as never,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(rerankerService.rerank).toHaveBeenCalledWith(
+      '当前问题',
+      documents,
+      10,
+      expect.any(AbortSignal),
+    );
+    expect(update).toEqual({
+      topDocuments: [documents[1]],
+      evidenceChunks: [documents[1]],
+    });
+  });
 });
+

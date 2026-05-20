@@ -174,5 +174,7 @@ export interface PersonaHybridRetrievalResult {
   chunks: KnowledgeChunk[];
   trace: RetrieveKnowledgeTraceItem[];
   knowledgeCount: number;
+  rerankLimit?: number;
 }
+
 

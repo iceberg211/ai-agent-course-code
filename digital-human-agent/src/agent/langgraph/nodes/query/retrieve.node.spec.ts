@@ -207,6 +207,7 @@ describe('createRetrieveNode', () => {
             skippedChannels: [],
           },
         ],
+        rerankLimit: 8,
       }),
     };
     const onCitations = jest.fn();
@@ -277,6 +278,7 @@ describe('createRetrieveNode', () => {
         },
       ],
       stopReason: '',
+      rerankLimit: 8,
     });
     expect(onCitations).toHaveBeenCalledWith([
       expect.objectContaining({

@@ -10,7 +10,10 @@ import {
 } from '@/common/utils';
 import type { RetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import { DEFAULT_HYBRID_KEYWORD_BACKEND } from '@/common/constants';
+import {
+  DEFAULT_HYBRID_KEYWORD_BACKEND,
+  DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
+} from '@/common/constants';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
@@ -258,6 +261,16 @@ export class HybridRetrieverService {
       },
     );
 
+    const rerankLimits = knowledgeConfigs.map(
+      (c) =>
+        c.retrievalConfig?.rerankLimit ??
+        DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
+    );
+    const rerankLimit =
+      rerankLimits.length > 0
+        ? Math.max(...rerankLimits)
+        : DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
+
     return {
       knowledgeCount: knowledgeConfigs.length,
       chunks: mergeHybridResults(
@@ -267,6 +280,7 @@ export class HybridRetrieverService {
           : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
       ),
       trace: hybridResults.flatMap((result) => result.trace),
+      rerankLimit,
     };
   }
 
