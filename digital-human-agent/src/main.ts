@@ -59,4 +59,8 @@ async function bootstrap() {
   logger.log(`HTTP 服务已启动: http://localhost:${port}`);
   logger.log(`Swagger 文档: http://localhost:${port}/api/docs`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  const logger = new Logger('Bootstrap');
+  logger.error(`应用启动失败: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+  process.exit(1);
+});

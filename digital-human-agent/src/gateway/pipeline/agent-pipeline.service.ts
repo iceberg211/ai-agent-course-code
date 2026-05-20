@@ -6,6 +6,8 @@ import { RealtimeSessionRegistry } from '@/conversation/services/realtime-sessio
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * Agent 执行 Pipeline。
@@ -50,7 +52,7 @@ export class AgentPipelineService {
     const abortController = new AbortController();
     this.sessionRegistry.update(session.sessionId, { abortController });
 
-    this.sendJson(client, {
+    sendJson(client, {
       type: 'conversation:start',
       sessionId: session.sessionId,
       turnId,
@@ -71,7 +73,7 @@ export class AgentPipelineService {
           fullReply += token;
 
           // 推送文字 token 给前端
-          this.sendJson(client, {
+          sendJson(client, {
             type: 'conversation:text_chunk',
             sessionId: session.sessionId,
             turnId,
@@ -82,7 +84,7 @@ export class AgentPipelineService {
           this.flushBuffer(client, session, turnId, token, false);
         },
         onCitations: (citations) => {
-          this.sendJson(client, {
+          sendJson(client, {
             type: 'conversation:citations',
             sessionId: session.sessionId,
             turnId,
@@ -118,14 +120,14 @@ export class AgentPipelineService {
       });
 
       if (shouldSendError) {
-        this.sendJson(client, {
+        sendJson(client, {
           type: 'error',
           sessionId: session.sessionId,
           payload: { message: 'Agent error' },
         });
       }
 
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'conversation:done',
         sessionId: session.sessionId,
         turnId,
@@ -183,9 +185,5 @@ export class AgentPipelineService {
     }
   }
 
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

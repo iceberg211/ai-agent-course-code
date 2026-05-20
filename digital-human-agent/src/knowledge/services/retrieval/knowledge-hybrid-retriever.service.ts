@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   isAbortError,
   isTransientInfrastructureError,
@@ -78,6 +79,7 @@ export class KnowledgeHybridRetrieverService {
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
     private readonly keywordRetriever: KnowledgeKeywordRetrieverService,
+    private readonly configService: ConfigService,
     @Optional()
     private readonly graphRetriever?: KnowledgeGraphService,
     @Optional()
@@ -670,7 +672,7 @@ export class KnowledgeHybridRetrieverService {
 
   private resolvePersonaConcurrency(): number {
     return this.runtime.toBoundedNumber(
-      process.env.RAG_PERSONA_KB_CONCURRENCY,
+      this.configService.get<string>('RAG_PERSONA_KB_CONCURRENCY'),
       3,
       1,
       8,

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
@@ -35,9 +36,14 @@ interface BochaSearchResponse {
 export class WebFallbackService {
   private readonly logger = new Logger(WebFallbackService.name);
 
+  constructor(private readonly configService: ConfigService) {}
+
   isEnabled(): boolean {
-    return Boolean(String(process.env.BOCHA_API_KEY ?? '').trim());
+    return Boolean(
+      String(this.configService.get<string>('BOCHA_API_KEY') ?? '').trim(),
+    );
   }
+
 
   async search(params: SearchWebParams): Promise<RagWebCitation[]> {
     const normalizedQuery = params.query.trim();
@@ -77,7 +83,9 @@ export class WebFallbackService {
     const response = await fetch(DEFAULT_BOCHA_SEARCH_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${String(process.env.BOCHA_API_KEY ?? '').trim()}`,
+        Authorization: `Bearer ${String(
+          this.configService.get<string>('BOCHA_API_KEY') ?? '',
+        ).trim()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

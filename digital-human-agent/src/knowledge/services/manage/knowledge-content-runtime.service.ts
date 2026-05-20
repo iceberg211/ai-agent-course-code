@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
@@ -29,21 +30,8 @@ import type {
 export class KnowledgeContentRuntimeService {
   private readonly logger = new Logger(KnowledgeContentRuntimeService.name);
 
-  readonly embeddingBatchSize = this.toBoundedNumber(
-    process.env.EMBEDDINGS_BATCH_SIZE,
-    DEFAULT_EMBEDDINGS_BATCH_SIZE_DEFAULT,
-    1,
-    DEFAULT_EMBEDDINGS_BATCH_SIZE_DEFAULT,
-  );
-
-  readonly embeddings = new OpenAIEmbeddings({
-    model: process.env.EMBEDDINGS_MODEL_NAME ?? DEFAULT_EMBEDDINGS_MODEL_NAME,
-    batchSize: this.embeddingBatchSize,
-    configuration: {
-      baseURL: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-  });
+  readonly embeddingBatchSize: number;
+  readonly embeddings: OpenAIEmbeddings;
 
   readonly splitter = new RecursiveCharacterTextSplitter({
     chunkSize: DEFAULT_KNOWLEDGE_CHUNK_SIZE,
@@ -54,7 +42,27 @@ export class KnowledgeContentRuntimeService {
   constructor(
     @Inject(SUPABASE_CLIENT)
     readonly supabase: SupabaseClient,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.embeddingBatchSize = this.toBoundedNumber(
+      this.configService.get<string>('EMBEDDINGS_BATCH_SIZE'),
+      DEFAULT_EMBEDDINGS_BATCH_SIZE_DEFAULT,
+      1,
+      DEFAULT_EMBEDDINGS_BATCH_SIZE_DEFAULT,
+    );
+
+    this.embeddings = new OpenAIEmbeddings({
+      model:
+        this.configService.get<string>('EMBEDDINGS_MODEL_NAME') ??
+        DEFAULT_EMBEDDINGS_MODEL_NAME,
+      batchSize: this.embeddingBatchSize,
+      configuration: {
+        baseURL: this.configService.get<string>('OPENAI_BASE_URL'),
+        apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+      },
+    });
+  }
+
 
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,

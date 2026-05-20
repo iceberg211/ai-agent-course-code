@@ -5,6 +5,8 @@ import { PersonaService } from '@/persona/persona.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 import { TtsAudioFrameMeta } from '@/gateway/gateway.types';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * TTS 推流 Pipeline。
@@ -73,7 +75,7 @@ export class TtsPipelineService {
 
     // 发送 tts:start（仅第一次）
     if (!session.ttsStarted) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'tts:start',
         sessionId: session.sessionId,
         turnId,
@@ -92,8 +94,12 @@ export class TtsPipelineService {
         const text = session.ttsQueue.shift();
         if (!text) continue;
 
-        const signal =
-          session.abortController?.signal ?? new AbortController().signal;
+        let signal = session.abortController?.signal;
+        if (!signal) {
+          const controller = new AbortController();
+          this.sessionRegistry.update(session.sessionId, { abortController: controller });
+          signal = controller.signal;
+        }
 
         await this.ttsService.synthesizeStream(
           text,
@@ -118,7 +124,7 @@ export class TtsPipelineService {
       session.ttsQueue = [];
       if ((err as { name?: string })?.name !== 'AbortError') {
         this.logger.error('TTS synthesize error', err);
-        this.sendJson(client, {
+        sendJson(client, {
           type: 'error',
           sessionId: session.sessionId,
           payload: { message: 'TTS failed' },
@@ -144,7 +150,7 @@ export class TtsPipelineService {
     if (!session.ttsFinalizeRequested) return;
 
     if (session.ttsStarted) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'tts:end',
         sessionId: session.sessionId,
         turnId,
@@ -171,13 +177,6 @@ export class TtsPipelineService {
     head.writeUInt32BE(metaBytes.length, 0);
     return Buffer.concat([head, metaBytes, audioBytes]);
   }
-
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
-
   private getOutputFormat(session: RealtimeSession): 'mp3' | 'pcm' {
     if (
       session.mode === 'digital-human' &&
@@ -188,3 +187,4 @@ export class TtsPipelineService {
     return 'mp3';
   }
 }
+

@@ -83,12 +83,12 @@ export class KnowledgeService {
     return this.knowledgeRepo
       .createQueryBuilder('knowledge')
       .innerJoin(
-        'persona_knowledge_base',
+        PersonaKnowledge,
         'personaKnowledge',
-        'personaKnowledge.knowledge_base_id = knowledge.id',
+        'personaKnowledge.knowledgeBaseId = knowledge.id',
       )
-      .where('personaKnowledge.persona_id = :personaId', { personaId })
-      .orderBy('knowledge.created_at', 'DESC')
+      .where('personaKnowledge.personaId = :personaId', { personaId })
+      .orderBy('knowledge.createdAt', 'DESC')
       .getMany();
   }
 

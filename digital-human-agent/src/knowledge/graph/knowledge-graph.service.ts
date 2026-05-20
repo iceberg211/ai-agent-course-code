@@ -1,468 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { throwIfAborted } from '@/common/utils';
 import { Neo4jGraphService } from '@/knowledge/graph/neo4j-graph.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
-
-// ==========================================
-// 接口与常数定义 (从 upsert-plan 等文件迁移)
-// ==========================================
-
 import {
-  DEFAULT_RAG_GRAPH_SCHEMA_VERSION,
-  DEFAULT_RAG_GRAPH_EXTRACTOR_VERSION,
-  type KnowledgeGraphNodeType,
   type KnowledgeGraphChunkRef,
-  type KnowledgeGraphNodeRef,
   type ExtractedKnowledgeGraphNode,
   type ExtractedKnowledgeGraphEdge,
   type ExtractedKnowledgeGraph,
-  type BuildKnowledgeGraphUpsertPlanInput,
-  type KnowledgeGraphNodePlan,
-  type KnowledgeGraphEdgePlan,
-  type KnowledgeGraphUpsertPlan,
-  type Neo4jGraphEvidence,
   type Neo4jGraphRetrieveRow,
   type Neo4jGraphRetrieveParams,
   type Neo4jGraphSyncInput,
   type Neo4jGraphSyncSummary,
   type Neo4jGraphSyncResult,
 } from '@/knowledge/types/knowledge-graph.types';
-
-const PARTY_TERMS = [
-  '甲方',
-  '乙方',
-  '丙方',
-  '丁方',
-  '发包方',
-  '承包方',
-  '客户',
-  '供应商',
-  '服务商',
-];
-
-// ==========================================
-// 辅助纯函数 (从 upsert-plan.ts, query.builder.ts, mapper.ts)
-// ==========================================
-
-export function buildKnowledgeGraphUpsertPlan(
-  input: BuildKnowledgeGraphUpsertPlanInput,
-): KnowledgeGraphUpsertPlan {
-  const extractorVersion =
-    input.extractorVersion?.trim() || DEFAULT_RAG_GRAPH_EXTRACTOR_VERSION;
-  const schemaVersion =
-    input.schemaVersion?.trim() || DEFAULT_RAG_GRAPH_SCHEMA_VERSION;
-  const nodes = new Map<string, KnowledgeGraphNodePlan>();
-  const edges = new Map<string, KnowledgeGraphEdgePlan>();
-
-  const documentNode = buildDocumentNode(input.documentId);
-  nodes.set(documentNode.nodeKey, documentNode);
-
-  for (const chunk of input.chunks) {
-    const chunkNode = buildChunkNode(input.documentId, chunk);
-    nodes.set(chunkNode.nodeKey, chunkNode);
-    const edge = buildEdgePlan({
-      sourceNodeKey: documentNode.nodeKey,
-      targetNodeKey: chunkNode.nodeKey,
-      relationType: 'HAS_CHUNK',
-      relationLabel: null,
-      documentId: input.documentId,
-      chunkId: chunk.id,
-      extractorVersion,
-      schemaVersion,
-      confidence: 1,
-      evidenceText: null,
-      metadata: { chunkIndex: chunk.chunkIndex },
-    });
-    edges.set(edge.edgeKey, edge);
-  }
-
-  for (const node of input.extractedGraph?.nodes ?? []) {
-    const nodePlan = buildExtractedNode(node);
-    if (nodePlan) {
-      nodes.set(nodePlan.nodeKey, nodePlan);
-    }
-  }
-
-  for (const relation of input.extractedGraph?.edges ?? []) {
-    const source = buildExtractedNode(relation.source);
-    const target = buildExtractedNode(relation.target);
-    if (!source || !target) continue;
-
-    nodes.set(source.nodeKey, source);
-    nodes.set(target.nodeKey, target);
-
-    const edge = buildEdgePlan({
-      sourceNodeKey: source.nodeKey,
-      targetNodeKey: target.nodeKey,
-      relationType: normalizeRelationType(relation.relationType),
-      relationLabel: normalizeOptionalText(relation.relationLabel),
-      documentId: input.documentId,
-      chunkId: normalizeOptionalText(relation.chunkId),
-      extractorVersion,
-      schemaVersion,
-      confidence: normalizeConfidence(relation.confidence),
-      evidenceText: normalizeOptionalText(relation.evidenceText),
-      metadata: relation.metadata ?? {},
-    });
-    edges.set(edge.edgeKey, edge);
-  }
-
-  return {
-    documentId: input.documentId,
-    extractorVersion,
-    schemaVersion,
-    nodes: Array.from(nodes.values()),
-    edges: Array.from(edges.values()),
-  };
-}
-
-function buildDocumentNode(documentId: string): KnowledgeGraphNodePlan {
-  return {
-    nodeKey: `Document:${documentId}`,
-    nodeType: 'Document',
-    displayName: documentId,
-    normalizedName: documentId,
-    entityType: null,
-    documentId,
-    chunkId: null,
-    aliases: [],
-    metadata: {},
-  };
-}
-
-function buildChunkNode(
-  documentId: string,
-  chunk: KnowledgeGraphChunkRef,
-): KnowledgeGraphNodePlan {
-  return {
-    nodeKey: `Chunk:${chunk.id}`,
-    nodeType: 'Chunk',
-    displayName: `${chunk.source}#${chunk.chunkIndex}`,
-    normalizedName: chunk.id,
-    entityType: null,
-    documentId,
-    chunkId: chunk.id,
-    aliases: [],
-    metadata: {
-      source: chunk.source,
-      chunkIndex: chunk.chunkIndex,
-    },
-  };
-}
-
-function buildExtractedNode(
-  node: KnowledgeGraphNodeRef & {
-    aliases?: string[];
-    metadata?: Record<string, unknown>;
-  },
-): KnowledgeGraphNodePlan | null {
-  const normalizedName = normalizeGraphName(node.name);
-  if (!normalizedName) return null;
-
-  const entityType = normalizeOptionalText(node.entityType);
-  const nodeKey = [node.type, entityType, normalizedName]
-    .filter((item): item is string => Boolean(item))
-    .join(':');
-
-  return {
-    nodeKey,
-    nodeType: node.type,
-    displayName: node.name.trim(),
-    normalizedName,
-    entityType,
-    documentId: null,
-    chunkId: null,
-    aliases: Array.from(
-      new Set((node.aliases ?? []).map(normalizeGraphName).filter(Boolean)),
-    ),
-    metadata: node.metadata ?? {},
-  };
-}
-
-function buildEdgePlan(input: {
-  sourceNodeKey: string;
-  targetNodeKey: string;
-  relationType: string;
-  relationLabel: string | null;
-  documentId: string;
-  chunkId: string | null;
-  extractorVersion: string;
-  schemaVersion: string;
-  confidence: number;
-  evidenceText: string | null;
-  metadata: Record<string, unknown>;
-}): KnowledgeGraphEdgePlan {
-  const relationType = normalizeRelationType(input.relationType);
-  const chunkPart = input.chunkId ?? 'document';
-  return {
-    ...input,
-    relationType,
-    edgeKey: `${input.sourceNodeKey}->${relationType}->${input.targetNodeKey}@${input.documentId}:${chunkPart}:${input.extractorVersion}`,
-  };
-}
-
-function normalizeGraphName(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-function normalizeRelationType(value: string): string {
-  const normalized = value
-    .replace(/\s+/g, '_')
-    .replace(/[^A-Za-z0-9_\u4e00-\u9fa5-]/g, '')
-    .trim();
-  return normalized || 'RELATED_TO';
-}
-
-function normalizeOptionalText(value: string | null | undefined): string | null {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
-function normalizeConfidence(value: number | null | undefined): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, Number(value)));
-}
-
-export function buildNeo4jGraphRetrieveQuery(
-  graphMode: 'neighbors' | 'path' | undefined,
-  graphMaxHops: number | undefined,
-): string {
-  const maxHops = normalizeNeo4jGraphMaxHops(graphMaxHops);
-  return graphMode === 'path' ? buildPathQuery(maxHops) : NEIGHBOR_QUERY;
-}
-
-export function buildNeo4jGraphSearchTerms(
-  keywordTerms: string[],
-  retrievalQuery: string,
-): string[] {
-  return Array.from(
-    new Set(
-      [...keywordTerms, retrievalQuery]
-        .map((term) => term.replace(/\s+/g, ' ').trim().toLowerCase())
-        .filter((term) => term.length > 0)
-        .slice(0, 8),
-    ),
-  );
-}
-
-export function normalizeNeo4jGraphMaxHops(value: number | undefined): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 1;
-  return Math.min(3, Math.max(1, Math.trunc(parsed)));
-}
-
-function toCypherRelationshipType(value: string): string {
-  const normalized = value
-    .replace(/\s+/g, '_')
-    .replace(/[^A-Za-z0-9_\u4e00-\u9fa5-]/g, '')
-    .trim();
-  return `\`${normalized || 'RELATED_TO'}\``;
-}
-
-const NEIGHBOR_QUERY = `
-        MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
-        WHERE c.enabled = true
-        OPTIONAL MATCH (source:GraphNode)-[rel]->(target:GraphNode)
-        WHERE rel.chunkId = c.id
-        WITH c, collect(
-          CASE WHEN rel IS NULL THEN null ELSE {
-            source: source.displayName,
-            target: target.displayName,
-            relationType: coalesce(rel.relationType, type(rel)),
-            relationLabel: rel.relationLabel,
-            evidenceText: rel.evidenceText,
-            confidence: coalesce(rel.confidence, 0.5)
-          } END
-        ) AS rawEvidence
-        WITH c, [item IN rawEvidence WHERE item IS NOT NULL] AS evidence
-        WITH
-          c,
-          evidence,
-          size([
-            term IN $terms
-            WHERE
-              toLower(coalesce(c.content, '')) CONTAINS term
-              OR toLower(coalesce(c.source, '')) CONTAINS term
-              OR toLower(coalesce(c.category, '')) CONTAINS term
-          ]) AS chunkMatches,
-          size([
-            item IN evidence
-            WHERE any(term IN $terms WHERE
-              toLower(
-                coalesce(item.source, '') + ' ' +
-                coalesce(item.target, '') + ' ' +
-                coalesce(item.relationType, '') + ' ' +
-                coalesce(item.relationLabel, '') + ' ' +
-                coalesce(item.evidenceText, '')
-              ) CONTAINS term
-            )
-          ]) AS graphMatches,
-          reduce(score = 0.0, item IN evidence | score + coalesce(toFloat(item.confidence), 0.5)) AS confidenceSum
-         WHERE chunkMatches > 0 OR graphMatches > 0
-         RETURN
-           c.id AS id,
-           c.documentId AS document_id,
-           c.knowledgeId AS knowledge_base_id,
-           c.content AS content,
-           c.source AS source,
-           c.chunkIndex AS chunk_index,
-           c.category AS category,
-           (chunkMatches * 0.2 + graphMatches * 0.6 + confidenceSum * 0.05) AS graph_score,
-           evidence[..5] AS graph_evidence
-         ORDER BY graph_score DESC, c.chunkIndex ASC
-         LIMIT toInteger($matchCount)
- `;
- 
-function buildPathQuery(maxHops: number): string {
-  return `
-        MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
-        WHERE c.enabled = true
-        OPTIONAL MATCH (source:GraphNode)-[rel]->(target:GraphNode)
-        WHERE rel.chunkId = c.id
-        WITH c, collect(
-          CASE WHEN rel IS NULL THEN null ELSE {
-            source: source.displayName,
-            target: target.displayName,
-            relationType: coalesce(rel.relationType, type(rel)),
-            relationLabel: rel.relationLabel,
-            evidenceText: rel.evidenceText,
-            confidence: coalesce(rel.confidence, 0.5)
-          } END
-        ) AS rawEvidence
-        WITH c, [item IN rawEvidence WHERE item IS NOT NULL] AS evidence
-        OPTIONAL MATCH path = (:GraphNode)-[pathRels*1..${maxHops}]-(:GraphNode)
-        WHERE any(pathRel IN pathRels WHERE pathRel.chunkId = c.id)
-        WITH c, evidence, collect(path) AS paths
-        WITH
-          c,
-          evidence,
-          size([
-            term IN $terms
-            WHERE
-              toLower(coalesce(c.content, '')) CONTAINS term
-              OR toLower(coalesce(c.source, '')) CONTAINS term
-              OR toLower(coalesce(c.category, '')) CONTAINS term
-          ]) AS chunkMatches,
-          size([
-            item IN evidence
-            WHERE any(term IN $terms WHERE
-              toLower(
-                coalesce(item.source, '') + ' ' +
-                coalesce(item.target, '') + ' ' +
-                coalesce(item.relationType, '') + ' ' +
-                coalesce(item.relationLabel, '') + ' ' +
-                coalesce(item.evidenceText, '')
-              ) CONTAINS term
-            )
-          ]) AS graphMatches,
-          size([
-            currentPath IN paths
-            WHERE any(term IN $terms WHERE
-              any(pathNode IN nodes(currentPath) WHERE
-                toLower(
-                  coalesce(pathNode.displayName, '') + ' ' +
-                  coalesce(pathNode.normalizedName, '') + ' ' +
-                  coalesce(pathNode.entityType, '')
-                ) CONTAINS term
-              )
-              OR any(pathRel IN relationships(currentPath) WHERE
-                toLower(
-                  coalesce(pathRel.relationType, '') + ' ' +
-                  coalesce(pathRel.relationLabel, '') + ' ' +
-                  coalesce(pathRel.evidenceText, '')
-                ) CONTAINS term
-              )
-            )
-          ]) AS pathMatches,
-          reduce(score = 0.0, item IN evidence | score + coalesce(toFloat(item.confidence), 0.5)) AS confidenceSum
-        WHERE chunkMatches > 0 OR graphMatches > 0 OR pathMatches > 0
-        RETURN
-          c.id AS id,
-          c.documentId AS document_id,
-          c.knowledgeId AS knowledge_base_id,
-          c.content AS content,
-          c.source AS source,
-          c.chunkIndex AS chunk_index,
-          c.category AS category,
-          (chunkMatches * 0.2 + graphMatches * 0.6 + pathMatches * 0.8 + confidenceSum * 0.05) AS graph_score,
-          evidence[..5] AS graph_evidence
-        ORDER BY graph_score DESC, c.chunkIndex ASC
-        LIMIT toInteger($matchCount)
-      `;
-}
-
-export function toNeo4jKnowledgeChunk(
-  row: Neo4jGraphRetrieveRow,
-): KnowledgeChunk {
-  return {
-    id: row.id,
-    document_id: row.document_id,
-    knowledge_base_id: row.knowledge_base_id,
-    content: row.content,
-    source: row.source,
-    chunk_index: Number(row.chunk_index),
-    category: row.category,
-    similarity: 0,
-    graph_score: Number(row.graph_score) || 0,
-    retrieval_sources: ['graph'],
-    graph_evidence: normalizeEvidence(row.graph_evidence),
-  };
-}
-
-function normalizeEvidence(value: unknown): Neo4jGraphEvidence[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(isNeo4jGraphEvidence);
-}
-
-function isNeo4jGraphEvidence(value: unknown): value is Neo4jGraphEvidence {
-  if (value === null || typeof value !== 'object') return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.source === 'string' &&
-    typeof item.target === 'string' &&
-    typeof item.relationType === 'string'
-  );
-}
-
-function extractMarkdownHeadings(content: string) {
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .map((line) => {
-      const match = /^(#{1,6})\s+(.+?)\s*#*$/.exec(line);
-      if (!match) return null;
-      const name = normalizeDisplayName(match[2]);
-      if (!name) return null;
-      return {
-        level: match[1].length,
-        name,
-        evidenceText: line,
-      };
-    })
-    .filter((heading): heading is { level: number; name: string; evidenceText: string } => Boolean(heading));
-}
-
-function normalizeDisplayName(value: string): string {
-  return value
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[`*_~]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function extractPartyTerms(content: string): string[] {
-  return PARTY_TERMS.filter((term) => content.includes(term));
-}
-
-function buildEvidenceExcerpt(content: string, term: string): string {
-  const normalizedContent = content.replace(/\s+/g, ' ').trim();
-  const index = normalizedContent.indexOf(term);
-  if (index < 0) return normalizedContent.slice(0, 160);
-
-  const start = Math.max(0, index - 50);
-  const end = Math.min(normalizedContent.length, index + term.length + 90);
-  return normalizedContent.slice(start, end);
-}
+import { buildKnowledgeGraphUpsertPlan } from './upsert-plan';
+import {
+  buildNeo4jGraphRetrieveQuery,
+  buildNeo4jGraphSearchTerms,
+  normalizeNeo4jGraphMaxHops,
+  toCypherRelationshipType,
+} from './query.builder';
+import {
+  toNeo4jKnowledgeChunk,
+  extractMarkdownHeadings,
+  normalizeDisplayName,
+  extractPartyTerms,
+  buildEvidenceExcerpt,
+} from './mapper';
 
 // ==========================================
 // 核心 Service 实现
@@ -472,7 +37,10 @@ function buildEvidenceExcerpt(content: string, term: string): string {
 export class KnowledgeGraphService {
   private readonly logger = new Logger(KnowledgeGraphService.name);
 
-  constructor(private readonly neo4jGraphService: Neo4jGraphService) {}
+  constructor(
+    private readonly neo4jGraphService: Neo4jGraphService,
+    private readonly configService: ConfigService,
+  ) {}
 
   isEnabled(): boolean {
     return this.neo4jGraphService.isEnabled();
@@ -720,8 +288,12 @@ export class KnowledgeGraphService {
       documentId: input.documentId,
       chunks: input.chunks,
       extractedGraph: input.extractedGraph,
-      extractorVersion: process.env.NEO4J_GRAPH_EXTRACTOR_VERSION,
-      schemaVersion: process.env.NEO4J_GRAPH_SCHEMA_VERSION,
+      extractorVersion: this.configService.get<string>(
+        'NEO4J_GRAPH_EXTRACTOR_VERSION',
+      ),
+      schemaVersion: this.configService.get<string>(
+        'NEO4J_GRAPH_SCHEMA_VERSION',
+      ),
     });
 
     await this.upsertDocumentAndChunks(input);

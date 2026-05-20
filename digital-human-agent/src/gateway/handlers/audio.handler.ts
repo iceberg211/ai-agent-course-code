@@ -5,6 +5,8 @@ import { AsrService } from '@/speech/asr/asr.service';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * 处理二进制音频帧（麦克风录音 → ASR → Agent）。
@@ -32,7 +34,7 @@ export class AudioHandler {
   ): Promise<void> {
     const session = this.sessionRegistry.findByWsClientId(clientId);
     if (!session) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'error',
         sessionId: '',
         payload: { message: 'No active session' },
@@ -44,7 +46,7 @@ export class AudioHandler {
     try {
       text = await this.asrService.recognize(audio);
     } catch {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'error',
         sessionId: session.sessionId,
         payload: { message: 'ASR failed' },
@@ -55,7 +57,7 @@ export class AudioHandler {
     if (!text.trim()) return;
 
     // 推送 ASR 识别结果
-    this.sendJson(client, {
+    sendJson(client, {
       type: 'asr:final',
       sessionId: session.sessionId,
       payload: { text },
@@ -71,19 +73,7 @@ export class AudioHandler {
     }
 
     const turnId = randomUUID();
-    this.sessionRegistry.update(session.sessionId, {
-      activeTurnId: turnId,
-      sentenceBuffer: '',
-      abortController: null,
-      ttsTurnId: turnId,
-      ttsQueue: [],
-      ttsProcessing: false,
-      ttsSeq: 0,
-      ttsStarted: false,
-      ttsFinalizeRequested: false,
-      speakQueue: [],
-      speakProcessing: false,
-    });
+    this.sessionRegistry.initTurn(session.sessionId, turnId);
 
     await this.conversationService.addMessage({
       conversationId: session.conversationId,
@@ -97,9 +87,5 @@ export class AudioHandler {
     await this.agentPipeline.run(client, session, text, turnId);
   }
 
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

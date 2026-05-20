@@ -215,28 +215,36 @@ const knowledgeHint = computed(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 5.5px 12px;
   border-radius: 20px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.7);
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+  transition: all 0.2s var(--ease-out);
   font-family: inherit;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .header-btn:hover {
-  background: var(--primary-bg);
+  background: #ffffff;
   border-color: var(--primary-muted);
   color: var(--primary);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.04);
+}
+
+.header-btn:active {
+  transform: scale(0.96);
 }
 
 .header-btn.active {
   background: var(--primary-bg);
-  border-color: var(--primary);
+  border-color: var(--primary) !important;
   color: var(--primary);
+  border-style: solid !important;
 }
 
 .header-btn--primary {

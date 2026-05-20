@@ -1,8 +1,8 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
+import { DIGITAL_HUMAN_PROVIDER, GATEWAY_HEARTBEAT_INTERVAL } from '@/common/constants';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
@@ -10,6 +10,9 @@ import { AudioHandler } from '@/gateway/handlers/audio.handler';
 import { TextHandler } from '@/gateway/handlers/text.handler';
 import { InterruptHandler } from '@/gateway/handlers/interrupt.handler';
 import { WsInboundMessage } from '@/gateway/gateway.types';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+import { validateInboundMessage } from '@/gateway/utils/ws-validate.util';
+
 
 /**
  * ConversationGateway — WebSocket 入口与消息路由。
@@ -23,7 +26,7 @@ import { WsInboundMessage } from '@/gateway/gateway.types';
  */
 @Injectable()
 @WebSocketGateway({ path: '/ws/conversation' })
-export class ConversationGateway implements OnModuleInit {
+export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
   @WebSocketServer()
   private server: Server;
 
@@ -31,6 +34,8 @@ export class ConversationGateway implements OnModuleInit {
 
   /** clientId → WebSocket */
   private readonly clients = new Map<string, WebSocket>();
+
+  private heartbeatInterval: NodeJS.Timeout;
 
   constructor(
     private readonly sessionRegistry: RealtimeSessionRegistry,
@@ -45,11 +50,22 @@ export class ConversationGateway implements OnModuleInit {
   onModuleInit(): void {
     this.server?.on('connection', (client: WebSocket) => {
       const clientId = randomUUID();
-      (client as WebSocket & { __clientId: string }).__clientId = clientId;
+      const clientWithState = client as WebSocket & {
+        __clientId: string;
+        isAlive: boolean;
+      };
+      clientWithState.__clientId = clientId;
+      clientWithState.isAlive = true;
+
       this.clients.set(clientId, client);
       this.logger.log(`Client connected: ${clientId}`);
 
+      client.on('pong', () => {
+        clientWithState.isAlive = true;
+      });
+
       client.on('message', (data: Buffer, isBinary: boolean) => {
+        clientWithState.isAlive = true;
         void this.handleMessage(client, clientId, data, isBinary).catch(
           (err) => {
             this.logger.error(
@@ -57,7 +73,7 @@ export class ConversationGateway implements OnModuleInit {
                 err instanceof Error ? (err.stack ?? err.message) : String(err)
               }`,
             );
-            this.sendJson(client, {
+            sendJson(client, {
               type: 'error',
               sessionId: '',
               payload: { message: '消息处理失败' },
@@ -73,6 +89,28 @@ export class ConversationGateway implements OnModuleInit {
         void this.cleanupClientById(clientId);
       });
     });
+
+    // 启动保活定时器
+    this.heartbeatInterval = setInterval(() => {
+      this.clients.forEach((client, clientId) => {
+        const clientWithState = client as WebSocket & { isAlive: boolean };
+        if (clientWithState.isAlive === false) {
+          this.logger.warn(
+            `Client heartbeat timeout, terminating connection: ${clientId}`,
+          );
+          client.terminate();
+          return;
+        }
+        clientWithState.isAlive = false;
+        client.ping();
+      });
+    }, GATEWAY_HEARTBEAT_INTERVAL);
+  }
+
+  onModuleDestroy(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
   }
 
   // ── 消息路由 ────────────────────────────────────────────────────────────────
@@ -89,11 +127,11 @@ export class ConversationGateway implements OnModuleInit {
       return;
     }
 
-    let msg: WsInboundMessage;
+    let rawMsg: unknown;
     try {
-      msg = JSON.parse(data.toString('utf-8')) as WsInboundMessage;
+      rawMsg = JSON.parse(data.toString('utf-8'));
     } catch {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'error',
         sessionId: '',
         payload: { message: 'Invalid JSON' },
@@ -101,9 +139,26 @@ export class ConversationGateway implements OnModuleInit {
       return;
     }
 
+    const validationResult = await validateInboundMessage(rawMsg);
+    if (!validationResult.isValid) {
+      this.logger.warn(
+        `WebSocket 消息校验失败: ${validationResult.errors?.join(', ')}`,
+      );
+      sendJson(client, {
+        type: 'error',
+        sessionId: '',
+        payload: {
+          message: `协议格式错误: ${validationResult.errors?.join('; ')}`,
+        },
+      });
+      return;
+    }
+
+    const msg = validationResult.validatedMsg as WsInboundMessage;
+
     switch (msg.type) {
       case 'ping':
-        this.sendJson(client, {
+        sendJson(client, {
           type: 'pong',
           sessionId: '',
           payload: { ts: Date.now() },
@@ -126,7 +181,7 @@ export class ConversationGateway implements OnModuleInit {
 
       default:
         this.logger.warn(
-          `Unknown message type: ${(msg as WsInboundMessage).type}`,
+          `Unknown message type: ${(msg as any).type}`,
         );
     }
   }
@@ -154,11 +209,5 @@ export class ConversationGateway implements OnModuleInit {
     this.sessionRegistry.delete(sessionId);
   }
 
-  // ── 工具方法 ───────────────────────────────────────────────────────────────
-
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

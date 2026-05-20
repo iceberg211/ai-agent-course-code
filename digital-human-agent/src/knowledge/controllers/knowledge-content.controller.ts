@@ -71,16 +71,10 @@ export class KnowledgeContentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
-    const content = await this.extractDocumentText(file);
-    return this.knowledgeContentService.ingestDocument(
+    return this.knowledgeContentService.parseAndIngestDocument(
       kbId,
-      file.originalname,
-      content,
-      {
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        category,
-      },
+      file,
+      category,
     );
   }
 
@@ -125,39 +119,4 @@ export class KnowledgeContentController {
     });
   }
 
-  private async extractDocumentText(
-    file: Express.Multer.File,
-  ): Promise<string> {
-    const ext = extname(file.originalname ?? '').toLowerCase();
-    const mime = String(file.mimetype ?? '').toLowerCase();
-
-    if (ext === '.pdf' || mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE) {
-      const mod = await import('pdf-parse');
-      const parser = new mod.PDFParse({ data: file.buffer });
-      let parsedText = '';
-      try {
-        const parsed = await parser.getText();
-        parsedText = String(parsed?.text ?? '').trim();
-      } finally {
-        await parser.destroy();
-      }
-      if (!parsedText) {
-        throw new BadRequestException('PDF 未解析到可用文本');
-      }
-      return parsedText;
-    }
-
-    if (
-      mime.startsWith('text/') ||
-      KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)
-    ) {
-      const text = file.buffer.toString('utf-8').trim();
-      if (!text) {
-        throw new BadRequestException('文档内容为空');
-      }
-      return text;
-    }
-
-    throw new BadRequestException('仅支持 txt、md、pdf 文档上传');
-  }
 }

@@ -1,8 +1,18 @@
+import { ConfigService } from '@nestjs/config';
 import { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 
 describe('WebFallbackService', () => {
   const originalApiKey = process.env.BOCHA_API_KEY;
   const originalFetch = global.fetch;
+
+  const mockConfigService = {
+    get: jest.fn().mockImplementation((key: string) => {
+      if (key === 'BOCHA_API_KEY') {
+        return process.env.BOCHA_API_KEY;
+      }
+      return undefined;
+    }),
+  } as unknown as ConfigService;
 
   afterEach(() => {
     process.env.BOCHA_API_KEY = originalApiKey;
@@ -12,7 +22,7 @@ describe('WebFallbackService', () => {
 
   it('会把联网搜索结果转换成网页引用', async () => {
     process.env.BOCHA_API_KEY = 'test-key';
-    const service = new WebFallbackService();
+    const service = new WebFallbackService(mockConfigService);
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -52,7 +62,7 @@ describe('WebFallbackService', () => {
 
   it('未配置密钥时会直接跳过联网补充', async () => {
     process.env.BOCHA_API_KEY = '';
-    const service = new WebFallbackService();
+    const service = new WebFallbackService(mockConfigService);
 
     global.fetch = jest.fn() as typeof fetch;
 
@@ -64,3 +74,4 @@ describe('WebFallbackService', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
+

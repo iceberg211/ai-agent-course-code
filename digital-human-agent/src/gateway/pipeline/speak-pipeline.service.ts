@@ -3,6 +3,8 @@ import { WebSocket } from 'ws';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * 数字人播报 Pipeline。
@@ -70,7 +72,7 @@ export class SpeakPipelineService {
 
     // 发送 digital-human:start（仅第一次）
     if (!session.ttsStarted) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'digital-human:start',
         sessionId: session.sessionId,
         turnId,
@@ -88,7 +90,7 @@ export class SpeakPipelineService {
         const digitalSessionId = session.digitalHumanSessionId;
         if (!digitalSessionId) break;
 
-        this.sendJson(client, {
+        sendJson(client, {
           type: 'digital-human:subtitle',
           sessionId: session.sessionId,
           turnId,
@@ -103,7 +105,7 @@ export class SpeakPipelineService {
       }
     } catch (err) {
       this.logger.error('Digital human speak error', err);
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'error',
         sessionId: session.sessionId,
         payload: { message: 'Digital human speak failed' },
@@ -128,7 +130,7 @@ export class SpeakPipelineService {
     if (!session.ttsFinalizeRequested) return;
 
     if (session.ttsStarted) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'digital-human:end',
         sessionId: session.sessionId,
         turnId,
@@ -151,9 +153,5 @@ export class SpeakPipelineService {
     session.abortController = null;
   }
 
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

@@ -281,6 +281,7 @@ onMounted(() => nextTick(resize))
 
 .status-indicator-dot.disabled {
   background: #cbd5e1;
+  border: 1.5px solid rgba(15, 23, 42, 0.05);
   box-shadow: none;
   animation: none;
 }

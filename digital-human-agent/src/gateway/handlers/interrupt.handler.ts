@@ -6,6 +6,8 @@ import { RealtimeSessionRegistry } from '@/conversation/services/realtime-sessio
 import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
 import { WsInterruptMessage } from '@/gateway/gateway.types';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * 处理 `conversation:interrupt` 消息。
@@ -70,7 +72,7 @@ export class InterruptHandler {
       }
     }
 
-    this.sendJson(client, {
+    sendJson(client, {
       type: 'conversation:interrupted',
       sessionId,
       turnId,
@@ -79,10 +81,5 @@ export class InterruptHandler {
 
     this.logger.log(`Interrupted session: ${sessionId}`);
   }
-
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

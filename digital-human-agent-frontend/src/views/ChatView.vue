@@ -29,25 +29,7 @@
         class="chat-body"
         :class="{ 'chat-body--digital': mode === 'digital-human' }"
       >
-        <ChatEmptyState
-          v-if="!sessionStore.historyLoading && conversationMessages.length === 0"
-          :eyebrow="emptyStateCard.eyebrow"
-          :title="emptyStateCard.title"
-          :description="emptyStateCard.description"
-          :tone="emptyStateCard.tone === 'active' ? 'success' : emptyStateCard.tone"
-          :steps="emptyStateCard.steps"
-          :capabilities="emptyStateCard.capabilities"
-          :primary-action-label="emptyStateCard.primaryAction?.label"
-          :secondary-action-label="emptyStateCard.secondaryAction?.label"
-          @primary-action="runChatAction(emptyStateCard.primaryAction)"
-          @secondary-action="runChatAction(emptyStateCard.secondaryAction)"
-        />
-        <MessageList
-          v-else
-          :messages="conversationMessages"
-          :loading="sessionStore.historyLoading"
-        />
-
+        <!-- 数字人视频窗口（仅数字人模式下呈现在左侧） -->
         <DigitalHumanWorkspace
           v-if="mode === 'digital-human'"
           class="chat-body__stage"
@@ -60,20 +42,42 @@
           @upload-voice-sample="onUploadVoiceSample"
           @refresh-voice-clone="onRefreshVoiceCloneStatus"
         />
-      </div>
 
-      <!-- 输入区 -->
-      <ChatComposer
-        :disabled="!personaStore.selectedId"
-        :busy="sessionStore.historyLoading || conversationState === 'thinking' || conversationState === 'speaking' || conversationState === 'recording'"
-        :can-stop="conversationState === 'thinking'"
-        :voice-state="conversationState"
-        :voice-preparing="micPreparing"
-        :voice-disabled="!personaStore.selectedId || !sessionStore.connected"
-        @send="onSendText"
-        @stop="onStopText"
-        @mic-toggle="() => onMicToggle(mode)"
-      />
+        <!-- 主体聊天记录与控制面板 -->
+        <div class="chat-content-pane">
+          <ChatEmptyState
+            v-if="!sessionStore.historyLoading && conversationMessages.length === 0"
+            :eyebrow="emptyStateCard.eyebrow"
+            :title="emptyStateCard.title"
+            :description="emptyStateCard.description"
+            :tone="emptyStateCard.tone === 'active' ? 'success' : emptyStateCard.tone"
+            :steps="emptyStateCard.steps"
+            :capabilities="emptyStateCard.capabilities"
+            :primary-action-label="emptyStateCard.primaryAction?.label"
+            :secondary-action-label="emptyStateCard.secondaryAction?.label"
+            @primary-action="runChatAction(emptyStateCard.primaryAction)"
+            @secondary-action="runChatAction(emptyStateCard.secondaryAction)"
+          />
+          <MessageList
+            v-else
+            :messages="conversationMessages"
+            :loading="sessionStore.historyLoading"
+          />
+
+          <!-- 输入区：统一收纳于聊天控制台面板内底栏，建立一致的边界感 -->
+          <ChatComposer
+            :disabled="!personaStore.selectedId || !sessionStore.connected"
+            :busy="sessionStore.historyLoading || conversationState === 'thinking' || conversationState === 'speaking' || conversationState === 'recording'"
+            :can-stop="conversationState === 'thinking'"
+            :voice-state="conversationState"
+            :voice-preparing="micPreparing"
+            :voice-disabled="!personaStore.selectedId || !sessionStore.connected"
+            @send="onSendText"
+            @stop="onStopText"
+            @mic-toggle="() => onMicToggle(mode)"
+          />
+        </div>
+      </div>
 
       <audio ref="audioEl" autoplay style="display:none" aria-hidden="true" />
     </main>
@@ -422,28 +426,65 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--surface);
+  background: #f1f5f9; /* 使用更有质感的冷灰色作为全局大背景 */
 }
 
 .chat-body {
   flex: 1;
   min-height: 0;
   display: flex;
+  padding: 20px 24px; /* 普通模式下也在四周包上 padding，将主视窗圈为精美的圆角卡片 */
+}
+
+/* 默认模式下的聊天面板：统一升级为悬浮白色卡片，在冷灰背景的映衬下层次分明 */
+.chat-content-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 
+    0 4px 20px rgba(15, 23, 42, 0.04),
+    0 1px 3px rgba(15, 23, 42, 0.02);
+  overflow: hidden;
 }
 
 /* 核心：数字人分栏独立滚动布局 */
 .chat-body--digital {
   display: flex;
   flex-direction: row;
-  gap: 20px;
-  padding: 16px 20px 0;
+  gap: 24px;
+  padding: 20px 24px; /* 统一的间距和边距 */
   position: relative;
   width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
+/* 数字人视频容器：高雅卡片化悬浮 */
 .chat-body--digital .chat-body__stage {
-  width: 320px;
+  width: 340px;
   flex-shrink: 0;
+  height: 100%;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 
+    0 4px 20px rgba(15, 23, 42, 0.05),
+    0 1px 3px rgba(15, 23, 42, 0.02);
+  background: #090d16; /* 视频未加载时的极深夜空蓝底色 */
+}
+
+/* 数字人模式下的聊天控制台面板：完美复用卡片样式并限定高度 */
+.chat-body--digital .chat-content-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .chat-body--digital :deep(.message-list) {
@@ -451,13 +492,26 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   margin: 0;
   min-height: 0;
   height: 100%;
-  padding-right: 0;
+  padding: 16px 20px;
 }
 
 .chat-body--digital :deep(.chat-empty) {
   flex: 1;
   min-height: 0;
   margin: 0;
+}
+
+/* 适配内嵌在卡片底部的输入栏 */
+.chat-content-pane :deep(.composer-wrap) {
+  padding: 10px 20px 16px;
+  border-top: 1px solid var(--border-muted);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.chat-content-pane :deep(.composer-pill) {
+  max-width: 100%; /* 卡片内部输入框占满宽度 */
 }
 
 /* ── 知识库抽屉滑入动画 ─────────────────────────────────────────────────────── */
@@ -483,13 +537,13 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   .chat-body--digital {
     display: flex;
     flex-direction: column;
-    padding: 12px 14px 0;
-    gap: 16px;
+    padding: 14px 16px;
+    gap: 20px;
   }
 
   .chat-body--digital .chat-body__stage {
     width: 100%;
-    margin-bottom: 0;
+    height: 280px;
   }
 }
 </style>

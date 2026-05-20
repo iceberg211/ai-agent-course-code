@@ -59,3 +59,128 @@ export type WsInboundMessage =
   | WsTextInputMessage
   | WsInterruptMessage
   | ({ type: 'ping' } & WsBaseMessage);
+
+// ── WebSocket 出站消息结构（强类型） ───────────────────────────────────────────────
+
+export interface WsPongMessage extends WsBaseMessage {
+  type: 'pong';
+  sessionId: '';
+  payload: {
+    ts: number;
+  };
+}
+
+export interface WsErrorMessage extends WsBaseMessage {
+  type: 'error';
+  sessionId: string;
+  payload: {
+    message: string;
+  };
+}
+
+export interface WsSessionReadyMessage extends WsBaseMessage {
+  type: 'session:ready';
+  sessionId: string;
+  payload: {
+    conversationId: string;
+    mode: string;
+    history: SessionHistoryMessage[];
+    historyLimit: number;
+  };
+}
+
+export interface WsDigitalHumanReadyMessage extends WsBaseMessage {
+  type: 'digital-human:ready';
+  sessionId: string;
+  payload: {
+    provider: string;
+    digitalSessionId: string;
+    speakMode: string;
+    credentials?: unknown;
+  };
+}
+
+export interface WsConversationStartMessage extends WsBaseMessage {
+  type: 'conversation:start';
+  sessionId: string;
+  turnId: string;
+}
+
+export interface WsConversationTextChunkMessage extends WsBaseMessage {
+  type: 'conversation:text_chunk';
+  sessionId: string;
+  turnId: string;
+  payload: {
+    token: string;
+  };
+}
+
+export interface WsConversationCitationsMessage extends WsBaseMessage {
+  type: 'conversation:citations';
+  sessionId: string;
+  turnId: string;
+  payload: {
+    citations: unknown;
+  };
+}
+
+export interface WsConversationDoneMessage extends WsBaseMessage {
+  type: 'conversation:done';
+  sessionId: string;
+  turnId: string;
+  payload: {
+    status: 'completed' | 'interrupted' | 'failed';
+  };
+}
+
+export interface WsTtsStartMessage extends WsBaseMessage {
+  type: 'tts:start';
+  sessionId: string;
+  turnId: string;
+  payload: {
+    encoding: 'mp3' | 'pcm';
+  };
+}
+
+export interface WsTtsEndMessage extends WsBaseMessage {
+  type: 'tts:end';
+  sessionId: string;
+  turnId: string;
+}
+
+export interface WsDigitalHumanStartMessage extends WsBaseMessage {
+  type: 'digital-human:start';
+  sessionId: string;
+  turnId: string;
+}
+
+export interface WsDigitalHumanSubtitleMessage extends WsBaseMessage {
+  type: 'digital-human:subtitle';
+  sessionId: string;
+  turnId: string;
+  payload: {
+    text: string;
+  };
+}
+
+export interface WsDigitalHumanEndMessage extends WsBaseMessage {
+  type: 'digital-human:end';
+  sessionId: string;
+  turnId: string;
+}
+
+export type WsOutboundMessage =
+  | WsPongMessage
+  | WsErrorMessage
+  | WsSessionReadyMessage
+  | WsDigitalHumanReadyMessage
+  | WsConversationStartMessage
+  | WsConversationTextChunkMessage
+  | WsConversationCitationsMessage
+  | WsConversationDoneMessage
+  | WsTtsStartMessage
+  | WsTtsEndMessage
+  | WsDigitalHumanStartMessage
+  | WsDigitalHumanSubtitleMessage
+  | WsDigitalHumanEndMessage;
+

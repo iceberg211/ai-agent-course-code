@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
@@ -11,6 +12,8 @@ import {
   SessionHistoryMessage,
   WsSessionStartMessage,
 } from '@/gateway/gateway.types';
+import { sendJson } from '@/gateway/utils/ws-send.util';
+
 
 /**
  * 处理 `session:start` 消息。
@@ -35,9 +38,10 @@ export class SessionHandler {
     @Inject(DIGITAL_HUMAN_PROVIDER)
     private readonly digitalHumanProvider: DigitalHumanProvider,
     private readonly sessionRegistry: RealtimeSessionRegistry,
+    private readonly configService: ConfigService,
   ) {
     this.historyLimit = Math.min(
-      Math.max(Number(process.env.SESSION_HISTORY_LIMIT ?? 80), 1),
+      Math.max(Number(this.configService.get<number>('SESSION_HISTORY_LIMIT') ?? 80), 1),
       500,
     );
   }
@@ -48,9 +52,8 @@ export class SessionHandler {
     msg: WsSessionStartMessage,
     cleanupSession: (sessionId: string) => Promise<void>,
   ): Promise<void> {
-    const { personaId } = msg.payload ?? {};
     if (!personaId) {
-      this.sendJson(client, {
+      sendJson(client, {
         type: 'error',
         sessionId: '',
         payload: { message: 'personaId required' },
@@ -113,7 +116,7 @@ export class SessionHandler {
       );
     }
 
-    this.sendJson(client, {
+    sendJson(client, {
       type: 'session:ready',
       sessionId,
       payload: {
@@ -158,7 +161,7 @@ export class SessionHandler {
       digitalHumanSpeakMode: created.speakMode,
     });
 
-    this.sendJson(client, {
+    sendJson(client, {
       type: 'digital-human:ready',
       sessionId,
       payload: {
@@ -173,10 +176,5 @@ export class SessionHandler {
   private parseMode(mode: unknown): SessionMode {
     return mode === 'digital-human' ? 'digital-human' : 'voice';
   }
-
-  private sendJson(client: WebSocket, msg: object): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(msg));
-    }
-  }
 }
+

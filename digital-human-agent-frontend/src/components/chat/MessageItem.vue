@@ -1,9 +1,22 @@
 <template>
   <div class="message" :class="message.role">
-    <div class="body">
-      <!-- 极简身份与状态标识 -->
+    <!-- 头像容器：User靠右，Agent靠左 -->
+    <div class="message-avatar" :class="message.role">
+      <template v-if="message.role === 'assistant'">
+        {{ personaStore.selectedPersona?.avatar || personaStore.selectedPersona?.name?.[0] || 'A' }}
+      </template>
+      <template v-else>
+        我
+      </template>
+    </div>
+
+    <!-- 气泡及内容区 -->
+    <div class="message-container">
+      <!-- 身份及状态行 -->
       <div class="role-header">
-        <span class="role-name">{{ message.role === 'assistant' ? 'Agent' : 'User' }}</span>
+        <span class="role-name">
+          {{ message.role === 'assistant' ? (personaStore.selectedPersona?.name || 'Agent') : '你' }}
+        </span>
         <span 
           v-if="message.status && message.status !== 'completed' && !message.streaming" 
           class="status-badge" 
@@ -13,26 +26,31 @@
         </span>
       </div>
 
-      <!-- 无气泡极简文本流 -->
+      <!-- 气泡卡片主体 -->
       <div 
-        class="text-flow" 
-        :class="{ 
-          streaming: message.streaming, 
-          interrupted: message.status === 'interrupted',
-          failed: message.status === 'failed'
-        }"
+        class="message-bubble" 
+        :class="[
+          message.role,
+          { 
+            streaming: message.streaming, 
+            interrupted: message.status === 'interrupted',
+            failed: message.status === 'failed'
+          }
+        ]"
       >
-        <TypingIndicator v-if="message.streaming && !message.content" />
-        <!-- assistant 消息使用 Markdown 渲染，用户消息保持纯文本 -->
-        <div v-else-if="message.role === 'assistant'" class="content md" v-html="renderMarkdown(message.content)" />
-        <span v-else class="content">{{ message.content }}</span>
-        
-        <!-- 流式光标 -->
-        <span v-if="message.streaming && message.content" class="cursor" aria-hidden="true" />
-      </div>
+        <div class="text-flow">
+          <TypingIndicator v-if="message.streaming && !message.content" />
+          <!-- assistant 消息使用 Markdown 渲染，用户消息保持纯文本 -->
+          <div v-else-if="message.role === 'assistant'" class="content md" v-html="renderMarkdown(message.content)" />
+          <span v-else class="content">{{ message.content }}</span>
+          
+          <!-- 流式光标 -->
+          <span v-if="message.streaming && message.content" class="cursor" aria-hidden="true" />
+        </div>
 
-      <!-- 引用来源 -->
-      <CitationChips :citations="message.citations" />
+        <!-- 引用来源 -->
+        <CitationChips :citations="message.citations" />
+      </div>
     </div>
   </div>
 </template>
@@ -42,6 +60,7 @@ import { marked } from 'marked'
 import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
 import CitationChips from '@/components/chat/CitationChips.vue'
+import { usePersonaStore } from '@/stores/persona'
 
 // marked 配置：开启 gfm（GitHub Flavored Markdown）
 marked.setOptions({ gfm: true })
@@ -49,6 +68,8 @@ marked.setOptions({ gfm: true })
 defineProps({
   message: { type: Object, required: true },
 })
+
+const personaStore = usePersonaStore()
 
 function statusLabel(status: string) {
   return MESSAGE_STATUS_LABELS[status as keyof typeof MESSAGE_STATUS_LABELS] ?? ''
@@ -64,39 +85,75 @@ function renderMarkdown(text: string): string {
 <style scoped>
 .message {
   display: flex;
+  gap: 12px;
   margin-bottom: 24px;
-  animation: slideUp 0.2s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+  animation: slideUp 0.25s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+.message.user {
+  flex-direction: row-reverse;
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.body { 
-  display: flex; 
-  flex-direction: column; 
-  max-width: 88%; 
-  width: 100%;
+.message-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
 }
-.user      .body { align-items: flex-end; }
-.assistant .body { align-items: flex-start; }
+.message.user .message-container {
+  align-items: flex-end;
+}
+.message.assistant .message-container {
+  align-items: flex-start;
+}
+
+/* ── 圆润头像 ──────────────────────────────────────────────────────── */
+.message-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  user-select: none;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.message-avatar.user {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  color: #ffffff;
+}
+
+.message-avatar.assistant {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+}
 
 /* ── 身份与状态行 ──────────────────────────────────────────────────── */
 .role-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 5px;
   user-select: none;
   opacity: 0.65;
+  color: var(--text-secondary);
 }
-.user      .role-header { color: var(--primary); justify-content: flex-end; }
-.assistant .role-header { color: var(--text-secondary); padding-left: 14px; }
+.message.user .role-header {
+  flex-direction: row-reverse;
+}
 
 .status-badge {
   font-size: 9px;
@@ -108,50 +165,81 @@ function renderMarkdown(text: string): string {
 .status-badge.interrupted { color: var(--warning); background: rgba(245, 158, 11, 0.1); }
 .status-badge.failed      { color: var(--error);   background: rgba(239, 68, 68, 0.1); }
 
-/* ── 无气泡排版主体 ────────────────────────────────────────────────── */
+/* ── 气泡卡片主体 ────────────────────────────────────────────────── */
+.message-bubble {
+  padding: 12px 16px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* 用户气泡：右侧靠拢，温润微蓝背景 */
+.message-bubble.user {
+  background: #f0f7ff;
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  color: #1e3a8a;
+  border-radius: 16px 4px 16px 16px; /* 右上折角仿对话泡 */
+  box-shadow: 
+    0 4px 12px rgba(59, 130, 246, 0.02),
+    0 1px 2px rgba(59, 130, 246, 0.01);
+}
+
+/* 助手气泡：左侧靠拢，清爽白底边框与精致阴影 */
+.message-bubble.assistant {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  color: var(--text);
+  border-radius: 4px 16px 16px 16px; /* 左上折角仿对话泡 */
+  box-shadow: 
+    0 4px 12px rgba(15, 23, 42, 0.03),
+    0 1px 2px rgba(15, 23, 42, 0.01);
+  position: relative;
+  overflow: hidden;
+  padding-left: 18px; /* 留出左侧思考立柱的间距 */
+}
+
+/* 渐变思考立柱：嵌入气泡左侧边缘 */
+.message-bubble.assistant::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: rgba(59, 130, 246, 0.25);
+  transition: background 0.3s ease;
+}
+
+.message-bubble.assistant.streaming::before {
+  background: linear-gradient(to bottom, #3b82f6, #10b981);
+  animation: bar-glow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes bar-glow {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+.message-bubble.assistant.interrupted::before {
+  background: var(--warning);
+}
+
+.message-bubble.assistant.failed::before {
+  background: var(--error);
+}
+
+.message-bubble.failed {
+  border-color: rgba(239, 68, 68, 0.2);
+  color: var(--error);
+}
+
 .text-flow {
   font-size: 14px;
-  line-height: 1.7;
-  color: var(--text);
+  line-height: 1.65;
   word-break: break-word;
-  width: 100%;
-  box-sizing: border-box;
 }
 
-/* 用户纯文本排版 */
 .user .text-flow {
-  text-align: right;
-  color: #1e3a8a; /* 深蓝色高雅文字 */
   font-weight: 500;
-  padding-right: 4px;
-}
-
-/* AI 科技感左侧渐变垂直线条 */
-.assistant .text-flow {
-  padding-left: 14px;
-  border-left: 2px solid rgba(59, 130, 246, 0.2);
-  transition: border-color 0.3s ease;
-}
-
-.assistant .text-flow.streaming {
-  border-left-color: var(--primary);
-  animation: streaming-border-glow 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes streaming-border-glow {
-  0% { border-left-color: rgba(59, 130, 246, 0.25); }
-  100% { border-left-color: var(--primary); }
-}
-
-.assistant .text-flow.interrupted {
-  border-left-style: dashed;
-  border-left-color: var(--warning);
-  opacity: 0.8;
-}
-
-.assistant .text-flow.failed {
-  border-left-color: var(--error);
-  color: var(--error);
 }
 
 /* ── 流式光标 ────────────────────────────────────────────────────── */
@@ -228,7 +316,7 @@ function renderMarkdown(text: string): string {
   margin: 10px 0;
 }
 .content.md :deep(a) { color: var(--primary); text-decoration: underline; }
-.assistant :deep(.citations) {
-  margin-left: 14px;
+:deep(.citations) {
+  margin-top: 10px;
 }
 </style>

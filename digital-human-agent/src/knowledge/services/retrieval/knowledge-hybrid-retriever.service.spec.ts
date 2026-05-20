@@ -86,9 +86,14 @@ describe('KnowledgeHybridRetrieverService', () => {
       retrieve: jest.fn().mockResolvedValue([graphChunk]),
     };
 
+    const mockConfigService = {
+      get: jest.fn(),
+    };
+
     const service = new KnowledgeHybridRetrieverService(
       runtime as never,
       keywordRetriever as never,
+      mockConfigService as never,
       graphRetriever as never,
     );
 
