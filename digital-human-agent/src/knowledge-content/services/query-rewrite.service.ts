@@ -15,14 +15,12 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryAngle,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
-
-const DEFAULT_EXPANDED_QUERY_COUNT = 3;
 const KEYWORD_SPLIT_PATTERN = /[、,，;；\s]+/u;
 
 const KeywordListSchema = z.union([
@@ -161,15 +159,21 @@ export class QueryRewriteService {
     query: string,
     reason: string,
   ): KnowledgeQueryRewriteResult {
+    const fallbackKeywords = this.normalizeKeywords([], query);
     return {
       originalQuery: query,
       rewrittenQuery: query,
-      keywords: this.normalizeKeywords([], query),
-      expandedQueries: this.normalizeExpandedQueries(
-        [],
-        query,
-        this.normalizeKeywords([], query),
-      ),
+      keywords: fallbackKeywords,
+      expandedQueries: query
+        ? [
+            {
+              index: 0,
+              query,
+              keywords: fallbackKeywords,
+              angle: 'original',
+            },
+          ]
+        : [],
       changed: false,
       reason,
     };
@@ -185,16 +189,19 @@ export class QueryRewriteService {
     keywords: string[],
   ): RetrievalQueryItem[] {
     const seen = new Set<string>();
-    const items = [
-      {
+    const items: Array<{ query: string; keywords?: any; angle?: RetrievalQueryAngle }> = [];
+
+    if (rewrittenQuery.trim()) {
+      items.push({
         query: rewrittenQuery,
         keywords,
         angle: 'original' as RetrievalQueryAngle,
-      },
-      ...expandedQueries,
-    ];
+      });
+    }
 
-    const normalizedItems = items
+    items.push(...expandedQueries);
+
+    return items
       .map((item) => ({
         query: item.query.trim(),
         keywords: this.normalizeKeywords(item.keywords ?? [], item.query),
@@ -207,86 +214,11 @@ export class QueryRewriteService {
         seen.add(key);
         return true;
       })
-      .slice(0, 5);
-
-    return this.padExpandedQueries(
-      normalizedItems,
-      rewrittenQuery,
-      keywords,
-      DEFAULT_EXPANDED_QUERY_COUNT,
-    )
-      .slice(0, 5)
+      .slice(0, 3)
       .map((item, index) => ({
         index,
         ...item,
       }));
-  }
-
-  private padExpandedQueries(
-    items: Array<{
-      query: string;
-      keywords: string[];
-      angle: RetrievalQueryAngle;
-    }>,
-    rewrittenQuery: string,
-    keywords: string[],
-    targetCount: number,
-  ): Array<{
-    query: string;
-    keywords: string[];
-    angle: RetrievalQueryAngle;
-  }> {
-    const padded = [...items];
-    if (!rewrittenQuery.trim() || padded.length >= targetCount) {
-      return padded;
-    }
-
-    const seen = new Set(padded.map((item) => item.query.toLowerCase()));
-    const normalizedKeywords = this.normalizeKeywords(keywords, rewrittenQuery);
-    const keywordQuery = normalizedKeywords.join(' ').trim();
-    const compactKeywords = normalizedKeywords.slice(0, 4).join(' ').trim();
-    const headKeywords = normalizedKeywords.slice(0, 2).join(' ').trim();
-
-    const candidates = [
-      {
-        query: keywordQuery,
-        keywords: normalizedKeywords,
-        angle: 'entity' as RetrievalQueryAngle,
-      },
-      {
-        query: [rewrittenQuery, compactKeywords].filter(Boolean).join(' '),
-        keywords: normalizedKeywords,
-        angle: 'semantic' as RetrievalQueryAngle,
-      },
-      {
-        query: [headKeywords, rewrittenQuery].filter(Boolean).join(' '),
-        keywords: normalizedKeywords,
-        angle: 'detail' as RetrievalQueryAngle,
-      },
-      {
-        query: `${rewrittenQuery} 相关信息`,
-        keywords: normalizedKeywords,
-        angle: 'semantic' as RetrievalQueryAngle,
-      },
-      {
-        query: `${rewrittenQuery} 具体说明`,
-        keywords: normalizedKeywords,
-        angle: 'detail' as RetrievalQueryAngle,
-      },
-    ];
-
-    for (const candidate of candidates) {
-      const query = candidate.query.trim();
-      if (!query) continue;
-      const key = query.toLowerCase();
-      if (seen.has(key)) continue;
-
-      seen.add(key);
-      padded.push(candidate);
-      if (padded.length >= targetCount) return padded;
-    }
-
-    return padded;
   }
 
   private normalizeKeywords(keywords: unknown, query: string): string[] {

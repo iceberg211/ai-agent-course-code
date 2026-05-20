@@ -10,11 +10,11 @@ import {
   publishCitations,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
-import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
+import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 
 export function createRetrieveNode(
   queryAugmentationService: QueryAugmentationService,
-  personaStage1RetrievalService: PersonaStage1RetrievalService,
+  stage1RetrievalService: KnowledgeStage1RetrievalService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
@@ -60,7 +60,7 @@ export function createRetrieveNode(
       } satisfies Partial<RagGraphState>;
     }
 
-    const stage1Result = await personaStage1RetrievalService.retrieve({
+    const stage1Result = await stage1RetrievalService.retrieveForPersona({
       personaId: input.personaId,
       retrievalQueries: augmentation.retrievalQueries,
       channels: {

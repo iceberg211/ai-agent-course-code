@@ -1,4 +1,3 @@
-import { KnowledgeDocumentIndexSyncService } from '@/knowledge-content/services/knowledge-document-index-sync.service';
 import { KnowledgeDocumentService } from '@/knowledge-content/services/knowledge-document.service';
 
 describe('KnowledgeDocumentService', () => {
@@ -102,36 +101,27 @@ describe('KnowledgeDocumentService', () => {
         })),
       },
     };
-    const elasticsearchSyncService = {
+    const elasticsearchService = {
       safeBulkUpsertChunkDocuments: jest.fn(),
       safeDeleteByDocumentId: jest.fn(),
+      findByChunkId: jest.fn(),
     };
-    const graphExtractorService = {
-      extract: jest.fn().mockResolvedValue({ nodes: [], edges: [] }),
-    };
-    const neo4jGraphSyncService = {
+    const graphService = {
       isEnabled: jest.fn().mockReturnValue(true),
-      safeDeleteByDocumentId: jest.fn(),
+      extract: jest.fn().mockResolvedValue({ nodes: [], edges: [] }),
       safeUpsertDocument: jest
         .fn<Promise<GraphSyncResult>, [GraphUpsertInput]>()
         .mockResolvedValue({ status: 'indexed' }),
+      safeDeleteByDocumentId: jest.fn(),
       safeUpdateChunkEnabled: jest.fn(),
     };
-    const knowledgeChunkIndexQueryService = {
-      findByChunkId: jest.fn(),
-    };
-    const documentIndexSyncService = new KnowledgeDocumentIndexSyncService(
-      elasticsearchSyncService as never,
-      graphExtractorService as never,
-      neo4jGraphSyncService as never,
-      knowledgeChunkIndexQueryService as never,
-    );
 
     const service = new KnowledgeDocumentService(
       documentRepo as never,
       chunkRepo as never,
       runtime as never,
-      documentIndexSyncService,
+      elasticsearchService as never,
+      graphService as never,
     );
 
     return {
@@ -142,11 +132,8 @@ describe('KnowledgeDocumentService', () => {
       insert,
       update,
       updateEq,
-      documentIndexSyncService,
-      elasticsearchSyncService,
-      graphExtractorService,
-      neo4jGraphSyncService,
-      knowledgeChunkIndexQueryService,
+      elasticsearchService,
+      graphService,
     };
   }
 
@@ -155,8 +142,8 @@ describe('KnowledgeDocumentService', () => {
       service,
       documentRepo,
       chunkRepo,
-      elasticsearchSyncService,
-      neo4jGraphSyncService,
+      elasticsearchService,
+      graphService,
     } = createService({ insertError: 'insert failed' });
 
     await expect(
@@ -165,9 +152,9 @@ describe('KnowledgeDocumentService', () => {
 
     expect(chunkRepo.delete).toHaveBeenCalledWith({ documentId: 'doc-1' });
     expect(
-      elasticsearchSyncService.safeDeleteByDocumentId,
+      elasticsearchService.safeDeleteByDocumentId,
     ).toHaveBeenCalledWith('doc-1', '导入失败清理文档 doc-1');
-    expect(neo4jGraphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+    expect(graphService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '导入失败清理文档 doc-1',
     );
@@ -181,17 +168,17 @@ describe('KnowledgeDocumentService', () => {
     const {
       service,
       documentRepo,
-      elasticsearchSyncService,
-      neo4jGraphSyncService,
+      elasticsearchService,
+      graphService,
     } = createService();
 
     await service.deleteDocument('doc-1');
 
     expect(documentRepo.delete).toHaveBeenCalledWith('doc-1');
     expect(
-      elasticsearchSyncService.safeDeleteByDocumentId,
+      elasticsearchService.safeDeleteByDocumentId,
     ).toHaveBeenCalledWith('doc-1', '删除文档 doc-1');
-    expect(neo4jGraphSyncService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+    expect(graphService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '删除文档 doc-1',
     );
@@ -202,9 +189,8 @@ describe('KnowledgeDocumentService', () => {
       service,
       update,
       updateEq,
-      elasticsearchSyncService,
-      neo4jGraphSyncService,
-      knowledgeChunkIndexQueryService,
+      elasticsearchService,
+      graphService,
     } = createService();
     const chunkDocument = {
       id: 'chunk-1',
@@ -216,7 +202,7 @@ describe('KnowledgeDocumentService', () => {
       category: null,
       enabled: false,
     };
-    knowledgeChunkIndexQueryService.findByChunkId.mockResolvedValue(
+    elasticsearchService.findByChunkId.mockResolvedValue(
       chunkDocument,
     );
 
@@ -225,23 +211,23 @@ describe('KnowledgeDocumentService', () => {
     expect(update).toHaveBeenCalledWith({ enabled: false });
     expect(updateEq).toHaveBeenCalledWith('id', 'chunk-1');
     expect(
-      elasticsearchSyncService.safeBulkUpsertChunkDocuments,
+      elasticsearchService.safeBulkUpsertChunkDocuments,
     ).toHaveBeenCalledWith([chunkDocument], '更新 chunk chunk-1');
-    expect(neo4jGraphSyncService.safeUpdateChunkEnabled).toHaveBeenCalledWith(
+    expect(graphService.safeUpdateChunkEnabled).toHaveBeenCalledWith(
       'chunk-1',
       false,
       '更新 chunk chunk-1',
     );
   });
 
-  it('Markdown 导入时会按标题边界生成结构化 chunk 再写入索引', async () => {
+  it('Markdown 导入时会按标题边界生成 structure chunk 再写入索引', async () => {
     const {
       service,
       documentRepo,
       runtime,
       insert,
-      elasticsearchSyncService,
-      neo4jGraphSyncService,
+      elasticsearchService,
+      graphService,
     } = createService();
 
     await service.ingestDocument(
@@ -277,7 +263,7 @@ describe('KnowledgeDocumentService', () => {
       ]),
     );
     expect(
-      elasticsearchSyncService.safeBulkUpsertChunkDocuments,
+      elasticsearchService.safeBulkUpsertChunkDocuments,
     ).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
@@ -292,7 +278,7 @@ describe('KnowledgeDocumentService', () => {
       ]),
       '写入文档 doc-1',
     );
-    const graphUpsertCall = neo4jGraphSyncService.safeUpsertDocument.mock
+    const graphUpsertCall = graphService.safeUpsertDocument.mock
       .calls[0]?.[0] as
       | {
           documentId: string;
@@ -336,8 +322,8 @@ describe('KnowledgeDocumentService', () => {
   });
 
   it('Neo4j 图谱写入失败时主文档仍完成，但会记录图谱同步失败状态', async () => {
-    const { service, documentRepo, neo4jGraphSyncService } = createService();
-    neo4jGraphSyncService.safeUpsertDocument.mockResolvedValue({
+    const { service, documentRepo, graphService } = createService();
+    graphService.safeUpsertDocument.mockResolvedValue({
       status: 'failed',
       errorMessage: 'neo4j unavailable',
     });
@@ -365,16 +351,15 @@ describe('KnowledgeDocumentService', () => {
     const {
       service,
       documentRepo,
-      graphExtractorService,
-      neo4jGraphSyncService,
+      graphService,
     } = createService();
-    graphExtractorService.extract.mockRejectedValue(
+    graphService.extract.mockRejectedValue(
       new Error('extract failed'),
     );
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
 
-    expect(neo4jGraphSyncService.safeUpsertDocument).not.toHaveBeenCalled();
+    expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
     expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
       status: 'completed',
       chunkCount: 1,
@@ -396,15 +381,14 @@ describe('KnowledgeDocumentService', () => {
     const {
       service,
       documentRepo,
-      graphExtractorService,
-      neo4jGraphSyncService,
+      graphService,
     } = createService();
-    neo4jGraphSyncService.isEnabled.mockReturnValue(false);
+    graphService.isEnabled.mockReturnValue(false);
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
 
-    expect(graphExtractorService.extract).not.toHaveBeenCalled();
-    expect(neo4jGraphSyncService.safeUpsertDocument).not.toHaveBeenCalled();
+    expect(graphService.extract).not.toHaveBeenCalled();
+    expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
     expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
       status: 'completed',
       chunkCount: 1,

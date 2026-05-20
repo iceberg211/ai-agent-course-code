@@ -1,4 +1,5 @@
 import type { RetrievalStrategy } from '@/common/rag';
+import type { KnowledgeRetrievalConfig } from '@/knowledge/knowledge.entity';
 
 export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'graph';
 export type KeywordBackend = 'pg' | 'elastic';
@@ -98,6 +99,14 @@ export interface RetrieveKnowledgeDebugResult {
   stage1Trace: RetrieveKnowledgeTraceItem[];
   stage1: KnowledgeChunk[];
   stage2: KnowledgeChunk[];
+}
+
+export interface MountedKnowledgeConfig {
+  knowledgeId: string;
+  threshold: number;
+  stage1TopK: number;
+  retrievalConfig: Partial<KnowledgeRetrievalConfig>;
+  updatedAt: string | null;
 }
 
 export interface IngestKnowledgeDocumentOptions {

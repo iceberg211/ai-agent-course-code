@@ -19,11 +19,11 @@ import { createWebFallbackNode } from '@/agent/langgraph/nodes/web-fallback.node
 import { RagGraphStateAnnotation } from '@/agent/langgraph/rag.state';
 import type { ConversationService } from '@/conversation/conversation.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
-import type { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
+import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import type { PersonaService } from '@/persona/persona.service';
 
 export interface RagGraphDeps {
-  personaStage1RetrievalService: PersonaStage1RetrievalService;
+  personaStage1RetrievalService: KnowledgeStage1RetrievalService;
   personaService: PersonaService;
   conversationService: ConversationService;
   answerGenerationService: AnswerGenerationService;

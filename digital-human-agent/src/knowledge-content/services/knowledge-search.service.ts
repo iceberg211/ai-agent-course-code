@@ -2,21 +2,43 @@ import { Injectable, Logger } from '@nestjs/common';
 import { isAbortError, throwIfAborted } from '@/common/utils';
 import { normalizeRetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
 import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
-import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
-import { PersonaStage1RetrievalService } from '@/knowledge-content/services/persona-stage1-retrieval.service';
+import {
+  KnowledgeStage1RetrievalService,
+  type KnowledgeStage1RetrievalResult,
+} from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
+  NormalizedRetrieveKnowledgeOptions,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
 import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
 import { RerankerService } from '@/knowledge-content/services/reranker.service';
-import { KnowledgeChunkContextExpansionService } from '@/knowledge-content/services/knowledge-chunk-context-expansion.service';
 import type { RetrievalStrategy } from '@/common/rag';
+
+interface ResolvedSearchInput {
+  query: string;
+  options: NormalizedRetrieveKnowledgeOptions;
+  strategy: RetrievalStrategy;
+  skipQueryRewrite: boolean;
+}
+
+interface Stage1LoaderParams {
+  strategy: RetrievalStrategy;
+  retrievalQueries: RetrievalQueryItem[];
+  options: NormalizedRetrieveKnowledgeOptions;
+  signal?: AbortSignal;
+}
+
+interface Stage1LoadResult {
+  knowledgeCount: number;
+  stage1Result: KnowledgeStage1RetrievalResult;
+  emptyReason?: string;
+}
 
 @Injectable()
 export class KnowledgeSearchService {
@@ -27,8 +49,6 @@ export class KnowledgeSearchService {
     private readonly stage1RetrievalService: KnowledgeStage1RetrievalService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
-    private readonly chunkContextExpansionService: KnowledgeChunkContextExpansionService,
-    private readonly personaStage1RetrievalService: PersonaStage1RetrievalService,
   ) {}
 
   async retrieve(
@@ -83,114 +103,19 @@ export class KnowledgeSearchService {
           stage1TraceCount: output.stage1Trace.length,
         }),
       },
-      () => this.retrieveWithStagesInternal(knowledgeId, query, options),
+      () =>
+        this.retrieveWithSharedPipeline(query, options, async (params) => ({
+          knowledgeCount: 1,
+          stage1Result: await this.stage1RetrievalService.retrieveForKnowledge({
+            knowledgeId,
+            retrievalQueries: params.retrievalQueries,
+            strategy: params.strategy,
+            threshold: params.options.threshold,
+            globalStage1TopK: params.options.stage1TopK,
+            signal: params.signal,
+          }),
+        })),
     );
-  }
-
-  private async retrieveWithStagesInternal(
-    knowledgeId: string,
-    query: string,
-    options: RetrieveKnowledgeOptions = {},
-  ): Promise<RetrieveKnowledgeDebugResult> {
-    const normalizedQuery = query.trim();
-    throwIfAborted(options.signal);
-
-    const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
-    const strategy = normalizeRetrievalStrategy(options.strategy);
-    const skipQueryRewrite =
-      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
-    normalizedOptions.strategy = strategy;
-    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
-
-    if (!normalizedQuery) {
-      const fallbackRewrite = this.buildFallbackRewrite(
-        normalizedQuery,
-        '原始问题为空，跳过改写',
-      );
-      return {
-        query: normalizedQuery,
-        retrievalQuery: normalizedQuery,
-        rewrite: fallbackRewrite,
-        options: normalizedOptions,
-        retrievalQueries: [],
-        stage1Trace: [],
-        stage1: [],
-        stage2: [],
-      };
-    }
-
-    if (!strategy.needRetrieval) {
-      const fallbackRewrite = this.buildFallbackRewrite(
-        normalizedQuery,
-        strategy.reason,
-      );
-      return {
-        query: normalizedQuery,
-        retrievalQuery: normalizedQuery,
-        retrievalQueries: fallbackRewrite.expandedQueries,
-        rewrite: fallbackRewrite,
-        options: normalizedOptions,
-        stage1Trace: [],
-        stage1: [],
-        stage2: [],
-      };
-    }
-
-    const rewrite = await this.resolveRetrievalQuery(
-      normalizedQuery,
-      skipQueryRewrite,
-      options.signal,
-    );
-    throwIfAborted(options.signal);
-
-    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
-    const stage1Result = await this.stage1RetrievalService.retrieveForKnowledge(
-      {
-        knowledgeId,
-        retrievalQueries,
-        strategy,
-        threshold: normalizedOptions.threshold,
-        globalStage1TopK: normalizedOptions.stage1TopK,
-        signal: options.signal,
-      },
-    );
-    throwIfAborted(options.signal);
-
-    const stage1 = stage1Result.chunks;
-
-    let stage2 = stage1.slice(0, normalizedOptions.finalTopK);
-    if (normalizedOptions.rerank && stage1.length > 1) {
-      try {
-        stage2 = await this.rerankerService.rerank(
-          normalizedQuery,
-          stage1,
-          normalizedOptions.finalTopK,
-          options.signal,
-        );
-      } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
-
-        this.logger.warn(
-          `Reranker 失败，回退为向量检索结果：${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-    stage2 = await this.expandStage2Context(stage2, strategy);
-
-    return {
-      query: normalizedQuery,
-      retrievalQuery: rewrite.rewrittenQuery,
-      retrievalQueries,
-      rewrite,
-      options: normalizedOptions,
-      stage1Trace: stage1Result.trace,
-      stage1,
-      stage2,
-    };
   }
 
   async retrieveForPersona(
@@ -270,131 +195,142 @@ export class KnowledgeSearchService {
     query: string,
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
-    const normalizedQuery = query.trim();
+    return this.retrieveWithSharedPipeline(query, options, async (params) => {
+      const stage1Result = await this.stage1RetrievalService.retrieveForPersona({
+        personaId,
+        retrievalQueries: params.retrievalQueries,
+        stage1TopK: params.options.stage1TopK,
+        threshold: params.options.threshold,
+        channels: {
+          useVector: params.strategy.useVector,
+          useKeyword: params.strategy.useKeyword,
+          useGraph: params.strategy.useGraph,
+          useExactPhrase: params.strategy.useExactPhrase,
+        },
+        signal: params.signal,
+      });
+
+      return {
+        knowledgeCount: stage1Result.knowledgeCount,
+        emptyReason: `persona ${personaId} 未挂载知识库`,
+        stage1Result: {
+          chunks: stage1Result.chunks,
+          trace: stage1Result.trace,
+        },
+      };
+    });
+  }
+
+  private async retrieveWithSharedPipeline(
+    query: string,
+    options: RetrieveKnowledgeOptions,
+    stage1Loader: (params: Stage1LoaderParams) => Promise<Stage1LoadResult>,
+  ): Promise<RetrieveKnowledgeDebugResult> {
+    const searchInput = this.resolveSearchInput(query, options);
     throwIfAborted(options.signal);
 
-    const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
-    const strategy = normalizeRetrievalStrategy(options.strategy);
-    const skipQueryRewrite =
-      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
-    normalizedOptions.strategy = strategy;
-    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
-
-    if (!normalizedQuery) {
-      const fallbackRewrite = this.buildFallbackRewrite(
-        normalizedQuery,
+    if (!searchInput.query) {
+      return this.buildEmptyResult(
+        searchInput.query,
         '原始问题为空，跳过检索',
+        searchInput.options,
       );
-      return {
-        query: normalizedQuery,
-        retrievalQuery: normalizedQuery,
-        retrievalQueries: [],
-        rewrite: fallbackRewrite,
-        options: normalizedOptions,
-        stage1Trace: [],
-        stage1: [],
-        stage2: [],
-      };
     }
 
-    if (!strategy.needRetrieval) {
-      const fallbackRewrite = this.buildFallbackRewrite(
-        normalizedQuery,
-        strategy.reason,
+    if (!searchInput.strategy.needRetrieval) {
+      return this.buildEmptyResult(
+        searchInput.query,
+        searchInput.strategy.reason,
+        searchInput.options,
       );
-      return {
-        query: normalizedQuery,
-        retrievalQuery: normalizedQuery,
-        retrievalQueries: fallbackRewrite.expandedQueries,
-        rewrite: fallbackRewrite,
-        options: normalizedOptions,
-        stage1Trace: [],
-        stage1: [],
-        stage2: [],
-      };
     }
 
     const rewrite = await this.resolveRetrievalQuery(
-      normalizedQuery,
-      skipQueryRewrite,
+      searchInput.query,
+      searchInput.skipQueryRewrite,
       options.signal,
     );
     throwIfAborted(options.signal);
 
-    const retrievalQueries = this.resolveRetrievalQueries(rewrite, strategy);
-    throwIfAborted(options.signal);
-
-    const stage1Result = await this.personaStage1RetrievalService.retrieve({
-      personaId,
+    const retrievalQueries = this.resolveRetrievalQueries(
+      rewrite,
+      searchInput.strategy,
+    );
+    const loadResult = await stage1Loader({
+      strategy: searchInput.strategy,
       retrievalQueries,
-      stage1TopK: options.stage1TopK,
-      threshold: options.threshold,
-      channels: {
-        useVector: strategy.useVector,
-        useKeyword: strategy.useKeyword,
-        useGraph: strategy.useGraph,
-        useExactPhrase: strategy.useExactPhrase,
-      },
+      options: searchInput.options,
       signal: options.signal,
     });
     throwIfAborted(options.signal);
 
-    if (stage1Result.knowledgeCount === 0) {
-      const fallbackRewrite = this.buildFallbackRewrite(
-        normalizedQuery,
-        `persona ${personaId} 未挂载知识库`,
+    if (loadResult.knowledgeCount === 0) {
+      return this.buildEmptyResult(
+        searchInput.query,
+        loadResult.emptyReason ?? '未找到可用知识库',
+        searchInput.options,
       );
-      return {
-        query: normalizedQuery,
-        retrievalQuery: normalizedQuery,
-        retrievalQueries: fallbackRewrite.expandedQueries,
-        rewrite: fallbackRewrite,
-        options: normalizedOptions,
-        stage1Trace: [],
-        stage1: [],
-        stage2: [],
-      };
     }
 
-    const mergedStage1 = stage1Result.chunks;
-    const stage1Trace = stage1Result.trace;
-    if (mergedStage1.length <= 1 || !normalizedOptions.rerank) {
-      const stage2 = await this.expandStage2Context(
-        mergedStage1.slice(0, normalizedOptions.finalTopK),
-        strategy,
-      );
-      const result = {
-        query: normalizedQuery,
-        retrievalQuery: rewrite.rewrittenQuery,
-        retrievalQueries,
-        rewrite,
-        options: normalizedOptions,
-        stage1Trace,
-        stage1: mergedStage1,
-        stage2,
-      };
-      return result;
+    const stage1 = loadResult.stage1Result.chunks;
+    const stage2 = await this.selectStage2(
+      searchInput.query,
+      stage1,
+      searchInput.options,
+      options.signal,
+    );
+
+    return {
+      query: searchInput.query,
+      retrievalQuery: rewrite.rewrittenQuery,
+      retrievalQueries,
+      rewrite,
+      options: searchInput.options,
+      stage1Trace: loadResult.stage1Result.trace,
+      stage1,
+      stage2,
+    };
+  }
+
+  private resolveSearchInput(
+    query: string,
+    options: RetrieveKnowledgeOptions,
+  ): ResolvedSearchInput {
+    const normalizedQuery = query.trim();
+    const normalizedOptions = this.runtime.normalizeRetrieveOptions(options);
+    const strategy = normalizeRetrievalStrategy(options.strategy);
+    const skipQueryRewrite =
+      normalizedOptions.skipQueryRewrite || !strategy.useMultiQuery;
+
+    normalizedOptions.strategy = strategy;
+    normalizedOptions.skipQueryRewrite = skipQueryRewrite;
+
+    return {
+      query: normalizedQuery,
+      options: normalizedOptions,
+      strategy,
+      skipQueryRewrite,
+    };
+  }
+
+  private async selectStage2(
+    query: string,
+    stage1: KnowledgeChunk[],
+    options: NormalizedRetrieveKnowledgeOptions,
+    signal?: AbortSignal,
+  ): Promise<KnowledgeChunk[]> {
+    const fallbackStage2 = stage1.slice(0, options.finalTopK);
+    if (!options.rerank || stage1.length <= 1) {
+      return fallbackStage2;
     }
 
     try {
-      const rerankedStage2 = await this.rerankerService.rerank(
-        normalizedQuery,
-        mergedStage1,
-        normalizedOptions.finalTopK,
-        options.signal,
+      return await this.rerankerService.rerank(
+        query,
+        stage1,
+        options.finalTopK,
+        signal,
       );
-      const stage2 = await this.expandStage2Context(rerankedStage2, strategy);
-      const result = {
-        query: normalizedQuery,
-        retrievalQuery: rewrite.rewrittenQuery,
-        retrievalQueries,
-        rewrite,
-        options: normalizedOptions,
-        stage1Trace,
-        stage1: mergedStage1,
-        stage2,
-      };
-      return result;
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -405,55 +341,19 @@ export class KnowledgeSearchService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      const stage2 = await this.expandStage2Context(
-        mergedStage1.slice(0, normalizedOptions.finalTopK),
-        strategy,
-      );
-      const result = {
-        query: normalizedQuery,
-        retrievalQuery: rewrite.rewrittenQuery,
-        retrievalQueries,
-        rewrite,
-        options: normalizedOptions,
-        stage1Trace,
-        stage1: mergedStage1,
-        stage2,
-      };
-      return result;
+      return fallbackStage2;
     }
   }
 
   private async resolveRetrievalQuery(
     query: string,
-    skipQueryRewrite?: boolean,
+    skipQueryRewrite: boolean,
     signal?: AbortSignal,
   ): Promise<KnowledgeQueryRewriteResult> {
     if (skipQueryRewrite) {
       return this.buildFallbackRewrite(query, '显式跳过 Query Rewrite');
     }
     return this.queryRewriteService.rewrite(query, signal);
-  }
-
-  private buildFallbackRewrite(
-    query: string,
-    reason: string,
-  ): KnowledgeQueryRewriteResult {
-    const keywords = extractFallbackKeywordTerms(query).slice(0, 6);
-    return {
-      originalQuery: query,
-      rewrittenQuery: query,
-      keywords,
-      expandedQueries: [
-        {
-          index: 0,
-          query,
-          keywords,
-          angle: 'original',
-        },
-      ],
-      changed: false,
-      reason,
-    };
   }
 
   private resolveRetrievalQueries(
@@ -468,7 +368,10 @@ export class KnowledgeSearchService {
               index: 0,
               query: rewrite.rewrittenQuery,
               keywords: rewrite.keywords,
-              angle: 'original' as const,
+              angle:
+                rewrite.rewrittenQuery === rewrite.originalQuery
+                  ? ('original' as const)
+                  : ('semantic' as const),
             },
           ];
 
@@ -478,25 +381,45 @@ export class KnowledgeSearchService {
     }));
   }
 
-  private async expandStage2Context(
-    stage2: KnowledgeChunk[],
-    strategy: RetrievalStrategy,
-  ): Promise<KnowledgeChunk[]> {
-    const window = strategy.chunkContextWindow ?? 0;
-    if (window <= 0 || stage2.length === 0) {
-      return stage2;
-    }
-
-    try {
-      return await this.chunkContextExpansionService.expand(stage2, window);
-    } catch (error) {
-      this.logger.warn(
-        `扩展相邻 chunk 上下文失败，保留原 stage2：${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return stage2;
-    }
+  private buildEmptyResult(
+    query: string,
+    reason: string,
+    options: NormalizedRetrieveKnowledgeOptions,
+  ): RetrieveKnowledgeDebugResult {
+    const fallbackRewrite = this.buildFallbackRewrite(query, reason);
+    return {
+      query,
+      retrievalQuery: query,
+      retrievalQueries: query ? fallbackRewrite.expandedQueries : [],
+      rewrite: fallbackRewrite,
+      options,
+      stage1Trace: [],
+      stage1: [],
+      stage2: [],
+    };
   }
 
+  private buildFallbackRewrite(
+    query: string,
+    reason: string,
+  ): KnowledgeQueryRewriteResult {
+    const keywords = extractFallbackKeywordTerms(query).slice(0, 6);
+    return {
+      originalQuery: query,
+      rewrittenQuery: query,
+      keywords,
+      expandedQueries: query
+        ? [
+            {
+              index: 0,
+              query,
+              keywords,
+              angle: 'original',
+            },
+          ]
+        : [],
+      changed: false,
+      reason,
+    };
+  }
 }

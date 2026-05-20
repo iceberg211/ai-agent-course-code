@@ -10,7 +10,7 @@ import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/keyword-retrievers/keyword-retriever.utils';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
 
 @Injectable()
 export class QueryAugmentationService {
