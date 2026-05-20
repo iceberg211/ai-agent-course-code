@@ -1,4 +1,4 @@
-import type { AnswerGenerationService } from '@/agent/services/answer-generation.service';
+import type { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,

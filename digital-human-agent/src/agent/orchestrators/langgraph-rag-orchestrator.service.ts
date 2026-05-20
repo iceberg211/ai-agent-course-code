@@ -6,12 +6,12 @@ import {
   getRagWorkflowCitations,
   toRagWorkflowState,
 } from '@/agent/langgraph/rag.state';
-import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
-import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
-import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
-import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
-import { RagRouteService } from '@/agent/services/rag-route.service';
-import { WebFallbackService } from '@/agent/services/web-fallback.service';
+import { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
+import { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
+import { MultiHopPlannerService } from '@/agent/services/planning/multi-hop-planner.service';
+import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
+import { RagRouteService } from '@/agent/services/planning/rag-route.service';
+import { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 import type {
   RagOrchestrator,
   RagWorkflowInput,

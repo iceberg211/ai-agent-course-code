@@ -1,5 +1,5 @@
 import { Command } from '@langchain/langgraph';
-import type { RagRouteService } from '@/agent/services/rag-route.service';
+import type { RagRouteService } from '@/agent/services/planning/rag-route.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,

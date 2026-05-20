@@ -1,4 +1,4 @@
-import type { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
+import type { MultiHopPlannerService } from '@/agent/services/planning/multi-hop-planner.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,

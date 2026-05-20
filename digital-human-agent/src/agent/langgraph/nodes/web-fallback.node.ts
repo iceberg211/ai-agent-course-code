@@ -1,6 +1,6 @@
 import { Command } from '@langchain/langgraph';
 import { isAbortError } from '@/common/utils';
-import type { WebFallbackService } from '@/agent/services/web-fallback.service';
+import type { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,

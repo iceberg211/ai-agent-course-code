@@ -1,10 +1,10 @@
 import { END, START, StateGraph } from '@langchain/langgraph';
-import type { AnswerGenerationService } from '@/agent/services/answer-generation.service';
-import type { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
-import type { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
-import type { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
-import type { RagRouteService } from '@/agent/services/rag-route.service';
-import type { WebFallbackService } from '@/agent/services/web-fallback.service';
+import type { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
+import type { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
+import type { MultiHopPlannerService } from '@/agent/services/planning/multi-hop-planner.service';
+import type { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
+import type { RagRouteService } from '@/agent/services/planning/rag-route.service';
+import type { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 import { RagGraphContextAnnotation } from '@/agent/langgraph/rag.context';
 import { createEvaluateEvidenceNode } from '@/agent/langgraph/nodes/evaluate-evidence.node';
 import { createPlanNextStepNode } from '@/agent/langgraph/nodes/plan-next-step.node';

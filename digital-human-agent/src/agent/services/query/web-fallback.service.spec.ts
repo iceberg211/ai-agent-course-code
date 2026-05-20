@@ -1,4 +1,4 @@
-import { WebFallbackService } from '@/agent/services/web-fallback.service';
+import { WebFallbackService } from '@/agent/services/query/web-fallback.service';
 
 describe('WebFallbackService', () => {
   const originalApiKey = process.env.BOCHA_API_KEY;

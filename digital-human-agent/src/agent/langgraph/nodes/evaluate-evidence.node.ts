@@ -1,6 +1,6 @@
 import { Command } from '@langchain/langgraph';
-import type { WebFallbackService } from '@/agent/services/web-fallback.service';
-import type { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
+import type { WebFallbackService } from '@/agent/services/query/web-fallback.service';
+import type { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,

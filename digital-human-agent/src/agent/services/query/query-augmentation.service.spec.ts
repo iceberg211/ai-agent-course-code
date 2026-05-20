@@ -1,4 +1,4 @@
-import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
+import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
 
 describe('QueryAugmentationService', () => {
   it('复杂问题会保留原问题并最多生成三条去重检索 query', async () => {

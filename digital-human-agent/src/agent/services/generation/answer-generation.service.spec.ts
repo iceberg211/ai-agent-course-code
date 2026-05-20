@@ -1,4 +1,4 @@
-import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
+import { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
 
 async function* createStream(parts: string[]) {
   for (const part of parts) {

@@ -11,6 +11,12 @@ import type {
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
 import { extractFallbackKeywordTerms } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
+import {
+  containsGraphTerms,
+  isGreeting,
+  isExactLookup,
+  isGraphQuestion,
+} from '@/agent/utils/query-heuristic.utils';
 
 @Injectable()
 export class QueryAugmentationService {
@@ -45,7 +51,7 @@ export class QueryAugmentationService {
       };
     }
 
-    if (this.isGreeting(normalizedQuestion)) {
+    if (isGreeting(normalizedQuestion)) {
       return {
         rewrite: fallbackRewrite,
         retrievalQueries: [
@@ -71,8 +77,8 @@ export class QueryAugmentationService {
       };
     }
 
-    const exactLike = this.isExactLookup(normalizedQuestion);
-    const graphLike = this.isGraphQuestion(normalizedQuestion);
+    const exactLike = isExactLookup(normalizedQuestion);
+    const graphLike = isGraphQuestion(normalizedQuestion);
     const maxQueries =
       input.routeStrategy === 'complex' && !exactLike ? 3 : 1;
     const rewrite =
@@ -228,14 +234,14 @@ export class QueryAugmentationService {
     rewrite: KnowledgeQueryRewriteResult,
     retrievalQueries: RetrievalQueryItem[],
   ): boolean {
-    if (this.containsGraphTerms(originalQuery)) {
+    if (containsGraphTerms(originalQuery)) {
       return true;
     }
 
     if (
       (rewrite.expandedQueries ?? []).some(
         (item) =>
-          item.angle === 'entity' || this.containsGraphTerms(item.query),
+          item.angle === 'entity' || containsGraphTerms(item.query),
       )
     ) {
       return true;
@@ -244,29 +250,7 @@ export class QueryAugmentationService {
     return retrievalQueries.some(
       (item) =>
         item.angle === 'entity' ||
-        item.keywords.some((keyword) => this.containsGraphTerms(keyword)),
+        item.keywords.some((keyword) => containsGraphTerms(keyword)),
     );
-  }
-
-  private containsGraphTerms(text: string): boolean {
-    return /关系|关联|包含|层级|上下游|依赖|参与方|甲方|乙方|流程/u.test(
-      text,
-    );
-  }
-
-  private isGreeting(query: string): boolean {
-    return /^(你好|您好|嗨|hi|hello|哈喽|谢谢|多谢)[。！!？?]*$/iu.test(
-      query.replace(/\s+/g, ''),
-    );
-  }
-
-  private isExactLookup(query: string): boolean {
-    return /《|》|"|'|\.md|\.txt|编号|订单|合同|条款|第.+章|第.+条/u.test(
-      query,
-    );
-  }
-
-  private isGraphQuestion(query: string): boolean {
-    return this.containsGraphTerms(query);
   }
 }
