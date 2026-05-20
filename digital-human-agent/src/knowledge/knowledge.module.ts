@@ -19,9 +19,7 @@ import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service
 import { ChunkExpansionService } from '@/knowledge/services/document/chunk-expansion.service';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
-import { KnowledgeContentService } from '@/knowledge/services/manage/knowledge-content.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
-import { KeywordRetrieverService } from '@/knowledge/services/retrieval/keyword-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
@@ -46,9 +44,7 @@ import { RerankerService } from '@/knowledge/services/retrieval/reranker.service
     ChunkExpansionService,
     KnowledgeDocumentService,
     ContentRuntimeService,
-    KnowledgeContentService,
     PersonaKnowledgeConfigService,
-    KeywordRetrieverService,
     KnowledgeSearchService,
     HybridRetrieverService,
     QueryRewriteService,
@@ -62,7 +58,6 @@ import { RerankerService } from '@/knowledge/services/retrieval/reranker.service
   ],
   exports: [
     KnowledgeService,
-    KnowledgeContentService,
     KnowledgeSearchService,
     QueryRewriteService,
     RerankerService,

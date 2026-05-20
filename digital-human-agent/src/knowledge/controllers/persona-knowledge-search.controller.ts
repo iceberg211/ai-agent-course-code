@@ -1,13 +1,13 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
-import { KnowledgeContentService } from '@/knowledge/services/manage/knowledge-content.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 
 @ApiTags('knowledge-content')
 @Controller('personas/:personaId')
 export class PersonaKnowledgeSearchController {
   constructor(
-    private readonly knowledgeContentService: KnowledgeContentService,
+    private readonly searchService: KnowledgeSearchService,
   ) {}
 
   @Post('search')
@@ -19,7 +19,7 @@ export class PersonaKnowledgeSearchController {
     @Body() body: KnowledgeSearchDto,
   ) {
     const normalizedQuery = String(body.query ?? '').trim();
-    const results = await this.knowledgeContentService.retrieveForPersona(
+    const results = await this.searchService.retrieveForPersona(
       personaId,
       normalizedQuery,
       {

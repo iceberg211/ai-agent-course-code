@@ -6,7 +6,7 @@ import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
   DEFAULT_FALLBACK_KEYWORD_LIMIT,
 } from '@/common/constants';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/keyword-retriever.service';
+import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/retrieval-utils';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import type {

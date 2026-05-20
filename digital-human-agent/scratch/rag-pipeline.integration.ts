@@ -2,8 +2,8 @@ import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
-import { KnowledgeContentService } from '@/knowledge-content/services/manage/knowledge-content.service';
-import { KnowledgeSearchService } from '@/knowledge-content/services/retrieval/knowledge-search.service';
+import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 
 function readDotEnv(): Record<string, string> {
@@ -47,7 +47,7 @@ async function main() {
   let ingestedDocId: string | null = null;
 
   try {
-    const contentService = app.get(KnowledgeContentService);
+    const documentService = app.get(KnowledgeDocumentService);
     const searchService = app.get(KnowledgeSearchService);
     const runtime = app.get(ContentRuntimeService);
 
@@ -64,7 +64,7 @@ async function main() {
     const targetKbId = kbList[0].id as string;
     console.log(`[RAG Integration Test] 找到目标测试知识库 ID: ${targetKbId}`);
 
-    // 2. 模拟文档数据导入 (包括文档切片、嵌入生成、PG入库、ES与Neo4j同步)
+    // 2. 模拟文档 data 导入 (包括文档切片、嵌入生成、PG入库、ES与Neo4j同步)
     const testFileName = `test-integration-${Date.now()}.md`;
     const testContent = [
       '# 反重力测试文档',
@@ -77,7 +77,7 @@ async function main() {
     ].join('\n');
 
     console.log(`[RAG Integration Test] 开始导入测试文档: ${testFileName}`);
-    const doc = await contentService.ingestDocument(targetKbId, testFileName, testContent, {
+    const doc = await documentService.ingestDocument(targetKbId, testFileName, testContent, {
       category: 'integration-test',
     });
     ingestedDocId = doc.id;
@@ -87,7 +87,7 @@ async function main() {
     const testQuery = 'Google DeepMind 的反重力智能体有哪些核心功能？';
     console.log(`[RAG Integration Test] 开始执行端到端检索，检索词为: "${testQuery}"`);
     
-    const retrieveResult = await contentService.retrieveWithStages(targetKbId, testQuery, {
+    const retrieveResult = await searchService.retrieveWithStages(targetKbId, testQuery, {
       rerank: true,
       stage1TopK: 5,
       finalTopK: 3,
@@ -119,8 +119,8 @@ async function main() {
     // 4. 清理脏数据，移除我们添加的临时测试文档
     if (ingestedDocId) {
       console.log(`[RAG Integration Test] 正在清理测试产生的 Document (ID: ${ingestedDocId})...`);
-      const contentService = app.get(KnowledgeContentService);
-      await contentService.deleteDocument(ingestedDocId).catch((err) => {
+      const documentService = app.get(KnowledgeDocumentService);
+      await documentService.deleteDocument(ingestedDocId).catch((err) => {
         console.error('清理文档失败', err);
       });
       console.log('[RAG Integration Test] 测试文档清理完毕。');

@@ -1,7 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { extname } from 'node:path';
+import {
+  KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
+  KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
+} from '@/common/constants';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
@@ -479,5 +484,64 @@ export class KnowledgeDocumentService {
         }`,
       );
     }
+  }
+
+  // ==========================================
+  // 从门面服务迁入：文档上传解析与摄入
+  // ==========================================
+  async parseAndIngestDocument(
+    knowledgeId: string,
+    file: {
+      originalname: string;
+      mimetype: string;
+      buffer: Buffer;
+      size: number;
+    },
+    category?: string,
+  ): Promise<KnowledgeDocument> {
+    const content = await this.extractDocumentText(file);
+    return this.ingestDocument(knowledgeId, file.originalname, content, {
+      mimeType: file.mimetype,
+      fileSize: file.size,
+      category,
+    });
+  }
+
+  private async extractDocumentText(file: {
+    originalname: string;
+    mimetype: string;
+    buffer: Buffer;
+  }): Promise<string> {
+    const ext = extname(file.originalname ?? '').toLowerCase();
+    const mime = String(file.mimetype ?? '').toLowerCase();
+
+    if (ext === '.pdf' || mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE) {
+      const mod = await import('pdf-parse');
+      const parser = new mod.PDFParse({ data: file.buffer });
+      let parsedText = '';
+      try {
+        const parsed = await parser.getText();
+        parsedText = String(parsed?.text ?? '').trim();
+      } finally {
+        await parser.destroy();
+      }
+      if (!parsedText) {
+        throw new BadRequestException('PDF 未解析到可用文本');
+      }
+      return parsedText;
+    }
+
+    if (
+      mime.startsWith('text/') ||
+      KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)
+    ) {
+      const text = file.buffer.toString('utf-8').trim();
+      if (!text) {
+        throw new BadRequestException('文档内容为空');
+      }
+      return text;
+    }
+
+    throw new BadRequestException('仅支持 txt、md、pdf 文档上传');
   }
 }

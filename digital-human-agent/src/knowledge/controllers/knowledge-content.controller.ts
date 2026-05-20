@@ -19,7 +19,8 @@ import {
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
-import { KnowledgeContentService } from '@/knowledge/services/manage/knowledge-content.service';
+import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
+import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -42,12 +43,13 @@ function isSupportedKnowledgeUpload(file: {
 @Controller('knowledge-bases')
 export class KnowledgeContentController {
   constructor(
-    private readonly knowledgeContentService: KnowledgeContentService,
+    private readonly documentService: KnowledgeDocumentService,
+    private readonly searchService: KnowledgeSearchService,
   ) {}
 
   @Get(':kbId/documents')
   listDocuments(@Param('kbId', ParseUUIDPipe) kbId: string) {
-    return this.knowledgeContentService.listDocumentsByKnowledgeId(kbId);
+    return this.documentService.listDocumentsByKnowledgeId(kbId);
   }
 
   @Post(':kbId/documents')
@@ -71,7 +73,7 @@ export class KnowledgeContentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
-    return this.knowledgeContentService.parseAndIngestDocument(
+    return this.documentService.parseAndIngestDocument(
       kbId,
       file,
       category,
@@ -83,7 +85,7 @@ export class KnowledgeContentController {
     @Param('kbId', ParseUUIDPipe) _kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.knowledgeContentService.deleteDocument(docId);
+    return this.documentService.deleteDocument(docId);
   }
 
   @Get(':kbId/documents/:docId/chunks')
@@ -91,7 +93,7 @@ export class KnowledgeContentController {
     @Param('kbId', ParseUUIDPipe) _kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.knowledgeContentService.listChunksByDocumentId(docId);
+    return this.documentService.listChunksByDocumentId(docId);
   }
 
   @Patch(':kbId/chunks/:chunkId')
@@ -101,7 +103,7 @@ export class KnowledgeContentController {
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Body() dto: UpdateChunkDto,
   ) {
-    await this.knowledgeContentService.updateChunkEnabled(chunkId, dto.enabled);
+    await this.documentService.updateChunkEnabled(chunkId, dto.enabled);
     return { chunkId, enabled: dto.enabled };
   }
 
@@ -111,12 +113,11 @@ export class KnowledgeContentController {
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Body() body: KnowledgeSearchDto,
   ) {
-    return this.knowledgeContentService.retrieveWithStages(kbId, body.query, {
+    return this.searchService.retrieveWithStages(kbId, body.query, {
       rerank: body.rerank,
       threshold: body.threshold,
       retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
       rerankLimit: body.rerankLimit ?? body.finalTopK,
     });
   }
-
 }
