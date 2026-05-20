@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
 import { KnowledgeContentService } from '@/knowledge-content/services/manage/knowledge-content.service';
 import { KnowledgeSearchService } from '@/knowledge-content/services/retrieval/knowledge-search.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 
 function readDotEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -49,7 +49,7 @@ async function main() {
   try {
     const contentService = app.get(KnowledgeContentService);
     const searchService = app.get(KnowledgeSearchService);
-    const runtime = app.get(KnowledgeContentRuntimeService);
+    const runtime = app.get(ContentRuntimeService);
 
     // 1. 从 supabase 获取一个现有的知识库，用以挂载测试文档
     const { data: kbList, error: kbError } = await runtime.supabase

@@ -10,7 +10,7 @@ interface DocumentWindowRange {
 }
 
 @Injectable()
-export class KnowledgeChunkContextExpansionService {
+export class ChunkExpansionService {
   constructor(
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,

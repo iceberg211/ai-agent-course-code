@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge/types/knowledge-content.types';
@@ -147,7 +147,7 @@ export class KnowledgeDocumentService {
     private readonly documentRepo: Repository<KnowledgeDocument>,
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
-    private readonly runtime: KnowledgeContentRuntimeService,
+    private readonly runtime: ContentRuntimeService,
     private readonly elasticsearchService: ElasticsearchIndexService,
     private readonly graphService: KnowledgeGraphService,
   ) {}

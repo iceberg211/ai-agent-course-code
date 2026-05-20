@@ -6,9 +6,9 @@ import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
   DEFAULT_FALLBACK_KEYWORD_LIMIT,
 } from '@/common/constants';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/keyword-retriever.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
@@ -47,8 +47,8 @@ export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
 
   constructor(
-    private readonly runtime: KnowledgeContentRuntimeService,
-    private readonly hybridRetrieverService: KnowledgeHybridRetrieverService,
+    private readonly runtime: ContentRuntimeService,
+    private readonly hybridRetrieverService: HybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
   ) {}

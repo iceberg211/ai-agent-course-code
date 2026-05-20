@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
 
 function readDotEnv(): Record<string, string> {
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const runtime = app.get(KnowledgeContentRuntimeService);
+    const runtime = app.get(ContentRuntimeService);
     const searchService = app.get(KnowledgeSearchService);
     const personaId =
       readArg('personaId') ?? (await findMountedPersonaId(runtime));
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
 }
 
 async function findMountedPersonaId(
-  runtime: KnowledgeContentRuntimeService,
+  runtime: ContentRuntimeService,
 ): Promise<string | null> {
   const { data, error } = await runtime.supabase
     .from('persona_knowledge_base')

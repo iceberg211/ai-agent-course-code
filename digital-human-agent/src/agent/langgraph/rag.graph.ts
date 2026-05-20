@@ -19,11 +19,11 @@ import { createWebFallbackNode } from '@/agent/langgraph/nodes/query/web-fallbac
 import { RagGraphStateAnnotation } from '@/agent/langgraph/rag.state';
 import type { ConversationService } from '@/conversation/services/conversation.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import type { PersonaService } from '@/persona/persona.service';
 
 export interface RagGraphDeps {
-  personaHybridRetrieverService: KnowledgeHybridRetrieverService;
+  personaHybridRetrieverService: HybridRetrieverService;
   personaService: PersonaService;
   conversationService: ConversationService;
   answerGenerationService: AnswerGenerationService;

@@ -1,11 +1,11 @@
-import { KnowledgeChunkContextExpansionService } from '@/knowledge/services/document/knowledge-chunk-context-expansion.service';
+import { ChunkExpansionService } from '@/knowledge/services/document/chunk-expansion.service';
 
-describe('KnowledgeChunkContextExpansionService', () => {
+describe('ChunkExpansionService', () => {
   function createService() {
     const repo = {
       find: jest.fn(),
     };
-    const service = new KnowledgeChunkContextExpansionService(repo as never);
+    const service = new ChunkExpansionService(repo as never);
 
     return {
       repo,

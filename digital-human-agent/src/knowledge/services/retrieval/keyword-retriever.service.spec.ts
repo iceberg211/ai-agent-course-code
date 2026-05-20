@@ -1,4 +1,4 @@
-import { KnowledgeKeywordRetrieverService } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
+import { KeywordRetrieverService } from '@/knowledge/services/retrieval/keyword-retriever.service';
 
 const sampleChunk = {
   id: 'chunk-1',
@@ -11,7 +11,7 @@ const sampleChunk = {
   retrieval_sources: ['keyword'] as const,
 };
 
-describe('KnowledgeKeywordRetrieverService', () => {
+describe('KeywordRetrieverService', () => {
   function createService(options?: {
     backend?: string;
     elasticsearchEnabled?: boolean;
@@ -81,7 +81,7 @@ describe('KnowledgeKeywordRetrieverService', () => {
       createQueryBuilder: jest.fn(() => queryBuilder),
     };
 
-    const service = new KnowledgeKeywordRetrieverService(
+    const service = new KeywordRetrieverService(
       configService as never,
       elasticsearchService as never,
       chunkRepo as never,

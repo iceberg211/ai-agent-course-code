@@ -23,7 +23,7 @@ import {
 } from '@/common/langsmith/langsmith.utils';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import { PersonaService } from '@/persona/persona.service';
 
 @Injectable()
@@ -31,7 +31,7 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
   private readonly graph: RagGraph;
 
   constructor(
-    private readonly personaHybridRetrieverService: KnowledgeHybridRetrieverService,
+    private readonly personaHybridRetrieverService: HybridRetrieverService,
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
     private readonly answerGenerationService: AnswerGenerationService,

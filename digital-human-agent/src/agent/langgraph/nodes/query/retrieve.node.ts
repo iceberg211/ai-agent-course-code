@@ -10,11 +10,11 @@ import {
   publishCitations,
   toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 
 export function createRetrieveNode(
   queryAugmentationService: QueryAugmentationService,
-  hybridRetrieverService: KnowledgeHybridRetrieverService,
+  hybridRetrieverService: HybridRetrieverService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);

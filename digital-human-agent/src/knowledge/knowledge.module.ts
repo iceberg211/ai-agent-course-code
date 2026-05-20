@@ -16,14 +16,14 @@ import {
 } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { Neo4jGraphService } from '@/knowledge/graph/neo4j-graph.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
-import { KnowledgeChunkContextExpansionService } from '@/knowledge/services/document/knowledge-chunk-context-expansion.service';
+import { ChunkExpansionService } from '@/knowledge/services/document/chunk-expansion.service';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { KnowledgeContentService } from '@/knowledge/services/manage/knowledge-content.service';
 import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
-import { KnowledgeKeywordRetrieverService } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
+import { KeywordRetrieverService } from '@/knowledge/services/retrieval/keyword-retriever.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/reranker.service';
 
@@ -43,14 +43,14 @@ import { RerankerService } from '@/knowledge/services/retrieval/reranker.service
     ElasticsearchIndexService,
     Neo4jGraphService,
     KnowledgeGraphService,
-    KnowledgeChunkContextExpansionService,
+    ChunkExpansionService,
     KnowledgeDocumentService,
-    KnowledgeContentRuntimeService,
+    ContentRuntimeService,
     KnowledgeContentService,
     PersonaKnowledgeConfigService,
-    KnowledgeKeywordRetrieverService,
+    KeywordRetrieverService,
     KnowledgeSearchService,
-    KnowledgeHybridRetrieverService,
+    HybridRetrieverService,
     QueryRewriteService,
     RerankerService,
   ],
@@ -66,7 +66,7 @@ import { RerankerService } from '@/knowledge/services/retrieval/reranker.service
     KnowledgeSearchService,
     QueryRewriteService,
     RerankerService,
-    KnowledgeHybridRetrieverService,
+    HybridRetrieverService,
   ],
 })
 export class KnowledgeModule {}

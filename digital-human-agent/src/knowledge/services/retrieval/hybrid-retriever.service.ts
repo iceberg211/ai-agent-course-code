@@ -8,8 +8,8 @@ import {
 import type { RetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
-import { KnowledgeKeywordRetrieverService } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { KeywordRetrieverService } from '@/knowledge/services/retrieval/keyword-retriever.service';
 import {
   fuseHybridAndGraphChannels,
   mergeHybridResults,
@@ -25,7 +25,6 @@ import type {
   KnowledgeRetrievalSource,
   KnowledgeHybridRetrievalParams,
   KnowledgeHybridRetrievalResult,
-  PersonaHybridRetrievalChannels,
   PersonaHybridRetrievalInput,
   PersonaHybridRetrievalResult,
 } from '@/knowledge/types/knowledge-content.types';
@@ -73,12 +72,12 @@ async function mapWithConcurrency<T, R>(
 // ==========================================
 
 @Injectable()
-export class KnowledgeHybridRetrieverService {
-  private readonly logger = new Logger(KnowledgeHybridRetrieverService.name);
+export class HybridRetrieverService {
+  private readonly logger = new Logger(HybridRetrieverService.name);
 
   constructor(
-    private readonly runtime: KnowledgeContentRuntimeService,
-    private readonly keywordRetriever: KnowledgeKeywordRetrieverService,
+    private readonly runtime: ContentRuntimeService,
+    private readonly keywordRetriever: KeywordRetrieverService,
     private readonly configService: ConfigService,
     @Optional()
     private readonly graphRetriever?: KnowledgeGraphService,

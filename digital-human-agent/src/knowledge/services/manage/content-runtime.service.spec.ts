@@ -1,12 +1,12 @@
 import { ConfigService } from '@nestjs/config';
-import { KnowledgeContentRuntimeService } from '@/knowledge/services/manage/knowledge-content-runtime.service';
+import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 
-describe('KnowledgeContentRuntimeService', () => {
+describe('ContentRuntimeService', () => {
   it('normalizeRetrieveOptions 会保留 skipQueryRewrite 观测字段', () => {
     const mockConfigService = {
       get: jest.fn(),
     } as unknown as ConfigService;
-    const service = new KnowledgeContentRuntimeService({} as never, mockConfigService);
+    const service = new ContentRuntimeService({} as never, mockConfigService);
 
     expect(
       service.normalizeRetrieveOptions({
@@ -17,4 +17,3 @@ describe('KnowledgeContentRuntimeService', () => {
     expect(service.normalizeRetrieveOptions({}).skipQueryRewrite).toBe(false);
   });
 });
-

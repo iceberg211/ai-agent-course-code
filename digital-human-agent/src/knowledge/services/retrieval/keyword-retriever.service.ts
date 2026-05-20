@@ -175,8 +175,8 @@ function buildElasticKeywordShouldClauses(
 // ==========================================
 
 @Injectable()
-export class KnowledgeKeywordRetrieverService {
-  private readonly logger = new Logger(KnowledgeKeywordRetrieverService.name);
+export class KeywordRetrieverService {
+  private readonly logger = new Logger(KeywordRetrieverService.name);
 
   constructor(
     private readonly configService: ConfigService,

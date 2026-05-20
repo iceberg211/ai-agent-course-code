@@ -27,8 +27,8 @@ import type {
 } from '@/knowledge/types/knowledge-content.types';
 
 @Injectable()
-export class KnowledgeContentRuntimeService {
-  private readonly logger = new Logger(KnowledgeContentRuntimeService.name);
+export class ContentRuntimeService {
+  private readonly logger = new Logger(ContentRuntimeService.name);
 
   readonly embeddingBatchSize: number;
   readonly embeddings: OpenAIEmbeddings;
@@ -62,7 +62,6 @@ export class KnowledgeContentRuntimeService {
       },
     });
   }
-
 
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,

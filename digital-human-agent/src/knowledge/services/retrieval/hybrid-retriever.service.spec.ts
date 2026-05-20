@@ -1,8 +1,8 @@
-import { KnowledgeHybridRetrieverService } from '@/knowledge/services/retrieval/knowledge-hybrid-retriever.service';
+import { HybridRetrieverService } from '@/knowledge/services/retrieval/hybrid-retriever.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { RetrievalStrategy } from '@/common/rag';
 
-describe('KnowledgeHybridRetrieverService', () => {
+describe('HybridRetrieverService', () => {
   const strategy: RetrievalStrategy = {
     needRetrieval: true,
     useVector: true,
@@ -90,7 +90,7 @@ describe('KnowledgeHybridRetrieverService', () => {
       get: jest.fn(),
     };
 
-    const service = new KnowledgeHybridRetrieverService(
+    const service = new HybridRetrieverService(
       runtime as never,
       keywordRetriever as never,
       mockConfigService as never,
