@@ -120,4 +120,43 @@ describe('RerankerService', () => {
 
     expect(result.map((item) => item.id)).toEqual(['chunk-keyword-first']);
   });
+
+  it('LLM 返回空分数或全部低于阈值时，会回退到 Stage1 当前顺序', async () => {
+    const { service: emptyScoreService } = createService({
+      invokeResult: {
+        scores: [],
+      },
+    });
+
+    const emptyScoreResult = await emptyScoreService.rerank(
+      '原始问题',
+      [chunk, chunk2],
+      2,
+    );
+
+    expect(emptyScoreResult.map((item) => item.id)).toEqual([
+      'chunk-1',
+      'chunk-2',
+    ]);
+
+    const { service: lowScoreService } = createService({
+      invokeResult: {
+        scores: [
+          { index: 1, score: 0.1 },
+          { index: 0, score: 0.05 },
+        ],
+      },
+    });
+
+    const lowScoreResult = await lowScoreService.rerank(
+      '原始问题',
+      [chunk, chunk2],
+      2,
+    );
+
+    expect(lowScoreResult.map((item) => item.id)).toEqual([
+      'chunk-1',
+      'chunk-2',
+    ]);
+  });
 });

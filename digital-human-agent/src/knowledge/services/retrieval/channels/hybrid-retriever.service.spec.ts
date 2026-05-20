@@ -338,4 +338,31 @@ describe('HybridRetrieverService', () => {
       }
     }
   });
+
+  it('persona 下所有知识库都硬失败时，会向上抛错而不是伪装成空结果', async () => {
+    const { service } = createService();
+    jest.spyOn(service, 'retrieveForKnowledge').mockRejectedValue(
+      new Error('broken index'),
+    );
+
+    await expect(
+      service.retrieveForPersona({
+        personaId: 'persona-1',
+        retrievalQueries: [
+          {
+            index: 0,
+            query: '甲方和乙方是什么关系？',
+            keywords: ['甲方', '乙方', '关系'],
+            angle: 'original',
+          },
+        ],
+        strategy: {
+          ...strategy,
+          useGraph: true,
+          graphMode: 'path',
+          graphMaxHops: 2,
+        },
+      }),
+    ).rejects.toThrow(/知识库检索全部失败/);
+  });
 });

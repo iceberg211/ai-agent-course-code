@@ -43,6 +43,13 @@ interface HybridRetrieveResult {
   skippedChannels: Array<'vector' | 'keyword' | 'graph'>;
 }
 
+interface PersonaKnowledgeRetrievalAttempt {
+  knowledgeId: string;
+  failed: boolean;
+  errorMessage?: string;
+  result: KnowledgeHybridRetrievalResult;
+}
+
 // ==========================================
 // 辅助并发限制工具
 // ==========================================
@@ -198,13 +205,13 @@ export class HybridRetrieverService {
     }
 
     const strategy = this.buildPersonaStrategy(input);
-    const hybridResults = await mapWithConcurrency(
+    const attempts = await mapWithConcurrency(
       knowledgeConfigs,
       this.resolvePersonaConcurrency(),
-      async (config) => {
+      async (config): Promise<PersonaKnowledgeRetrievalAttempt> => {
         try {
           throwIfAborted(input.signal);
-          return await this.retrieveForKnowledge({
+          const result = await this.retrieveForKnowledge({
             knowledgeId: config.knowledgeId,
             retrievalQueries: input.retrievalQueries,
             strategy,
@@ -212,6 +219,11 @@ export class HybridRetrieverService {
             globalRetrievalLimit: this.resolveRetrievalLimit(input.retrievalLimit, config),
             signal: input.signal,
           });
+          return {
+            knowledgeId: config.knowledgeId,
+            failed: false,
+            result,
+          };
         } catch (error) {
           if (isAbortError(error)) {
             throw error;
@@ -226,12 +238,35 @@ export class HybridRetrieverService {
             }`,
           );
           return {
-            chunks: [],
-            trace: [],
-          } satisfies KnowledgeHybridRetrievalResult;
+            knowledgeId: config.knowledgeId,
+            failed: true,
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            result: {
+              chunks: [],
+              trace: [],
+            },
+          };
         }
       },
     );
+    const successfulResults = attempts.filter((item) => !item.failed);
+    const failedResults = attempts.filter((item) => item.failed);
+
+    if (successfulResults.length === 0 && failedResults.length > 0) {
+      const failedKnowledgeIds = failedResults
+        .map((item) => item.knowledgeId)
+        .join(', ');
+      throw new Error(
+        `persona ${input.personaId} 的知识库检索全部失败：${failedKnowledgeIds}`,
+      );
+    }
+
+    if (failedResults.length > 0) {
+      this.logger.warn(
+        `persona ${input.personaId} 有 ${failedResults.length} 个知识库检索失败，继续返回其余结果`,
+      );
+    }
 
     const rerankLimits = knowledgeConfigs.map(
       (c) =>
@@ -244,14 +279,14 @@ export class HybridRetrieverService {
         : DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
 
     return {
-      knowledgeCount: knowledgeConfigs.length,
+      knowledgeCount: successfulResults.length,
       chunks: mergeHybridResults(
-        hybridResults.map((result) => result.chunks),
+        successfulResults.map((item) => item.result.chunks),
         input.retrievalLimit === undefined
           ? Math.max(20, ...knowledgeConfigs.map((config) => config.retrievalLimit))
           : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
       ),
-      trace: hybridResults.flatMap((result) => result.trace),
+      trace: successfulResults.flatMap((item) => item.result.trace),
       rerankLimit,
     };
   }

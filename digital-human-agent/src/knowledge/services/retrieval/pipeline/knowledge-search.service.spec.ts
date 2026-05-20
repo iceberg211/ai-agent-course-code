@@ -487,26 +487,39 @@ describe('KnowledgeSearchService', () => {
       '原始问题',
       undefined,
     );
-    expect(hybridRetrieverService.retrieveForPersona).toHaveBeenCalledWith({
-      personaId: 'persona-1',
-      retrievalQueries: [
-        {
-          index: 0,
-          query: '改写后的检索问题',
-          keywords: ['原始问题'],
-          angle: 'original',
+    expect(hybridRetrieverService.retrieveForPersona).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personaId: 'persona-1',
+        retrievalQueries: [
+          {
+            index: 0,
+            query: '改写后的检索问题',
+            keywords: ['原始问题'],
+            angle: 'original',
+          },
+        ],
+        strategy: expect.objectContaining({
+          needRetrieval: true,
+          useVector: true,
+          useKeyword: true,
+          useGraph: false,
+          useExactPhrase: false,
+          useMultiQuery: true,
+          allowWeb: true,
+          queryCount: 2,
+          reason: '测试检索策略',
+        }),
+        retrievalLimit: 10,
+        threshold: 0.6,
+        channels: {
+          useVector: true,
+          useKeyword: true,
+          useGraph: false,
+          useExactPhrase: false,
         },
-      ],
-      retrievalLimit: 10,
-      threshold: 0.6,
-      channels: {
-        useVector: true,
-        useKeyword: true,
-        useGraph: false,
-        useExactPhrase: false,
-      },
-      signal: undefined,
-    });
+        signal: undefined,
+      }),
+    );
     expect(rerankerService.rerank).toHaveBeenCalledWith(
       '原始问题',
       [hybridChunk, hybridChunk2],
@@ -518,6 +531,39 @@ describe('KnowledgeSearchService', () => {
         knowledgeId: 'kb-1',
       }),
     ]);
+  });
+
+  it('persona 检索会把 graphMode 和 graphMaxHops 继续传给混合检索层', async () => {
+    const { service, hybridRetrieverService } = createService();
+    const previousGraphEnabled = process.env.NEO4J_GRAPH_ENABLED;
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
+
+    try {
+      await service.retrieveForPersonaWithStages('persona-1', '甲乙双方是什么关系？', {
+        strategy: baseStrategy({
+          useGraph: true,
+          graphMode: 'path',
+          graphMaxHops: 2,
+          reason: '图谱路径检索',
+        }),
+      });
+
+      expect(hybridRetrieverService.retrieveForPersona).toHaveBeenCalledWith(
+        expect.objectContaining({
+          strategy: expect.objectContaining({
+            useGraph: true,
+            graphMode: 'path',
+            graphMaxHops: 2,
+          }),
+        }),
+      );
+    } finally {
+      if (previousGraphEnabled === undefined) {
+        delete process.env.NEO4J_GRAPH_ENABLED;
+      } else {
+        process.env.NEO4J_GRAPH_ENABLED = previousGraphEnabled;
+      }
+    }
   });
 
   it('persona 未挂载知识库时返回空结果，并保留 fallback 原因', async () => {

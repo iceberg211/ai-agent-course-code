@@ -4,7 +4,6 @@ import { normalizeRetrievalStrategy, type RetrievalStrategy } from '@/common/rag
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
-  DEFAULT_FALLBACK_KEYWORD_LIMIT,
 } from '@/common/constants';
 import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
@@ -60,7 +59,6 @@ function buildEmptyResult(
   options: NormalizedRetrieveKnowledgeOptions,
 ): RetrieveKnowledgeDebugResult {
   const fallbackKeywords = normalizeKeywords([], query);
-  const fallbackQueries = extractFallbackKeywordTerms(query);
   const fallbackRewrite = {
     originalQuery: query,
     rewrittenQuery: query,
@@ -259,6 +257,7 @@ export class KnowledgeSearchService {
       const hybridResult = await this.hybridRetrieverService.retrieveForPersona({
         personaId,
         retrievalQueries: params.retrievalQueries,
+        strategy: params.strategy,
         retrievalLimit: params.options.retrievalLimit,
         threshold: params.options.threshold,
         channels: {

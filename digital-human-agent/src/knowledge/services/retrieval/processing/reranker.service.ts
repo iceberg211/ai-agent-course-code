@@ -95,7 +95,13 @@ export class RerankerService {
       throwIfAborted(signal);
 
       const parsed = result?.scores ?? [];
-      return this.applyScores(rerankCandidates, parsed, safeTopK);
+      const reranked = this.applyScores(rerankCandidates, parsed, safeTopK);
+      if (reranked.length > 0) {
+        return reranked;
+      }
+
+      this.logger.warn('LLM Rerank 未返回有效分数，回退 Stage1 当前排序');
+      return rerankCandidates.slice(0, safeTopK);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
