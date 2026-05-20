@@ -10,27 +10,12 @@ import type { KnowledgeChunkIndexDocument } from '@/knowledge-content/elasticsea
 import { throwIfAborted } from '@/common/utils';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge-content/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge-content/entities/knowledge-document.entity';
-import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
-
-// ==========================================
-// 接口与类型定义
-// ==========================================
-
-export type KeywordBackend = 'pg' | 'elastic';
-
-export interface KeywordRetrieveParams {
-  knowledgeId: string;
-  terms: string[];
-  matchCount: number;
-  useExactPhrase?: boolean;
-  signal?: AbortSignal;
-}
-
-export interface KeywordRetrieveResult {
-  chunks: KnowledgeChunk[];
-  backend: KeywordBackend;
-  fallbackToPg: boolean;
-}
+import type {
+  KnowledgeChunk,
+  KeywordRetrieveParams,
+  KeywordRetrieveResult,
+  KeywordBackend,
+} from '@/knowledge-content/types/knowledge-content.types';
 
 interface KeywordRow {
   id: string;

@@ -19,7 +19,7 @@ import {
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
 import { KnowledgeSearchDto } from '@/knowledge-content/dto/knowledge-search.dto';
-import { KnowledgeContentService } from '@/knowledge-content/services/knowledge-content.service';
+import { KnowledgeContentService } from '@/knowledge-content/services/manage/knowledge-content.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;

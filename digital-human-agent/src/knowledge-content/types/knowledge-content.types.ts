@@ -114,3 +114,52 @@ export interface IngestKnowledgeDocumentOptions {
   fileSize?: number;
   category?: string;
 }
+
+export interface KeywordRetrieveParams {
+  knowledgeId: string;
+  terms: string[];
+  matchCount: number;
+  useExactPhrase?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface KeywordRetrieveResult {
+  chunks: KnowledgeChunk[];
+  backend: KeywordBackend;
+  fallbackToPg: boolean;
+}
+
+export interface KnowledgeHybridRetrievalParams {
+  knowledgeId: string;
+  retrievalQueries: RetrievalQueryItem[];
+  strategy: RetrievalStrategy;
+  threshold: number;
+  globalStage1TopK: number;
+  signal?: AbortSignal;
+}
+
+export interface KnowledgeHybridRetrievalResult {
+  chunks: KnowledgeChunk[];
+  trace: RetrieveKnowledgeTraceItem[];
+}
+
+export interface PersonaHybridRetrievalChannels {
+  useVector: boolean;
+  useKeyword: boolean;
+  useGraph: boolean;
+}
+
+export interface PersonaHybridRetrievalInput {
+  personaId: string;
+  query: string;
+  terms: string[];
+  matchCount: number;
+  channels: PersonaHybridRetrievalChannels;
+  signal?: AbortSignal;
+}
+
+export interface PersonaHybridRetrievalResult {
+  chunks: KnowledgeChunk[];
+  trace: RetrieveKnowledgeTraceItem[];
+}
+

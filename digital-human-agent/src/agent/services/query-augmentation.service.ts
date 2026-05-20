@@ -5,12 +5,12 @@ import type {
   RagQueryAugmentationPlan,
   RagStrategy,
 } from '@/agent/types/rag-workflow.types';
-import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge-content/services/retrieval/query-rewrite.service';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,
 } from '@/knowledge-content/types/knowledge-content.types';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
 
 @Injectable()
 export class QueryAugmentationService {

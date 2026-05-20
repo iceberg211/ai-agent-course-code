@@ -2,12 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { isAbortError, throwIfAborted } from '@/common/utils';
 import { normalizeRetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import { extractFallbackKeywordTerms } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
-import {
-  KnowledgeStage1RetrievalService,
-  type KnowledgeStage1RetrievalResult,
-} from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
+import { extractFallbackKeywordTerms } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
+import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-hybrid-retriever.service';
 import type {
   KnowledgeChunk,
   KnowledgeQueryRewriteResult,
@@ -15,9 +12,10 @@ import type {
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
   RetrievalQueryItem,
+  KnowledgeHybridRetrievalResult,
 } from '@/knowledge-content/types/knowledge-content.types';
-import { QueryRewriteService } from '@/knowledge-content/services/query-rewrite.service';
-import { RerankerService } from '@/knowledge-content/services/reranker.service';
+import { QueryRewriteService } from '@/knowledge-content/services/retrieval/query-rewrite.service';
+import { RerankerService } from '@/knowledge-content/services/retrieval/reranker.service';
 import type { RetrievalStrategy } from '@/common/rag';
 
 interface ResolvedSearchInput {
@@ -36,7 +34,7 @@ interface Stage1LoaderParams {
 
 interface Stage1LoadResult {
   knowledgeCount: number;
-  stage1Result: KnowledgeStage1RetrievalResult;
+  stage1Result: KnowledgeHybridRetrievalResult;
   emptyReason?: string;
 }
 
@@ -46,7 +44,7 @@ export class KnowledgeSearchService {
 
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
-    private readonly stage1RetrievalService: KnowledgeStage1RetrievalService,
+    private readonly hybridRetrieverService: KnowledgeHybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
   ) {}
@@ -106,7 +104,7 @@ export class KnowledgeSearchService {
       () =>
         this.retrieveWithSharedPipeline(query, options, async (params) => ({
           knowledgeCount: 1,
-          stage1Result: await this.stage1RetrievalService.retrieveForKnowledge({
+          stage1Result: await this.hybridRetrieverService.retrieveForKnowledge({
             knowledgeId,
             retrievalQueries: params.retrievalQueries,
             strategy: params.strategy,
@@ -196,7 +194,7 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     return this.retrieveWithSharedPipeline(query, options, async (params) => {
-      const stage1Result = await this.stage1RetrievalService.retrieveForPersona({
+      const stage1Result = await this.hybridRetrieverService.retrieveForPersona({
         personaId,
         retrievalQueries: params.retrievalQueries,
         stage1TopK: params.options.stage1TopK,

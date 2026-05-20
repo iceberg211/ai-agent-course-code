@@ -1,6 +1,6 @@
 import { createAbortError } from '@/common/utils';
 import type { RetrievalStrategy } from '@/common/rag';
-import { KnowledgeSearchService } from '@/knowledge-content/services/knowledge-search.service';
+import { KnowledgeSearchService } from '@/knowledge-content/services/retrieval/knowledge-search.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
@@ -90,7 +90,7 @@ describe('KnowledgeSearchService', () => {
       expand: jest.fn((chunks: KnowledgeChunk[]) => Promise.resolve(chunks)),
     };
 
-    const stage1RetrievalService = {
+    const hybridRetrieverService = {
       retrieveForKnowledge: jest.fn().mockResolvedValue({
         chunks: [stage1Chunk, stage1Chunk2],
         trace: [
@@ -136,7 +136,7 @@ describe('KnowledgeSearchService', () => {
 
     const service = new KnowledgeSearchService(
       runtime as never,
-      stage1RetrievalService as never,
+      hybridRetrieverService as never,
       rerankerService as never,
       queryRewriteService as never,
       chunkContextExpansionService as never,
@@ -145,7 +145,7 @@ describe('KnowledgeSearchService', () => {
     return {
       service,
       runtime,
-      stage1RetrievalService,
+      hybridRetrieverService,
       rerankerService,
       queryRewriteService,
       chunkContextExpansionService,
@@ -171,7 +171,7 @@ describe('KnowledgeSearchService', () => {
   it('retrieveWithStages 会使用改写后的 query 做召回，但 rerank 仍基于原始问题', async () => {
     const {
       service,
-      stage1RetrievalService,
+      hybridRetrieverService,
       rerankerService,
       queryRewriteService,
     } = createService();
@@ -182,7 +182,7 @@ describe('KnowledgeSearchService', () => {
       '原始问题',
       undefined,
     );
-    expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledWith(
+    expect(hybridRetrieverService.retrieveForKnowledge).toHaveBeenCalledWith(
       expect.objectContaining({
         knowledgeId: 'kb-1',
         retrievalQueries: [
@@ -220,11 +220,11 @@ describe('KnowledgeSearchService', () => {
     };
     const {
       service,
-      stage1RetrievalService,
+      hybridRetrieverService,
       rerankerService,
       queryRewriteService,
     } = createService();
-    stage1RetrievalService.retrieveForKnowledge.mockResolvedValue({
+    hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
       chunks: [graphChunk],
       trace: [
         {
@@ -260,7 +260,7 @@ describe('KnowledgeSearchService', () => {
       });
 
       expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-      expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledWith(
+      expect(hybridRetrieverService.retrieveForKnowledge).toHaveBeenCalledWith(
         expect.objectContaining({
           knowledgeId: 'kb-1',
           strategy: expect.objectContaining({
@@ -293,7 +293,7 @@ describe('KnowledgeSearchService', () => {
   it('multi-query 会逐条召回并按 chunk.id 合并去重，rerank 仍使用原始问题', async () => {
     const {
       service,
-      stage1RetrievalService,
+      hybridRetrieverService,
       rerankerService,
       queryRewriteService,
     } = createService();
@@ -318,7 +318,7 @@ describe('KnowledgeSearchService', () => {
       changed: true,
       reason: '生成多角度检索问题',
     });
-    stage1RetrievalService.retrieveForKnowledge.mockResolvedValue({
+    hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
       chunks: [
         {
           ...stage1Chunk,
@@ -374,7 +374,7 @@ describe('KnowledgeSearchService', () => {
       },
     });
 
-    expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledTimes(1);
+    expect(hybridRetrieverService.retrieveForKnowledge).toHaveBeenCalledTimes(1);
     expect(rerankerService.rerank).toHaveBeenCalledWith(
       '原始问题',
       expect.arrayContaining([
@@ -397,9 +397,9 @@ describe('KnowledgeSearchService', () => {
   });
 
   it('skipQueryRewrite=true 且 useVector=false 时只走原始问题关键词召回，不调用 LLM rewrite 或 embedding', async () => {
-    const { service, stage1RetrievalService, queryRewriteService } =
+    const { service, hybridRetrieverService, queryRewriteService } =
       createService();
-    stage1RetrievalService.retrieveForKnowledge.mockResolvedValue({
+    hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
       chunks: [stage1Chunk],
       trace: [
         {
@@ -436,7 +436,7 @@ describe('KnowledgeSearchService', () => {
     });
 
     expect(queryRewriteService.rewrite).not.toHaveBeenCalled();
-    expect(stage1RetrievalService.retrieveForKnowledge).toHaveBeenCalledWith(
+    expect(hybridRetrieverService.retrieveForKnowledge).toHaveBeenCalledWith(
       expect.objectContaining({
         knowledgeId: 'kb-1',
         retrievalQueries: [
@@ -464,7 +464,7 @@ describe('KnowledgeSearchService', () => {
     const {
       service,
       rerankerService,
-      stage1RetrievalService,
+      hybridRetrieverService,
       queryRewriteService,
     } = createService();
 
@@ -483,7 +483,7 @@ describe('KnowledgeSearchService', () => {
       '原始问题',
       undefined,
     );
-    expect(stage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith({
+    expect(hybridRetrieverService.retrieveForPersona).toHaveBeenCalledWith({
       personaId: 'persona-1',
       retrievalQueries: [
         {
@@ -517,8 +517,8 @@ describe('KnowledgeSearchService', () => {
   });
 
   it('persona 未挂载知识库时返回空结果，并保留 fallback 原因', async () => {
-    const { service, stage1RetrievalService } = createService();
-    stage1RetrievalService.retrieveForPersona.mockResolvedValue({
+    const { service, hybridRetrieverService } = createService();
+    hybridRetrieverService.retrieveForPersona.mockResolvedValue({
       knowledgeCount: 0,
       chunks: [],
       trace: [],
@@ -553,8 +553,8 @@ describe('KnowledgeSearchService', () => {
   });
 
   it('persona stage1 遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {
-    const { service, stage1RetrievalService } = createService();
-    stage1RetrievalService.retrieveForPersona.mockRejectedValue(
+    const { service, hybridRetrieverService } = createService();
+    hybridRetrieverService.retrieveForPersona.mockRejectedValue(
       new Error('fetch failed'),
     );
 

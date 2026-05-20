@@ -7,13 +7,13 @@ import {
 import type { RetrievalStrategy } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { KnowledgeGraphService } from '@/knowledge-content/graph/knowledge-graph.service';
-import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/knowledge-content-runtime.service';
-import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/knowledge-keyword-retriever.service';
+import { KnowledgeContentRuntimeService } from '@/knowledge-content/services/manage/knowledge-content-runtime.service';
+import { KnowledgeKeywordRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-keyword-retriever.service';
 import {
   fuseStage1Channels,
   mergeStage1Results,
-} from '@/knowledge-content/services/knowledge-retrieval-fusion';
-import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/persona-knowledge-config.service';
+} from '@/knowledge-content/services/retrieval/knowledge-retrieval-fusion';
+import { PersonaKnowledgeConfigService } from '@/knowledge-content/services/manage/persona-knowledge-config.service';
 import type {
   GraphBackend,
   KeywordBackend,
@@ -22,46 +22,12 @@ import type {
   RetrieveKnowledgeTraceItem,
   RetrievalQueryItem,
   KnowledgeRetrievalSource,
+  KnowledgeHybridRetrievalParams,
+  KnowledgeHybridRetrievalResult,
+  PersonaHybridRetrievalChannels,
+  PersonaHybridRetrievalInput,
+  PersonaHybridRetrievalResult,
 } from '@/knowledge-content/types/knowledge-content.types';
-
-// ==========================================
-// 接口与类型定义
-// ==========================================
-
-export interface KnowledgeStage1RetrievalParams {
-  knowledgeId: string;
-  retrievalQueries: RetrievalQueryItem[];
-  strategy: RetrievalStrategy;
-  threshold: number;
-  globalStage1TopK: number;
-  signal?: AbortSignal;
-}
-
-export interface KnowledgeStage1RetrievalResult {
-  chunks: KnowledgeChunk[];
-  trace: RetrieveKnowledgeTraceItem[];
-}
-
-export interface PersonaStage1RetrievalChannels {
-  useVector: boolean;
-  useKeyword: boolean;
-  useGraph: boolean;
-  useExactPhrase: boolean;
-}
-
-export interface PersonaStage1RetrievalInput {
-  personaId: string;
-  retrievalQueries: RetrievalQueryItem[];
-  stage1TopK?: number;
-  threshold?: number;
-  channels: PersonaStage1RetrievalChannels;
-  signal?: AbortSignal;
-}
-
-export interface PersonaStage1RetrievalResult
-  extends KnowledgeStage1RetrievalResult {
-  knowledgeCount: number;
-}
 
 interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
@@ -106,8 +72,8 @@ async function mapWithConcurrency<T, R>(
 // ==========================================
 
 @Injectable()
-export class KnowledgeStage1RetrievalService {
-  private readonly logger = new Logger(KnowledgeStage1RetrievalService.name);
+export class KnowledgeHybridRetrieverService {
+  private readonly logger = new Logger(KnowledgeHybridRetrieverService.name);
 
   constructor(
     private readonly runtime: KnowledgeContentRuntimeService,
@@ -122,8 +88,8 @@ export class KnowledgeStage1RetrievalService {
   // 单知识库第一阶段多路召回
   // ==========================================
   async retrieveForKnowledge(
-    params: KnowledgeStage1RetrievalParams,
-  ): Promise<KnowledgeStage1RetrievalResult> {
+    params: KnowledgeHybridRetrievalParams,
+  ): Promise<KnowledgeHybridRetrievalResult> {
     const perQueryTopK = Math.max(
       4,
       Math.ceil(
@@ -202,8 +168,8 @@ export class KnowledgeStage1RetrievalService {
   // 多知识库（Persona）第一阶段召回
   // ==========================================
   async retrieveForPersona(
-    input: PersonaStage1RetrievalInput,
-  ): Promise<PersonaStage1RetrievalResult> {
+    input: PersonaHybridRetrievalInput,
+  ): Promise<PersonaHybridRetrievalResult> {
     throwIfAborted(input.signal);
 
     if (input.retrievalQueries.length === 0) {
@@ -258,7 +224,7 @@ export class KnowledgeStage1RetrievalService {
           return {
             chunks: [],
             trace: [],
-          } satisfies KnowledgeStage1RetrievalResult;
+          } satisfies KnowledgeHybridRetrievalResult;
         }
       },
     );
@@ -657,7 +623,7 @@ export class KnowledgeStage1RetrievalService {
   }
 
   private buildPersonaStrategy(
-    input: PersonaStage1RetrievalInput,
+    input: PersonaHybridRetrievalInput,
   ): RetrievalStrategy {
     return {
       needRetrieval: true,

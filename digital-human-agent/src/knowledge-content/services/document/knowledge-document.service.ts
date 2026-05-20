@@ -9,38 +9,13 @@ import { ElasticsearchIndexService } from '@/knowledge-content/elasticsearch/ela
 import { KnowledgeGraphService } from '@/knowledge-content/graph/knowledge-graph.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge-content/types/knowledge-content.types';
 
-// ==========================================
-// 接口与类型定义
-// ==========================================
-
-export interface KnowledgeDocumentChunk {
-  pageContent: string;
-}
-
-export interface RecursiveChunkSplitter {
-  createDocuments(texts: string[]): Promise<KnowledgeDocumentChunk[]>;
-}
-
-interface MarkdownHeading {
-  level: number;
-  line: string;
-}
-
-interface MarkdownSection {
-  headings: MarkdownHeading[];
-  bodyLines: string[];
-}
-
-export interface KnowledgeDocumentChunkRow {
-  id: string;
-  document_id: string;
-  chunk_index: number;
-  content: string;
-  source: string;
-  category: string | null;
-  enabled: boolean;
-  embedding: string;
-}
+import type {
+  KnowledgeDocumentChunk,
+  RecursiveChunkSplitter,
+  MarkdownHeading,
+  MarkdownSection,
+  KnowledgeDocumentChunkRow,
+} from '@/knowledge-content/types/knowledge-document.types';
 
 const STRUCTURED_CHUNK_MAX_LENGTH = 900;
 

@@ -1,8 +1,8 @@
-import { KnowledgeStage1RetrievalService } from '@/knowledge-content/services/knowledge-stage1-retrieval.service';
+import { KnowledgeHybridRetrieverService } from '@/knowledge-content/services/retrieval/knowledge-hybrid-retriever.service';
 import type { KnowledgeChunk } from '@/knowledge-content/types/knowledge-content.types';
 import type { RetrievalStrategy } from '@/common/rag';
 
-describe('KnowledgeStage1RetrievalService', () => {
+describe('KnowledgeHybridRetrieverService', () => {
   const strategy: RetrievalStrategy = {
     needRetrieval: true,
     useVector: true,
@@ -86,7 +86,7 @@ describe('KnowledgeStage1RetrievalService', () => {
       retrieve: jest.fn().mockResolvedValue([graphChunk]),
     };
 
-    const service = new KnowledgeStage1RetrievalService(
+    const service = new KnowledgeHybridRetrieverService(
       runtime as never,
       keywordRetriever as never,
       graphRetriever as never,
