@@ -81,7 +81,7 @@ describe('createEvaluateEvidenceNode', () => {
     history: [],
   } satisfies RagGraphState;
 
-  it('证据不足时不再回到本地检索节点，而是根据策略进入 web fallback', async () => {
+  it('评估发现缺失事实且还有 hop 预算时，会扩展子问题并回到本地检索', async () => {
     const evidenceEvaluatorService = {
       evaluate: jest.fn().mockResolvedValue({
         enough: false,
@@ -112,6 +112,50 @@ describe('createEvaluateEvidenceNode', () => {
         remainingSubQuestionCount: 1,
       }),
     );
+    expect(command.goto).toEqual(['retrieve']);
+    expect(command.update).toMatchObject({
+      enough: false,
+      missingFacts: ['审计保留要求是什么？'],
+      subQuestions: [
+        '合同删除条款是什么？',
+        '审计要求是什么？',
+        '审计保留要求是什么？',
+      ],
+      stopReason: 'multi_hop_insufficient',
+    });
+  });
+
+  it('缺失事实但没有额外 hop 预算时，才会退到 web fallback', async () => {
+    const evidenceEvaluatorService = {
+      evaluate: jest.fn().mockResolvedValue({
+        enough: false,
+        missingFacts: ['审计保留要求是什么？'],
+        reason: '缺少审计保留要求',
+        webQuery: '合同 审计 保留 要求',
+      }),
+    };
+    const webFallbackService = {
+      isEnabled: jest.fn().mockReturnValue(true),
+    };
+    const node = createEvaluateEvidenceNode(
+      evidenceEvaluatorService as never,
+      webFallbackService as never,
+    );
+
+    const command = await node(
+      {
+        ...baseState,
+        maxHops: 2,
+      },
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
     expect(command.goto).toEqual(['web_fallback']);
     expect(command.update).toMatchObject({
       enough: false,

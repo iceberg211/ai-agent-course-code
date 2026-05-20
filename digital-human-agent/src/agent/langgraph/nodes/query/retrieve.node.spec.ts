@@ -253,11 +253,15 @@ describe('createRetrieveNode', () => {
           angle: 'semantic',
         },
       ],
-      channels: {
+      strategy: {
+        needRetrieval: true,
         useVector: true,
         useKeyword: true,
         useGraph: false,
         useExactPhrase: false,
+        useMultiQuery: true,
+        allowWeb: true,
+        reason: '复杂问题，使用多路 query 检索',
       },
       signal: expect.any(AbortSignal),
     });
@@ -287,5 +291,89 @@ describe('createRetrieveNode', () => {
         id: 'chunk-1',
       }),
     ]);
+  });
+
+  it('关系类问题会把 graphMode 和 graphMaxHops 沿 Agent 主链路传给 persona stage1', async () => {
+    const queryAugmentationService = {
+      plan: jest.fn().mockResolvedValue({
+        currentQuery: '甲方和乙方是什么关系？',
+        rewrite: {
+          originalQuery: '甲方和乙方是什么关系？',
+          rewrittenQuery: '甲方 乙方 关系',
+          keywords: ['甲方', '乙方', '关系'],
+          expandedQueries: [
+            {
+              index: 0,
+              query: '甲方和乙方是什么关系？',
+              keywords: ['甲方', '乙方', '关系'],
+              angle: 'original',
+            },
+          ],
+          changed: true,
+          reason: '抽出关系实体',
+        },
+        retrievalQueries: [
+          {
+            index: 0,
+            query: '甲方和乙方是什么关系？',
+            keywords: ['甲方', '乙方', '关系'],
+            angle: 'original',
+          },
+        ],
+        strategy: {
+          needRetrieval: true,
+          useVector: true,
+          useKeyword: true,
+          useGraph: true,
+          useExactPhrase: false,
+          useMultiQuery: false,
+          allowWeb: true,
+          graphMode: 'path',
+          graphMaxHops: 2,
+          reason: '关系类问题，启用 Neo4j 路径检索',
+        },
+      }),
+    };
+    const personaStage1RetrievalService = {
+      retrieveForPersona: jest.fn().mockResolvedValue({
+        knowledgeCount: 1,
+        chunks: [chunk],
+        trace: [],
+      }),
+    };
+    const node = createRetrieveNode(
+      queryAugmentationService as never,
+      personaStage1RetrievalService as never,
+    );
+
+    await node(
+      {
+        ...baseState,
+        question: '甲方和乙方是什么关系？',
+      },
+      {
+        configurable: {
+          workflowInput: {
+            conversationId: 'conv-1',
+            personaId: 'persona-1',
+            question: '甲方和乙方是什么关系？',
+            turnId: 'turn-1',
+            signal: new AbortController().signal,
+            onToken: jest.fn(),
+            onCitations: jest.fn(),
+          },
+        },
+      } as never,
+    );
+
+    expect(personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategy: expect.objectContaining({
+          useGraph: true,
+          graphMode: 'path',
+          graphMaxHops: 2,
+        }),
+      }),
+    );
   });
 });

@@ -8,6 +8,8 @@ import {
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { RagStopReason } from '@/agent/types/rag-workflow.types';
 import {
+  canContinueMultiHop,
+  extendSubQuestionsWithMissingFacts,
   getPlannedQuestions,
   shouldUseWebFallback,
 } from '@/agent/langgraph/rag.utils';
@@ -110,13 +112,23 @@ export function createEvaluateEvidenceNode(
 
     const webFallbackEnabled =
       webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
+    const plannedQuestionCount = getPlannedQuestions(state).length;
+    const extendedSubQuestions = extendSubQuestionsWithMissingFacts(
+      state,
+      evaluation.missingFacts,
+    );
+    const stateForDecision = {
+      ...state,
+      subQuestions: extendedSubQuestions,
+    };
     const update = {
+      subQuestions: extendedSubQuestions,
       enough: evaluation.enough,
       missingFacts: evaluation.missingFacts,
       evaluationReason: evaluation.reason,
       webQuery: evaluation.webQuery,
       stopReason: resolveStopReason(
-        state,
+        stateForDecision,
         evaluation.enough,
         webFallbackEnabled,
       ),
@@ -126,10 +138,16 @@ export function createEvaluateEvidenceNode(
       ...state,
       ...update,
     };
+    const canRetryLocalKnowledge =
+      !nextState.enough &&
+      extendedSubQuestions.length > plannedQuestionCount &&
+      canContinueMultiHop(nextState);
 
-    let goto: 'web_fallback' | 'load_context' = 'load_context';
+    let goto: 'retrieve' | 'web_fallback' | 'load_context' = 'load_context';
     if (nextState.enough) {
       goto = 'load_context';
+    } else if (canRetryLocalKnowledge) {
+      goto = 'retrieve';
     } else if (shouldUseWebFallback(nextState, webFallbackEnabled)) {
       goto = 'web_fallback';
     }

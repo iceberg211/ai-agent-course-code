@@ -164,7 +164,8 @@ export interface PersonaHybridRetrievalChannels {
 export interface PersonaHybridRetrievalInput {
   personaId: string;
   retrievalQueries: RetrievalQueryItem[];
-  channels: PersonaHybridRetrievalChannels;
+  strategy?: RetrievalStrategy;
+  channels?: PersonaHybridRetrievalChannels;
   threshold?: number;
   retrievalLimit?: number;
   signal?: AbortSignal;
@@ -176,5 +177,3 @@ export interface PersonaHybridRetrievalResult {
   knowledgeCount: number;
   rerankLimit?: number;
 }
-
-

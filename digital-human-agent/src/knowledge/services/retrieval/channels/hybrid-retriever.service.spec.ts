@@ -92,12 +92,24 @@ describe('HybridRetrieverService', () => {
       isEnabled: jest.fn().mockReturnValue(false),
       retrieve: jest.fn().mockResolvedValue([]),
     };
+    const personaKnowledgeConfigService = {
+      listMountedKnowledgeConfigs: jest.fn().mockResolvedValue([
+        {
+          knowledgeId: 'kb-1',
+          threshold: 0.6,
+          retrievalLimit: 20,
+          retrievalConfig: {},
+          updatedAt: null,
+        },
+      ]),
+    };
 
     const service = new HybridRetrieverService(
       runtime as never,
       configService as never,
       fulltextRetriever as never,
       graphRetriever as never,
+      personaKnowledgeConfigService as never,
     );
 
     return {
@@ -106,6 +118,7 @@ describe('HybridRetrieverService', () => {
       runtime,
       fulltextRetriever,
       graphRetriever,
+      personaKnowledgeConfigService,
     };
   }
 
@@ -269,5 +282,60 @@ describe('HybridRetrieverService', () => {
     expect(fulltextRetriever.retrieve).toHaveBeenCalled();
     expect(result.trace[0].keywordBackend).toBe('pg');
     expect(result.trace[0].fallbackToPg).toBe(true);
+  });
+
+  it('persona 检索传入完整 strategy 时，会保留 graph path / hops 配置', async () => {
+    const previousGraphEnabled = process.env.NEO4J_GRAPH_ENABLED;
+    process.env.NEO4J_GRAPH_ENABLED = 'true';
+    const graphChunk: KnowledgeChunk = {
+      id: 'chunk-graph',
+      content: '甲方和乙方的关系条款。',
+      source: 'contract.md',
+      chunk_index: 3,
+      category: 'contract',
+      similarity: 0,
+      graph_score: 7,
+      retrieval_sources: ['graph'],
+    };
+    const { service, graphRetriever } = createService({
+      vectorResult: [],
+      pgResult: [],
+    });
+    graphRetriever.isEnabled.mockReturnValue(true);
+    graphRetriever.retrieve.mockResolvedValue([graphChunk]);
+
+    try {
+      await service.retrieveForPersona({
+        personaId: 'persona-1',
+        retrievalQueries: [
+          {
+            index: 0,
+            query: '甲方和乙方是什么关系？',
+            keywords: ['甲方', '乙方', '关系'],
+            angle: 'original',
+          },
+        ],
+        strategy: {
+          ...strategy,
+          useGraph: true,
+          graphMode: 'path',
+          graphMaxHops: 2,
+          reason: '关系类问题',
+        },
+      });
+
+      expect(graphRetriever.retrieve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          graphMode: 'path',
+          graphMaxHops: 2,
+        }),
+      );
+    } finally {
+      if (previousGraphEnabled === undefined) {
+        delete process.env.NEO4J_GRAPH_ENABLED;
+      } else {
+        process.env.NEO4J_GRAPH_ENABLED = previousGraphEnabled;
+      }
+    }
   });
 });

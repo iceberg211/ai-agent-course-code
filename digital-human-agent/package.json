@@ -13,6 +13,7 @@
     "rag:infra:down": "docker compose -f docker-compose.rag.yml down",
     "rag:preflight": "node -r ts-node/register -r tsconfig-paths/register ./scripts/rag-runtime-preflight.ts",
     "rag:smoke:agentic": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agentic.ts",
+    "rag:smoke:agent-path": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agent-path.ts",
     "es:index:ensure": "node -r ts-node/register -r tsconfig-paths/register ./scripts/ensure-elasticsearch-index.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

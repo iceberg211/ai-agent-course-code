@@ -5,7 +5,10 @@ import {
   isTransientInfrastructureError,
   throwIfAborted,
 } from '@/common/utils';
-import type { RetrievalStrategy } from '@/common/rag';
+import {
+  normalizeRetrievalStrategy,
+  type RetrievalStrategy,
+} from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import {
   DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
@@ -550,18 +553,30 @@ export class HybridRetrieverService {
   private buildPersonaStrategy(
     input: PersonaHybridRetrievalInput,
   ): RetrievalStrategy {
-    return {
+    if (input.strategy) {
+      return normalizeRetrievalStrategy({
+        ...input.strategy,
+        queryCount: input.retrievalQueries.length,
+      });
+    }
+
+    const channels = input.channels;
+    if (!channels) {
+      throw new Error('persona 检索缺少 strategy 或 channels 配置');
+    }
+
+    return normalizeRetrievalStrategy({
       needRetrieval: true,
-      useVector: input.channels.useVector,
-      useKeyword: input.channels.useKeyword,
-      useGraph: input.channels.useGraph,
-      useExactPhrase: input.channels.useExactPhrase ?? false,
+      useVector: channels.useVector,
+      useKeyword: channels.useKeyword,
+      useGraph: channels.useGraph,
+      useExactPhrase: channels.useExactPhrase ?? false,
       useMultiQuery: input.retrievalQueries.length > 1,
       allowWeb: false,
       queryCount: input.retrievalQueries.length,
       chunkContextWindow: 0,
       reason: 'persona 检索',
-    };
+    });
   }
 
   private async listMountedKnowledgeConfigs(

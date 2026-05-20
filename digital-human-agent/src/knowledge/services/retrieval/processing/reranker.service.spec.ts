@@ -91,4 +91,33 @@ describe('RerankerService', () => {
       service.rerank('原始问题', [chunk], 1, abortController.signal),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('候选超过上限时保留 Stage1 当前顺序，不按 similarity 重新洗牌', async () => {
+    const keywordFirst = {
+      ...chunk,
+      id: 'chunk-keyword-first',
+      similarity: 0,
+      keyword_score: 15,
+      retrieval_sources: ['keyword' as const],
+    } satisfies KnowledgeChunk;
+    const vectorCandidates = Array.from({ length: 12 }, (_, index) => ({
+      ...chunk,
+      id: `chunk-vector-${index + 1}`,
+      similarity: 0.99 - index * 0.01,
+      retrieval_sources: ['vector' as const],
+    })) satisfies KnowledgeChunk[];
+    const { service } = createService({
+      invokeResult: {
+        scores: [{ index: 0, score: 0.95 }],
+      },
+    });
+
+    const result = await service.rerank(
+      '原始问题',
+      [keywordFirst, ...vectorCandidates],
+      1,
+    );
+
+    expect(result.map((item) => item.id)).toEqual(['chunk-keyword-first']);
+  });
 });

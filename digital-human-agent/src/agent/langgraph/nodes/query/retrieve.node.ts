@@ -63,12 +63,7 @@ export function createRetrieveNode(
     const stage1Result = await hybridRetrieverService.retrieveForPersona({
       personaId: input.personaId,
       retrievalQueries: augmentation.retrievalQueries,
-      channels: {
-        useVector: augmentation.strategy.useVector,
-        useKeyword: augmentation.strategy.useKeyword,
-        useGraph: augmentation.strategy.useGraph,
-        useExactPhrase: augmentation.strategy.useExactPhrase,
-      },
+      strategy: augmentation.strategy,
       signal: input.signal,
     });
 

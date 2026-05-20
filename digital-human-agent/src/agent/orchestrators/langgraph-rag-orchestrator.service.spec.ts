@@ -491,6 +491,76 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(result.state.stopReason).toBe('multi_hop_enough');
   });
 
+  it('complex 路径评估出 missingFacts 且仍有 hop 预算时，会回到本地补检索后再生成回答', async () => {
+    const chunkA = createChunk('chunk-a', '雁门关事件主谋是慕容博。');
+    const chunkB = createChunk('chunk-b', '慕容博的儿子最终疯癫。');
+    const chunkC = createChunk('chunk-c', '监管更新时间是 2026 年春。');
+    const { service, deps } = createService({
+      routeStrategy: 'complex',
+      plannerQuestions: ['雁门关事件主谋是谁？', '慕容博的儿子结局是什么？'],
+      retrieveMap: {
+        '雁门关事件主谋是谁？': [chunkA],
+        '慕容博的儿子结局是什么？': [chunkB],
+        '监管更新时间是什么？': [chunkC],
+      },
+      evaluations: [
+        {
+          enough: false,
+          reason: '还缺监管更新时间',
+          missingFacts: ['监管更新时间是什么？'],
+          webQuery: '雁门关事件 监管 更新时间',
+        },
+        {
+          enough: true,
+          reason: '补检索后证据足够',
+          missingFacts: [],
+          webQuery: '',
+        },
+      ],
+    });
+
+    const result = await service.run({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      question: '雁门关事件的主谋是谁，他儿子的结局是什么？',
+      turnId: 'turn-1',
+      signal: new AbortController().signal,
+      onToken: jest.fn(),
+      onCitations: jest.fn(),
+    });
+
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledTimes(3);
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        retrievalQueries: [
+          expect.objectContaining({
+            query: '监管更新时间是什么？',
+          }),
+        ],
+      }),
+    );
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
+    expect(deps.webFallbackService.search).not.toHaveBeenCalled();
+    expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localChunks: [chunkA, chunkB, chunkC],
+      }),
+    );
+    expect(result.state.subQuestions).toEqual([
+      '雁门关事件主谋是谁？',
+      '慕容博的儿子结局是什么？',
+      '监管更新时间是什么？',
+    ]);
+    expect(result.state.currentHop).toBe(3);
+    expect(result.state.nextSubIdx).toBe(3);
+    expect(result.state.stopReason).toBe('multi_hop_enough');
+  });
+
   it('本地证据不足时会触发 web fallback，补充后再次评估并生成回答', async () => {
     const localChunk = createChunk('chunk-1', '本地只提到雁门关事件。');
     const webCitation = createWebCitation('雁门关事件补充资料');

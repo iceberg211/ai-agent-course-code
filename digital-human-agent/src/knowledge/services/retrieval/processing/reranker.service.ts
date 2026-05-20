@@ -61,12 +61,14 @@ export class RerankerService {
       return [];
     }
 
-    // 1. Rerank 前粗筛截断 (Pre-rerank Pruning)
+    // 1. Rerank 前粗筛截断：保留 Stage1 融合后的当前顺序，避免纯 keyword / graph
+    // 命中因为 similarity=0 被提前误删。
     let rerankCandidates = candidates;
     if (candidates.length > RerankerService.MAX_RERANK_CANDIDATES) {
-      rerankCandidates = [...candidates]
-        .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
-        .slice(0, RerankerService.MAX_RERANK_CANDIDATES);
+      rerankCandidates = candidates.slice(
+        0,
+        RerankerService.MAX_RERANK_CANDIDATES,
+      );
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), rerankCandidates.length);

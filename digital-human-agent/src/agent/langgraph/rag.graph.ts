@@ -71,7 +71,7 @@ export function buildRagGraph(deps: RagGraphDeps) {
         deps.webFallbackService,
       ),
       {
-        ends: ['web_fallback', 'load_context'],
+        ends: ['retrieve', 'web_fallback', 'load_context'],
       },
     )
     .addNode('web_fallback', createWebFallbackNode(deps.webFallbackService), {
