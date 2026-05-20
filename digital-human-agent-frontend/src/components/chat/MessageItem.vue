@@ -87,15 +87,16 @@ function renderMarkdown(text: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
   user-select: none;
+  opacity: 0.65;
 }
 .user      .role-header { color: var(--primary); justify-content: flex-end; }
-.assistant .role-header { color: var(--text-secondary); }
+.assistant .role-header { color: var(--text-secondary); padding-left: 14px; }
 
 .status-badge {
   font-size: 9px;
@@ -185,12 +186,14 @@ function renderMarkdown(text: string): string {
 }
 .content.md :deep(pre) {
   background: #0f172a;
-  border: 1px solid #1e293b;
+  border: 1px solid rgba(226, 232, 240, 0.1);
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   overflow-x: auto;
-  margin: 10px 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  margin: 12px 0;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.03);
 }
 .content.md :deep(pre code) {
   background: none;
@@ -198,6 +201,7 @@ function renderMarkdown(text: string): string {
   font-size: 11.5px;
   color: #e2e8f0;
   font-weight: 400;
+  line-height: 1.6;
 }
 .content.md :deep(strong) { font-weight: 600; }
 .content.md :deep(blockquote) {
