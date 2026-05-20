@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
+import { z } from 'zod';
 import { isAbortError, throwIfAborted } from '@/common/utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
@@ -17,6 +18,15 @@ interface RerankerItem {
   index: number;
   score: number;
 }
+
+const RerankResultSchema = z.object({
+  scores: z.array(
+    z.object({
+      index: z.number().int().nonnegative(),
+      score: z.number(),
+    }),
+  ),
+});
 
 @Injectable()
 export class RerankerService {
@@ -50,7 +60,8 @@ export class RerankerService {
 
     const safeTopK = Math.min(Math.max(topK, 1), candidates.length);
     try {
-      const response = await this.llm.invoke(
+      const rewriter = this.llm.withStructuredOutput(RerankResultSchema);
+      const result = await rewriter.invoke(
         await KNOWLEDGE_RERANK_PROMPT.formatMessages(
           buildKnowledgeRerankPromptInput(query, candidates),
         ),
@@ -70,7 +81,7 @@ export class RerankerService {
 
       throwIfAborted(signal);
 
-      const parsed = this.parseRerankItems(this.extractText(response.content));
+      const parsed = result?.scores ?? [];
       return this.applyScores(candidates, parsed, safeTopK);
     } catch (error) {
       if (isAbortError(error)) {
@@ -116,65 +127,5 @@ export class RerankerService {
     });
 
     return reranked.slice(0, safeTopK);
-  }
-
-  private extractText(content: unknown): string {
-    if (typeof content === 'string') return content.trim();
-    if (!Array.isArray(content)) return '';
-
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        if (!part || typeof part !== 'object') return '';
-        const text = (part as { text?: unknown }).text;
-        return typeof text === 'string' ? text : '';
-      })
-      .join('\n')
-      .trim();
-  }
-
-  private parseRerankItems(raw: string): RerankerItem[] {
-    const normalized = raw.trim();
-    if (!normalized) {
-      this.logger.warn('Reranker 返回空内容，按无重排处理');
-      return [];
-    }
-
-    const direct = this.tryParseItems(normalized);
-    if (direct) return direct;
-
-    const match = normalized.match(/\[[\s\S]*\]/);
-    if (match) {
-      const extracted = this.tryParseItems(match[0]);
-      if (extracted) return extracted;
-    }
-
-    throw new Error(`Reranker 输出不是合法 JSON：${normalized.slice(0, 180)}`);
-  }
-
-  private tryParseItems(raw: string): RerankerItem[] | null {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      const list = Array.isArray(parsed)
-        ? parsed
-        : parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as { scores?: unknown }).scores)
-          ? (parsed as { scores: unknown[] }).scores
-          : null;
-
-      if (!list) return null;
-
-      return list
-        .map((item) => ({
-          index: Number((item as { index?: unknown }).index),
-          score: Number((item as { score?: unknown }).score),
-        }))
-        .filter(
-          (item) => Number.isInteger(item.index) && Number.isFinite(item.score),
-        );
-    } catch {
-      return null;
-    }
   }
 }

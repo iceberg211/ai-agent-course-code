@@ -353,7 +353,7 @@ export class KnowledgeSearchService {
     signal?: AbortSignal,
   ): Promise<KnowledgeQueryRewriteResult> {
     if (skipQueryRewrite) {
-      return this.buildFallbackRewrite(query, '显式跳过 Query Rewrite');
+      return this.queryRewriteService.buildFallbackRewrite(query, '显式跳过 Query Rewrite');
     }
     return this.queryRewriteService.rewrite(query, signal);
   }
@@ -362,25 +362,14 @@ export class KnowledgeSearchService {
     rewrite: KnowledgeQueryRewriteResult,
     strategy: RetrievalStrategy,
   ): RetrievalQueryItem[] {
-    const queries =
-      strategy.useMultiQuery && (rewrite.expandedQueries?.length ?? 0) > 0
-        ? rewrite.expandedQueries
-        : [
-            {
-              index: 0,
-              query: rewrite.rewrittenQuery,
-              keywords: rewrite.keywords,
-              angle:
-                rewrite.rewrittenQuery === rewrite.originalQuery
-                  ? ('original' as const)
-                  : ('semantic' as const),
-            },
-          ];
-
-    return queries.slice(0, strategy.queryCount ?? DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS).map((item, index) => ({
-      ...item,
-      index,
-    }));
+    return this.queryRewriteService.resolveRetrievalQueries(
+      rewrite,
+      strategy.queryCount ?? DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
+      {
+        useMultiQuery: strategy.useMultiQuery,
+        preferOriginal: false,
+      },
+    );
   }
 
   private buildEmptyResult(
@@ -388,40 +377,21 @@ export class KnowledgeSearchService {
     reason: string,
     options: NormalizedRetrieveKnowledgeOptions,
   ): RetrieveKnowledgeDebugResult {
-    const fallbackRewrite = this.buildFallbackRewrite(query, reason);
+    const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(query, reason);
     return {
       query,
       retrievalQuery: query,
-      retrievalQueries: query ? fallbackRewrite.expandedQueries : [],
+      retrievalQueries: query
+        ? this.queryRewriteService.resolveRetrievalQueries(fallbackRewrite, 1, {
+            useMultiQuery: false,
+            preferOriginal: false,
+          })
+        : [],
       rewrite: fallbackRewrite,
       options,
       retrievalTrace: [],
       hybridChunks: [],
       rerankedChunks: [],
-    };
-  }
-
-  private buildFallbackRewrite(
-    query: string,
-    reason: string,
-  ): KnowledgeQueryRewriteResult {
-    const keywords = extractFallbackKeywordTerms(query).slice(0, DEFAULT_FALLBACK_KEYWORD_LIMIT);
-    return {
-      originalQuery: query,
-      rewrittenQuery: query,
-      keywords,
-      expandedQueries: query
-        ? [
-            {
-              index: 0,
-              query,
-              keywords,
-              angle: 'original',
-            },
-          ]
-        : [],
-      changed: false,
-      reason,
     };
   }
 }

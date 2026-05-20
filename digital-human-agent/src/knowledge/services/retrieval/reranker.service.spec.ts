@@ -25,18 +25,24 @@ describe('RerankerService', () => {
     invokeResult?: unknown;
     invokeError?: Error;
   }) {
-    const defaultContent = JSON.stringify([
-      { index: 1, score: 0.92 },
-      { index: 0, score: 0.41 },
-    ]);
+    const defaultResult = {
+      scores: [
+        { index: 1, score: 0.92 },
+        { index: 0, score: 0.41 },
+      ],
+    };
+    const invokeMock = options?.invokeError
+      ? jest.fn().mockRejectedValue(options.invokeError)
+      : jest.fn().mockResolvedValue(
+          options?.invokeResult !== undefined
+            ? options.invokeResult
+            : defaultResult,
+        );
+
     const model = {
-      invoke: options?.invokeError
-        ? jest.fn().mockRejectedValue(options.invokeError)
-        : jest.fn().mockResolvedValue({
-            content: options?.invokeResult !== undefined
-              ? JSON.stringify(options.invokeResult)
-              : defaultContent,
-          }),
+      withStructuredOutput: jest.fn().mockReturnValue({
+        invoke: invokeMock,
+      }),
     };
     const llmFactory = {
       resolveModel: jest.fn().mockReturnValue(model),
@@ -48,12 +54,13 @@ describe('RerankerService', () => {
     return {
       service,
       model,
+      invokeMock,
     };
   }
 
   it('LLM JSON 管道返回分数时按重排结果截断候选', async () => {
     const abortController = new AbortController();
-    const { service, model } = createService();
+    const { service, model, invokeMock } = createService();
 
     const result = await service.rerank(
       '原始问题',
@@ -62,7 +69,8 @@ describe('RerankerService', () => {
       abortController.signal,
     );
 
-    expect(model.invoke).toHaveBeenCalled();
+    expect(model.withStructuredOutput).toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalled();
     expect(result.map((item) => item.id)).toEqual(['chunk-2', 'chunk-1']);
     expect(result[0].rerank_score).toBe(0.92);
   });

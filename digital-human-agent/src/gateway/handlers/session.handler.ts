@@ -52,6 +52,7 @@ export class SessionHandler {
     msg: WsSessionStartMessage,
     cleanupSession: (sessionId: string) => Promise<void>,
   ): Promise<void> {
+    const personaId = msg.payload?.personaId;
     if (!personaId) {
       sendJson(client, {
         type: 'error',

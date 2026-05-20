@@ -1,6 +1,9 @@
 import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 
 describe('QueryAugmentationService', () => {
+  const realQueryRewrite = new QueryRewriteService(null as any);
+
   it('复杂问题会保留原问题并最多生成三条去重检索 query', async () => {
     const queryRewriteService = {
       rewrite: jest.fn().mockResolvedValue({
@@ -30,6 +33,8 @@ describe('QueryAugmentationService', () => {
         changed: true,
         reason: '补全实体关系',
       }),
+      buildFallbackRewrite: realQueryRewrite.buildFallbackRewrite.bind(realQueryRewrite),
+      resolveRetrievalQueries: realQueryRewrite.resolveRetrievalQueries.bind(realQueryRewrite),
     };
     const service = new QueryAugmentationService(queryRewriteService as never);
 
@@ -66,6 +71,8 @@ describe('QueryAugmentationService', () => {
   it('rewrite 失败时只回退原始问题，不额外凑 query', async () => {
     const queryRewriteService = {
       rewrite: jest.fn().mockRejectedValue(new Error('llm timeout')),
+      buildFallbackRewrite: realQueryRewrite.buildFallbackRewrite.bind(realQueryRewrite),
+      resolveRetrievalQueries: realQueryRewrite.resolveRetrievalQueries.bind(realQueryRewrite),
     };
     const service = new QueryAugmentationService(queryRewriteService as never);
 

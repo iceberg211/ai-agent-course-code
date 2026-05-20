@@ -98,10 +98,7 @@ export class KnowledgeHybridRetrieverService {
         params.globalRetrievalLimit / Math.max(params.retrievalQueries.length, 1),
       ),
     );
-    const results: KnowledgeChunk[][] = [];
-    const trace: RetrieveKnowledgeTraceItem[] = [];
-
-    for (const retrievalQuery of params.retrievalQueries) {
+    const retrievalTasks = params.retrievalQueries.map(async (retrievalQuery) => {
       throwIfAborted(params.signal);
       const queryEmbedding = params.strategy.useVector
         ? await this.runtime.withTransientRetry(
@@ -113,6 +110,8 @@ export class KnowledgeHybridRetrieverService {
             3,
           )
         : undefined;
+
+      throwIfAborted(params.signal);
 
       const hybridResult = await this.retrieveHybridChannels({
         knowledgeId: params.knowledgeId,
@@ -139,8 +138,7 @@ export class KnowledgeHybridRetrieverService {
         vector_backend: this.resolveChunkVectorBackend(chunk),
       }));
 
-      results.push(chunks);
-      trace.push({
+      const traceItem: RetrieveKnowledgeTraceItem = {
         knowledgeId: params.knowledgeId,
         queryIndex: retrievalQuery.index,
         query: retrievalQuery.query,
@@ -157,8 +155,14 @@ export class KnowledgeHybridRetrieverService {
         mergedResultCount: chunks.length,
         fallbackToPg: hybridResult.fallbackToPg,
         skippedChannels: hybridResult.skippedChannels,
-      });
-    }
+      };
+
+      return { chunks, traceItem };
+    });
+
+    const taskResults = await Promise.all(retrievalTasks);
+    const results = taskResults.map((t) => t.chunks);
+    const trace = taskResults.map((t) => t.traceItem);
 
     return {
       chunks: mergeHybridResults(results, params.globalRetrievalLimit),

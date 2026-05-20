@@ -17,6 +17,7 @@ function resolveStopReason(
   enough: boolean,
   webFallbackEnabled: boolean,
 ): RagStopReason {
+  // 情况 1: 证据已充足
   if (enough) {
     if (state.webSearchUsed) {
       return 'web_fallback_enough';
@@ -27,6 +28,7 @@ function resolveStopReason(
     return 'single_hop_enough';
   }
 
+  // 情况 2: 证据不足，且已经使用过网页搜索
   if (state.webSearchUsed) {
     if (shouldUseWebFallback(state, webFallbackEnabled)) {
       return 'web_fallback_retry';
@@ -34,20 +36,23 @@ function resolveStopReason(
     return 'web_fallback_insufficient';
   }
 
-  if (!shouldUseWebFallback(state, webFallbackEnabled)) {
+  // 情况 3: 证据不足，尚未使用过网页搜索
+  const canWebSearch = shouldUseWebFallback(state, webFallbackEnabled);
+
+  if (!canWebSearch) {
     if (!state.webSearchAttempted && !webFallbackEnabled) {
       return 'web_fallback_disabled';
     }
-
     if (
       state.webSearchAttempted &&
       !state.webSearchUsed &&
-      state.stopReason.length > 0
+      state.stopReason?.length > 0
     ) {
       return state.stopReason;
     }
   }
 
+  // 多跳流程判断
   if (state.strategy === 'complex') {
     if (state.currentHop >= state.maxHops) {
       return 'max_hops_reached';
@@ -58,10 +63,7 @@ function resolveStopReason(
     return 'multi_hop_insufficient';
   }
 
-  if (shouldUseWebFallback(state, webFallbackEnabled)) {
-    return 'single_hop_insufficient';
-  }
-
+  // 单跳流程判断
   return 'single_hop_insufficient';
 }
 

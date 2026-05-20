@@ -1,6 +1,7 @@
 import { createAbortError } from '@/common/utils';
 import type { RetrievalStrategy } from '@/common/rag';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/knowledge-search.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/query-rewrite.service';
 import type {
   KnowledgeChunk,
   RetrieveKnowledgeOptions,
@@ -70,6 +71,7 @@ describe('KnowledgeSearchService', () => {
         .mockResolvedValue([hybridChunk, hybridChunk2]),
     };
 
+    const realQueryRewrite = new QueryRewriteService(null as any);
     const queryRewriteService = {
       rewrite: jest.fn().mockResolvedValue({
         originalQuery: '原始问题',
@@ -86,6 +88,8 @@ describe('KnowledgeSearchService', () => {
         changed: true,
         reason: '补全实体，便于检索',
       }),
+      buildFallbackRewrite: realQueryRewrite.buildFallbackRewrite.bind(realQueryRewrite),
+      resolveRetrievalQueries: realQueryRewrite.resolveRetrievalQueries.bind(realQueryRewrite),
     };
 
     const chunkContextExpansionService = {

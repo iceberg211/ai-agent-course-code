@@ -169,6 +169,22 @@ export interface WsDigitalHumanEndMessage extends WsBaseMessage {
   turnId: string;
 }
 
+export interface WsAsrFinalMessage extends WsBaseMessage {
+  type: 'asr:final';
+  sessionId: string;
+  payload: {
+    text: string;
+  };
+}
+
+export interface WsConversationInterruptedMessage extends WsBaseMessage {
+  type: 'conversation:interrupted';
+  sessionId: string;
+  payload: {
+    status: 'interrupted';
+  };
+}
+
 export type WsOutboundMessage =
   | WsPongMessage
   | WsErrorMessage
@@ -182,5 +198,7 @@ export type WsOutboundMessage =
   | WsTtsEndMessage
   | WsDigitalHumanStartMessage
   | WsDigitalHumanSubtitleMessage
-  | WsDigitalHumanEndMessage;
+  | WsDigitalHumanEndMessage
+  | WsAsrFinalMessage
+  | WsConversationInterruptedMessage;
 

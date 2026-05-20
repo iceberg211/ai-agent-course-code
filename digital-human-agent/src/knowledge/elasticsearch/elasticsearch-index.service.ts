@@ -25,6 +25,11 @@ import { formatElasticsearchError } from './error-format';
 import { elasticsearchProvider } from './elasticsearch.provider';
 
 export { elasticsearchProvider };
+export type {
+  KnowledgeChunkIndexDocument,
+  KnowledgeChunkIndexRow,
+  KnowledgeChunkIndexCursor,
+};
 
 // ==========================================
 // 核心 Service 实现

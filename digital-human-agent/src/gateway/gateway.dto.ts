@@ -38,7 +38,7 @@ export class SessionStartPayloadDto {
 
 export class WsSessionStartMessageDto extends WsBaseMessageDto {
   @IsIn(['session:start'], { message: '不支持的消息类型' })
-  type: 'session:start';
+  declare type: 'session:start';
 
   @IsOptional()
   @ValidateNested()
@@ -54,7 +54,7 @@ export class TextInputPayloadDto {
 
 export class WsTextInputMessageDto extends WsBaseMessageDto {
   @IsIn(['conversation:text'], { message: '不支持的消息类型' })
-  type: 'conversation:text';
+  declare type: 'conversation:text';
 
   @IsNotEmpty({ message: 'payload 不能为空' })
   @ValidateNested()
@@ -64,10 +64,10 @@ export class WsTextInputMessageDto extends WsBaseMessageDto {
 
 export class WsInterruptMessageDto extends WsBaseMessageDto {
   @IsIn(['conversation:interrupt'], { message: '不支持的消息类型' })
-  type: 'conversation:interrupt';
+  declare type: 'conversation:interrupt';
 }
 
 export class WsPingMessageDto extends WsBaseMessageDto {
   @IsIn(['ping'], { message: '不支持的消息类型' })
-  type: 'ping';
+  declare type: 'ping';
 }

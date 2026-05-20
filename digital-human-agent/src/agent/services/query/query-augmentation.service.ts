@@ -1,8 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
-  DEFAULT_FALLBACK_KEYWORD_LIMIT,
-} from '@/common/constants';
+import { DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS } from '@/common/constants';
 import { isAbortError } from '@/common/utils';
 import { normalizeRetrievalStrategy } from '@/common/rag';
 import type {
@@ -14,7 +11,6 @@ import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/knowledge-keyword-retriever.service';
 import {
   containsGraphTerms,
   isGreeting,
@@ -34,7 +30,10 @@ export class QueryAugmentationService {
     signal?: AbortSignal;
   }): Promise<RagQueryAugmentationPlan> {
     const normalizedQuestion = input.question.trim();
-    const fallbackRewrite = this.buildFallbackRewrite(normalizedQuestion);
+    const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(
+      normalizedQuestion,
+      normalizedQuestion ? '使用原始问题检索' : '问题为空',
+    );
 
     if (!normalizedQuestion) {
       return {
@@ -91,11 +90,16 @@ export class QueryAugmentationService {
       maxQueries > 1
         ? await this.tryRewrite(normalizedQuestion, fallbackRewrite, input.signal)
         : fallbackRewrite;
-    const retrievalQueries = this.buildRetrievalQueries(
-      normalizedQuestion,
+
+    const retrievalQueries = this.queryRewriteService.resolveRetrievalQueries(
       rewrite,
       maxQueries,
+      {
+        useMultiQuery: maxQueries > 1,
+        preferOriginal: true,
+      },
     );
+
     const hasAugmentedGraphHints = this.hasAugmentedGraphHints(
       normalizedQuestion,
       rewrite,
@@ -125,93 +129,6 @@ export class QueryAugmentationService {
             : '单轮本地混合检索',
       }),
     };
-  }
-
-  private buildRetrievalQueries(
-    originalQuery: string,
-    rewrite: KnowledgeQueryRewriteResult,
-    maxQueries: number,
-  ): RetrievalQueryItem[] {
-    const seen = new Set<string>();
-    const queries: RetrievalQueryItem[] = [];
-
-    const pushQuery = (item: {
-      query: string;
-      keywords: string[];
-      angle: RetrievalQueryItem['angle'];
-    }) => {
-      const query = item.query.trim();
-      if (!query || queries.length >= maxQueries) {
-        return;
-      }
-
-      const key = query.toLowerCase();
-      if (seen.has(key)) {
-        return;
-      }
-
-      seen.add(key);
-      queries.push({
-        index: queries.length,
-        query,
-        keywords: item.keywords,
-        angle: item.angle,
-      });
-    };
-
-    pushQuery({
-      query: originalQuery,
-      keywords: this.extractKeywords(originalQuery),
-      angle: 'original',
-    });
-    pushQuery({
-      query: rewrite.rewrittenQuery,
-      keywords: rewrite.keywords,
-      angle: 'semantic',
-    });
-
-    for (const item of rewrite.expandedQueries ?? []) {
-      pushQuery(item);
-      if (queries.length >= maxQueries) {
-        break;
-      }
-    }
-
-    if (queries.length === 0 && originalQuery) {
-      queries.push({
-        index: 0,
-        query: originalQuery,
-        keywords: this.extractKeywords(originalQuery),
-        angle: 'original',
-      });
-    }
-
-    return queries;
-  }
-
-  private buildFallbackRewrite(query: string): KnowledgeQueryRewriteResult {
-    const keywords = this.extractKeywords(query);
-    return {
-      originalQuery: query,
-      rewrittenQuery: query,
-      keywords,
-      expandedQueries: query
-        ? [
-            {
-              index: 0,
-              query,
-              keywords,
-              angle: 'original',
-            },
-          ]
-        : [],
-      changed: false,
-      reason: query ? '使用原始问题检索' : '问题为空',
-    };
-  }
-
-  private extractKeywords(query: string): string[] {
-    return extractFallbackKeywordTerms(query).slice(0, DEFAULT_FALLBACK_KEYWORD_LIMIT);
   }
 
   private async tryRewrite(
