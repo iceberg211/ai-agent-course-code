@@ -15,15 +15,24 @@ describe('KnowledgeStage1RetrievalService', () => {
   };
 
   it('按 stage1 rank 融合 hybrid 与 graph，不让 graph 原始分数覆盖 hybrid 排序', async () => {
-    const hybridChunk: KnowledgeChunk = {
+    const vectorChunk: KnowledgeChunk = {
       id: 'chunk-hybrid',
       content: '向量关键词命中的条款。',
       source: 'contract.md',
       chunk_index: 1,
       category: 'contract',
       similarity: 0.91,
-      hybrid_score: 0.032,
-      retrieval_sources: ['vector', 'keyword'],
+      retrieval_sources: ['vector'],
+    };
+    const keywordChunk: KnowledgeChunk = {
+      id: 'chunk-hybrid',
+      content: '向量关键词命中的条款。',
+      source: 'contract.md',
+      chunk_index: 1,
+      category: 'contract',
+      similarity: 0,
+      keyword_score: 12,
+      retrieval_sources: ['keyword'],
     };
     const graphChunk: KnowledgeChunk = {
       id: 'chunk-graph',
@@ -35,6 +44,23 @@ describe('KnowledgeStage1RetrievalService', () => {
       graph_score: 99,
       retrieval_sources: ['graph'],
     };
+
+    const rpcMock = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: vectorChunk.id,
+          document_id: 'doc-1',
+          knowledge_base_id: 'kb-1',
+          content: vectorChunk.content,
+          source: vectorChunk.source,
+          chunk_index: vectorChunk.chunk_index,
+          category: vectorChunk.category,
+          similarity: vectorChunk.similarity,
+        },
+      ],
+      error: null,
+    });
+
     const runtime = {
       withTransientRetry: jest.fn(
         <T>(_operation: string, fn: () => Promise<T>): Promise<T> => fn(),
@@ -42,24 +68,27 @@ describe('KnowledgeStage1RetrievalService', () => {
       embeddings: {
         embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
       },
+      supabase: {
+        rpc: rpcMock,
+      },
     };
-    const hybridRetriever = {
+
+    const keywordRetriever = {
       retrieve: jest.fn().mockResolvedValue({
-        chunks: [hybridChunk],
-        keywordBackend: 'pg',
-        vectorResultCount: 1,
-        keywordResultCount: 1,
+        chunks: [keywordChunk],
+        backend: 'pg',
         fallbackToPg: false,
-        skippedChannels: [],
       }),
     };
+
     const graphRetriever = {
       isEnabled: jest.fn().mockReturnValue(true),
       retrieve: jest.fn().mockResolvedValue([graphChunk]),
     };
+
     const service = new KnowledgeStage1RetrievalService(
       runtime as never,
-      hybridRetriever as never,
+      keywordRetriever as never,
       graphRetriever as never,
     );
 
@@ -82,7 +111,7 @@ describe('KnowledgeStage1RetrievalService', () => {
       'chunk-hybrid',
       'chunk-graph',
     ]);
-    expect(result.chunks[1]?.hybrid_score).toBeLessThan(0.032);
+    expect(result.chunks[0]?.hybrid_score).toBeGreaterThan(0);
     expect(result.trace[0]).toMatchObject({
       knowledgeId: 'kb-1',
       vectorBackend: 'pgvector',

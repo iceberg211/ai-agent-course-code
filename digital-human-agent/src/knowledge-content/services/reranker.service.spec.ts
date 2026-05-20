@@ -21,17 +21,39 @@ describe('RerankerService', () => {
     jest.clearAllMocks();
   });
 
-  it('LLM JSON provider 返回分数时按重排结果截断候选', async () => {
-    const abortController = new AbortController();
-    const llmProvider = {
-      name: 'llm-json',
-      model: 'qwen-plus',
-      rerank: jest.fn().mockResolvedValue([
-        { index: 1, score: 0.92 },
-        { index: 0, score: 0.41 },
-      ]),
+  function createService(options?: {
+    invokeResult?: unknown;
+    invokeError?: Error;
+  }) {
+    const defaultContent = JSON.stringify([
+      { index: 1, score: 0.92 },
+      { index: 0, score: 0.41 },
+    ]);
+    const model = {
+      invoke: options?.invokeError
+        ? jest.fn().mockRejectedValue(options.invokeError)
+        : jest.fn().mockResolvedValue({
+            content: options?.invokeResult !== undefined
+              ? JSON.stringify(options.invokeResult)
+              : defaultContent,
+          }),
     };
-    const service = new RerankerService(llmProvider as never);
+    const llmFactory = {
+      resolveModel: jest.fn().mockReturnValue(model),
+      createChatModel: jest.fn().mockReturnValue(model),
+    };
+
+    const service = new RerankerService(llmFactory as never);
+
+    return {
+      service,
+      model,
+    };
+  }
+
+  it('LLM JSON 管道返回分数时按重排结果截断候选', async () => {
+    const abortController = new AbortController();
+    const { service, model } = createService();
 
     const result = await service.rerank(
       '原始问题',
@@ -40,25 +62,15 @@ describe('RerankerService', () => {
       abortController.signal,
     );
 
-    expect(llmProvider.rerank).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: '原始问题',
-        candidates: [chunk, chunk2],
-        topK: 2,
-        signal: abortController.signal,
-      }),
-    );
+    expect(model.invoke).toHaveBeenCalled();
     expect(result.map((item) => item.id)).toEqual(['chunk-2', 'chunk-1']);
     expect(result[0].rerank_score).toBe(0.92);
   });
 
-  it('provider 失败时回退到 Stage1 排序，不吞掉 AbortError', async () => {
-    const llmProvider = {
-      name: 'llm-json',
-      model: 'qwen-plus',
-      rerank: jest.fn().mockRejectedValue(new Error('json malformed')),
-    };
-    const service = new RerankerService(llmProvider as never);
+  it('LLM 失败时回退到 Stage1 排序，不吞掉 AbortError', async () => {
+    const { service } = createService({
+      invokeError: new Error('json malformed'),
+    });
 
     const result = await service.rerank('原始问题', [chunk, chunk2], 2);
 

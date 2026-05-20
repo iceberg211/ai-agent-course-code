@@ -15,7 +15,7 @@ describe('KnowledgeKeywordRetrieverService', () => {
   function createService(options?: {
     backend?: string;
     elasticsearchEnabled?: boolean;
-    elasticResult?: unknown[];
+    elasticResult?: unknown;
     pgResult?: unknown[];
     elasticError?: Error;
   }) {
@@ -28,42 +28,77 @@ describe('KnowledgeKeywordRetrieverService', () => {
       }),
     };
 
-    const elasticsearchIndexService = {
+    const defaultElasticResult = {
+      hits: {
+        hits: [
+          {
+            _id: sampleChunk.id,
+            _source: {
+              content: sampleChunk.content,
+              source: sampleChunk.source,
+              chunk_index: sampleChunk.chunk_index,
+              category: sampleChunk.category,
+              knowledge_base_id: 'kb-1',
+            },
+            _score: 12,
+          },
+        ],
+      },
+    };
+
+    const elasticsearchClient = {
+      search: options?.elasticError
+        ? jest.fn().mockRejectedValue(options.elasticError)
+        : jest.fn().mockResolvedValue(options?.elasticResult ?? defaultElasticResult),
+    };
+
+    const elasticsearchService = {
       isEnabled: jest
         .fn()
         .mockReturnValue(options?.elasticsearchEnabled ?? false),
-    };
-
-    const pgKeywordRetriever = {
-      retrieveChunks: jest
+      getClient: jest.fn().mockReturnValue(elasticsearchClient),
+      ensureKnowledgeChunkIndex: jest.fn().mockResolvedValue(undefined),
+      getKnowledgeChunkReadAlias: jest
         .fn()
-        .mockResolvedValue(options?.pgResult ?? [sampleChunk]),
+        .mockReturnValue('digital-human-knowledge-chunk-read'),
     };
 
-    const elasticKeywordRetriever = {
-      retrieveChunks: options?.elasticError
-        ? jest.fn().mockRejectedValue(options.elasticError)
-        : jest.fn().mockResolvedValue(options?.elasticResult ?? [sampleChunk]),
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(options?.pgResult ?? [sampleChunk]),
+      getRawMany: jest.fn().mockResolvedValue(options?.pgResult ?? [sampleChunk]),
+    };
+
+    const chunkRepo = {
+      createQueryBuilder: jest.fn(() => queryBuilder),
     };
 
     const service = new KnowledgeKeywordRetrieverService(
       configService as never,
-      elasticsearchIndexService as never,
-      pgKeywordRetriever as never,
-      elasticKeywordRetriever as never,
+      elasticsearchService as never,
+      chunkRepo as never,
     );
 
     return {
       service,
       configService,
-      elasticsearchIndexService,
-      pgKeywordRetriever,
-      elasticKeywordRetriever,
+      elasticsearchService,
+      elasticsearchClient,
+      chunkRepo,
+      queryBuilder,
     };
   }
 
   it('配置为 elastic 且 ES 可用时优先走 ES', async () => {
-    const { service, pgKeywordRetriever, elasticKeywordRetriever } =
+    const { service, queryBuilder, elasticsearchClient } =
       createService({
         backend: 'elastic',
         elasticsearchEnabled: true,
@@ -75,14 +110,14 @@ describe('KnowledgeKeywordRetrieverService', () => {
       matchCount: 5,
     });
 
-    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalled();
-    expect(pgKeywordRetriever.retrieveChunks).not.toHaveBeenCalled();
+    expect(elasticsearchClient.search).toHaveBeenCalled();
+    expect(queryBuilder.getRawMany).not.toHaveBeenCalled();
     expect(result.backend).toBe('elastic');
     expect(result.fallbackToPg).toBe(false);
   });
 
   it('配置为 elastic 但 ES 未启用时会直接回退 PG', async () => {
-    const { service, pgKeywordRetriever, elasticKeywordRetriever } =
+    const { service, queryBuilder, elasticsearchClient } =
       createService({
         backend: 'elastic',
         elasticsearchEnabled: false,
@@ -94,14 +129,14 @@ describe('KnowledgeKeywordRetrieverService', () => {
       matchCount: 5,
     });
 
-    expect(elasticKeywordRetriever.retrieveChunks).not.toHaveBeenCalled();
-    expect(pgKeywordRetriever.retrieveChunks).toHaveBeenCalled();
+    expect(elasticsearchClient.search).not.toHaveBeenCalled();
+    expect(queryBuilder.getRawMany).toHaveBeenCalled();
     expect(result.backend).toBe('pg');
     expect(result.fallbackToPg).toBe(true);
   });
 
   it('ES 检索抛错时会自动回退 PG', async () => {
-    const { service, pgKeywordRetriever, elasticKeywordRetriever } =
+    const { service, queryBuilder, elasticsearchClient } =
       createService({
         backend: 'elastic',
         elasticsearchEnabled: true,
@@ -114,14 +149,14 @@ describe('KnowledgeKeywordRetrieverService', () => {
       matchCount: 5,
     });
 
-    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalled();
-    expect(pgKeywordRetriever.retrieveChunks).toHaveBeenCalled();
+    expect(elasticsearchClient.search).toHaveBeenCalled();
+    expect(queryBuilder.getRawMany).toHaveBeenCalled();
     expect(result.backend).toBe('pg');
     expect(result.fallbackToPg).toBe(true);
   });
 
   it('ES 回退 PG 时保留 useExactPhrase 参数', async () => {
-    const { service, pgKeywordRetriever, elasticKeywordRetriever } =
+    const { service, queryBuilder, elasticsearchClient } =
       createService({
         backend: 'elastic',
         elasticsearchEnabled: true,
@@ -137,7 +172,7 @@ describe('KnowledgeKeywordRetrieverService', () => {
 
     await service.retrieve(params);
 
-    expect(elasticKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(params);
-    expect(pgKeywordRetriever.retrieveChunks).toHaveBeenCalledWith(params);
+    expect(elasticsearchClient.search).toHaveBeenCalled();
+    expect(queryBuilder.where).toHaveBeenCalled();
   });
 });
