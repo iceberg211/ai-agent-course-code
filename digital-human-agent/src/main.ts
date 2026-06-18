@@ -8,15 +8,36 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
+import { AccessTokenGuard } from '@/common/security/access-token.guard';
 import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
 import { HttpExceptionFilter } from '@/common/filters/http-exception.filter';
 import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
+
+function resolveCorsOptions(configService: ConfigService): CorsOptions {
+  const origins = String(configService.get<string>('CORS_ORIGINS') ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return {
+    origin:
+      origins.length > 0
+        ? origins
+        : process.env.NODE_ENV === 'production'
+          ? false
+          : true,
+    credentials: true,
+  };
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
   });
   const logger = new Logger('Bootstrap');
+  const configService = app.get(ConfigService);
 
   app.useWebSocketAdapter(new WsAdapter(app));
   app.useGlobalPipes(
@@ -38,7 +59,8 @@ async function bootstrap() {
   );
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.enableCors();
+  app.useGlobalGuards(app.get(AccessTokenGuard));
+  app.enableCors(resolveCorsOptions(configService));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Digital Human Agent API')
@@ -61,6 +83,8 @@ async function bootstrap() {
 }
 bootstrap().catch((err) => {
   const logger = new Logger('Bootstrap');
-  logger.error(`应用启动失败: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+  logger.error(
+    `应用启动失败: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+  );
   process.exit(1);
 });

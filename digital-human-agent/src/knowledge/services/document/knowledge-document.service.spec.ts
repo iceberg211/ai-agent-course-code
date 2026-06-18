@@ -1,5 +1,10 @@
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 
+const flushPromises = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
 describe('KnowledgeDocumentService', () => {
   type MockDocument = {
     id: string;
@@ -151,9 +156,10 @@ describe('KnowledgeDocumentService', () => {
     ).rejects.toThrow('insert failed');
 
     expect(chunkRepo.delete).toHaveBeenCalledWith({ documentId: 'doc-1' });
-    expect(
-      elasticsearchService.safeDeleteByDocumentId,
-    ).toHaveBeenCalledWith('doc-1', '导入失败清理文档 doc-1');
+    expect(elasticsearchService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+      'doc-1',
+      '导入失败清理文档 doc-1',
+    );
     expect(graphService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '导入失败清理文档 doc-1',
@@ -165,19 +171,16 @@ describe('KnowledgeDocumentService', () => {
   });
 
   it('删除文档时会同步清理 ES 与 Neo4j 图谱索引', async () => {
-    const {
-      service,
-      documentRepo,
-      elasticsearchService,
-      graphService,
-    } = createService();
+    const { service, documentRepo, elasticsearchService, graphService } =
+      createService();
 
     await service.deleteDocument('doc-1');
 
     expect(documentRepo.delete).toHaveBeenCalledWith('doc-1');
-    expect(
-      elasticsearchService.safeDeleteByDocumentId,
-    ).toHaveBeenCalledWith('doc-1', '删除文档 doc-1');
+    expect(elasticsearchService.safeDeleteByDocumentId).toHaveBeenCalledWith(
+      'doc-1',
+      '删除文档 doc-1',
+    );
     expect(graphService.safeDeleteByDocumentId).toHaveBeenCalledWith(
       'doc-1',
       '删除文档 doc-1',
@@ -185,13 +188,8 @@ describe('KnowledgeDocumentService', () => {
   });
 
   it('更新 chunk 启停状态时会同步 ES 与 Neo4j 图谱索引', async () => {
-    const {
-      service,
-      update,
-      updateEq,
-      elasticsearchService,
-      graphService,
-    } = createService();
+    const { service, update, updateEq, elasticsearchService, graphService } =
+      createService();
     const chunkDocument = {
       id: 'chunk-1',
       document_id: 'doc-1',
@@ -202,9 +200,7 @@ describe('KnowledgeDocumentService', () => {
       category: null,
       enabled: false,
     };
-    elasticsearchService.findByChunkId.mockResolvedValue(
-      chunkDocument,
-    );
+    elasticsearchService.findByChunkId.mockResolvedValue(chunkDocument);
 
     await service.updateChunkEnabled('chunk-1', false);
 
@@ -243,6 +239,7 @@ describe('KnowledgeDocumentService', () => {
         '试用期结束后，乙方应在七日内删除甲方试用数据。',
       ].join('\n'),
     );
+    await flushPromises();
 
     expect(runtime.splitter.createDocuments).not.toHaveBeenCalled();
     expect(runtime.embeddings.embedDocuments).toHaveBeenCalledWith([
@@ -329,6 +326,7 @@ describe('KnowledgeDocumentService', () => {
     });
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
+    await flushPromises();
 
     expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
       status: 'completed',
@@ -337,27 +335,19 @@ describe('KnowledgeDocumentService', () => {
       graphSyncError: null,
       graphSyncedAt: null,
     });
-    expect(documentRepo.update).toHaveBeenCalledWith(
-      'doc-1',
-      {
-        graphSyncStatus: 'failed',
-        graphSyncError: 'neo4j unavailable',
-        graphSyncedAt: null,
-      },
-    );
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      graphSyncStatus: 'failed',
+      graphSyncError: 'neo4j unavailable',
+      graphSyncedAt: null,
+    });
   });
 
   it('图谱抽取失败时主文档仍完成，并记录图谱同步失败状态', async () => {
-    const {
-      service,
-      documentRepo,
-      graphService,
-    } = createService();
-    graphService.extract.mockRejectedValue(
-      new Error('extract failed'),
-    );
+    const { service, documentRepo, graphService } = createService();
+    graphService.extract.mockRejectedValue(new Error('extract failed'));
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
+    await flushPromises();
 
     expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
     expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
@@ -367,25 +357,19 @@ describe('KnowledgeDocumentService', () => {
       graphSyncError: null,
       graphSyncedAt: null,
     });
-    expect(documentRepo.update).toHaveBeenCalledWith(
-      'doc-1',
-      {
-        graphSyncStatus: 'failed',
-        graphSyncError: 'extract failed',
-        graphSyncedAt: null,
-      },
-    );
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      graphSyncStatus: 'failed',
+      graphSyncError: 'extract failed',
+      graphSyncedAt: null,
+    });
   });
 
   it('Neo4j 未启用时不会执行图谱抽取，并记录 skipped 状态', async () => {
-    const {
-      service,
-      documentRepo,
-      graphService,
-    } = createService();
+    const { service, documentRepo, graphService } = createService();
     graphService.isEnabled.mockReturnValue(false);
 
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
+    await flushPromises();
 
     expect(graphService.extract).not.toHaveBeenCalled();
     expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
@@ -396,13 +380,10 @@ describe('KnowledgeDocumentService', () => {
       graphSyncError: null,
       graphSyncedAt: null,
     });
-    expect(documentRepo.update).toHaveBeenCalledWith(
-      'doc-1',
-      {
-        graphSyncStatus: 'skipped',
-        graphSyncError: null,
-        graphSyncedAt: null,
-      },
-    );
+    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
+      graphSyncStatus: 'skipped',
+      graphSyncError: null,
+      graphSyncedAt: null,
+    });
   });
 });

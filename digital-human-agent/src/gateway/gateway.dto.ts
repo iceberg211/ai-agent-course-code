@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsBoolean,
   IsIn,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -30,6 +31,16 @@ export class SessionStartPayloadDto {
   @IsOptional()
   @IsString({ message: 'mode 必须为字符串' })
   mode?: string;
+
+  @IsOptional()
+  @IsString({ message: 'clientId 必须为字符串' })
+  @MaxLength(120, { message: 'clientId 不能超过 120 个字符' })
+  clientId?: string;
+
+  @IsOptional()
+  @IsString({ message: 'ownerId 必须为字符串' })
+  @MaxLength(120, { message: 'ownerId 不能超过 120 个字符' })
+  ownerId?: string;
 
   @IsOptional()
   @IsBoolean({ message: 'forceNew 必须为布尔值' })

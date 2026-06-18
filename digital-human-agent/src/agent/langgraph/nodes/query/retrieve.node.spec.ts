@@ -116,10 +116,13 @@ describe('createRetrieveNode', () => {
 
     expect(queryAugmentationService.plan).toHaveBeenCalledWith({
       question: '你好',
+      history: [],
       routeStrategy: 'simple',
       signal: expect.any(AbortSignal),
     });
-    expect(personaStage1RetrievalService.retrieveForPersona).not.toHaveBeenCalled();
+    expect(
+      personaStage1RetrievalService.retrieveForPersona,
+    ).not.toHaveBeenCalled();
     expect(update).toMatchObject({
       currentQuery: '你好',
       currentHop: 1,
@@ -237,7 +240,9 @@ describe('createRetrieveNode', () => {
       } as never,
     );
 
-    expect(personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith({
+    expect(
+      personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledWith({
       personaId: 'persona-1',
       retrievalQueries: [
         {
@@ -366,7 +371,9 @@ describe('createRetrieveNode', () => {
       } as never,
     );
 
-    expect(personaStage1RetrievalService.retrieveForPersona).toHaveBeenCalledWith(
+    expect(
+      personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         strategy: expect.objectContaining({
           useGraph: true,

@@ -7,7 +7,7 @@ import {
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
-function normalizePromptHistory(
+export function normalizePromptHistory(
   history: ConversationMessage[],
   currentTurnId: string,
 ): ConversationMessage[] {

@@ -16,6 +16,7 @@ describe('FulltextRetrieverService', () => {
     backend?: string;
     elasticsearchEnabled?: boolean;
     elasticResult?: any;
+    existingChunks?: any[];
     pgResult?: any[];
   }) {
     const configService = {
@@ -28,28 +29,32 @@ describe('FulltextRetrieverService', () => {
     };
 
     const elasticsearchClient = {
-      search: jest.fn().mockResolvedValue(options?.elasticResult ?? {
-        hits: {
-          hits: [
-            {
-              _id: 'chunk-1',
-              _source: {
-                id: 'chunk-1',
-                content: 'test content',
-                source: 'test.md',
-                chunk_index: 0,
-                category: 'test',
-                knowledge_base_id: 'kb-1',
+      search: jest.fn().mockResolvedValue(
+        options?.elasticResult ?? {
+          hits: {
+            hits: [
+              {
+                _id: 'chunk-1',
+                _source: {
+                  id: 'chunk-1',
+                  content: 'test content',
+                  source: 'test.md',
+                  chunk_index: 0,
+                  category: 'test',
+                  knowledge_base_id: 'kb-1',
+                },
+                _score: 10,
               },
-              _score: 10,
-            },
-          ],
+            ],
+          },
         },
-      }),
+      ),
     };
 
     const elasticsearchIndexService = {
-      isEnabled: jest.fn().mockReturnValue(options?.elasticsearchEnabled ?? false),
+      isEnabled: jest
+        .fn()
+        .mockReturnValue(options?.elasticsearchEnabled ?? false),
       getClient: jest.fn().mockReturnValue(elasticsearchClient),
       ensureKnowledgeChunkIndex: jest.fn().mockResolvedValue(undefined),
       getKnowledgeChunkReadAlias: jest.fn().mockReturnValue('alias-read'),
@@ -65,11 +70,25 @@ describe('FulltextRetrieverService', () => {
       addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       setParameters: jest.fn().mockReturnThis(),
-      getRawMany: jest.fn().mockResolvedValue(options?.pgResult ?? [sampleChunk]),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue(options?.pgResult ?? [sampleChunk]),
     };
 
     const chunkRepo = {
       createQueryBuilder: jest.fn(() => queryBuilder),
+      find: jest.fn().mockResolvedValue(
+        options?.existingChunks ?? [
+          {
+            id: 'chunk-1',
+            documentId: 'doc-1',
+            content: 'test content',
+            source: 'test.md',
+            chunkIndex: 0,
+            category: 'test',
+          },
+        ],
+      ),
     };
 
     const service = new FulltextRetrieverService(

@@ -1,8 +1,19 @@
-import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
+import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { DIGITAL_HUMAN_PROVIDER, GATEWAY_HEARTBEAT_INTERVAL } from '@/common/constants';
+import {
+  DIGITAL_HUMAN_PROVIDER,
+  GATEWAY_HEARTBEAT_INTERVAL,
+} from '@/common/constants';
+import { AccessControlService } from '@/common/security/access-control.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
@@ -12,7 +23,6 @@ import { InterruptHandler } from '@/gateway/handlers/interrupt.handler';
 import { WsInboundMessage } from '@/gateway/gateway.types';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 import { validateInboundMessage } from '@/gateway/utils/ws-validate.util';
-
 
 /**
  * ConversationGateway — WebSocket 入口与消息路由。
@@ -45,50 +55,62 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     private readonly audioHandler: AudioHandler,
     private readonly textHandler: TextHandler,
     private readonly interruptHandler: InterruptHandler,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   onModuleInit(): void {
-    this.server?.on('connection', (client: WebSocket) => {
-      const clientId = randomUUID();
-      const clientWithState = client as WebSocket & {
-        __clientId: string;
-        isAlive: boolean;
-      };
-      clientWithState.__clientId = clientId;
-      clientWithState.isAlive = true;
+    this.server?.on(
+      'connection',
+      (client: WebSocket, request: IncomingMessage) => {
+        const clientId = randomUUID();
+        if (!this.accessControl.validateWsRequest(request)) {
+          client.close(1008, 'Unauthorized');
+          this.logger.warn(`Client rejected by access token: ${clientId}`);
+          return;
+        }
 
-      this.clients.set(clientId, client);
-      this.logger.log(`Client connected: ${clientId}`);
-
-      client.on('pong', () => {
+        const clientWithState = client as WebSocket & {
+          __clientId: string;
+          isAlive: boolean;
+        };
+        clientWithState.__clientId = clientId;
         clientWithState.isAlive = true;
-      });
 
-      client.on('message', (data: Buffer, isBinary: boolean) => {
-        clientWithState.isAlive = true;
-        void this.handleMessage(client, clientId, data, isBinary).catch(
-          (err) => {
-            this.logger.error(
-              `Handle message failed: ${
-                err instanceof Error ? (err.stack ?? err.message) : String(err)
-              }`,
-            );
-            sendJson(client, {
-              type: 'error',
-              sessionId: '',
-              payload: { message: '消息处理失败' },
-            });
-          },
-        );
-      });
+        this.clients.set(clientId, client);
+        this.logger.log(`Client connected: ${clientId}`);
 
-      client.on('close', (code: number, reason: Buffer) => {
-        this.logger.log(
-          `Client closing: ${clientId} code=${code} reason=${reason?.toString() ?? ''}`,
-        );
-        void this.cleanupClientById(clientId);
-      });
-    });
+        client.on('pong', () => {
+          clientWithState.isAlive = true;
+        });
+
+        client.on('message', (data: Buffer, isBinary: boolean) => {
+          clientWithState.isAlive = true;
+          void this.handleMessage(client, clientId, data, isBinary).catch(
+            (err) => {
+              this.logger.error(
+                `Handle message failed: ${
+                  err instanceof Error
+                    ? (err.stack ?? err.message)
+                    : String(err)
+                }`,
+              );
+              sendJson(client, {
+                type: 'error',
+                sessionId: '',
+                payload: { message: '消息处理失败' },
+              });
+            },
+          );
+        });
+
+        client.on('close', (code: number, reason: Buffer) => {
+          this.logger.log(
+            `Client closing: ${clientId} code=${code} reason=${reason?.toString() ?? ''}`,
+          );
+          void this.cleanupClientById(clientId);
+        });
+      },
+    );
 
     // 启动保活定时器
     this.heartbeatInterval = setInterval(() => {
@@ -180,9 +202,7 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
         break;
 
       default:
-        this.logger.warn(
-          `Unknown message type: ${(msg as any).type}`,
-        );
+        this.logger.warn(`Unknown message type: ${(msg as any).type}`);
     }
   }
 
@@ -208,6 +228,4 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     }
     this.sessionRegistry.delete(sessionId);
   }
-
 }
-

@@ -11,6 +11,7 @@ import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
+import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import {
   containsGraphTerms,
   isGreeting,
@@ -27,15 +28,16 @@ export class QueryAugmentationService {
   async plan(input: {
     question: string;
     routeStrategy: RagStrategy;
+    history?: ConversationMessage[];
     signal?: AbortSignal;
   }): Promise<RagQueryAugmentationPlan> {
     const normalizedQuestion = input.question.trim();
-    const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(
-      normalizedQuestion,
-      normalizedQuestion ? '使用原始问题检索' : '问题为空',
-    );
 
     if (!normalizedQuestion) {
+      const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(
+        '',
+        '问题为空',
+      );
       return {
         rewrite: fallbackRewrite,
         retrievalQueries: [],
@@ -55,6 +57,10 @@ export class QueryAugmentationService {
     }
 
     if (isGreeting(normalizedQuestion)) {
+      const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(
+        normalizedQuestion,
+        '使用原始问题检索',
+      );
       return {
         rewrite: fallbackRewrite,
         retrievalQueries: [
@@ -80,6 +86,16 @@ export class QueryAugmentationService {
       };
     }
 
+    const retrievalQuestion = this.buildContextualQuestion(
+      normalizedQuestion,
+      input.history ?? [],
+    );
+    const fallbackRewrite = this.queryRewriteService.buildFallbackRewrite(
+      retrievalQuestion,
+      retrievalQuestion === normalizedQuestion
+        ? '使用原始问题检索'
+        : '结合上文补全追问后检索',
+    );
     const exactLike = isExactLookup(normalizedQuestion);
     const graphLike = isGraphQuestion(normalizedQuestion);
     const maxQueries =
@@ -88,7 +104,11 @@ export class QueryAugmentationService {
         : 1;
     const rewrite =
       maxQueries > 1
-        ? await this.tryRewrite(normalizedQuestion, fallbackRewrite, input.signal)
+        ? await this.tryRewrite(
+            retrievalQuestion,
+            fallbackRewrite,
+            input.signal,
+          )
         : fallbackRewrite;
 
     const retrievalQueries = this.queryRewriteService.resolveRetrievalQueries(
@@ -109,7 +129,7 @@ export class QueryAugmentationService {
     return {
       rewrite,
       retrievalQueries,
-      currentQuery: retrievalQueries[0]?.query ?? normalizedQuestion,
+      currentQuery: retrievalQueries[0]?.query ?? retrievalQuestion,
       strategy: normalizeRetrievalStrategy({
         needRetrieval: true,
         useVector: true,
@@ -152,6 +172,36 @@ export class QueryAugmentationService {
     }
   }
 
+  private buildContextualQuestion(
+    question: string,
+    history: ConversationMessage[],
+  ): string {
+    if (!this.looksLikeFollowUp(question)) {
+      return question;
+    }
+
+    const recentHistory = history
+      .slice(-4)
+      .map((message) => {
+        const role = message.role === 'user' ? '用户' : '助手';
+        return `${role}：${message.content.trim()}`;
+      })
+      .filter((line) => line.length > 3)
+      .join('\n');
+
+    if (!recentHistory) {
+      return question;
+    }
+
+    return `上文：\n${recentHistory}\n当前追问：${question}`;
+  }
+
+  private looksLikeFollowUp(question: string): boolean {
+    return /(?:它|他|她|其|这个|那个|这些|那些|上述|前面|刚才|刚刚|上一|该)/u.test(
+      question,
+    );
+  }
+
   private hasAugmentedGraphHints(
     originalQuery: string,
     rewrite: KnowledgeQueryRewriteResult,
@@ -163,8 +213,7 @@ export class QueryAugmentationService {
 
     if (
       (rewrite.expandedQueries ?? []).some(
-        (item) =>
-          item.angle === 'entity' || containsGraphTerms(item.query),
+        (item) => item.angle === 'entity' || containsGraphTerms(item.query),
       )
     ) {
       return true;

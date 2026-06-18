@@ -285,6 +285,7 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.multiHopPlannerService.planSubQuestions).not.toHaveBeenCalled();
     expect(deps.queryAugmentationService.plan).toHaveBeenCalledWith({
       question: '乔峰是谁？',
+      history: [],
       routeStrategy: 'simple',
       signal: expect.any(AbortSignal),
     });
@@ -372,7 +373,7 @@ describe('LangGraphRagOrchestratorService', () => {
     ]);
   });
 
-  it('none 路由会直达轻量回答并跳过检索、评估和上下文加载', async () => {
+  it('none 路由会直达轻量回答并跳过检索、评估和生成上下文加载', async () => {
     const { service, deps } = createService({
       routeStrategy: 'none',
     });
@@ -397,9 +398,10 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.rerankerService.rerank).not.toHaveBeenCalled();
     expect(deps.evidenceEvaluatorService.evaluate).not.toHaveBeenCalled();
     expect(deps.personaService.findOne).not.toHaveBeenCalled();
-    expect(
-      deps.conversationService.getCompletedMessages,
-    ).not.toHaveBeenCalled();
+    expect(deps.conversationService.getCompletedMessages).toHaveBeenCalledWith(
+      'conv-1',
+      10,
+    );
     expect(deps.answerGenerationService.generate).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generateDirect).toHaveBeenCalledWith(
       expect.objectContaining({

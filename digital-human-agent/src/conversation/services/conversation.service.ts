@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Conversation } from '@/conversation/entities/conversation.entity';
 import {
   ConversationMessage,
@@ -25,8 +25,15 @@ export class ConversationService {
     private readonly msgRepo: Repository<ConversationMessage>,
   ) {}
 
-  createConversation(personaId: string): Promise<Conversation> {
-    const conversation = this.convRepo.create({ id: randomUUID(), personaId });
+  createConversation(
+    personaId: string,
+    ownerId: string | null = null,
+  ): Promise<Conversation> {
+    const conversation = this.convRepo.create({
+      id: randomUUID(),
+      personaId,
+      ownerId,
+    });
     return this.withTransientRetry('createConversation', () =>
       this.convRepo.save(conversation),
     );
@@ -42,24 +49,27 @@ export class ConversationService {
 
   getLatestConversationByPersona(
     personaId: string,
+    ownerId: string | null,
   ): Promise<Conversation | null> {
     return this.withTransientRetry('getLatestConversationByPersona', () =>
       this.convRepo.findOne({
-        where: { personaId },
+        where: { personaId, ownerId: ownerId ?? IsNull() },
         order: { createdAt: 'DESC' },
       }),
     );
   }
 
-  addMessage(params: {
+  async addMessage(params: {
     conversationId: string;
     turnId: string;
     role: MessageRole;
-    seq: number;
+    seq?: number;
     content: string;
     status: MessageStatus;
   }): Promise<ConversationMessage> {
-    const message = this.msgRepo.create({ id: randomUUID(), ...params });
+    const seq =
+      params.seq ?? (await this.getNextMessageSeq(params.conversationId));
+    const message = this.msgRepo.create({ id: randomUUID(), ...params, seq });
     return this.withTransientRetry('addMessage', () =>
       this.msgRepo.save(message),
     );
@@ -76,7 +86,7 @@ export class ConversationService {
       () =>
         this.msgRepo.find({
           where: { conversationId, status: 'completed' },
-          order: { createdAt: 'DESC' },
+          order: { seq: 'DESC', createdAt: 'DESC' },
           take: safeLimit,
         }),
     );
@@ -92,11 +102,23 @@ export class ConversationService {
     const recentDesc = await this.withTransientRetry('getRecentMessages', () =>
       this.msgRepo.find({
         where: { conversationId },
-        order: { createdAt: 'DESC' },
+        order: { seq: 'DESC', createdAt: 'DESC' },
         take: safeLimit,
       }),
     );
     return recentDesc.reverse();
+  }
+
+  private async getNextMessageSeq(conversationId: string): Promise<number> {
+    const row = await this.withTransientRetry('getNextMessageSeq', () =>
+      this.msgRepo
+        .createQueryBuilder('message')
+        .select('COALESCE(MAX(message.seq), -1)', 'maxSeq')
+        .where('message.conversation_id = :conversationId', { conversationId })
+        .getRawOne<{ maxSeq: string | number | null }>(),
+    );
+    const maxSeq = Number(row?.maxSeq ?? -1);
+    return Number.isFinite(maxSeq) ? maxSeq + 1 : 0;
   }
 
   private async withTransientRetry<T>(

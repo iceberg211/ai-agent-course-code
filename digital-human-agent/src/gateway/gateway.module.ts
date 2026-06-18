@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConversationGateway } from '@/gateway/conversation.gateway';
 import { AgentModule } from '@/agent/agent.module';
+import { CommonModule } from '@/common/common.module';
 import { SpeechModule } from '@/speech/speech.module';
 import { ConversationModule } from '@/conversation/conversation.module';
 import { PersonaModule } from '@/persona/persona.module';
@@ -17,6 +18,7 @@ import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service'
 
 @Module({
   imports: [
+    CommonModule,
     AgentModule,
     SpeechModule,
     ConversationModule,

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type { estypes } from '@elastic/elasticsearch';
 import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
@@ -52,7 +52,9 @@ export function extractFallbackKeywordTerms(query: string): string[] {
 
   const terms = tokens.flatMap((token) => splitFallbackKeywordToken(token));
   const deduped = Array.from(
-    new Set(terms.map((term) => term.trim()).filter((term) => term.length >= 2)),
+    new Set(
+      terms.map((term) => term.trim()).filter((term) => term.length >= 2),
+    ),
   ).slice(0, 8);
 
   return deduped.length > 0 ? deduped : trimmedQuery ? [trimmedQuery] : [];
@@ -227,7 +229,11 @@ export class FulltextRetrieverService {
         }),
       },
       async () => {
-        return this.retrieveWithFallback(params, initialBackend, initialFallbackToPg);
+        return this.retrieveWithFallback(
+          params,
+          initialBackend,
+          initialFallbackToPg,
+        );
       },
     );
   }
@@ -254,6 +260,12 @@ export class FulltextRetrieverService {
 
     try {
       const chunks = await this.elasticRetrieve(params);
+      if (chunks.length === 0) {
+        const pgChunks = await this.pgRetrieve(params);
+        if (pgChunks.length > 0) {
+          return { chunks: pgChunks, backend: 'pg', fallbackToPg: true };
+        }
+      }
       return { chunks, backend: 'elastic', fallbackToPg };
     } catch (error) {
       this.logger.warn(
@@ -373,7 +385,9 @@ export class FulltextRetrieverService {
     }
 
     if (!this.elasticsearchIndexService.isEnabled()) {
-      throw new Error('ELASTICSEARCH_ENABLED=false，当前无法使用 ES 关键词检索');
+      throw new Error(
+        'ELASTICSEARCH_ENABLED=false，当前无法使用 ES 关键词检索',
+      );
     }
 
     const client = this.elasticsearchIndexService.getClient();
@@ -410,7 +424,49 @@ export class FulltextRetrieverService {
       : await client.search<KnowledgeChunkIndexDocument>(searchRequest);
     throwIfAborted(params.signal);
 
-    return this.mapResponseToChunks(response);
+    const chunks = this.mapResponseToChunks(response);
+    return this.filterExistingChunks(params.knowledgeId, chunks);
+  }
+
+  private async filterExistingChunks(
+    knowledgeId: string,
+    chunks: KnowledgeChunk[],
+  ): Promise<KnowledgeChunk[]> {
+    if (chunks.length === 0) {
+      return [];
+    }
+
+    const scoreById = new Map(
+      chunks.map((chunk) => [chunk.id, chunk.keyword_score ?? 0]),
+    );
+    const rows = await this.chunkRepo.find({
+      where: {
+        id: In(chunks.map((chunk) => chunk.id)),
+        enabled: true,
+        document: {
+          knowledgeBaseId: knowledgeId,
+        },
+      },
+      relations: { document: true },
+    });
+    const existingById = new Map(rows.map((row) => [row.id, row]));
+
+    return chunks
+      .map((chunk): KnowledgeChunk | null => {
+        const row = existingById.get(chunk.id);
+        if (!row) return null;
+        return {
+          ...chunk,
+          document_id: row.documentId,
+          content: row.content,
+          source: row.source,
+          chunk_index: row.chunkIndex,
+          category: row.category,
+          knowledge_base_id: knowledgeId,
+          keyword_score: scoreById.get(chunk.id) ?? chunk.keyword_score,
+        } satisfies KnowledgeChunk;
+      })
+      .filter((chunk): chunk is KnowledgeChunk => chunk !== null);
   }
 
   private mapResponseToChunks(

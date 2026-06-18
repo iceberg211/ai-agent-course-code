@@ -61,13 +61,17 @@ export const RagGraphStateAnnotation = Annotation.Root({
 export type RagGraphState = typeof RagGraphStateAnnotation.State;
 
 export function getRagWorkflowCitations(
-  state: Pick<RagGraphState, 'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'>,
+  state: Pick<
+    RagGraphState,
+    'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'
+  >,
 ) {
   return toWorkflowCitations(state);
 }
 
 export function buildInitialRagGraphState(
   input: RagWorkflowInput,
+  history: ConversationMessage[] = [],
 ): RagGraphState {
   return {
     conversationId: input.conversationId,
@@ -104,7 +108,7 @@ export function buildInitialRagGraphState(
     rerankLimit: DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
     answerText: '',
     persona: null,
-    history: [],
+    history,
   };
 }
 
@@ -120,9 +124,7 @@ export function toRagWorkflowState(state: RagGraphState): RagWorkflowState {
     ...workflowState,
     currentQuery: getCurrentQuery(state),
     evidenceChunks:
-      state.topDocuments.length > 0
-        ? state.topDocuments
-        : state.evidenceChunks,
+      state.topDocuments.length > 0 ? state.topDocuments : state.evidenceChunks,
     localCitations: toKnowledgeCitations(
       state.topDocuments.length > 0 ? state.topDocuments : state.evidenceChunks,
     ),

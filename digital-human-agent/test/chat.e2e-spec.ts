@@ -128,7 +128,11 @@ describe('Chat API (e2e)', () => {
     expect(personaService.findOne).toHaveBeenCalledWith(personaId);
     expect(
       conversationService.getLatestConversationByPersona,
-    ).toHaveBeenCalledWith(personaId);
+    ).not.toHaveBeenCalled();
+    expect(conversationService.createConversation).toHaveBeenCalledWith(
+      personaId,
+      null,
+    );
     expect(agentService.run).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId,

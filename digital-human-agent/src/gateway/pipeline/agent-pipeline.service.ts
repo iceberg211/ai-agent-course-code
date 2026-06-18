@@ -8,7 +8,6 @@ import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
-
 /**
  * Agent 执行 Pipeline。
  *
@@ -114,7 +113,6 @@ export class AgentPipelineService {
         conversationId: session.conversationId,
         turnId,
         role: 'assistant',
-        seq: 0,
         content: fullReply,
         status,
       });
@@ -184,6 +182,4 @@ export class AgentPipelineService {
       this.ttsPipeline.markFinalize(client, session, turnId);
     }
   }
-
 }
-

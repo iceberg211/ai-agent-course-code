@@ -21,8 +21,11 @@ describe('Knowledge API (e2e)', () => {
     parseAndIngestDocument: jest.fn(),
     listDocumentsByKnowledgeId: jest.fn(),
     deleteDocument: jest.fn(),
+    deleteDocumentForKnowledge: jest.fn(),
     listChunksByDocumentId: jest.fn(),
+    listChunksByKnowledgeDocument: jest.fn(),
     updateChunkEnabled: jest.fn(),
+    updateChunkEnabledForKnowledge: jest.fn(),
   };
 
   const knowledgeSearchService = {
@@ -210,17 +213,21 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('DELETE /knowledge-bases/:kbId/documents/:docId 删除文档', async () => {
-    knowledgeDocumentService.deleteDocument.mockResolvedValue(undefined);
+    knowledgeDocumentService.deleteDocumentForKnowledge.mockResolvedValue(
+      undefined,
+    );
 
     await request(app.getHttpServer())
       .delete(`/knowledge-bases/${kbId}/documents/${docId}`)
       .expect(200);
 
-    expect(knowledgeDocumentService.deleteDocument).toHaveBeenCalledWith(docId);
+    expect(
+      knowledgeDocumentService.deleteDocumentForKnowledge,
+    ).toHaveBeenCalledWith(kbId, docId);
   });
 
   it('GET /knowledge-bases/:kbId/documents/:docId/chunks 返回 chunk 列表', async () => {
-    knowledgeDocumentService.listChunksByDocumentId.mockResolvedValue([
+    knowledgeDocumentService.listChunksByKnowledgeDocument.mockResolvedValue([
       {
         id: chunkId,
         documentId: docId,
@@ -235,8 +242,8 @@ describe('Knowledge API (e2e)', () => {
       .expect(200);
 
     expect(
-      knowledgeDocumentService.listChunksByDocumentId,
-    ).toHaveBeenCalledWith(docId);
+      knowledgeDocumentService.listChunksByKnowledgeDocument,
+    ).toHaveBeenCalledWith(kbId, docId);
     expect(res.body).toEqual([
       {
         id: chunkId,
@@ -249,17 +256,18 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('PATCH /knowledge-bases/:kbId/chunks/:chunkId 切换 chunk 状态', async () => {
-    knowledgeDocumentService.updateChunkEnabled.mockResolvedValue(undefined);
+    knowledgeDocumentService.updateChunkEnabledForKnowledge.mockResolvedValue(
+      undefined,
+    );
 
     const res = await request(app.getHttpServer())
       .patch(`/knowledge-bases/${kbId}/chunks/${chunkId}`)
       .send({ enabled: false })
       .expect(200);
 
-    expect(knowledgeDocumentService.updateChunkEnabled).toHaveBeenCalledWith(
-      chunkId,
-      false,
-    );
+    expect(
+      knowledgeDocumentService.updateChunkEnabledForKnowledge,
+    ).toHaveBeenCalledWith(kbId, chunkId, false);
     expect(res.body).toEqual({ chunkId, enabled: false });
   });
 

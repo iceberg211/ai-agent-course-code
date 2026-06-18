@@ -37,6 +37,8 @@ export interface WsSessionStartMessage extends WsBaseMessage {
   payload?: {
     personaId?: string;
     mode?: string;
+    clientId?: string;
+    ownerId?: string;
     /** true 时强制新建对话，不复用最近一次 */
     forceNew?: boolean;
   };
@@ -83,6 +85,7 @@ export interface WsSessionReadyMessage extends WsBaseMessage {
   sessionId: string;
   payload: {
     conversationId: string;
+    ownerId: string;
     mode: string;
     history: SessionHistoryMessage[];
     historyLimit: number;
@@ -201,4 +204,3 @@ export type WsOutboundMessage =
   | WsDigitalHumanEndMessage
   | WsAsrFinalMessage
   | WsConversationInterruptedMessage;
-

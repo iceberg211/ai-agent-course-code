@@ -6,6 +6,7 @@ import {
   getRagWorkflowCitations,
   toRagWorkflowState,
 } from '@/agent/langgraph/rag.state';
+import { normalizePromptHistory } from '@/agent/langgraph/nodes/generation/load-context.node';
 import { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
 import { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
 import { MultiHopPlannerService } from '@/agent/services/planning/multi-hop-planner.service';
@@ -93,9 +94,17 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
       },
       async () => {
         throwIfAborted(input.signal);
+        const initialHistory = normalizePromptHistory(
+          await this.conversationService.getCompletedMessages(
+            input.conversationId,
+            10,
+          ),
+          input.turnId,
+        );
+        throwIfAborted(input.signal);
 
         const finalState = await this.graph.invoke(
-          buildInitialRagGraphState(input),
+          buildInitialRagGraphState(input, initialHistory),
           {
             ...buildLangSmithRunnableConfig({
               runName: 'langgraph_rag_workflow',

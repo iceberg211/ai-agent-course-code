@@ -10,9 +10,7 @@ import {
   type RetrievalStrategy,
 } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import {
-  DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
-} from '@/common/constants';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import {
@@ -41,6 +39,12 @@ interface HybridRetrieveResult {
   keywordResultCount: number;
   fallbackToPg: boolean;
   skippedChannels: Array<'vector' | 'keyword' | 'graph'>;
+}
+
+interface KeywordRetrieveResult {
+  chunks: KnowledgeChunk[];
+  backend: KeywordBackend;
+  fallbackToPg: boolean;
 }
 
 interface PersonaKnowledgeRetrievalAttempt {
@@ -100,70 +104,85 @@ export class HybridRetrieverService {
     const perQueryTopK = Math.max(
       4,
       Math.ceil(
-        params.globalRetrievalLimit / Math.max(params.retrievalQueries.length, 1),
+        params.globalRetrievalLimit /
+          Math.max(params.retrievalQueries.length, 1),
       ),
     );
-    const retrievalTasks = params.retrievalQueries.map(async (retrievalQuery) => {
-      throwIfAborted(params.signal);
-      const queryEmbedding = params.strategy.useVector
-        ? await this.runtime.withTransientRetry(
-            'embed query',
-            () => {
-              throwIfAborted(params.signal);
-              return this.runtime.embeddings.embedQuery(retrievalQuery.query);
-            },
-            3,
-          )
-        : undefined;
+    const retrievalTasks = params.retrievalQueries.map(
+      async (retrievalQuery) => {
+        throwIfAborted(params.signal);
+        let queryEmbedding: number[] | undefined;
+        if (params.strategy.useVector) {
+          try {
+            queryEmbedding = await this.runtime.withTransientRetry(
+              'embed query',
+              () => {
+                throwIfAborted(params.signal);
+                return this.runtime.embeddings.embedQuery(retrievalQuery.query);
+              },
+              3,
+            );
+          } catch (error) {
+            if (isAbortError(error)) {
+              throw error;
+            }
+            this.logger.warn(
+              `query embedding 失败，跳过向量通道：${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
 
-      throwIfAborted(params.signal);
+        throwIfAborted(params.signal);
 
-      const hybridResult = await this.retrieveHybridChannels({
-        knowledgeId: params.knowledgeId,
-        queryEmbedding,
-        retrievalQuery: retrievalQuery.query,
-        keywordTerms: retrievalQuery.keywords,
-        threshold: params.threshold,
-        matchCount: perQueryTopK,
-        strategy: params.strategy,
-        signal: params.signal,
-      });
+        const hybridResult = await this.retrieveHybridChannels({
+          knowledgeId: params.knowledgeId,
+          queryEmbedding,
+          retrievalQuery: retrievalQuery.query,
+          keywordTerms: retrievalQuery.keywords,
+          threshold: params.threshold,
+          matchCount: perQueryTopK,
+          strategy: params.strategy,
+          signal: params.signal,
+        });
 
-      const keywordBackend: KeywordBackend | undefined =
-        hybridResult.keywordBackend === 'disabled'
-          ? undefined
-          : hybridResult.keywordBackend;
+        const keywordBackend: KeywordBackend | undefined =
+          hybridResult.keywordBackend === 'disabled'
+            ? undefined
+            : hybridResult.keywordBackend;
 
-      const chunks = hybridResult.chunks.map((chunk) => ({
-        ...chunk,
-        matched_queries: Array.from(
-          new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
-        ),
-        keyword_backend: keywordBackend ?? chunk.keyword_backend,
-        vector_backend: this.resolveChunkVectorBackend(chunk),
-      }));
+        const chunks = hybridResult.chunks.map((chunk) => ({
+          ...chunk,
+          matched_queries: Array.from(
+            new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
+          ),
+          keyword_backend: keywordBackend ?? chunk.keyword_backend,
+          vector_backend: this.resolveChunkVectorBackend(chunk),
+        }));
 
-      const traceItem: RetrieveKnowledgeTraceItem = {
-        knowledgeId: params.knowledgeId,
-        queryIndex: retrievalQuery.index,
-        query: retrievalQuery.query,
-        keywords: retrievalQuery.keywords,
-        angle: retrievalQuery.angle,
-        vectorBackend: params.strategy.useVector ? 'pgvector' : 'disabled',
-        keywordBackend: params.strategy.useKeyword
-          ? hybridResult.keywordBackend
-          : 'disabled',
-        vectorResultCount: hybridResult.vectorResultCount,
-        keywordResultCount: hybridResult.keywordResultCount,
-        graphBackend: hybridResult.graphBackend,
-        graphResultCount: hybridResult.graphResultCount,
-        mergedResultCount: chunks.length,
-        fallbackToPg: hybridResult.fallbackToPg,
-        skippedChannels: hybridResult.skippedChannels,
-      };
+        const traceItem: RetrieveKnowledgeTraceItem = {
+          knowledgeId: params.knowledgeId,
+          queryIndex: retrievalQuery.index,
+          query: retrievalQuery.query,
+          keywords: retrievalQuery.keywords,
+          angle: retrievalQuery.angle,
+          vectorBackend: params.strategy.useVector ? 'pgvector' : 'disabled',
+          keywordBackend: params.strategy.useKeyword
+            ? hybridResult.keywordBackend
+            : 'disabled',
+          vectorResultCount: hybridResult.vectorResultCount,
+          keywordResultCount: hybridResult.keywordResultCount,
+          graphBackend: hybridResult.graphBackend,
+          graphResultCount: hybridResult.graphResultCount,
+          mergedResultCount: chunks.length,
+          fallbackToPg: hybridResult.fallbackToPg,
+          skippedChannels: hybridResult.skippedChannels,
+        };
 
-      return { chunks, traceItem };
-    });
+        return { chunks, traceItem };
+      },
+    );
 
     const taskResults = await Promise.all(retrievalTasks);
     const results = taskResults.map((t) => t.chunks);
@@ -216,7 +235,10 @@ export class HybridRetrieverService {
             retrievalQueries: input.retrievalQueries,
             strategy,
             threshold: this.resolveThreshold(input.threshold, config),
-            globalRetrievalLimit: this.resolveRetrievalLimit(input.retrievalLimit, config),
+            globalRetrievalLimit: this.resolveRetrievalLimit(
+              input.retrievalLimit,
+              config,
+            ),
             signal: input.signal,
           });
           return {
@@ -283,7 +305,10 @@ export class HybridRetrieverService {
       chunks: mergeHybridResults(
         successfulResults.map((item) => item.result.chunks),
         input.retrievalLimit === undefined
-          ? Math.max(20, ...knowledgeConfigs.map((config) => config.retrievalLimit))
+          ? Math.max(
+              20,
+              ...knowledgeConfigs.map((config) => config.retrievalLimit),
+            )
           : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
       ),
       trace: successfulResults.flatMap((item) => item.result.trace),
@@ -439,21 +464,56 @@ export class HybridRetrieverService {
           skippedChannels.push('keyword');
         }
 
-        const [vectorResults, keywordResult] = await Promise.all([
+        const [vectorSettled, keywordSettled] = await Promise.allSettled([
           vectorPromise,
           keywordPromise,
         ]);
+        let vectorResults: KnowledgeChunk[] = [];
+        let keywordResult: KeywordRetrieveResult | null = null;
+
+        if (vectorSettled.status === 'fulfilled') {
+          vectorResults = vectorSettled.value;
+        } else if (isAbortError(vectorSettled.reason)) {
+          throw vectorSettled.reason;
+        } else {
+          skippedChannels.push('vector');
+          this.logger.warn(
+            `向量检索失败，继续使用其他通道：${
+              vectorSettled.reason instanceof Error
+                ? vectorSettled.reason.message
+                : String(vectorSettled.reason)
+            }`,
+          );
+        }
+
+        if (keywordSettled.status === 'fulfilled') {
+          keywordResult = keywordSettled.value;
+        } else if (isAbortError(keywordSettled.reason)) {
+          throw keywordSettled.reason;
+        } else {
+          skippedChannels.push('keyword');
+          this.logger.warn(
+            `关键词检索失败，继续使用其他通道：${
+              keywordSettled.reason instanceof Error
+                ? keywordSettled.reason.message
+                : String(keywordSettled.reason)
+            }`,
+          );
+        }
+
+        const keywordChunks = keywordResult?.chunks ?? [];
 
         return {
-          chunks: fuseVectorAndKeywordResults(vectorResults, keywordResult.chunks).slice(
-            0,
-            params.matchCount,
-          ),
-          keywordBackend: useKeyword ? keywordResult.backend : 'disabled',
+          chunks: fuseVectorAndKeywordResults(
+            vectorResults,
+            keywordChunks,
+          ).slice(0, params.matchCount),
+          keywordBackend:
+            useKeyword && keywordResult ? keywordResult.backend : 'disabled',
           vectorResultCount: vectorResults.length,
-          keywordResultCount: keywordResult.chunks.length,
-          fallbackToPg: keywordResult.fallbackToPg,
-          skippedChannels,
+          keywordResultCount: keywordChunks.length,
+          fallbackToPg: keywordResult?.fallbackToPg ?? false,
+          skippedChannels: Array.from(new Set(skippedChannels)),
         };
       },
     );
@@ -519,11 +579,7 @@ export class HybridRetrieverService {
     matchCount: number;
     useExactPhrase?: boolean;
     signal?: AbortSignal;
-  }): Promise<{
-    chunks: KnowledgeChunk[];
-    backend: KeywordBackend;
-    fallbackToPg: boolean;
-  }> {
+  }): Promise<KeywordRetrieveResult> {
     return this.fulltextRetriever.retrieve(params);
   }
 
@@ -618,7 +674,9 @@ export class HybridRetrieverService {
     personaId: string,
   ): Promise<MountedKnowledgeConfig[]> {
     if (!this.personaKnowledgeConfigService) {
-      throw new Error('缺少 PersonaKnowledgeConfigService，无法执行 persona 检索');
+      throw new Error(
+        '缺少 PersonaKnowledgeConfigService，无法执行 persona 检索',
+      );
     }
     return this.personaKnowledgeConfigService.listMountedKnowledgeConfigs(
       personaId,
@@ -640,7 +698,12 @@ export class HybridRetrieverService {
   ): number {
     return retrievalLimit === undefined
       ? config.retrievalLimit
-      : this.runtime.toBoundedNumber(retrievalLimit, config.retrievalLimit, 1, 50);
+      : this.runtime.toBoundedNumber(
+          retrievalLimit,
+          config.retrievalLimit,
+          1,
+          50,
+        );
   }
 
   private resolvePersonaConcurrency(): number {

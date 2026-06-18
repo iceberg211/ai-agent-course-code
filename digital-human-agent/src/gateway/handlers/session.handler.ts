@@ -14,7 +14,6 @@ import {
 } from '@/gateway/gateway.types';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
-
 /**
  * 处理 `session:start` 消息。
  *
@@ -41,7 +40,10 @@ export class SessionHandler {
     private readonly configService: ConfigService,
   ) {
     this.historyLimit = Math.min(
-      Math.max(Number(this.configService.get<number>('SESSION_HISTORY_LIMIT') ?? 80), 1),
+      Math.max(
+        Number(this.configService.get<number>('SESSION_HISTORY_LIMIT') ?? 80),
+        1,
+      ),
       500,
     );
   }
@@ -64,6 +66,7 @@ export class SessionHandler {
 
     const mode = this.parseMode(msg.payload?.mode);
     const forceNew = msg.payload?.forceNew === true;
+    const ownerId = this.resolveOwnerId(msg.payload, clientId);
 
     // 关闭旧会话
     const oldSession = this.sessionRegistry.findByWsClientId(clientId);
@@ -76,10 +79,15 @@ export class SessionHandler {
 
     // 复用或新建 Conversation（forceNew=true 时始终新建）
     const conversation = forceNew
-      ? await this.conversationService.createConversation(personaId)
+      ? await this.conversationService.createConversation(personaId, ownerId)
       : ((await this.conversationService.getLatestConversationByPersona(
           personaId,
-        )) ?? (await this.conversationService.createConversation(personaId)));
+          ownerId,
+        )) ??
+        (await this.conversationService.createConversation(
+          personaId,
+          ownerId,
+        )));
 
     const history = await this.conversationService.getRecentMessages(
       conversation.id,
@@ -91,6 +99,7 @@ export class SessionHandler {
     this.sessionRegistry.create(sessionId, {
       conversationId: conversation.id,
       personaId,
+      ownerId,
       mode,
       digitalHumanSessionId: null,
       digitalHumanSpeakMode: null,
@@ -122,6 +131,7 @@ export class SessionHandler {
       sessionId,
       payload: {
         conversationId: conversation.id,
+        ownerId,
         mode,
         history: history.map<SessionHistoryMessage>((m) => ({
           id: m.id,
@@ -177,5 +187,20 @@ export class SessionHandler {
   private parseMode(mode: unknown): SessionMode {
     return mode === 'digital-human' ? 'digital-human' : 'voice';
   }
-}
 
+  private resolveOwnerId(
+    payload: WsSessionStartMessage['payload'],
+    clientId: string,
+  ): string {
+    return (
+      this.normalizeOwnerId(payload?.clientId) ??
+      this.normalizeOwnerId(payload?.ownerId) ??
+      clientId
+    );
+  }
+
+  private normalizeOwnerId(value: unknown): string | null {
+    const normalized = String(value ?? '').trim();
+    return normalized ? normalized.slice(0, 120) : null;
+  }
+}

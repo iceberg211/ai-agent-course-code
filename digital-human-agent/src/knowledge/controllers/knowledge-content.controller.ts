@@ -73,37 +73,37 @@ export class KnowledgeContentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
-    return this.documentService.parseAndIngestDocument(
-      kbId,
-      file,
-      category,
-    );
+    return this.documentService.parseAndIngestDocument(kbId, file, category);
   }
 
   @Delete(':kbId/documents/:docId')
   deleteDocument(
-    @Param('kbId', ParseUUIDPipe) _kbId: string,
+    @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.documentService.deleteDocument(docId);
+    return this.documentService.deleteDocumentForKnowledge(kbId, docId);
   }
 
   @Get(':kbId/documents/:docId/chunks')
   listChunks(
-    @Param('kbId', ParseUUIDPipe) _kbId: string,
+    @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
-    return this.documentService.listChunksByDocumentId(docId);
+    return this.documentService.listChunksByKnowledgeDocument(kbId, docId);
   }
 
   @Patch(':kbId/chunks/:chunkId')
   @ApiOperation({ summary: '启用或禁用单个 chunk' })
   async updateChunk(
-    @Param('kbId', ParseUUIDPipe) _kbId: string,
+    @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Body() dto: UpdateChunkDto,
   ) {
-    await this.documentService.updateChunkEnabled(chunkId, dto.enabled);
+    await this.documentService.updateChunkEnabledForKnowledge(
+      kbId,
+      chunkId,
+      dto.enabled,
+    );
     return { chunkId, enabled: dto.enabled };
   }
 

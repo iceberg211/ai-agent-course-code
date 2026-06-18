@@ -15,6 +15,7 @@ import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service'
 import { PersonaService } from '@/persona/persona.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { ConfigService } from '@nestjs/config';
+import { AccessControlService } from '@/common/security/access-control.service';
 
 type JsonMessage = Record<string, unknown>;
 
@@ -61,6 +62,10 @@ describe('Conversation Gateway (e2e)', () => {
     closeSession: jest.fn(),
   };
 
+  const accessControlService = {
+    validateWsRequest: jest.fn(),
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -75,6 +80,7 @@ describe('Conversation Gateway (e2e)', () => {
         { provide: AsrService, useValue: asrService },
         { provide: AgentPipelineService, useValue: agentPipeline },
         { provide: DIGITAL_HUMAN_PROVIDER, useValue: digitalHumanProvider },
+        { provide: AccessControlService, useValue: accessControlService },
         {
           provide: ConfigService,
           useValue: {
@@ -122,6 +128,7 @@ describe('Conversation Gateway (e2e)', () => {
       credentials: { token: 'mock-token' },
     });
     digitalHumanProvider.closeSession.mockResolvedValue(undefined);
+    accessControlService.validateWsRequest.mockReturnValue(true);
 
     agentPipeline.run.mockImplementation(
       async (
@@ -178,12 +185,13 @@ describe('Conversation Gateway (e2e)', () => {
       expect(personaService.findOne).toHaveBeenCalledWith(personaId);
       expect(
         conversationService.getLatestConversationByPersona,
-      ).toHaveBeenCalledWith(personaId);
+      ).toHaveBeenCalledWith(personaId, expect.any(String));
       expect(readyMessage).toEqual(
         expect.objectContaining({
           type: 'session:ready',
           payload: expect.objectContaining({
             conversationId,
+            ownerId: expect.any(String),
             mode: 'voice',
             history: [],
           }),
@@ -219,7 +227,9 @@ describe('Conversation Gateway (e2e)', () => {
       );
 
       const startMessage = await collector.waitFor('conversation:start');
-      const textChunkMessage = await collector.waitFor('conversation:text_chunk');
+      const textChunkMessage = await collector.waitFor(
+        'conversation:text_chunk',
+      );
       const doneMessage = await collector.waitFor('conversation:done');
 
       expect(conversationService.addMessage).toHaveBeenCalledWith(
@@ -280,9 +290,7 @@ describe('Conversation Gateway (e2e)', () => {
       const startMessage = await collector.waitFor('conversation:start');
       const doneMessage = await collector.waitFor('conversation:done');
 
-      expect(asrService.recognize).toHaveBeenCalledWith(
-        expect.any(Buffer),
-      );
+      expect(asrService.recognize).toHaveBeenCalledWith(expect.any(Buffer));
       expect(conversationService.addMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationId,
@@ -342,7 +350,10 @@ function createMessageCollector(socket: WebSocket) {
   const queue: JsonMessage[] = [];
   const waiters = new Map<
     string,
-    Array<{ resolve: (msg: JsonMessage) => void; reject: (error: Error) => void }>
+    Array<{
+      resolve: (msg: JsonMessage) => void;
+      reject: (error: Error) => void;
+    }>
   >();
 
   const onMessage = (raw: RawData) => {

@@ -53,9 +53,11 @@ export class ChatController {
 
     await this.personaService.findOne(personaId);
 
+    const ownerId = this.resolveOwnerId(body, req);
     const conversation = await this.resolveConversation(
       personaId,
       body.conversationId,
+      ownerId,
     );
     const userMessage = this.extractLatestUserText(body);
     if (!userMessage) {
@@ -81,7 +83,6 @@ export class ChatController {
       conversationId: conversation.id,
       turnId,
       role: 'user',
-      seq: 0,
       content: userMessage,
       status: 'completed',
     });
@@ -151,7 +152,6 @@ export class ChatController {
             conversationId: conversation.id,
             turnId,
             role: 'assistant',
-            seq: 0,
             content: assistantReply,
             status,
           });
@@ -192,6 +192,7 @@ export class ChatController {
   private async resolveConversation(
     personaId: string,
     conversationId?: string,
+    ownerId?: string | null,
   ): Promise<Conversation> {
     if (conversationId) {
       const existing =
@@ -202,15 +203,41 @@ export class ChatController {
       if (existing.personaId !== personaId) {
         throw new BadRequestException('conversationId 与 personaId 不匹配');
       }
+      if ((existing.ownerId ?? null) !== (ownerId ?? null)) {
+        throw new BadRequestException('conversationId 与调用方不匹配');
+      }
       return existing;
     }
 
-    const latest =
-      await this.conversationService.getLatestConversationByPersona(personaId);
-    if (latest) {
-      return latest;
+    if (ownerId) {
+      const latest =
+        await this.conversationService.getLatestConversationByPersona(
+          personaId,
+          ownerId,
+        );
+      if (latest) {
+        return latest;
+      }
     }
-    return this.conversationService.createConversation(personaId);
+    return this.conversationService.createConversation(
+      personaId,
+      ownerId ?? null,
+    );
+  }
+
+  private resolveOwnerId(body: ChatRequestDto, req: Request): string | null {
+    return (
+      this.normalizeOwnerId(body.clientId) ??
+      this.normalizeOwnerId(body.ownerId) ??
+      this.normalizeOwnerId(req.headers['x-client-id']) ??
+      null
+    );
+  }
+
+  private normalizeOwnerId(value: unknown): string | null {
+    const raw = Array.isArray(value) ? value[0] : value;
+    const normalized = String(raw ?? '').trim();
+    return normalized ? normalized.slice(0, 120) : null;
   }
 
   private extractLatestUserText(body: ChatRequestDto): string {

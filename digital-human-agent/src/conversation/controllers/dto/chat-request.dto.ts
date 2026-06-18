@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class ChatRequestDto {
   @ApiPropertyOptional({
@@ -25,6 +31,24 @@ export class ChatRequestDto {
   @IsOptional()
   @IsUUID()
   conversationId?: string;
+
+  @ApiPropertyOptional({
+    description: '调用方标识，用于隔离同一 persona 下的会话复用',
+    example: 'browser-device-123',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  clientId?: string;
+
+  @ApiPropertyOptional({
+    description: '调用方标识别名，兼容 owner 命名',
+    example: 'browser-device-123',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  ownerId?: string;
 
   @ApiPropertyOptional({
     description: '兼容纯文本入参',

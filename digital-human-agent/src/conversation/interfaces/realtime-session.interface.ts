@@ -6,6 +6,7 @@ export interface RealtimeSession {
   sessionId: string;
   conversationId: string;
   personaId: string;
+  ownerId: string;
   mode: SessionMode;
   digitalHumanSessionId: string | null;
   digitalHumanSpeakMode: DigitalHumanSpeakMode | null;

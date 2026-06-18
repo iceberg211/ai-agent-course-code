@@ -7,7 +7,6 @@ import { RealtimeSessionRegistry } from '@/conversation/services/realtime-sessio
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
-
 /**
  * 处理二进制音频帧（麦克风录音 → ASR → Agent）。
  *
@@ -79,13 +78,10 @@ export class AudioHandler {
       conversationId: session.conversationId,
       turnId,
       role: 'user',
-      seq: 0,
       content: text,
       status: 'completed',
     });
 
     await this.agentPipeline.run(client, session, text, turnId);
   }
-
 }
-

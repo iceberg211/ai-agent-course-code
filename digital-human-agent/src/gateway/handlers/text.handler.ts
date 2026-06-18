@@ -7,7 +7,6 @@ import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service'
 import { WsTextInputMessage } from '@/gateway/gateway.types';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
-
 /**
  * 处理文字输入消息（`conversation:text`）。
  *
@@ -60,13 +59,10 @@ export class TextHandler {
       conversationId: session.conversationId,
       turnId,
       role: 'user',
-      seq: 0,
       content: text,
       status: 'completed',
     });
 
     await this.agentPipeline.run(client, session, text, turnId);
   }
-
 }
-

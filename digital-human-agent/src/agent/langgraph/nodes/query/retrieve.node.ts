@@ -27,6 +27,7 @@ export function createRetrieveNode(
     const augmentation = await queryAugmentationService.plan({
       question: currentQuery,
       routeStrategy: state.strategy,
+      history: state.history,
       signal: input.signal,
     });
 

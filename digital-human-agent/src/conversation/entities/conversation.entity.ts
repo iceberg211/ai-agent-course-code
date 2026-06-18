@@ -17,6 +17,9 @@ export class Conversation {
   @Column({ name: 'persona_id' })
   personaId: string;
 
+  @Column({ name: 'owner_id', type: 'text', nullable: true })
+  ownerId: string | null;
+
   @ManyToOne(() => Persona, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'persona_id' })
   persona: Persona;

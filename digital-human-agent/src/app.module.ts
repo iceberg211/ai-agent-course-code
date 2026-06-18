@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AgentModule } from '@/agent/agent.module';
+import { CommonModule } from '@/common/common.module';
 import { validateEnv } from '@/config/env.validation';
 import { ConversationModule } from '@/conversation/conversation.module';
 import { DatabaseModule } from '@/database/database.module';
@@ -14,6 +15,7 @@ import { SpeechModule } from '@/speech/speech.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    CommonModule,
     DatabaseModule,
     PersonaModule,
     ConversationModule,

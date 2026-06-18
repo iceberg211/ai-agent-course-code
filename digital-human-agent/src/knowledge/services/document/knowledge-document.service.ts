@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
@@ -44,6 +49,14 @@ export class KnowledgeDocumentService {
   async deleteDocument(documentId: string): Promise<void> {
     await this.documentRepo.delete(documentId);
     await this.cleanupDocument(documentId, `删除文档 ${documentId}`);
+  }
+
+  async deleteDocumentForKnowledge(
+    knowledgeId: string,
+    documentId: string,
+  ): Promise<void> {
+    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId);
+    await this.deleteDocument(documentId);
   }
 
   // ==========================================
@@ -110,8 +123,8 @@ export class KnowledgeDocumentService {
         graphSyncedAt: null,
       });
 
-      // 3. 后置异步尽力同步 Neo4j 知识图谱
-      await this.syncGraphBestEffort({
+      // 3. 后台尽力同步 Neo4j 知识图谱，避免上传请求被长任务阻塞
+      this.scheduleGraphSync({
         documentId: document.id,
         knowledgeId,
         source: filename,
@@ -147,6 +160,14 @@ export class KnowledgeDocumentService {
       .getMany();
   }
 
+  async listChunksByKnowledgeDocument(
+    knowledgeId: string,
+    documentId: string,
+  ): Promise<KnowledgeChunkEntity[]> {
+    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId);
+    return this.listChunksByDocumentId(documentId);
+  }
+
   // ==========================================
   // 启用/停用单个 Chunk 并同步索引
   // ==========================================
@@ -162,6 +183,44 @@ export class KnowledgeDocumentService {
     }
 
     await this.syncChunkEnabled(chunkId, enabled, context);
+  }
+
+  async updateChunkEnabledForKnowledge(
+    knowledgeId: string,
+    chunkId: string,
+    enabled: boolean,
+  ): Promise<void> {
+    await this.findChunkInKnowledgeOrThrow(knowledgeId, chunkId);
+    return this.updateChunkEnabled(chunkId, enabled);
+  }
+
+  private async findDocumentInKnowledgeOrThrow(
+    knowledgeId: string,
+    documentId: string,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.documentRepo.findOne({
+      where: { id: documentId, knowledgeBaseId: knowledgeId },
+    });
+    if (!document) {
+      throw new NotFoundException('文档不属于当前知识库或不存在');
+    }
+    return document;
+  }
+
+  private async findChunkInKnowledgeOrThrow(
+    knowledgeId: string,
+    chunkId: string,
+  ): Promise<void> {
+    const row = await this.chunkRepo
+      .createQueryBuilder('chunk')
+      .innerJoin('chunk.document', 'document')
+      .where('chunk.id = :chunkId', { chunkId })
+      .andWhere('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .getOne();
+
+    if (!row) {
+      throw new NotFoundException('chunk 不属于当前知识库或不存在');
+    }
   }
 
   // ==========================================
@@ -227,7 +286,8 @@ export class KnowledgeDocumentService {
     enabled: boolean,
     context: string,
   ): Promise<void> {
-    const chunkDocument = await this.elasticsearchService.findByChunkId(chunkId);
+    const chunkDocument =
+      await this.elasticsearchService.findByChunkId(chunkId);
     if (chunkDocument) {
       await this.elasticsearchService.safeBulkUpsertChunkDocuments(
         [chunkDocument],
@@ -235,11 +295,7 @@ export class KnowledgeDocumentService {
       );
     }
 
-    await this.graphService.safeUpdateChunkEnabled(
-      chunkId,
-      enabled,
-      context,
-    );
+    await this.graphService.safeUpdateChunkEnabled(chunkId, enabled, context);
   }
 
   private async syncGraphBestEffort(input: {
@@ -284,6 +340,15 @@ export class KnowledgeDocumentService {
     }
   }
 
+  private scheduleGraphSync(input: {
+    documentId: string;
+    knowledgeId: string;
+    source: string;
+    rows: KnowledgeDocumentChunkRow[];
+  }): void {
+    void this.syncGraphBestEffort(input);
+  }
+
   private async syncDocumentGraph(input: {
     documentId: string;
     knowledgeId: string;
@@ -320,9 +385,15 @@ export class KnowledgeDocumentService {
     }
   }
 
-  private async cleanupDocument(documentId: string, reason: string): Promise<void> {
+  private async cleanupDocument(
+    documentId: string,
+    reason: string,
+  ): Promise<void> {
     try {
-      await this.elasticsearchService.safeDeleteByDocumentId(documentId, reason);
+      await this.elasticsearchService.safeDeleteByDocumentId(
+        documentId,
+        reason,
+      );
     } catch (error) {
       this.logger.warn(
         `清理 ES 索引失败（doc=${documentId}）：${
@@ -354,10 +425,7 @@ export class KnowledgeDocumentService {
     }
 
     try {
-      await this.cleanupDocument(
-        documentId,
-        `导入失败清理文档 ${documentId}`,
-      );
+      await this.cleanupDocument(documentId, `导入失败清理文档 ${documentId}`);
     } catch (error) {
       this.logger.warn(
         `导入失败清理文档索引与图谱失败（doc=${documentId}）：${

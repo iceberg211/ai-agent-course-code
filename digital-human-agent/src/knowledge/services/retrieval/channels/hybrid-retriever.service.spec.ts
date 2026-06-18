@@ -31,6 +31,8 @@ describe('HybridRetrieverService', () => {
     elasticResult?: unknown;
     pgResult?: KnowledgeChunk[];
     elasticError?: Error;
+    keywordError?: Error;
+    vectorError?: Error;
     vectorResult?: KnowledgeChunk[];
   }) {
     const configService = {
@@ -52,20 +54,32 @@ describe('HybridRetrieverService', () => {
       supabase: {
         rpc: jest.fn().mockReturnValue({
           abortSignal: jest.fn().mockResolvedValue({
-            data: (options?.vectorResult ?? []).map((chunk) => ({
-              ...chunk,
-              retrieval_sources: ['vector'],
-            })),
-            error: null,
+            data: options?.vectorError
+              ? null
+              : (options?.vectorResult ?? []).map((chunk) => ({
+                  ...chunk,
+                  retrieval_sources: ['vector'],
+                })),
+            error: options?.vectorError
+              ? { message: options.vectorError.message }
+              : null,
           }),
         }),
       },
-      toBoundedNumber: jest.fn((value: any, defaultValue: number) => defaultValue),
+      toBoundedNumber: jest.fn(
+        (value: any, defaultValue: number) => defaultValue,
+      ),
     };
 
     const fulltextRetriever = {
       retrieve: jest.fn().mockImplementation(() => {
-        if (options?.backend === 'elastic' && (options?.elasticsearchEnabled ?? false)) {
+        if (options?.keywordError) {
+          return Promise.reject(options.keywordError);
+        }
+        if (
+          options?.backend === 'elastic' &&
+          (options?.elasticsearchEnabled ?? false)
+        ) {
           if (options?.elasticError) {
             return Promise.resolve({
               chunks: options?.pgResult ?? [sampleChunk],
@@ -83,7 +97,8 @@ describe('HybridRetrieverService', () => {
           chunks: options?.pgResult ?? [sampleChunk],
           backend: 'pg' as const,
           fallbackToPg:
-            options?.backend === 'elastic' && !(options?.elasticsearchEnabled ?? false),
+            options?.backend === 'elastic' &&
+            !(options?.elasticsearchEnabled ?? false),
         });
       }),
     };
@@ -214,6 +229,7 @@ describe('HybridRetrieverService', () => {
       },
       threshold: 0.6,
       globalRetrievalLimit: 5,
+      signal: new AbortController().signal,
     });
 
     expect(fulltextRetriever.retrieve).toHaveBeenCalled();
@@ -245,6 +261,7 @@ describe('HybridRetrieverService', () => {
       },
       threshold: 0.6,
       globalRetrievalLimit: 5,
+      signal: new AbortController().signal,
     });
 
     expect(fulltextRetriever.retrieve).toHaveBeenCalled();
@@ -277,11 +294,81 @@ describe('HybridRetrieverService', () => {
       },
       threshold: 0.6,
       globalRetrievalLimit: 5,
+      signal: new AbortController().signal,
     });
 
     expect(fulltextRetriever.retrieve).toHaveBeenCalled();
     expect(result.trace[0].keywordBackend).toBe('pg');
     expect(result.trace[0].fallbackToPg).toBe(true);
+  });
+
+  it('向量通道失败时会保留关键词结果并记录跳过通道', async () => {
+    const { service } = createService({
+      vectorError: new Error('vector unavailable'),
+      pgResult: [sampleChunk],
+    });
+
+    const result = await service.retrieveForKnowledge({
+      knowledgeId: 'kb-1',
+      retrievalQueries: [
+        {
+          index: 0,
+          query: '删除时限',
+          keywords: ['删除时限'],
+          angle: 'original',
+        },
+      ],
+      strategy: {
+        ...strategy,
+        useGraph: false,
+      },
+      threshold: 0.6,
+      globalRetrievalLimit: 5,
+      signal: new AbortController().signal,
+    });
+
+    expect(result.chunks.map((chunk) => chunk.id)).toEqual(['chunk-keyword']);
+    expect(result.trace[0].skippedChannels).toContain('vector');
+    expect(result.trace[0].keywordResultCount).toBe(1);
+  });
+
+  it('关键词通道失败时会保留向量结果并记录跳过通道', async () => {
+    const vectorChunk: KnowledgeChunk = {
+      id: 'chunk-vector',
+      content: '向量命中的条款。',
+      source: 'contract.md',
+      chunk_index: 2,
+      category: 'contract',
+      similarity: 0.82,
+      retrieval_sources: ['vector'],
+    };
+    const { service } = createService({
+      keywordError: new Error('keyword unavailable'),
+      vectorResult: [vectorChunk],
+    });
+
+    const result = await service.retrieveForKnowledge({
+      knowledgeId: 'kb-1',
+      retrievalQueries: [
+        {
+          index: 0,
+          query: '删除时限',
+          keywords: ['删除时限'],
+          angle: 'original',
+        },
+      ],
+      strategy: {
+        ...strategy,
+        useGraph: false,
+      },
+      threshold: 0.6,
+      globalRetrievalLimit: 5,
+      signal: new AbortController().signal,
+    });
+
+    expect(result.chunks.map((chunk) => chunk.id)).toEqual(['chunk-vector']);
+    expect(result.trace[0].skippedChannels).toContain('keyword');
+    expect(result.trace[0].vectorResultCount).toBe(1);
   });
 
   it('persona 检索传入完整 strategy 时，会保留 graph path / hops 配置', async () => {
@@ -341,9 +428,9 @@ describe('HybridRetrieverService', () => {
 
   it('persona 下所有知识库都硬失败时，会向上抛错而不是伪装成空结果', async () => {
     const { service } = createService();
-    jest.spyOn(service, 'retrieveForKnowledge').mockRejectedValue(
-      new Error('broken index'),
-    );
+    jest
+      .spyOn(service, 'retrieveForKnowledge')
+      .mockRejectedValue(new Error('broken index'));
 
     await expect(
       service.retrieveForPersona({

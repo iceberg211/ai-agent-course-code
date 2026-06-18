@@ -8,6 +8,7 @@ describe('AgentPipelineService', () => {
       sessionId: 'session-1',
       conversationId: 'conv-1',
       personaId: 'persona-1',
+      ownerId: 'owner-1',
       mode: 'voice',
       digitalHumanSessionId: null,
       digitalHumanSpeakMode: null,
@@ -71,7 +72,6 @@ describe('AgentPipelineService', () => {
       conversationId: 'conv-1',
       turnId: 'turn-1',
       role: 'assistant',
-      seq: 0,
       content: '半句',
       status: 'interrupted',
     });

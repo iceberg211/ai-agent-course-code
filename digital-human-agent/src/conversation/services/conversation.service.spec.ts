@@ -36,7 +36,7 @@ describe('ConversationService', () => {
     ]);
     expect(msgRepo.find).toHaveBeenCalledWith({
       where: { conversationId: 'conv-1', status: 'completed' },
-      order: { createdAt: 'DESC' },
+      order: { seq: 'DESC', createdAt: 'DESC' },
       take: 3,
     });
   });
