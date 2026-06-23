@@ -1,7 +1,22 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/kb' },
+  { path: '/', redirect: '/dashboard' },
+  {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('@/views/DashboardView.vue'),
+  },
+  {
+    path: '/documents',
+    name: 'documents',
+    component: () => import('@/views/DocumentManagementView.vue'),
+  },
+  {
+    path: '/search',
+    name: 'search',
+    component: () => import('@/views/SearchView.vue'),
+  },
   {
     path: '/chat',
     name: 'chat',
@@ -20,7 +35,12 @@ const routes: RouteRecordRaw[] = [
       import('@/views/knowledge-base/KnowledgeBaseDetailView.vue'),
     props: true,
   },
-  { path: '/:pathMatch(.*)*', redirect: '/kb' },
+  {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('@/views/ProfileView.vue'),
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 
 export const router = createRouter({

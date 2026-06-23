@@ -4,6 +4,7 @@ import { CommonModule } from '@/common/common.module';
 import { KnowledgeController } from '@/knowledge/controllers/knowledge.controller';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
 import { KnowledgeContentController } from '@/knowledge/controllers/knowledge-content.controller';
+import { DocumentManagementController } from '@/knowledge/controllers/document-management.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
@@ -54,6 +55,7 @@ import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channel
   ],
   controllers: [
     KnowledgeController,
+    DocumentManagementController,
     PersonaKnowledgeController,
     KnowledgeContentController,
     PersonaKnowledgeSearchController,

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { AgentService } from '@/agent/agent.service';
+import type { RagWorkflowResult } from '@/agent/types/rag-workflow.types';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
@@ -60,9 +61,12 @@ export class AgentPipelineService {
     let fullReply = '';
     let status: 'completed' | 'interrupted' | 'failed' = 'completed';
     let shouldSendError = false;
+    let citations: unknown[] = [];
+    let ragTrace: Record<string, unknown> | null = null;
+    const startedAt = Date.now();
 
     try {
-      await this.agentService.run({
+      const result = await this.agentService.run({
         conversationId: session.conversationId,
         personaId: session.personaId,
         userMessage,
@@ -82,15 +86,17 @@ export class AgentPipelineService {
           // 按句缓冲 → 分发到对应 Pipeline
           this.flushBuffer(client, session, turnId, token, false);
         },
-        onCitations: (citations) => {
+        onCitations: (items) => {
+          citations = items;
           sendJson(client, {
             type: 'conversation:citations',
             sessionId: session.sessionId,
             turnId,
-            payload: { citations },
+            payload: { citations: items },
           });
         },
       });
+      ragTrace = this.toRagTrace(result);
       status = abortController.signal.aborted ? 'interrupted' : 'completed';
     } catch (err: unknown) {
       const isAbortError = (err as { name?: string })?.name === 'AbortError';
@@ -115,6 +121,9 @@ export class AgentPipelineService {
         role: 'assistant',
         content: fullReply,
         status,
+        citations,
+        ragTrace,
+        latencyMs: Date.now() - startedAt,
       });
 
       if (shouldSendError) {
@@ -132,6 +141,26 @@ export class AgentPipelineService {
         payload: { status },
       });
     }
+  }
+
+  private toRagTrace(result: RagWorkflowResult): Record<string, unknown> {
+    const state = result.state;
+    return {
+      strategy: state.strategy,
+      routeReason: state.routeReason,
+      retrievalStrategy: state.retrievalStrategy,
+      retrievalStrategyReason: state.retrievalStrategyReason,
+      subQuestions: state.subQuestions,
+      retrievalHistory: state.retrievalHistory,
+      retrievalTrace: state.retrievalTrace,
+      enough: state.enough,
+      missingFacts: state.missingFacts,
+      evaluationReason: state.evaluationReason,
+      webSearchUsed: state.webSearchUsed,
+      webSearchQueries: state.webSearchQueries,
+      stopReason: state.stopReason,
+      orchestrator: state.orchestrator,
+    };
   }
 
   // ── 按句缓冲 ───────────────────────────────────────────────────────────────

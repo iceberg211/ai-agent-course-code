@@ -34,12 +34,24 @@
 </template>
 
 <script setup lang="ts">
-import { MessageSquareIcon, LibraryIcon, SparklesIcon } from 'lucide-vue-next'
+import {
+  BarChart3Icon,
+  FileTextIcon,
+  LibraryIcon,
+  MessageSquareIcon,
+  SearchIcon,
+  SparklesIcon,
+  UserCircleIcon,
+} from 'lucide-vue-next'
 import { APP_NAV_ITEMS } from '@/common/constants'
 
 const iconMap = {
+  dashboard: BarChart3Icon,
+  documents: FileTextIcon,
+  search: SearchIcon,
   chat: MessageSquareIcon,
   knowledge: LibraryIcon,
+  profile: UserCircleIcon,
 } as const
 
 const items = APP_NAV_ITEMS.map((item) => ({
@@ -102,6 +114,7 @@ const items = APP_NAV_ITEMS.map((item) => ({
 
 .nav-tabs {
   display: flex;
+  flex-wrap: wrap;
   background: var(--surface-soft);
   padding: 4px;
   border-radius: var(--radius-full);
@@ -112,7 +125,7 @@ const items = APP_NAV_ITEMS.map((item) => ({
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
   font-size: 13px;
   font-weight: 600;
@@ -172,6 +185,11 @@ const items = APP_NAV_ITEMS.map((item) => ({
   .brand__text, .status-indicator {
     display: none;
   }
+  .nav-tab span {
+    display: none;
+  }
+  .nav-tab {
+    padding: 7px 10px;
+  }
 }
 </style>
-

@@ -1,9 +1,11 @@
 import { ref } from 'vue'
 import type {
   KnowledgeBase,
+  ChunkContext,
   KnowledgeChunk,
   KnowledgeDocumentDetail,
   KnowledgeSearchResult,
+  PaginatedResult,
   RetrievalConfig,
 } from '@/types'
 
@@ -17,6 +19,16 @@ export interface CreateKnowledgeBasePayload {
 export interface UpdateKnowledgeBasePayload
   extends Partial<CreateKnowledgeBasePayload> {}
 
+export interface DocumentListQuery {
+  q?: string
+  knowledgeBaseId?: string
+  fileType?: string
+  status?: string
+  graphStatus?: string
+  page?: number
+  pageSize?: number
+}
+
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(input, init)
@@ -29,6 +41,16 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null
     console.error(`[useKnowledgeBase] network error ${input}:`, e)
     return null
   }
+}
+
+function toQuery(params: Record<string, unknown>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    search.set(key, String(value))
+  }
+  const qs = search.toString()
+  return qs ? `?${qs}` : ''
 }
 
 export function useKnowledgeBase() {
@@ -99,6 +121,37 @@ export function useKnowledgeBase() {
     }
   }
 
+  async function listDocumentsPaged(
+    kbId: string,
+    query: Omit<DocumentListQuery, 'knowledgeBaseId'> = {},
+  ): Promise<PaginatedResult<KnowledgeDocumentDetail>> {
+    documentsLoading.value = true
+    try {
+      return (
+        (await fetchJson<PaginatedResult<KnowledgeDocumentDetail>>(
+          `/api/knowledge-bases/${kbId}/documents${toQuery(query)}`,
+        )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
+      )
+    } finally {
+      documentsLoading.value = false
+    }
+  }
+
+  async function listAllDocuments(
+    query: DocumentListQuery = {},
+  ): Promise<PaginatedResult<KnowledgeDocumentDetail>> {
+    documentsLoading.value = true
+    try {
+      return (
+        (await fetchJson<PaginatedResult<KnowledgeDocumentDetail>>(
+          `/api/documents${toQuery(query)}`,
+        )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
+      )
+    } finally {
+      documentsLoading.value = false
+    }
+  }
+
   async function uploadDocument(
     kbId: string,
     file: File,
@@ -126,6 +179,16 @@ export function useKnowledgeBase() {
       { method: 'DELETE' },
     ).catch(() => null)
     return !!res?.ok
+  }
+
+  async function retryDocument(
+    kbId: string,
+    docId: string,
+  ): Promise<KnowledgeDocumentDetail | null> {
+    return fetchJson<KnowledgeDocumentDetail>(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/retry`,
+      { method: 'POST' },
+    )
   }
 
   async function listChunks(
@@ -160,6 +223,18 @@ export function useKnowledgeBase() {
     return res?.enabled === enabled
   }
 
+  async function getChunkContext(
+    kbId: string,
+    docId: string,
+    chunkId: string,
+    before = 1,
+    after = 1,
+  ): Promise<ChunkContext | null> {
+    return fetchJson<ChunkContext>(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/chunks/${chunkId}/context${toQuery({ before, after })}`,
+    )
+  }
+
   async function searchInKb(
     kbId: string,
     query: string,
@@ -176,6 +251,33 @@ export function useKnowledgeBase() {
     try {
       return await fetchJson<KnowledgeSearchResult>(
         `/api/knowledge-bases/${kbId}/search`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: q, ...options }),
+        },
+      )
+    } finally {
+      searching.value = false
+    }
+  }
+
+  async function searchForPersonaWithStages(
+    personaId: string,
+    query: string,
+    options: Partial<{
+      rerank: boolean
+      threshold: number
+      stage1TopK: number
+      finalTopK: number
+    }> = {},
+  ): Promise<KnowledgeSearchResult | null> {
+    const q = query.trim()
+    if (!q || !personaId) return null
+    searching.value = true
+    try {
+      return await fetchJson<KnowledgeSearchResult>(
+        `/api/personas/${personaId}/search/stages`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -234,11 +336,16 @@ export function useKnowledgeBase() {
     update,
     remove,
     listDocuments,
+    listDocumentsPaged,
+    listAllDocuments,
     uploadDocument,
     deleteDocument,
+    retryDocument,
     listChunks,
     setChunkEnabled,
+    getChunkContext,
     searchInKb,
+    searchForPersonaWithStages,
     listKbsForPersona,
     attachToPersona,
     detachFromPersona,

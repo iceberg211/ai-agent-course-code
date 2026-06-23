@@ -5,6 +5,7 @@ import { ConversationMessage } from '@/conversation/entities/conversation-messag
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { ChatController } from '@/conversation/controllers/chat.controller';
+import { ConversationController } from '@/conversation/controllers/conversation.controller';
 import { AgentModule } from '@/agent/agent.module';
 import { PersonaModule } from '@/persona/persona.module';
 
@@ -15,7 +16,7 @@ import { PersonaModule } from '@/persona/persona.module';
     AgentModule,
     PersonaModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, ConversationController],
   providers: [ConversationService, RealtimeSessionRegistry],
   exports: [ConversationService, RealtimeSessionRegistry],
 })

@@ -21,6 +21,9 @@ export interface SessionHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
   status: 'completed' | 'interrupted' | 'failed';
+  citations?: unknown[] | null;
+  feedback?: 'up' | 'down' | null;
+  latencyMs?: number | null;
   createdAt: Date;
 }
 

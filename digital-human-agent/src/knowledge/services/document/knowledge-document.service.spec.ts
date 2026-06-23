@@ -14,11 +14,15 @@ describe('KnowledgeDocumentService', () => {
     chunkCount: number;
     mimeType: string | null;
     fileSize: number | null;
+    processingStage?: string;
+    processingError?: string | null;
   };
 
   type DocumentUpdate = Partial<{
     status: string;
     chunkCount: number;
+    processingStage: string;
+    processingError: string | null;
     graphSyncStatus: string;
     graphSyncError: string | null;
     graphSyncedAt: Date | null;
@@ -49,6 +53,8 @@ describe('KnowledgeDocumentService', () => {
       chunkCount: 0,
       mimeType: null,
       fileSize: null,
+      processingStage: 'uploaded',
+      processingError: null,
     };
     const documentRepo = {
       create: jest.fn(
@@ -71,6 +77,7 @@ describe('KnowledgeDocumentService', () => {
     const chunkRepo = {
       delete: jest.fn(),
       createQueryBuilder: jest.fn(),
+      findOne: jest.fn(),
     };
     const insert = jest.fn().mockResolvedValue({
       error: options.insertError
@@ -164,10 +171,14 @@ describe('KnowledgeDocumentService', () => {
       'doc-1',
       '导入失败清理文档 doc-1',
     );
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      status: 'failed',
-      chunkCount: 0,
-    });
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        status: 'failed',
+        chunkCount: 0,
+        processingStage: 'failed',
+      }),
+    );
   });
 
   it('删除文档时会同步清理 ES 与 Neo4j 图谱索引', async () => {
@@ -328,18 +339,24 @@ describe('KnowledgeDocumentService', () => {
     await service.ingestDocument('kb-1', 'demo.md', '普通文本内容');
     await flushPromises();
 
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      status: 'completed',
-      chunkCount: 1,
-      graphSyncStatus: 'pending',
-      graphSyncError: null,
-      graphSyncedAt: null,
-    });
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      graphSyncStatus: 'failed',
-      graphSyncError: 'neo4j unavailable',
-      graphSyncedAt: null,
-    });
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        status: 'completed',
+        chunkCount: 1,
+        graphSyncStatus: 'pending',
+        graphSyncError: null,
+        graphSyncedAt: null,
+      }),
+    );
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        graphSyncStatus: 'failed',
+        graphSyncError: 'neo4j unavailable',
+        graphSyncedAt: null,
+      }),
+    );
   });
 
   it('图谱抽取失败时主文档仍完成，并记录图谱同步失败状态', async () => {
@@ -350,18 +367,24 @@ describe('KnowledgeDocumentService', () => {
     await flushPromises();
 
     expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      status: 'completed',
-      chunkCount: 1,
-      graphSyncStatus: 'pending',
-      graphSyncError: null,
-      graphSyncedAt: null,
-    });
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      graphSyncStatus: 'failed',
-      graphSyncError: 'extract failed',
-      graphSyncedAt: null,
-    });
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        status: 'completed',
+        chunkCount: 1,
+        graphSyncStatus: 'pending',
+        graphSyncError: null,
+        graphSyncedAt: null,
+      }),
+    );
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        graphSyncStatus: 'failed',
+        graphSyncError: 'extract failed',
+        graphSyncedAt: null,
+      }),
+    );
   });
 
   it('Neo4j 未启用时不会执行图谱抽取，并记录 skipped 状态', async () => {
@@ -373,17 +396,23 @@ describe('KnowledgeDocumentService', () => {
 
     expect(graphService.extract).not.toHaveBeenCalled();
     expect(graphService.safeUpsertDocument).not.toHaveBeenCalled();
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      status: 'completed',
-      chunkCount: 1,
-      graphSyncStatus: 'pending',
-      graphSyncError: null,
-      graphSyncedAt: null,
-    });
-    expect(documentRepo.update).toHaveBeenCalledWith('doc-1', {
-      graphSyncStatus: 'skipped',
-      graphSyncError: null,
-      graphSyncedAt: null,
-    });
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        status: 'completed',
+        chunkCount: 1,
+        graphSyncStatus: 'pending',
+        graphSyncError: null,
+        graphSyncedAt: null,
+      }),
+    );
+    expect(documentRepo.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({
+        graphSyncStatus: 'skipped',
+        graphSyncError: null,
+        graphSyncedAt: null,
+      }),
+    );
   });
 });

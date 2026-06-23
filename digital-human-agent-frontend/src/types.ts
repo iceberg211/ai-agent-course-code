@@ -11,12 +11,21 @@ export type MessageRole = 'user' | 'assistant'
 export type MessageStatus = 'completed' | 'interrupted' | 'failed'
 
 export interface Citation {
+  id?: string
+  document_id?: string
+  documentId?: string
   source?: string
   chunkIndex?: number
   chunk_index?: number
   knowledgeBaseId?: string
   knowledge_base_id?: string
   similarity?: number
+  rerank_score?: number
+  hybrid_score?: number
+  keyword_score?: number
+  graph_score?: number
+  retrieval_sources?: string[]
+  content?: string
   knowledgeBaseName?: string
   [key: string]: unknown
 }
@@ -29,6 +38,8 @@ export interface ChatMessage {
   citations: Citation[]
   streaming: boolean
   turnId?: string
+  feedback?: 'up' | 'down' | null
+  latencyMs?: number | null
 }
 
 export interface Persona {
@@ -63,23 +74,53 @@ export interface VoiceCloneState {
 
 export interface KnowledgeDocument {
   id: string
+  knowledgeBaseId?: string
+  knowledge_base_id?: string
+  knowledge?: KnowledgeBase
   filename: string
   status: string
+  processingStage?: string
+  processing_stage?: string
+  processingError?: string | null
+  processing_error?: string | null
+  graphSyncStatus?: string
+  graph_sync_status?: string
+  graphSyncError?: string | null
+  graph_sync_error?: string | null
   chunkCount?: number
+  chunk_count?: number
   createdAt?: string
+  created_at?: string
+  updatedAt?: string
+  updated_at?: string
 }
 
 export interface KnowledgeSearchChunk {
   id: string
+  document_id?: string
+  documentId?: string
+  knowledge_base_id?: string
+  knowledgeBaseId?: string
   source: string
   chunk_index: number
+  chunkIndex?: number
   content: string
   similarity: number
   rerank_score?: number
+  hybrid_score?: number
+  keyword_score?: number
+  graph_score?: number
+  retrieval_sources?: string[]
 }
 
 export interface KnowledgeSearchResult {
   query: string
+  retrievalQuery?: string
+  retrievalQueries?: unknown[]
+  rewrite?: unknown
+  retrievalTrace?: unknown[]
+  hybridChunks?: KnowledgeSearchChunk[]
+  rerankedChunks?: KnowledgeSearchChunk[]
   options?: {
     rerank: boolean
     threshold: number
@@ -141,6 +182,43 @@ export interface KnowledgeChunk {
 export interface KnowledgeDocumentDetail extends KnowledgeDocument {
   knowledgeBaseId: string
   mimeType?: string | null
+  mime_type?: string | null
   fileSize?: number | null
+  file_size?: number | null
   sourceType: 'upload'
+}
+
+export interface PaginatedResult<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface ConversationSummary {
+  id: string
+  personaId: string
+  ownerId: string | null
+  createdAt: string
+  updatedAt: string
+  lastMessage?: ChatMessage | null
+}
+
+export interface DashboardSummary {
+  knowledgeBaseCount: number
+  documentCount: number
+  chunkCount: number
+  failedDocumentCount: number
+  conversationCount: number
+  messageCount: number
+  recentDocuments: KnowledgeDocument[]
+  recentConversations: ConversationSummary[]
+}
+
+export interface ChunkContext {
+  document: KnowledgeDocument
+  chunk: KnowledgeChunk
+  before: number
+  after: number
+  items: KnowledgeChunk[]
 }

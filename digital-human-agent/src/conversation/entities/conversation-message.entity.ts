@@ -11,6 +11,7 @@ import { Conversation } from '@/conversation/entities/conversation.entity';
 
 export type MessageRole = 'user' | 'assistant';
 export type MessageStatus = 'completed' | 'interrupted' | 'failed';
+export type MessageFeedback = 'up' | 'down';
 
 @Entity('conversation_message')
 export class ConversationMessage {
@@ -38,6 +39,18 @@ export class ConversationMessage {
 
   @Column({ default: 'completed' })
   status: MessageStatus;
+
+  @Column({ type: 'jsonb', nullable: true })
+  citations: unknown[] | null;
+
+  @Column({ name: 'rag_trace', type: 'jsonb', nullable: true })
+  ragTrace: Record<string, unknown> | null;
+
+  @Column({ name: 'latency_ms', type: 'int', nullable: true })
+  latencyMs: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  feedback: MessageFeedback | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

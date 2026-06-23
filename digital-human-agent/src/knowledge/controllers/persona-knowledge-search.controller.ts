@@ -31,4 +31,25 @@ export class PersonaKnowledgeSearchController {
     );
     return { query: normalizedQuery, results };
   }
+
+  @Post('search/stages')
+  @ApiOperation({
+    summary: 'persona 聚合命中测试（返回 query rewrite、召回、重排与 trace）',
+  })
+  async searchWithStages(
+    @Param('personaId', ParseUUIDPipe) personaId: string,
+    @Body() body: KnowledgeSearchDto,
+  ) {
+    const normalizedQuery = String(body.query ?? '').trim();
+    return this.searchService.retrieveForPersonaWithStages(
+      personaId,
+      normalizedQuery,
+      {
+        rerank: body.rerank,
+        threshold: body.threshold,
+        retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
+        rerankLimit: body.rerankLimit ?? body.finalTopK,
+      },
+    );
+  }
 }

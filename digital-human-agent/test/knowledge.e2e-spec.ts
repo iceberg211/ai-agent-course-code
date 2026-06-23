@@ -22,6 +22,9 @@ describe('Knowledge API (e2e)', () => {
     listDocumentsByKnowledgeId: jest.fn(),
     deleteDocument: jest.fn(),
     deleteDocumentForKnowledge: jest.fn(),
+    listDocumentsForKnowledge: jest.fn(),
+    retryDocumentForKnowledge: jest.fn(),
+    getChunkContextForKnowledge: jest.fn(),
     listChunksByDocumentId: jest.fn(),
     listChunksByKnowledgeDocument: jest.fn(),
     updateChunkEnabled: jest.fn(),
@@ -30,6 +33,8 @@ describe('Knowledge API (e2e)', () => {
 
   const knowledgeSearchService = {
     retrieveForPersona: jest.fn(),
+    retrieveForPersonaWithStages: jest.fn(),
+    retrieveWithStages: jest.fn(),
   };
 
   const knowledgeCatalogService = {
@@ -369,5 +374,41 @@ describe('Knowledge API (e2e)', () => {
         },
       ],
     });
+  });
+
+  it('POST /personas/:personaId/search/stages 返回 persona 分阶段检索结果', async () => {
+    knowledgeSearchService.retrieveForPersonaWithStages.mockResolvedValue({
+      query: '产品如何部署？',
+      retrievalQuery: '产品如何部署？',
+      retrievalQueries: [],
+      rewrite: { changed: false },
+      options: {},
+      retrievalTrace: [],
+      hybridChunks: [],
+      rerankedChunks: [
+        {
+          id: chunkId,
+          source: '产品 FAQ',
+          chunk_index: 1,
+          content: '这里是命中的知识片段',
+          similarity: 0.92,
+        },
+      ],
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/personas/${personaId}/search/stages`)
+      .send({ query: '产品如何部署？' })
+      .expect(201);
+
+    expect(
+      knowledgeSearchService.retrieveForPersonaWithStages,
+    ).toHaveBeenCalledWith(personaId, '产品如何部署？', {
+      rerank: undefined,
+      threshold: undefined,
+      retrievalLimit: undefined,
+      rerankLimit: undefined,
+    });
+    expect(res.body.rerankedChunks).toHaveLength(1);
   });
 });

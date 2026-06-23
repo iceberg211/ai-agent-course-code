@@ -11,6 +11,13 @@
       @create="createModalOpen = true"
     />
 
+    <ConversationHistoryPanel
+      :persona-id="personaStore.selectedId"
+      :current-conversation-id="sessionStore.conversationId"
+      @select="onSelectHistoryConversation"
+      @new-conversation="onNewConversation"
+    />
+
     <!-- 中间对话区 -->
     <main class="chat-main">
       <ChatHeader
@@ -115,6 +122,7 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import PersonaPanel from '@/components/persona/PersonaPanel.vue'
+import ConversationHistoryPanel from '@/components/chat/ConversationHistoryPanel.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ChatEmptyState from '@/components/chat/ChatEmptyState.vue'
 import DigitalHumanWorkspace from '@/components/chat/DigitalHumanWorkspace.vue'
@@ -124,6 +132,7 @@ import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowl
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
 import type { Persona } from '@/types'
+import type { ChatMessage } from '@/types'
 
 type ChatActionType =
   | 'create-persona'
@@ -328,6 +337,14 @@ const emptyStateCard = computed<ChatStateCard>(() => {
 function onPersonaCreated(persona: Persona) {
   createModalOpen.value = false
   onSelectPersona(persona.id)
+}
+
+function onSelectHistoryConversation(payload: {
+  conversationId: string
+  messages: ChatMessage[]
+}) {
+  sessionStore.setSession(sessionStore.sessionId, payload.conversationId)
+  conversation.hydrateMessages(payload.messages)
 }
 
 async function refreshMountedKnowledgeBases(personaId: string) {

@@ -76,10 +76,14 @@ export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
 }> = [
   { key: 'documents', label: '文档' },
   { key: 'settings', label: '配置' },
-  { key: 'hit-test', label: '命中测试' },
+  { key: 'hit-test', label: '问答验证' },
 ];
 
 export const APP_NAV_ITEMS = [
-  { to: '/chat', label: '知识问答', icon: 'chat' },
+  { to: '/dashboard', label: '首页大盘', icon: 'dashboard' },
+  { to: '/documents', label: '文档管理', icon: 'documents' },
+  { to: '/search', label: '智能搜索', icon: 'search' },
+  { to: '/chat', label: 'AI 问答', icon: 'chat' },
   { to: '/kb', label: '知识库', icon: 'knowledge' },
+  { to: '/profile', label: '个人中心', icon: 'profile' },
 ] as const;

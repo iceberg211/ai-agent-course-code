@@ -13,7 +13,10 @@ import {
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
-import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
+import {
+  DocumentProcessingStage,
+  KnowledgeDocument,
+} from '@/knowledge/entities/knowledge-document.entity';
 import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
@@ -73,12 +76,25 @@ export class KnowledgeDocumentService {
         knowledgeBaseId: knowledgeId,
         filename,
         status: 'processing',
+        processingStage: 'chunking',
+        processingError: null,
         mimeType: options.mimeType ?? null,
         fileSize: options.fileSize ?? null,
       }),
     );
 
+    return this.ingestPreparedDocument(document, knowledgeId, filename, content, options);
+  }
+
+  private async ingestPreparedDocument(
+    document: KnowledgeDocument,
+    knowledgeId: string,
+    filename: string,
+    content: string,
+    options: IngestKnowledgeDocumentOptions = {},
+  ): Promise<KnowledgeDocument> {
     try {
+      await this.updateDocumentStage(document.id, 'chunking');
       const splitDocuments = await splitKnowledgeDocumentContent(
         content,
         this.runtime.splitter,
@@ -88,6 +104,7 @@ export class KnowledgeDocumentService {
       );
 
       const texts = splitDocuments.map((item) => item.pageContent);
+      await this.updateDocumentStage(document.id, 'embedding');
       this.logger.log(
         `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
       );
@@ -109,6 +126,7 @@ export class KnowledgeDocumentService {
       await this.insertChunkRows(document.id, chunkRows);
 
       // 2. 写入 Elasticsearch 索引
+      await this.updateDocumentStage(document.id, 'keyword_indexing');
       await this.syncDocumentIndex({
         documentId: document.id,
         knowledgeId,
@@ -118,6 +136,8 @@ export class KnowledgeDocumentService {
       await this.documentRepo.update(document.id, {
         status: 'completed',
         chunkCount: splitDocuments.length,
+        processingStage: 'graph_indexing',
+        processingError: null,
         graphSyncStatus: 'pending',
         graphSyncError: null,
         graphSyncedAt: null,
@@ -138,6 +158,8 @@ export class KnowledgeDocumentService {
       await this.documentRepo.update(document.id, {
         status: 'failed',
         chunkCount: 0,
+        processingStage: 'failed',
+        processingError: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
@@ -150,6 +172,100 @@ export class KnowledgeDocumentService {
       where: { knowledgeBaseId: knowledgeId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async listDocumentsForKnowledge(
+    knowledgeId: string,
+    filters: {
+      q?: string;
+      status?: string;
+      graphStatus?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ): Promise<{
+    items: KnowledgeDocument[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = this.normalizePage(filters.page);
+    const pageSize = this.normalizePageSize(filters.pageSize);
+    const qb = this.documentRepo
+      .createQueryBuilder('document')
+      .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .orderBy('document.created_at', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const q = String(filters.q ?? '').trim();
+    if (q) {
+      qb.andWhere('document.filename ILIKE :q', { q: `%${q}%` });
+    }
+    if (filters.status) {
+      qb.andWhere('document.status = :status', { status: filters.status });
+    }
+    if (filters.graphStatus) {
+      qb.andWhere('document.graph_sync_status = :graphStatus', {
+        graphStatus: filters.graphStatus,
+      });
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, pageSize };
+  }
+
+  async listDocuments(
+    filters: {
+      q?: string;
+      knowledgeBaseId?: string;
+      fileType?: string;
+      status?: string;
+      graphStatus?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ): Promise<{
+    items: KnowledgeDocument[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = this.normalizePage(filters.page);
+    const pageSize = this.normalizePageSize(filters.pageSize);
+    const qb = this.documentRepo
+      .createQueryBuilder('document')
+      .leftJoinAndSelect('document.knowledge', 'knowledge')
+      .orderBy('document.created_at', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const q = String(filters.q ?? '').trim();
+    if (q) {
+      qb.andWhere('document.filename ILIKE :q', { q: `%${q}%` });
+    }
+    if (filters.knowledgeBaseId) {
+      qb.andWhere('document.knowledge_base_id = :knowledgeBaseId', {
+        knowledgeBaseId: filters.knowledgeBaseId,
+      });
+    }
+    if (filters.fileType) {
+      qb.andWhere(
+        '(document.mime_type ILIKE :fileType OR document.filename ILIKE :fileType)',
+        { fileType: `%${filters.fileType}%` },
+      );
+    }
+    if (filters.status) {
+      qb.andWhere('document.status = :status', { status: filters.status });
+    }
+    if (filters.graphStatus) {
+      qb.andWhere('document.graph_sync_status = :graphStatus', {
+        graphStatus: filters.graphStatus,
+      });
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, pageSize };
   }
 
   listChunksByDocumentId(documentId: string): Promise<KnowledgeChunkEntity[]> {
@@ -166,6 +282,95 @@ export class KnowledgeDocumentService {
   ): Promise<KnowledgeChunkEntity[]> {
     await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId);
     return this.listChunksByDocumentId(documentId);
+  }
+
+  async getChunkContextForKnowledge(
+    knowledgeId: string,
+    documentId: string,
+    chunkId: string,
+    options: { before?: number; after?: number } = {},
+  ) {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+    );
+    const chunk = await this.findChunkInDocumentOrThrow(documentId, chunkId);
+    const before = Math.min(Math.max(Number(options.before ?? 1), 0), 5);
+    const after = Math.min(Math.max(Number(options.after ?? 1), 0), 5);
+    const start = Math.max(chunk.chunkIndex - before, 0);
+    const end = chunk.chunkIndex + after;
+    const items = await this.chunkRepo
+      .createQueryBuilder('chunk')
+      .where('chunk.document_id = :documentId', { documentId })
+      .andWhere('chunk.chunk_index BETWEEN :start AND :end', { start, end })
+      .orderBy('chunk.chunk_index', 'ASC')
+      .getMany();
+
+    return {
+      document,
+      chunk,
+      before,
+      after,
+      items,
+    };
+  }
+
+  async retryDocumentForKnowledge(
+    knowledgeId: string,
+    documentId: string,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+    );
+    const chunks = await this.listChunksByDocumentId(documentId);
+    if (chunks.length === 0) {
+      throw new BadRequestException(
+        '当前文档没有可重试的片段，请重新上传原始文件',
+      );
+    }
+
+    await this.documentRepo.update(document.id, {
+      status: 'processing',
+      processingStage: 'keyword_indexing',
+      processingError: null,
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+      graphSyncedAt: null,
+    });
+
+    const rows = chunks.map((chunk) => ({
+      id: chunk.id,
+      document_id: document.id,
+      chunk_index: chunk.chunkIndex,
+      content: chunk.content,
+      source: chunk.source,
+      category: chunk.category,
+      enabled: chunk.enabled,
+      embedding: '[]',
+    }));
+
+    await this.syncDocumentIndex({
+      documentId: document.id,
+      knowledgeId,
+      rows,
+    });
+
+    await this.documentRepo.update(document.id, {
+      status: 'completed',
+      chunkCount: chunks.length,
+      processingStage: 'graph_indexing',
+      processingError: null,
+    });
+
+    this.scheduleGraphSync({
+      documentId: document.id,
+      knowledgeId,
+      source: document.filename,
+      rows,
+    });
+
+    return this.documentRepo.findOneByOrFail({ id: document.id });
   }
 
   // ==========================================
@@ -221,6 +426,19 @@ export class KnowledgeDocumentService {
     if (!row) {
       throw new NotFoundException('chunk 不属于当前知识库或不存在');
     }
+  }
+
+  private async findChunkInDocumentOrThrow(
+    documentId: string,
+    chunkId: string,
+  ): Promise<KnowledgeChunkEntity> {
+    const chunk = await this.chunkRepo.findOne({
+      where: { id: chunkId, documentId },
+    });
+    if (!chunk) {
+      throw new NotFoundException('chunk 不属于当前文档或不存在');
+    }
+    return chunk;
   }
 
   // ==========================================
@@ -325,6 +543,7 @@ export class KnowledgeDocumentService {
             ? graphSyncResult.errorMessage
             : null,
         graphSyncedAt: graphSyncResult.status === 'indexed' ? new Date() : null,
+        processingStage: 'completed',
       });
     } catch (error) {
       const errorMessage =
@@ -336,6 +555,7 @@ export class KnowledgeDocumentService {
         graphSyncStatus: 'failed',
         graphSyncError: errorMessage,
         graphSyncedAt: null,
+        processingStage: 'completed',
       });
     }
   }
@@ -448,12 +668,42 @@ export class KnowledgeDocumentService {
     },
     category?: string,
   ): Promise<KnowledgeDocument> {
-    const content = await this.extractDocumentText(file);
-    return this.ingestDocument(knowledgeId, file.originalname, content, {
-      mimeType: file.mimetype,
-      fileSize: file.size,
-      category,
-    });
+    const document = await this.documentRepo.save(
+      this.documentRepo.create({
+        knowledgeBaseId: knowledgeId,
+        filename: file.originalname,
+        status: 'processing',
+        processingStage: 'uploaded',
+        processingError: null,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+      }),
+    );
+
+    try {
+      await this.updateDocumentStage(document.id, 'parsing');
+      const content = await this.extractDocumentText(file);
+      return this.ingestPreparedDocument(
+        document,
+        knowledgeId,
+        file.originalname,
+        content,
+        {
+          mimeType: file.mimetype,
+          fileSize: file.size,
+          category,
+        },
+      );
+    } catch (error) {
+      await this.cleanupFailedIngest(document.id);
+      await this.documentRepo.update(document.id, {
+        status: 'failed',
+        chunkCount: 0,
+        processingStage: 'failed',
+        processingError: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private async extractDocumentText(file: {
@@ -492,5 +742,27 @@ export class KnowledgeDocumentService {
     }
 
     throw new BadRequestException('仅支持 txt、md、pdf 文档上传');
+  }
+
+  private updateDocumentStage(
+    documentId: string,
+    processingStage: DocumentProcessingStage,
+  ): Promise<unknown> {
+    return this.documentRepo.update(documentId, {
+      status: processingStage === 'failed' ? 'failed' : 'processing',
+      processingStage,
+      processingError: null,
+    });
+  }
+
+  private normalizePage(page: number | undefined): number {
+    const value = Number(page ?? 1);
+    return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
+  }
+
+  private normalizePageSize(pageSize: number | undefined): number {
+    const value = Number(pageSize ?? 20);
+    if (!Number.isFinite(value)) return 20;
+    return Math.min(Math.max(Math.floor(value), 1), 100);
   }
 }

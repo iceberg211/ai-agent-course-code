@@ -5,11 +5,21 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type DocumentSourceType = 'upload';
+export type DocumentProcessingStage =
+  | 'uploaded'
+  | 'parsing'
+  | 'chunking'
+  | 'embedding'
+  | 'keyword_indexing'
+  | 'graph_indexing'
+  | 'completed'
+  | 'failed';
 export type DocumentGraphSyncStatus =
   | 'pending'
   | 'indexed'
@@ -46,6 +56,12 @@ export class KnowledgeDocument {
   @Column({ name: 'source_type', type: 'text', default: 'upload' })
   sourceType: DocumentSourceType;
 
+  @Column({ name: 'processing_stage', type: 'text', default: 'completed' })
+  processingStage: DocumentProcessingStage;
+
+  @Column({ name: 'processing_error', type: 'text', nullable: true })
+  processingError: string | null;
+
   @Column({ name: 'graph_sync_status', type: 'text', default: 'pending' })
   graphSyncStatus: DocumentGraphSyncStatus;
 
@@ -57,4 +73,7 @@ export class KnowledgeDocument {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

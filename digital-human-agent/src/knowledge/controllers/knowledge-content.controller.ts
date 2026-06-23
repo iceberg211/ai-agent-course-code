@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,6 +20,8 @@ import {
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
+import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
+import { ListDocumentsDto } from '@/knowledge/dto/list-documents.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
@@ -48,7 +51,13 @@ export class KnowledgeContentController {
   ) {}
 
   @Get(':kbId/documents')
-  listDocuments(@Param('kbId', ParseUUIDPipe) kbId: string) {
+  listDocuments(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Query() query: ListDocumentsDto,
+  ) {
+    if (this.hasDocumentListFilters(query)) {
+      return this.documentService.listDocumentsForKnowledge(kbId, query);
+    }
     return this.documentService.listDocumentsByKnowledgeId(kbId);
   }
 
@@ -84,12 +93,37 @@ export class KnowledgeContentController {
     return this.documentService.deleteDocumentForKnowledge(kbId, docId);
   }
 
+  @Post(':kbId/documents/:docId/retry')
+  @ApiOperation({ summary: '重试文档索引与图谱同步' })
+  retryDocument(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+  ) {
+    return this.documentService.retryDocumentForKnowledge(kbId, docId);
+  }
+
   @Get(':kbId/documents/:docId/chunks')
   listChunks(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
   ) {
     return this.documentService.listChunksByKnowledgeDocument(kbId, docId);
+  }
+
+  @Get(':kbId/documents/:docId/chunks/:chunkId/context')
+  @ApiOperation({ summary: '查询 chunk 原文上下文' })
+  getChunkContext(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Param('chunkId', ParseUUIDPipe) chunkId: string,
+    @Query() query: ChunkContextDto,
+  ) {
+    return this.documentService.getChunkContextForKnowledge(
+      kbId,
+      docId,
+      chunkId,
+      query,
+    );
   }
 
   @Patch(':kbId/chunks/:chunkId')
@@ -119,5 +153,15 @@ export class KnowledgeContentController {
       retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
       rerankLimit: body.rerankLimit ?? body.finalTopK,
     });
+  }
+
+  private hasDocumentListFilters(query: ListDocumentsDto): boolean {
+    return Boolean(
+      query.q ||
+        query.status ||
+        query.graphStatus ||
+        query.page ||
+        query.pageSize,
+    );
   }
 }

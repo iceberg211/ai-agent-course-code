@@ -5,6 +5,7 @@ import { IsNull, Repository } from 'typeorm';
 import { Conversation } from '@/conversation/entities/conversation.entity';
 import {
   ConversationMessage,
+  MessageFeedback,
   MessageRole,
   MessageStatus,
 } from '@/conversation/entities/conversation-message.entity';
@@ -66,12 +67,96 @@ export class ConversationService {
     seq?: number;
     content: string;
     status: MessageStatus;
+    citations?: unknown[] | null;
+    ragTrace?: Record<string, unknown> | null;
+    latencyMs?: number | null;
   }): Promise<ConversationMessage> {
     const seq =
       params.seq ?? (await this.getNextMessageSeq(params.conversationId));
     const message = this.msgRepo.create({ id: randomUUID(), ...params, seq });
     return this.withTransientRetry('addMessage', () =>
       this.msgRepo.save(message),
+    );
+  }
+
+  async listConversations(params: {
+    personaId?: string;
+    ownerId?: string | null;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      personaId: string;
+      ownerId: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      lastMessage: ConversationMessage | null;
+    }>;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = this.normalizePage(params.page);
+    const pageSize = this.normalizePageSize(params.pageSize);
+    const qb = this.convRepo
+      .createQueryBuilder('conversation')
+      .orderBy('conversation.updated_at', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    if (params.personaId) {
+      qb.andWhere('conversation.persona_id = :personaId', {
+        personaId: params.personaId,
+      });
+    }
+
+    if (params.ownerId !== undefined) {
+      if (params.ownerId === null) {
+        qb.andWhere('conversation.owner_id IS NULL');
+      } else {
+        qb.andWhere('conversation.owner_id = :ownerId', {
+          ownerId: params.ownerId,
+        });
+      }
+    }
+
+    const [conversations, total] = await this.withTransientRetry(
+      'listConversations',
+      () => qb.getManyAndCount(),
+    );
+
+    const items = await Promise.all(
+      conversations.map(async (conversation) => ({
+        id: conversation.id,
+        personaId: conversation.personaId,
+        ownerId: conversation.ownerId,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        lastMessage: await this.getLatestMessage(conversation.id),
+      })),
+    );
+
+    return { items, total, page, pageSize };
+  }
+
+  async deleteConversation(id: string): Promise<{ id: string; deleted: boolean }> {
+    const result = await this.withTransientRetry('deleteConversation', () =>
+      this.convRepo.delete(id),
+    );
+    return { id, deleted: (result.affected ?? 0) > 0 };
+  }
+
+  async setMessageFeedback(
+    conversationId: string,
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ): Promise<ConversationMessage | null> {
+    await this.withTransientRetry('setMessageFeedback', () =>
+      this.msgRepo.update({ id: messageId, conversationId }, { feedback }),
+    );
+    return this.withTransientRetry('findMessageAfterFeedback', () =>
+      this.msgRepo.findOne({ where: { id: messageId, conversationId } }),
     );
   }
 
@@ -109,6 +194,19 @@ export class ConversationService {
     return recentDesc.reverse();
   }
 
+  private async getLatestMessage(
+    conversationId: string,
+  ): Promise<ConversationMessage | null> {
+    const rows = await this.withTransientRetry('getLatestMessage', () =>
+      this.msgRepo.find({
+        where: { conversationId },
+        order: { seq: 'DESC', createdAt: 'DESC' },
+        take: 1,
+      }),
+    );
+    return rows[0] ?? null;
+  }
+
   private async getNextMessageSeq(conversationId: string): Promise<number> {
     const row = await this.withTransientRetry('getNextMessageSeq', () =>
       this.msgRepo
@@ -136,5 +234,16 @@ export class ConversationService {
           error,
         )}`,
     });
+  }
+
+  private normalizePage(page: number | undefined): number {
+    const value = Number(page ?? 1);
+    return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
+  }
+
+  private normalizePageSize(pageSize: number | undefined): number {
+    const value = Number(pageSize ?? 20);
+    if (!Number.isFinite(value)) return 20;
+    return Math.min(Math.max(Math.floor(value), 1), 100);
   }
 }

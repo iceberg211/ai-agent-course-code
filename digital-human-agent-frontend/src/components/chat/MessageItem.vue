@@ -17,6 +17,27 @@
         <span class="role-name">
           {{ message.role === 'assistant' ? (personaStore.selectedPersona?.name || 'Agent') : '你' }}
         </span>
+        <div v-if="message.role === 'assistant' && !message.streaming" class="message-actions">
+          <button type="button" title="复制回答" @click="copyMessage">
+            <ClipboardIcon :size="12" />
+          </button>
+          <button
+            type="button"
+            title="回答有用"
+            :class="{ active: message.feedback === 'up' }"
+            @click="setFeedback('up')"
+          >
+            <ThumbsUpIcon :size="12" />
+          </button>
+          <button
+            type="button"
+            title="回答无用"
+            :class="{ active: message.feedback === 'down' }"
+            @click="setFeedback('down')"
+          >
+            <ThumbsDownIcon :size="12" />
+          </button>
+        </div>
         <span 
           v-if="message.status && message.status !== 'completed' && !message.streaming" 
           class="status-badge" 
@@ -57,19 +78,23 @@
 
 <script setup lang="ts">
 import { marked } from 'marked'
+import { ClipboardIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-vue-next'
 import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
 import CitationChips from '@/components/chat/CitationChips.vue'
+import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { usePersonaStore } from '@/stores/persona'
+import { useSessionStore } from '@/stores/session'
+import type { ChatMessage } from '@/types'
 
 // marked 配置：开启 gfm（GitHub Flavored Markdown）
 marked.setOptions({ gfm: true })
 
-defineProps({
-  message: { type: Object, required: true },
-})
+const props = defineProps<{ message: ChatMessage }>()
 
 const personaStore = usePersonaStore()
+const sessionStore = useSessionStore()
+const productApi = useProductizedKnowledge()
 
 function statusLabel(status: string) {
   return MESSAGE_STATUS_LABELS[status as keyof typeof MESSAGE_STATUS_LABELS] ?? ''
@@ -79,6 +104,22 @@ function statusLabel(status: string) {
 function renderMarkdown(text: string): string {
   if (!text) return ''
   return marked.parse(text) as string
+}
+
+async function copyMessage() {
+  await navigator.clipboard?.writeText(props.message.content)
+}
+
+async function setFeedback(next: 'up' | 'down') {
+  const conversationId = sessionStore.conversationId
+  if (!conversationId || !props.message.id) return
+  const feedback = props.message.feedback === next ? null : next
+  const ok = await productApi.setMessageFeedback(
+    conversationId,
+    props.message.id,
+    feedback,
+  )
+  if (ok) props.message.feedback = feedback
 }
 </script>
 
@@ -153,6 +194,28 @@ function renderMarkdown(text: string): string {
 }
 .message.user .role-header {
   flex-direction: row-reverse;
+}
+.message-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.message-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+.message-actions button:hover,
+.message-actions button.active {
+  border-color: rgba(59, 130, 246, 0.18);
+  background: var(--primary-bg);
+  color: var(--primary);
 }
 
 .status-badge {

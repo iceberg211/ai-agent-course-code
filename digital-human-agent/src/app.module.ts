@@ -4,6 +4,7 @@ import { AgentModule } from '@/agent/agent.module';
 import { CommonModule } from '@/common/common.module';
 import { validateEnv } from '@/config/env.validation';
 import { ConversationModule } from '@/conversation/conversation.module';
+import { DashboardModule } from '@/dashboard/dashboard.module';
 import { DatabaseModule } from '@/database/database.module';
 import { DigitalHumanModule } from '@/digital-human/digital-human.module';
 import { GatewayModule } from '@/gateway/gateway.module';
@@ -19,6 +20,7 @@ import { SpeechModule } from '@/speech/speech.module';
     DatabaseModule,
     PersonaModule,
     ConversationModule,
+    DashboardModule,
     KnowledgeModule,
     SpeechModule,
     AgentModule,

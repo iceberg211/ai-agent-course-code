@@ -6,12 +6,15 @@ describe('ConversationService', () => {
       save: jest.fn(),
       create: jest.fn(),
       findOne: jest.fn(),
+      delete: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
     const msgRepo = {
       save: jest.fn(),
       create: jest.fn(),
       find: jest.fn(),
       update: jest.fn(),
+      findOne: jest.fn(),
     };
 
     return {
@@ -82,6 +85,32 @@ describe('ConversationService', () => {
         id: expect.any(String),
         conversationId: 'conv-1',
         turnId: 'turn-1',
+      }),
+    );
+  });
+
+  it('addMessage 会保存引用、RAG trace 和耗时信息', async () => {
+    const { service, msgRepo } = createService();
+    msgRepo.create.mockImplementation((params) => params);
+    msgRepo.save.mockResolvedValue({ id: 'message-1' });
+
+    await service.addMessage({
+      conversationId: 'conv-1',
+      turnId: 'turn-1',
+      role: 'assistant',
+      seq: 1,
+      content: '回答',
+      status: 'completed',
+      citations: [{ source: 'demo.md' }],
+      ragTrace: { strategy: 'simple' },
+      latencyMs: 1234,
+    });
+
+    expect(msgRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        citations: [{ source: 'demo.md' }],
+        ragTrace: { strategy: 'simple' },
+        latencyMs: 1234,
       }),
     );
   });

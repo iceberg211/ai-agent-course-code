@@ -7,6 +7,9 @@ interface HistoryMessage {
   role?: MessageRole
   content?: string
   status?: MessageStatus
+  citations?: Citation[] | null
+  feedback?: 'up' | 'down' | null
+  latencyMs?: number | null
 }
 
 /**
@@ -106,13 +109,16 @@ export function useConversation() {
       .map((m, idx): ChatMessage => {
         const role: MessageRole = m.role === 'user' ? 'user' : 'assistant'
         return {
-        id: m.id ?? `${m.turnId}-${role}-${idx}`,
-        role,
-        content: m.content ?? '',
-        status: m.status ?? 'completed',
-        citations: [],
-        streaming: false,
-      }
+          id: m.id ?? `${m.turnId}-${role}-${idx}`,
+          role,
+          content: m.content ?? '',
+          status: m.status ?? 'completed',
+          citations: Array.isArray(m.citations) ? m.citations : [],
+          streaming: false,
+          turnId: m.turnId,
+          feedback: m.feedback ?? null,
+          latencyMs: m.latencyMs ?? null,
+        }
       })
     scrollToBottom()
   }
