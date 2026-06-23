@@ -66,7 +66,15 @@ export class SessionHandler {
 
     const mode = this.parseMode(msg.payload?.mode);
     const forceNew = msg.payload?.forceNew === true;
-    const ownerId = this.resolveOwnerId(msg.payload, clientId);
+    const ownerId = (client as any).__userId;
+    if (!ownerId) {
+      sendJson(client, {
+        type: 'error',
+        sessionId: '',
+        payload: { message: 'Unauthorized: Session owner not found' },
+      });
+      return;
+    }
 
     // 关闭旧会话
     const oldSession = this.sessionRegistry.findByWsClientId(clientId);
@@ -203,19 +211,5 @@ export class SessionHandler {
     return mode === 'digital-human' ? 'digital-human' : 'voice';
   }
 
-  private resolveOwnerId(
-    payload: WsSessionStartMessage['payload'],
-    clientId: string,
-  ): string {
-    return (
-      this.normalizeOwnerId(payload?.clientId) ??
-      this.normalizeOwnerId(payload?.ownerId) ??
-      clientId
-    );
-  }
 
-  private normalizeOwnerId(value: unknown): string | null {
-    const normalized = String(value ?? '').trim();
-    return normalized ? normalized.slice(0, 120) : null;
-  }
 }

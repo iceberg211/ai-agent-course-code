@@ -6,6 +6,7 @@ import { SpeechModule } from '@/speech/speech.module';
 import { ConversationModule } from '@/conversation/conversation.module';
 import { PersonaModule } from '@/persona/persona.module';
 import { DigitalHumanModule } from '@/digital-human/digital-human.module';
+import { AuthModule } from '@/auth/auth.module';
 // Handlers
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';
@@ -24,6 +25,7 @@ import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service'
     ConversationModule,
     PersonaModule,
     DigitalHumanModule,
+    AuthModule,
   ],
   providers: [
     ConversationGateway,

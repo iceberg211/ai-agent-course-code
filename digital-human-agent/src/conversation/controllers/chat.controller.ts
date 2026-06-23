@@ -6,6 +6,7 @@ import {
   Post,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from 'ai';
@@ -18,6 +19,7 @@ import type { MessageStatus } from '@/conversation/entities/conversation-message
 import type { Conversation } from '@/conversation/entities/conversation.entity';
 import { PersonaService } from '@/persona/persona.service';
 import { ChatRequestDto } from '@/conversation/controllers/dto/chat-request.dto';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 interface MessagePartLike {
   type?: unknown;
@@ -31,6 +33,7 @@ interface MessageLike {
 
 @ApiTags('chat')
 @Controller('chat')
+@UseGuards(JwtAuthGuard)
 export class ChatController {
   private readonly logger = new Logger(ChatController.name);
 
@@ -233,12 +236,11 @@ export class ChatController {
   }
 
   private resolveOwnerId(body: ChatRequestDto, req: Request): string | null {
-    return (
-      this.normalizeOwnerId(body.clientId) ??
-      this.normalizeOwnerId(body.ownerId) ??
-      this.normalizeOwnerId(req.headers['x-client-id']) ??
-      null
-    );
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      throw new BadRequestException('未检测到合法用户登录信息');
+    }
+    return user.id;
   }
 
   private normalizeOwnerId(value: unknown): string | null {

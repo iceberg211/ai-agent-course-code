@@ -5,9 +5,8 @@ import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { KnowledgeController } from '@/knowledge/controllers/knowledge.controller';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
-import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
-import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
+import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { KnowledgeDocumentModule } from './knowledge-document.module';
 import { KnowledgeRetrievalModule } from './knowledge-retrieval.module';
 
@@ -20,16 +19,15 @@ import { KnowledgeRetrievalModule } from './knowledge-retrieval.module';
   ],
   providers: [
     KnowledgeService,
-    PersonaKnowledgeConfigService,
+    PersonaKbConfigService,
   ],
   controllers: [
     KnowledgeController,
     PersonaKnowledgeController,
-    PersonaKnowledgeSearchController,
   ],
   exports: [
     KnowledgeService,
-    PersonaKnowledgeConfigService,
+    PersonaKbConfigService,
   ],
 })
 export class KnowledgeBaseModule {}

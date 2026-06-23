@@ -13,6 +13,10 @@ export const useSessionStore = defineStore('session', () => {
     conversationId.value = cid
   }
 
+  function setConversationId(cid: string) {
+    conversationId.value = cid
+  }
+
   function setConnected(val: boolean) {
     connected.value = val
   }
@@ -26,5 +30,5 @@ export const useSessionStore = defineStore('session', () => {
     conversationId.value = ''
   }
 
-  return { sessionId, conversationId, connected, historyLoading, setSession, setConnected, setHistoryLoading, reset }
+  return { sessionId, conversationId, connected, historyLoading, setSession, setConversationId, setConnected, setHistoryLoading, reset }
 })

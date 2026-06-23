@@ -58,7 +58,7 @@ export class KnowledgeController {
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
     @Body() body: KnowledgeSearchDto,
   ) {
-    return this.searchService.retrieveWithStages(knowledgeId, body.query, {
+    return this.searchService.retrieveWithDebug(knowledgeId, body.query, {
       rerank: body.rerank,
       threshold: body.threshold,
       retrievalLimit: body.retrievalLimit ?? body.stage1TopK,

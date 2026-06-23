@@ -13,6 +13,8 @@ import { HealthModule } from '@/health/health.module';
 import { KnowledgeModule } from '@/knowledge/knowledge.module';
 import { PersonaModule } from '@/persona/persona.module';
 import { SpeechModule } from '@/speech/speech.module';
+import { UserModule } from '@/user/user.module';
+import { AuthModule } from '@/auth/auth.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { SpeechModule } from '@/speech/speech.module';
     ]),
     CommonModule,
     DatabaseModule,
+    UserModule,
+    AuthModule,
     PersonaModule,
     ConversationModule,
     DashboardModule,

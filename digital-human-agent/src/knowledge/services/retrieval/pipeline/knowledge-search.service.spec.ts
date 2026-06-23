@@ -172,7 +172,7 @@ describe('KnowledgeSearchService', () => {
     };
   }
 
-  it('retrieveWithStages 会使用改写后的 query 做召回，但 rerank 仍基于原始问题', async () => {
+  it('retrieveWithDebug 会使用改写后的 query 做召回，但 rerank 仍基于原始问题', async () => {
     const {
       service,
       hybridRetrieverService,
@@ -180,7 +180,7 @@ describe('KnowledgeSearchService', () => {
       queryRewriteService,
     } = createService();
 
-    const result = await service.retrieveWithStages('kb-1', '原始问题');
+    const result = await service.retrieveWithDebug('kb-1', '原始问题');
 
     expect(queryRewriteService.rewrite).toHaveBeenCalledWith(
       '原始问题',
@@ -249,7 +249,7 @@ describe('KnowledgeSearchService', () => {
     process.env.NEO4J_GRAPH_ENABLED = 'true';
 
     try {
-      const result = await service.retrieveWithStages('kb-1', '甲方审计保留', {
+      const result = await service.retrieveWithDebug('kb-1', '甲方审计保留', {
         signal: new AbortController().signal,
         strategy: {
           needRetrieval: true,
@@ -364,7 +364,7 @@ describe('KnowledgeSearchService', () => {
       ],
     });
 
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
+    const result = await service.retrieveWithDebug('kb-1', '原始问题', {
       strategy: {
         needRetrieval: true,
         useVector: true,
@@ -424,7 +424,7 @@ describe('KnowledgeSearchService', () => {
       ],
     });
 
-    const result = await service.retrieveWithStages('kb-1', '原始问题', {
+    const result = await service.retrieveWithDebug('kb-1', '原始问题', {
       rerank: false,
       strategy: {
         needRetrieval: true,
@@ -472,7 +472,7 @@ describe('KnowledgeSearchService', () => {
       queryRewriteService,
     } = createService();
 
-    const result = await service.retrieveForPersonaWithStages(
+    const result = await service.retrieveForPersonaWithDebug(
       'persona-1',
       '原始问题',
       {
@@ -539,7 +539,7 @@ describe('KnowledgeSearchService', () => {
     process.env.NEO4J_GRAPH_ENABLED = 'true';
 
     try {
-      await service.retrieveForPersonaWithStages('persona-1', '甲乙双方是什么关系？', {
+      await service.retrieveForPersonaWithDebug('persona-1', '甲乙双方是什么关系？', {
         strategy: baseStrategy({
           useGraph: true,
           graphMode: 'path',
@@ -574,7 +574,7 @@ describe('KnowledgeSearchService', () => {
       trace: [],
     });
 
-    const result = await service.retrieveForPersonaWithStages(
+    const result = await service.retrieveForPersonaWithDebug(
       'persona-1',
       '原始问题',
       {
@@ -591,7 +591,7 @@ describe('KnowledgeSearchService', () => {
     const { service, rerankerService } = createService();
     rerankerService.rerank.mockRejectedValue(new Error('rerank failed'));
 
-    const result = await service.retrieveForPersonaWithStages(
+    const result = await service.retrieveForPersonaWithDebug(
       'persona-1',
       '原始问题',
       {
@@ -609,7 +609,7 @@ describe('KnowledgeSearchService', () => {
     );
 
     await expect(
-      service.retrieveForPersonaWithStages('persona-1', '原始问题', {
+      service.retrieveForPersonaWithDebug('persona-1', '原始问题', {
         strategy: baseStrategy(),
       }),
     ).rejects.toThrow(/fetch failed/);

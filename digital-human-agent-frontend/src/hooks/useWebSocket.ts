@@ -37,7 +37,9 @@ export function useWebSocket() {
     }
 
     manualClose = false
-    ws.value = new WebSocket(`ws://${location.host}${WS_CONVERSATION_PATH}`)
+    const token = localStorage.getItem('jwt_token') || ''
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+    ws.value = new WebSocket(`ws://${location.host}${WS_CONVERSATION_PATH}${tokenParam}`)
 
     ws.value.onopen = () => {
       connected.value = true

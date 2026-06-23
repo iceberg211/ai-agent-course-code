@@ -259,7 +259,7 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
     reset()
     conversation.messages.value = []
     textChat.messages = history.map((m) => {
-      const parts = [{ type: 'text' as const, text: m.content, state: 'ready' as const }]
+      const parts = [{ type: 'text' as const, text: m.content, state: 'done' as const }]
       return {
         id: m.id,
         role: m.role,

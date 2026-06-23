@@ -8,6 +8,7 @@ import { ChatController } from '@/conversation/controllers/chat.controller';
 import { ConversationController } from '@/conversation/controllers/conversation.controller';
 import { AgentModule } from '@/agent/agent.module';
 import { PersonaModule } from '@/persona/persona.module';
+import { AuthModule } from '@/auth/auth.module';
 
 @Global()
 @Module({
@@ -15,6 +16,7 @@ import { PersonaModule } from '@/persona/persona.module';
     TypeOrmModule.forFeature([Conversation, ConversationMessage]),
     AgentModule,
     PersonaModule,
+    AuthModule,
   ],
   controllers: [ChatController, ConversationController],
   providers: [ConversationService, RealtimeSessionRegistry],

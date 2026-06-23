@@ -128,7 +128,7 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<KnowledgeChunk[]> {
     try {
-      const result = await this.retrieveWithStages(knowledgeId, query, options);
+      const result = await this.retrieveWithDebug(knowledgeId, query, options);
       return result.rerankedChunks;
     } catch (error) {
       if (isAbortError(error)) {
@@ -144,14 +144,14 @@ export class KnowledgeSearchService {
     }
   }
 
-  async retrieveWithStages(
+  async retrieveWithDebug(
     knowledgeId: string,
     query: string,
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     return runInTracedScope(
       {
-        name: 'knowledge_retrieve_with_stages',
+        name: 'knowledge_retrieve_with_debug',
         runType: 'chain',
         tags: ['knowledge', 'rag', 'retrieve', 'single-kb'],
         metadata: { knowledgeId },
@@ -212,19 +212,19 @@ export class KnowledgeSearchService {
       },
       async () =>
         (
-          await this.retrieveForPersonaWithStagesInternal(personaId, query, options)
+          await this.retrieveForPersonaWithDebugInternal(personaId, query, options)
         ).rerankedChunks,
     );
   }
 
-  async retrieveForPersonaWithStages(
+  async retrieveForPersonaWithDebug(
     personaId: string,
     query: string,
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     return runInTracedScope(
       {
-        name: 'persona_knowledge_retrieve_with_stages',
+        name: 'persona_knowledge_retrieve_with_debug',
         runType: 'chain',
         tags: ['knowledge', 'rag', 'retrieve', 'persona', 'debug'],
         metadata: { personaId },
@@ -244,11 +244,11 @@ export class KnowledgeSearchService {
           retrievalTraceCount: output.retrievalTrace.length,
         }),
       },
-      () => this.retrieveForPersonaWithStagesInternal(personaId, query, options),
+      () => this.retrieveForPersonaWithDebugInternal(personaId, query, options),
     );
   }
 
-  private async retrieveForPersonaWithStagesInternal(
+  private async retrieveForPersonaWithDebugInternal(
     personaId: string,
     query: string,
     options: RetrieveKnowledgeOptions = {},

@@ -4,13 +4,21 @@ import { Repository, In } from 'typeorm';
 import { Knowledge, KnowledgeRetrievalConfig } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
+import {
+  DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
+  THRESHOLD_MIN,
+  THRESHOLD_MAX,
+  RETRIEVAL_LIMIT_MAX,
+} from '@/common/constants/knowledge.constants';
 import type {
   MountedKnowledgeConfig,
 } from '@/knowledge/types/knowledge-content.types';
 
 @Injectable()
-export class PersonaKnowledgeConfigService {
-  private readonly logger = new Logger(PersonaKnowledgeConfigService.name);
+export class PersonaKbConfigService {
+  private readonly logger = new Logger(PersonaKbConfigService.name);
+
+  private static readonly DB_RETRY_ATTEMPTS = 3;
 
   constructor(
     private readonly runtime: RagRuntimeService,
@@ -30,7 +38,7 @@ export class PersonaKnowledgeConfigService {
           where: { personaId },
           select: ['knowledgeBaseId'],
         }),
-      3,
+      PersonaKbConfigService.DB_RETRY_ATTEMPTS,
     );
 
     if (!mounts || mounts.length === 0) {
@@ -46,7 +54,7 @@ export class PersonaKnowledgeConfigService {
           where: { id: In(knowledgeIds) },
           select: ['id', 'retrievalConfig', 'updatedAt'],
         }),
-      3,
+      PersonaKbConfigService.DB_RETRY_ATTEMPTS,
     );
 
     if (!knowledgeRows || knowledgeRows.length === 0) {
@@ -59,12 +67,17 @@ export class PersonaKnowledgeConfigService {
 
       return {
         knowledgeId: knowledge.id,
-        threshold: this.runtime.toBoundedNumber(config.threshold, 0.6, 0, 1),
+        threshold: this.runtime.toBoundedNumber(
+          config.threshold,
+          DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.threshold,
+          THRESHOLD_MIN,
+          THRESHOLD_MAX,
+        ),
         retrievalLimit: this.runtime.toBoundedNumber(
           config.retrievalLimit ?? config.stage1TopK,
-          20,
+          DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.retrievalLimit,
           1,
-          50,
+          RETRIEVAL_LIMIT_MAX,
         ),
         retrievalConfig: config,
         updatedAt: knowledge.updatedAt
@@ -74,4 +87,5 @@ export class PersonaKnowledgeConfigService {
     });
   }
 }
+
 

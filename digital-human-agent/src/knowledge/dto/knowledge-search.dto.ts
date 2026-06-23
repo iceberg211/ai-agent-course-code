@@ -58,11 +58,19 @@ export class KnowledgeSearchDto {
   @Max(20)
   rerankLimit?: number;
 
+  @ApiPropertyOptional({
+    description: '混合检索召回条数限制（已废弃，请使用 retrievalLimit）',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   stage1TopK?: number;
 
+  @ApiPropertyOptional({
+    description: '重排后最终返回条数限制（已废弃，请使用 rerankLimit）',
+    deprecated: true,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

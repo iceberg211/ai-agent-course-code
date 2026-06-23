@@ -18,7 +18,7 @@ import {
   mergeHybridResults,
   fuseVectorAndKeywordResults,
 } from '@/knowledge/services/retrieval/channels/knowledge-retrieval-fusion';
-import { PersonaKnowledgeConfigService } from '@/knowledge/services/manage/persona-knowledge-config.service';
+import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { FulltextRetrieverService } from './fulltext-retriever.service';
 import type {
   GraphBackend,
@@ -92,7 +92,7 @@ export class HybridRetrieverService {
     @Optional()
     private readonly graphRetriever?: KnowledgeGraphService,
     @Optional()
-    private readonly personaKnowledgeConfigService?: PersonaKnowledgeConfigService,
+    private readonly personaKnowledgeConfigService?: PersonaKbConfigService,
   ) {}
 
   // ==========================================
@@ -711,7 +711,7 @@ export class HybridRetrieverService {
   ): Promise<MountedKnowledgeConfig[]> {
     if (!this.personaKnowledgeConfigService) {
       throw new Error(
-        '缺少 PersonaKnowledgeConfigService，无法执行 persona 检索',
+        '缺少 PersonaKbConfigService，无法执行 persona 检索',
       );
     }
     return this.personaKnowledgeConfigService.listMountedKnowledgeConfigs(

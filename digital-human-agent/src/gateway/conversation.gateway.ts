@@ -6,6 +6,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
 import { Server, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -78,28 +79,53 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     private readonly textHandler: TextHandler,
     private readonly interruptHandler: InterruptHandler,
     private readonly accessControl: AccessControlService,
+    private readonly jwtService: JwtService,
   ) {}
 
   onModuleInit(): void {
     this.server?.on(
       'connection',
-      (client: WebSocket, request: IncomingMessage) => {
+      async (client: WebSocket, request: IncomingMessage) => {
         const clientId = randomUUID();
-        if (!this.accessControl.validateWsRequest(request)) {
+
+        // 提取 token 校验用户身份
+        const url = new URL(request.url || '', 'http://localhost');
+        const token = url.searchParams.get('token');
+        const authHeader = request.headers['authorization'];
+        let tokenFromHeader = '';
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          tokenFromHeader = authHeader.substring(7);
+        }
+        const finalToken = token || tokenFromHeader;
+
+        let userId = '';
+        try {
+          if (!finalToken) {
+            throw new Error('未提供认证令牌');
+          }
+          const payload = await this.jwtService.verifyAsync(finalToken);
+          userId = payload.sub;
+        } catch (err) {
           client.close(1008, 'Unauthorized');
-          this.logger.warn(`Client rejected by access token: ${clientId}`);
+          this.logger.warn(
+            `Client rejected by JWT: ${clientId}, reason: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
           return;
         }
 
         const clientWithState = client as WebSocket & {
           __clientId: string;
+          __userId: string;
           isAlive: boolean;
         };
         clientWithState.__clientId = clientId;
+        clientWithState.__userId = userId;
         clientWithState.isAlive = true;
 
         this.clients.set(clientId, client);
-        this.logger.log(`Client connected: ${clientId}`);
+        this.logger.log(`Client connected: ${clientId} (User: ${userId})`);
 
         client.on('pong', () => {
           clientWithState.isAlive = true;
