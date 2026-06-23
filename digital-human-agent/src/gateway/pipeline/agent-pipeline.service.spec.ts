@@ -68,13 +68,18 @@ describe('AgentPipelineService', () => {
     const session = createSession();
     await service.run(client, session, '你好', 'turn-1');
 
-    expect(conversationService.addMessage).toHaveBeenCalledWith({
-      conversationId: 'conv-1',
-      turnId: 'turn-1',
-      role: 'assistant',
-      content: '半句',
-      status: 'interrupted',
-    });
+    expect(conversationService.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        role: 'assistant',
+        content: '半句',
+        status: 'interrupted',
+        citations: [],
+        ragTrace: null,
+        latencyMs: expect.any(Number),
+      }),
+    );
 
     const sentMessages = (client.send as jest.Mock).mock.calls.map(
       ([payload]) => JSON.parse(String(payload)),

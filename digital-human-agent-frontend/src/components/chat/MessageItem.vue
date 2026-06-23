@@ -3,7 +3,7 @@
     <!-- 头像容器：User靠右，Agent靠左 -->
     <div class="message-avatar" :class="message.role">
       <template v-if="message.role === 'assistant'">
-        {{ personaStore.selectedPersona?.avatar || personaStore.selectedPersona?.name?.[0] || 'A' }}
+        {{ personaStore.selectedPersona?.avatarId || personaStore.selectedPersona?.name?.[0] || 'A' }}
       </template>
       <template v-else>
         我

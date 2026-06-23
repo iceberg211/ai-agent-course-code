@@ -2,9 +2,9 @@
   <div class="hit-test">
     <section class="search-panel" aria-label="知识库检索测试">
       <div class="search-panel__copy">
-        <p class="eyebrow">命中测试</p>
+        <p class="eyebrow">问答验证</p>
         <h3>验证问题会命中哪些片段</h3>
-        <p>用于检查召回阈值、候选数量和重排结果，调整后不会自动保存到知识库配置。</p>
+        <p>用于检查召回、重排、检索来源和最终引用候选，调整后不会自动保存到知识库配置。</p>
       </div>
 
       <div class="query-row">
@@ -23,6 +23,15 @@
           {{ hook.searching.value ? '检索中' : '运行测试' }}
         </button>
       </div>
+
+      <label class="expected-field">
+        <span>期望答案或验收要点</span>
+        <textarea
+          v-model="expectedAnswer"
+          rows="3"
+          placeholder="可选，用来记录正确答案、必须命中的制度条款或人工验收标准"
+        />
+      </label>
 
       <div class="params" aria-label="临时检索参数">
         <label class="param param--threshold">
@@ -43,8 +52,45 @@
           <span>重排</span>
         </label>
         <button class="btn-ghost" type="button" @click="resetParams">恢复默认</button>
+        <button class="btn-ghost" type="button" :disabled="!canSaveCase" @click="saveEvalCase">
+          <SaveIcon :size="14" />
+          {{ activeEvalCaseId ? '更新用例' : '保存用例' }}
+        </button>
       </div>
       <p v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</p>
+    </section>
+
+    <section class="case-panel" aria-label="验证用例">
+      <header>
+        <div>
+          <p class="eyebrow">用例库</p>
+          <h3>常用验证问题</h3>
+        </div>
+        <span>{{ evalCases.length }} 条</span>
+      </header>
+      <div v-if="evalCases.length" class="case-list">
+        <article
+          v-for="item in evalCases"
+          :key="item.id"
+          :class="{ 'is-active': item.id === activeEvalCaseId }"
+          class="case-item"
+        >
+          <button type="button" @click="applyEvalCase(item)">
+            <strong>{{ item.question }}</strong>
+            <small v-if="resolveExpectedAnswer(item)">{{ resolveExpectedAnswer(item) }}</small>
+            <small v-else>未填写期望答案</small>
+          </button>
+          <button
+            class="icon-button"
+            type="button"
+            aria-label="删除验证用例"
+            @click="deleteEvalCase(item.id)"
+          >
+            <Trash2Icon :size="14" />
+          </button>
+        </article>
+      </div>
+      <p v-else class="muted">还没有保存验证问题。</p>
     </section>
 
     <section v-if="result" class="results">
@@ -56,28 +102,33 @@
         <dl class="metrics">
           <div>
             <dt>召回</dt>
-            <dd>{{ result.stage1.length }}</dd>
+            <dd>{{ stage1.length }}</dd>
           </div>
           <div>
             <dt>最终</dt>
-            <dd>{{ result.stage2.length }}</dd>
+            <dd>{{ stage2.length }}</dd>
           </div>
           <div>
             <dt>模式</dt>
-            <dd>{{ result.options.rerank ? 'Rerank' : '截断' }}</dd>
+            <dd>{{ result.options?.rerank ? 'Rerank' : '截断' }}</dd>
           </div>
         </dl>
       </div>
+
+      <aside v-if="expectedAnswer.trim()" class="expected-preview" aria-label="期望答案">
+        <p class="eyebrow">期望答案</p>
+        <pre>{{ expectedAnswer.trim() }}</pre>
+      </aside>
 
       <div class="results__columns">
         <article class="result-list">
           <header class="result-list__head">
             <span>Stage 1</span>
-            <strong>向量召回</strong>
+            <strong>混合召回</strong>
           </header>
-          <ol v-if="result.stage1.length" class="hit-list">
+          <ol v-if="stage1.length" class="hit-list">
             <li
-              v-for="(c, index) in result.stage1"
+              v-for="(c, index) in stage1"
               :key="`s1-${c.id}`"
               :class="{ 'is-active': selected?.id === c.id }"
             >
@@ -95,11 +146,11 @@
         <article class="result-list result-list--final">
           <header class="result-list__head">
             <span>Stage 2</span>
-            <strong>{{ result.options.rerank ? '重排结果' : '最终结果' }}</strong>
+            <strong>{{ result.options?.rerank ? '重排结果' : '最终结果' }}</strong>
           </header>
-          <ol v-if="result.stage2.length" class="hit-list">
+          <ol v-if="stage2.length" class="hit-list">
             <li
-              v-for="(c, index) in result.stage2"
+              v-for="(c, index) in stage2"
               :key="`s2-${c.id}`"
               :class="{ 'is-active': selected?.id === c.id }"
             >
@@ -140,10 +191,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { SearchIcon } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { SaveIcon, SearchIcon, Trash2Icon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type {
+  KnowledgeEvalCase,
   KnowledgeBase,
   KnowledgeSearchChunk,
   KnowledgeSearchResult,
@@ -157,6 +209,10 @@ const threshold = ref(props.kb.retrievalConfig.threshold)
 const stage1TopK = ref(props.kb.retrievalConfig.stage1TopK)
 const finalTopK = ref(props.kb.retrievalConfig.finalTopK)
 const rerank = ref(props.kb.retrievalConfig.rerank)
+const expectedAnswer = ref('')
+const evalCases = ref<KnowledgeEvalCase[]>([])
+const activeEvalCaseId = ref<string | null>(null)
+const loadingCases = ref(false)
 
 const result = ref<KnowledgeSearchResult | null>(null)
 const selected = ref<KnowledgeSearchChunk | null>(null)
@@ -165,14 +221,26 @@ const errorMsg = ref('')
 const canSearch = computed(
   () => !hook.searching.value && query.value.trim().length > 0,
 )
+const canSaveCase = computed(
+  () => query.value.trim().length > 0 && !loadingCases.value,
+)
+const stage1 = computed(() => result.value?.hybridChunks ?? result.value?.stage1 ?? [])
+const stage2 = computed(() => result.value?.rerankedChunks ?? result.value?.stage2 ?? [])
+
+onMounted(() => {
+  void loadEvalCases()
+})
 
 watch(
   () => props.kb.id,
   () => {
     query.value = ''
+    expectedAnswer.value = ''
+    activeEvalCaseId.value = null
     result.value = null
     selected.value = null
     resetParams()
+    void loadEvalCases()
   },
 )
 
@@ -199,7 +267,55 @@ async function runSearch() {
     return
   }
   result.value = r
-  selected.value = r.stage2[0] ?? r.stage1[0] ?? null
+  selected.value = stage2.value[0] ?? stage1.value[0] ?? null
+}
+
+async function loadEvalCases() {
+  loadingCases.value = true
+  try {
+    evalCases.value = await hook.listEvalCases(props.kb.id)
+  } finally {
+    loadingCases.value = false
+  }
+}
+
+async function saveEvalCase() {
+  if (!canSaveCase.value) return
+  errorMsg.value = ''
+  const payload = {
+    question: query.value.trim(),
+    expectedAnswer: expectedAnswer.value.trim(),
+  }
+  const saved = activeEvalCaseId.value
+    ? await hook.updateEvalCase(props.kb.id, activeEvalCaseId.value, payload)
+    : await hook.createEvalCase(props.kb.id, payload)
+  if (!saved) {
+    errorMsg.value = '验证用例保存失败'
+    return
+  }
+  activeEvalCaseId.value = saved.id
+  await loadEvalCases()
+}
+
+async function applyEvalCase(item: KnowledgeEvalCase) {
+  activeEvalCaseId.value = item.id
+  query.value = item.question
+  expectedAnswer.value = resolveExpectedAnswer(item)
+  await runSearch()
+}
+
+async function deleteEvalCase(evalCaseId: string) {
+  const ok = await hook.deleteEvalCase(props.kb.id, evalCaseId)
+  if (!ok) {
+    errorMsg.value = '验证用例删除失败'
+    return
+  }
+  if (activeEvalCaseId.value === evalCaseId) activeEvalCaseId.value = null
+  await loadEvalCases()
+}
+
+function resolveExpectedAnswer(item: KnowledgeEvalCase): string {
+  return item.expectedAnswer ?? item.expected_answer ?? ''
 }
 
 function fmt(n: number | undefined): string {
@@ -217,6 +333,7 @@ function fmt(n: number | undefined): string {
 }
 
 .search-panel,
+.case-panel,
 .results,
 .empty-state {
   border: 1px solid var(--border);
@@ -282,10 +399,36 @@ function fmt(n: number | undefined): string {
 }
 
 .query-field input:focus,
-.param input:focus {
+.param input:focus,
+.expected-field textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
+}
+
+.expected-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.expected-field span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.expected-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 76px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .btn-primary {
@@ -312,7 +455,7 @@ function fmt(n: number | undefined): string {
 
 .params {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(2, 112px) auto auto;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, 112px) auto auto auto;
   gap: 10px;
   align-items: end;
 }
@@ -382,6 +525,10 @@ function fmt(n: number | undefined): string {
 
 .btn-ghost {
   height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -392,6 +539,104 @@ function fmt(n: number | undefined): string {
   cursor: pointer;
 }
 .btn-ghost:hover { background: var(--primary-bg); color: var(--primary); }
+.btn-ghost:disabled { opacity: 0.46; cursor: not-allowed; }
+
+.case-panel {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.case-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.case-panel h3 {
+  margin: 1px 0 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.case-panel > header > span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.case-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.case-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.case-item.is-active {
+  border-color: var(--primary-muted);
+  background: var(--primary-bg);
+}
+
+.case-item > button:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.case-item strong,
+.case-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-item strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.case-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: rgba(220, 38, 38, 0.22);
+  color: var(--error);
+  background: rgba(220, 38, 38, 0.06);
+}
 
 .error {
   margin: 0;
@@ -451,6 +696,22 @@ function fmt(n: number | undefined): string {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.expected-preview {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffdf5;
+}
+
+.expected-preview pre {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .result-list {

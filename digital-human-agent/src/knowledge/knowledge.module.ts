@@ -5,11 +5,13 @@ import { KnowledgeController } from '@/knowledge/controllers/knowledge.controlle
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
 import { KnowledgeContentController } from '@/knowledge/controllers/knowledge-content.controller';
 import { DocumentManagementController } from '@/knowledge/controllers/document-management.controller';
+import { KnowledgeEvalCaseController } from '@/knowledge/controllers/knowledge-eval-case.controller';
 import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
+import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.entity';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import {
   ElasticsearchIndexService,
@@ -26,6 +28,7 @@ import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/
 import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
+import { KnowledgeEvalCaseService } from '@/knowledge/services/evaluation/knowledge-eval-case.service';
 
 @Module({
   imports: [
@@ -35,6 +38,7 @@ import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channel
       PersonaKnowledge,
       KnowledgeDocument,
       KnowledgeChunk,
+      KnowledgeEvalCase,
     ]),
   ],
   providers: [
@@ -52,10 +56,12 @@ import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channel
     QueryRewriteService,
     RerankerService,
     FulltextRetrieverService,
+    KnowledgeEvalCaseService,
   ],
   controllers: [
     KnowledgeController,
     DocumentManagementController,
+    KnowledgeEvalCaseController,
     PersonaKnowledgeController,
     KnowledgeContentController,
     PersonaKnowledgeSearchController,

@@ -4,6 +4,7 @@ import type {
   ChunkContext,
   KnowledgeChunk,
   KnowledgeDocumentDetail,
+  KnowledgeEvalCase,
   KnowledgeSearchResult,
   PaginatedResult,
   RetrievalConfig,
@@ -29,6 +30,11 @@ export interface DocumentListQuery {
   pageSize?: number
 }
 
+export interface EvalCasePayload {
+  question: string
+  expectedAnswer?: string
+}
+
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(input, init)
@@ -43,7 +49,7 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null
   }
 }
 
-function toQuery(params: Record<string, unknown>): string {
+function toQuery(params: object): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue
@@ -289,6 +295,54 @@ export function useKnowledgeBase() {
     }
   }
 
+  async function listEvalCases(kbId: string): Promise<KnowledgeEvalCase[]> {
+    return (
+      (await fetchJson<KnowledgeEvalCase[]>(
+        `/api/knowledge-bases/${kbId}/eval-cases`,
+      )) ?? []
+    )
+  }
+
+  async function createEvalCase(
+    kbId: string,
+    payload: EvalCasePayload,
+  ): Promise<KnowledgeEvalCase | null> {
+    return fetchJson<KnowledgeEvalCase>(
+      `/api/knowledge-bases/${kbId}/eval-cases`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    )
+  }
+
+  async function updateEvalCase(
+    kbId: string,
+    evalCaseId: string,
+    payload: Partial<EvalCasePayload>,
+  ): Promise<KnowledgeEvalCase | null> {
+    return fetchJson<KnowledgeEvalCase>(
+      `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    )
+  }
+
+  async function deleteEvalCase(
+    kbId: string,
+    evalCaseId: string,
+  ): Promise<boolean> {
+    const res = await fetchJson<{ deleted: true }>(
+      `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}`,
+      { method: 'DELETE' },
+    )
+    return res?.deleted === true
+  }
+
   async function listKbsForPersona(personaId: string): Promise<KnowledgeBase[]> {
     return (
       (await fetchJson<KnowledgeBase[]>(
@@ -346,6 +400,10 @@ export function useKnowledgeBase() {
     getChunkContext,
     searchInKb,
     searchForPersonaWithStages,
+    listEvalCases,
+    createEvalCase,
+    updateEvalCase,
+    deleteEvalCase,
     listKbsForPersona,
     attachToPersona,
     detachFromPersona,

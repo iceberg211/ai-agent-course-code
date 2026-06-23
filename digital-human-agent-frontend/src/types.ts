@@ -127,8 +127,8 @@ export interface KnowledgeSearchResult {
     stage1TopK: number
     finalTopK: number
   }
-  stage1: KnowledgeSearchChunk[]
-  stage2: KnowledgeSearchChunk[]
+  stage1?: KnowledgeSearchChunk[]
+  stage2?: KnowledgeSearchChunk[]
 }
 
 /**
@@ -221,4 +221,17 @@ export interface ChunkContext {
   before: number
   after: number
   items: KnowledgeChunk[]
+}
+
+export interface KnowledgeEvalCase {
+  id: string
+  knowledgeBaseId: string
+  knowledge_base_id?: string
+  question: string
+  expectedAnswer?: string | null
+  expected_answer?: string | null
+  createdAt: string
+  created_at?: string
+  updatedAt: string
+  updated_at?: string
 }

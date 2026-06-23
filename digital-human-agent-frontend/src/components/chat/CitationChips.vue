@@ -33,8 +33,11 @@
           <dd>{{ sourceText(activeCitation) }}</dd>
         </div>
       </dl>
-      <pre v-if="activeCitation.content">{{ activeCitation.content }}</pre>
-      <p v-else>当前引用未携带原文片段，请在智能搜索或文档详情中查看上下文。</p>
+      <p v-if="loadingContext" class="state-text">正在读取上下文...</p>
+      <pre v-else-if="contextText">{{ contextText }}</pre>
+      <pre v-else-if="activeCitation.content">{{ activeCitation.content }}</pre>
+      <p v-else-if="contextError" class="state-text state-text--error">{{ contextError }}</p>
+      <p v-else class="state-text">当前引用缺少知识库、文档或片段标识，暂时无法读取上下文。</p>
     </aside>
   </div>
 </template>
@@ -42,19 +45,68 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { LinkIcon, XIcon } from 'lucide-vue-next'
-import type { Citation } from '@/types'
+import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import type { ChunkContext, Citation } from '@/types'
 
 const props = defineProps<{
   citations: Citation[]
 }>()
 
 const active = ref<number | null>(null)
+const loadingContext = ref(false)
+const contextError = ref('')
+const contextCache = ref<Record<string, ChunkContext>>({})
+const kbApi = useKnowledgeBase()
+
 const activeCitation = computed(() =>
   active.value == null ? null : props.citations[active.value] ?? null,
 )
+const activeContext = computed(() => {
+  const citation = activeCitation.value
+  if (!citation) return null
+  const key = contextKey(citation)
+  return key ? contextCache.value[key] ?? null : null
+})
+const contextText = computed(() => {
+  const items = activeContext.value?.items ?? []
+  if (!items.length) return ''
+  return items
+    .map((chunk) => `§${chunk.chunkIndex + 1}\n${chunk.content}`)
+    .join('\n\n')
+})
 
-function toggle(index: number) {
-  active.value = active.value === index ? null : index
+async function toggle(index: number) {
+  if (active.value === index) {
+    active.value = null
+    contextError.value = ''
+    return
+  }
+  active.value = index
+  contextError.value = ''
+  const citation = props.citations[index]
+  if (!citation) return
+  await loadContext(citation)
+}
+
+async function loadContext(citation: Citation) {
+  const key = contextKey(citation)
+  if (!key || contextCache.value[key]) return
+  const knowledgeBaseId = resolveKnowledgeBaseId(citation)
+  const documentId = resolveDocumentId(citation)
+  const chunkId = resolveChunkId(citation)
+  if (!knowledgeBaseId || !documentId || !chunkId) return
+
+  loadingContext.value = true
+  try {
+    const context = await kbApi.getChunkContext(knowledgeBaseId, documentId, chunkId, 1, 1)
+    if (context) {
+      contextCache.value = { ...contextCache.value, [key]: context }
+    } else {
+      contextError.value = '引用上下文读取失败，请稍后重试。'
+    }
+  } finally {
+    loadingContext.value = false
+  }
 }
 
 function resolveChunkNumber(citation: Citation): number {
@@ -77,6 +129,29 @@ function resolveKnowledgeBaseName(citation: Citation): string {
   if (citation.knowledgeBaseName) return citation.knowledgeBaseName
   const raw = citation.knowledgeBaseId ?? citation.knowledge_base_id
   return typeof raw === 'string' && raw ? `KB ${raw.slice(0, 8)}` : ''
+}
+
+function resolveKnowledgeBaseId(citation: Citation): string {
+  const raw = citation.knowledgeBaseId ?? citation.knowledge_base_id
+  return typeof raw === 'string' ? raw : ''
+}
+
+function resolveDocumentId(citation: Citation): string {
+  const raw = citation.documentId ?? citation.document_id
+  return typeof raw === 'string' ? raw : ''
+}
+
+function resolveChunkId(citation: Citation): string {
+  return typeof citation.id === 'string' ? citation.id : ''
+}
+
+function contextKey(citation: Citation): string {
+  const knowledgeBaseId = resolveKnowledgeBaseId(citation)
+  const documentId = resolveDocumentId(citation)
+  const chunkId = resolveChunkId(citation)
+  return knowledgeBaseId && documentId && chunkId
+    ? `${knowledgeBaseId}:${documentId}:${chunkId}`
+    : ''
 }
 
 function fmt(value: unknown): string {
@@ -182,5 +257,11 @@ function sourceText(citation: Citation): string {
   color: var(--text);
   font-size: 12px;
   line-height: 1.6;
+}
+.state-text {
+  color: var(--text-secondary);
+}
+.state-text--error {
+  color: var(--danger, #dc2626);
 }
 </style>
