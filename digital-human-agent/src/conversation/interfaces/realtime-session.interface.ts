@@ -8,6 +8,7 @@ export interface RealtimeSession {
   personaId: string;
   ownerId: string;
   mode: SessionMode;
+  voiceId: string | null; // Persona 的语音配置缓存，优化高频 TTS 查询性能
   digitalHumanSessionId: string | null;
   digitalHumanSpeakMode: DigitalHumanSpeakMode | null;
   activeTurnId: string | null;

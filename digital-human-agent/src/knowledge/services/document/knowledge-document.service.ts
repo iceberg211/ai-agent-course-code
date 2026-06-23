@@ -18,7 +18,7 @@ import {
   DocumentProcessingStage,
   KnowledgeDocument,
 } from '@/knowledge/entities/knowledge-document.entity';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge/types/knowledge-content.types';
@@ -42,7 +42,7 @@ export class KnowledgeDocumentService {
     private readonly documentRepo: Repository<KnowledgeDocument>,
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
-    private readonly runtime: ContentRuntimeService,
+    private readonly runtime: RagRuntimeService,
     private readonly elasticsearchService: ElasticsearchIndexService,
     private readonly graphService: KnowledgeGraphService,
   ) {}

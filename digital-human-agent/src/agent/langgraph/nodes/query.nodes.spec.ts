@@ -1,4 +1,4 @@
-import { createRetrieveNode } from '@/agent/langgraph/nodes/query/retrieve.node';
+import { createRetrieveNode } from '@/agent/langgraph/nodes/query.nodes';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createRetrieveNode', () => {

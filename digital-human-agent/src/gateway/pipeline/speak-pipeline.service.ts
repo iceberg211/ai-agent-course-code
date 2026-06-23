@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
+import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
@@ -21,6 +22,7 @@ export class SpeakPipelineService {
   constructor(
     @Inject(DIGITAL_HUMAN_PROVIDER)
     private readonly digitalHumanProvider: DigitalHumanProvider,
+    private readonly sessionRegistry: RealtimeSessionRegistry,
   ) {}
 
   /**
@@ -37,7 +39,7 @@ export class SpeakPipelineService {
     if (session.mode !== 'digital-human') return;
     if (session.digitalHumanSpeakMode !== 'text-direct') return;
 
-    session.speakQueue.push({ turnId, text });
+    this.sessionRegistry.pushSpeakQueue(session.sessionId, { turnId, text });
     void this.drain(client, session, turnId);
   }
 
@@ -51,7 +53,7 @@ export class SpeakPipelineService {
   ): void {
     if (session.ttsTurnId !== turnId) return;
     if (session.digitalHumanSpeakMode !== 'text-direct') return;
-    session.ttsFinalizeRequested = true;
+    this.sessionRegistry.update(session.sessionId, { ttsFinalizeRequested: true });
     this.completeTurnIfNeeded(client, session, turnId);
   }
 
@@ -68,7 +70,7 @@ export class SpeakPipelineService {
     if (session.speakProcessing) return;
     if (session.ttsTurnId !== turnId) return;
 
-    session.speakProcessing = true;
+    this.sessionRegistry.update(session.sessionId, { speakProcessing: true });
 
     // 发送 digital-human:start（仅第一次）
     if (!session.ttsStarted) {
@@ -77,14 +79,14 @@ export class SpeakPipelineService {
         sessionId: session.sessionId,
         turnId,
       });
-      session.ttsStarted = true;
+      this.sessionRegistry.update(session.sessionId, { ttsStarted: true });
     }
 
     try {
       while (session.speakQueue.length > 0) {
         if (session.ttsTurnId !== turnId) break;
 
-        const item = session.speakQueue.shift();
+        const item = this.sessionRegistry.shiftSpeakQueue(session.sessionId);
         if (!item) continue;
 
         const digitalSessionId = session.digitalHumanSessionId;
@@ -118,7 +120,7 @@ export class SpeakPipelineService {
         payload: { message: 'Digital human speak failed' },
       });
     } finally {
-      session.speakProcessing = false;
+      this.sessionRegistry.update(session.sessionId, { speakProcessing: false });
       this.completeTurnIfNeeded(client, session, turnId);
     }
   }
@@ -148,16 +150,16 @@ export class SpeakPipelineService {
   }
 
   private resetTurnState(session: RealtimeSession, turnId: string): void {
-    session.ttsTurnId = null;
-    session.ttsStarted = false;
-    session.ttsFinalizeRequested = false;
-    session.ttsSeq = 0;
-    session.speakQueue = [];
-    session.speakProcessing = false;
-    if (session.activeTurnId === turnId) {
-      session.activeTurnId = null;
-    }
-    session.abortController = null;
+    this.sessionRegistry.clearSpeakQueue(session.sessionId);
+    this.sessionRegistry.update(session.sessionId, {
+      ttsTurnId: null,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
+      ttsSeq: 0,
+      speakProcessing: false,
+      activeTurnId: session.activeTurnId === turnId ? null : session.activeTurnId,
+      abortController: null,
+    });
   }
 
 }

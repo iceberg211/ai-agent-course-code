@@ -40,11 +40,13 @@ export class InterruptHandler {
 
     // 中止 Agent
     session.abortController?.abort();
-    session.sentenceBuffer = '';
-    session.activeTurnId = null;
-    session.ttsQueue = [];
-    session.speakQueue = [];
-    session.ttsFinalizeRequested = true;
+    this.sessionRegistry.clearTtsQueue(session.sessionId);
+    this.sessionRegistry.clearSpeakQueue(session.sessionId);
+    this.sessionRegistry.update(session.sessionId, {
+      sentenceBuffer: '',
+      activeTurnId: null,
+      ttsFinalizeRequested: true,
+    });
 
     // 通知数字人打断
     if (session.mode === 'digital-human' && session.digitalHumanSessionId) {

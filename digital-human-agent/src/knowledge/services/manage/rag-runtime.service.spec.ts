@@ -1,12 +1,12 @@
 import { ConfigService } from '@nestjs/config';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 
-describe('ContentRuntimeService', () => {
+describe('RagRuntimeService', () => {
   it('normalizeRetrieveOptions 会保留 skipQueryRewrite 观测字段', () => {
     const mockConfigService = {
       get: jest.fn(),
     } as unknown as ConfigService;
-    const service = new ContentRuntimeService({} as never, mockConfigService);
+    const service = new RagRuntimeService({} as never, mockConfigService);
 
     expect(
       service.normalizeRetrieveOptions({

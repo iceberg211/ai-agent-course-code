@@ -95,5 +95,52 @@ export class RealtimeSessionRegistry {
       speakProcessing: false,
     });
   }
+
+  // ── 原子状态修改 API ──────────────────────────────────────────────────────────
+
+  pushTtsQueue(sessionId: string, text: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.ttsQueue.push(text);
+    }
+  }
+
+  shiftTtsQueue(sessionId: string): string | undefined {
+    const session = this.sessions.get(sessionId);
+    return session ? session.ttsQueue.shift() : undefined;
+  }
+
+  clearTtsQueue(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.ttsQueue = [];
+    }
+  }
+
+  pushSpeakQueue(sessionId: string, item: { turnId: string; text: string }): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.speakQueue.push(item);
+    }
+  }
+
+  shiftSpeakQueue(sessionId: string): { turnId: string; text: string } | undefined {
+    const session = this.sessions.get(sessionId);
+    return session ? session.speakQueue.shift() : undefined;
+  }
+
+  clearSpeakQueue(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.speakQueue = [];
+    }
+  }
+
+  appendToSentenceBuffer(sessionId: string, token: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.sentenceBuffer += token;
+    }
+  }
 }
 

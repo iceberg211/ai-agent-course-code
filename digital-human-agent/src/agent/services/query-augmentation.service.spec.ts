@@ -1,4 +1,4 @@
-import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
+import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 
 describe('QueryAugmentationService', () => {

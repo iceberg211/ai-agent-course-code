@@ -1,4 +1,4 @@
-import { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
+import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 
 describe('EvidenceEvaluatorService', () => {
   it('会返回结构化评估结果', async () => {

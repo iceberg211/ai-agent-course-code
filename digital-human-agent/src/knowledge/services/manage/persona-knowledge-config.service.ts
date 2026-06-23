@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Knowledge, KnowledgeRetrievalConfig } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import type {
   MountedKnowledgeConfig,
 } from '@/knowledge/types/knowledge-content.types';
@@ -13,7 +13,7 @@ export class PersonaKnowledgeConfigService {
   private readonly logger = new Logger(PersonaKnowledgeConfigService.name);
 
   constructor(
-    private readonly runtime: ContentRuntimeService,
+    private readonly runtime: RagRuntimeService,
     @InjectRepository(PersonaKnowledge)
     private readonly personaKnowledgeRepo: Repository<PersonaKnowledge>,
     @InjectRepository(Knowledge)

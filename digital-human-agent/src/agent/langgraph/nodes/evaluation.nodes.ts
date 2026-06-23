@@ -1,25 +1,70 @@
 import { Command } from '@langchain/langgraph';
-import type { WebFallbackService } from '@/agent/services/query/web-fallback.service';
-import type { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
+import type { WebFallbackService } from '@/agent/services/web-fallback.service';
+import type { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { RagStopReason } from '@/agent/types/rag-workflow.types';
+import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 import {
   canContinueMultiHop,
   extendSubQuestionsWithMissingFacts,
   getPlannedQuestions,
   shouldUseWebFallback,
+  publishCitations,
+  toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
 
+// ==========================================
+// 1. rerank 节点
+// ==========================================
+export function createRerankNode(rerankerService: RerankerService) {
+  return async (state: RagGraphState, config: RagGraphConfig) => {
+    const input = ensureWorkflowNotAborted(config);
+    const documents = state.documents;
+
+    if (documents.length === 0) {
+      return {
+        topDocuments: [],
+        evidenceChunks: [],
+      } satisfies Partial<RagGraphState>;
+    }
+
+    const topDocuments = await rerankerService.rerank(
+      state.question,
+      documents,
+      state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
+      input.signal,
+    );
+
+    publishCitations(
+      input,
+      toWorkflowCitations({
+        documents: state.documents,
+        topDocuments,
+        evidenceChunks: topDocuments,
+        webCitations: state.webCitations,
+      }),
+    );
+
+    return {
+      topDocuments,
+      evidenceChunks: topDocuments,
+    } satisfies Partial<RagGraphState>;
+  };
+}
+
+// ==========================================
+// 2. evaluate_evidence 节点
+// ==========================================
 function resolveStopReason(
   state: RagGraphState,
   enough: boolean,
   webFallbackEnabled: boolean,
 ): RagStopReason {
-  // 情况 1: 证据已充足
   if (enough) {
     if (state.webSearchUsed) {
       return 'web_fallback_enough';
@@ -30,7 +75,6 @@ function resolveStopReason(
     return 'single_hop_enough';
   }
 
-  // 情况 2: 证据不足，且已经使用过网页搜索
   if (state.webSearchUsed) {
     if (shouldUseWebFallback(state, webFallbackEnabled)) {
       return 'web_fallback_retry';
@@ -38,7 +82,6 @@ function resolveStopReason(
     return 'web_fallback_insufficient';
   }
 
-  // 情况 3: 证据不足，尚未使用过网页搜索
   const canWebSearch = shouldUseWebFallback(state, webFallbackEnabled);
 
   if (!canWebSearch) {
@@ -54,7 +97,6 @@ function resolveStopReason(
     }
   }
 
-  // 多跳流程判断
   if (state.strategy === 'complex') {
     if (state.currentHop >= state.maxHops) {
       return 'max_hops_reached';
@@ -65,7 +107,6 @@ function resolveStopReason(
     return 'multi_hop_insufficient';
   }
 
-  // 单跳流程判断
   return 'single_hop_insufficient';
 }
 

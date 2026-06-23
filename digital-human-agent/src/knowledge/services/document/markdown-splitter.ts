@@ -4,8 +4,8 @@ import type {
   MarkdownHeading,
   MarkdownSection,
 } from '@/knowledge/types/knowledge-document.types';
+import { STRUCTURED_CHUNK_MAX_LENGTH } from '@/common/constants/knowledge.constants';
 
-const STRUCTURED_CHUNK_MAX_LENGTH = 900;
 
 export async function splitKnowledgeDocumentContent(
   content: string,

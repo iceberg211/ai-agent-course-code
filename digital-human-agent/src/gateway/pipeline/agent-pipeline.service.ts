@@ -183,12 +183,12 @@ export class AgentPipelineService {
     isEnd: boolean,
   ): void {
     if (session.ttsTurnId !== turnId) return;
-    session.sentenceBuffer += token;
+    this.sessionRegistry.appendToSentenceBuffer(session.sessionId, token);
 
     while (true) {
       const buffer = session.sentenceBuffer;
       if (!buffer.trim()) {
-        session.sentenceBuffer = '';
+        this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
         break;
       }
 
@@ -218,7 +218,7 @@ export class AgentPipelineService {
       // 如果找到了断句位置，进行切割
       if (splitIndex !== -1) {
         const text = buffer.slice(0, splitIndex).trim();
-        session.sentenceBuffer = buffer.slice(splitIndex);
+        this.sessionRegistry.update(session.sessionId, { sentenceBuffer: buffer.slice(splitIndex) });
 
         if (text) {
           this.sendToPipeline(client, session, turnId, text);
@@ -230,7 +230,7 @@ export class AgentPipelineService {
       // 4. 如果是流结束，把剩余的部分全部刷出去
       if (isEnd && session.sentenceBuffer.trim()) {
         const text = session.sentenceBuffer.trim();
-        session.sentenceBuffer = '';
+        this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
         this.sendToPipeline(client, session, turnId, text);
       }
 

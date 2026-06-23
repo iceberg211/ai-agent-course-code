@@ -6,7 +6,7 @@ import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
 } from '@/common/constants';
 import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type {
   KnowledgeChunk,
@@ -116,7 +116,7 @@ export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
 
   constructor(
-    private readonly runtime: ContentRuntimeService,
+    private readonly runtime: RagRuntimeService,
     private readonly hybridRetrieverService: HybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AgentModule } from '@/agent/agent.module';
 import { CommonModule } from '@/common/common.module';
 import { validateEnv } from '@/config/env.validation';
@@ -16,6 +17,12 @@ import { SpeechModule } from '@/speech/speech.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 秒
+        limit: 60,   // 最多 60 次
+      },
+    ]),
     CommonModule,
     DatabaseModule,
     PersonaModule,

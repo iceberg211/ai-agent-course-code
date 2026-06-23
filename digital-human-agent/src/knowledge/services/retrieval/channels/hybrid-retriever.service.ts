@@ -12,7 +12,7 @@ import {
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import {
   fuseHybridAndGraphChannels,
   mergeHybridResults,
@@ -86,7 +86,7 @@ export class HybridRetrieverService {
   private readonly logger = new Logger(HybridRetrieverService.name);
 
   constructor(
-    private readonly runtime: ContentRuntimeService,
+    private readonly runtime: RagRuntimeService,
     private readonly configService: ConfigService,
     private readonly fulltextRetriever: FulltextRetrieverService,
     @Optional()

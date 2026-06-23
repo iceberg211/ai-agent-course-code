@@ -45,3 +45,8 @@ export const RERANK_LIMIT_MIN = 1;
 export const RERANK_LIMIT_MAX = 20;
 export const THRESHOLD_MIN = 0;
 export const THRESHOLD_MAX = 1;
+
+// 结构化切片与上下文扩展配置
+export const STRUCTURED_CHUNK_MAX_LENGTH = 900;
+export const MAX_CONTEXT_EXPANSION_WINDOW = 2;
+

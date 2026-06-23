@@ -101,6 +101,7 @@ export class SessionHandler {
       personaId,
       ownerId,
       mode,
+      voiceId: persona.voiceId ?? null,
       digitalHumanSessionId: null,
       digitalHumanSpeakMode: null,
       activeTurnId: null,

@@ -64,6 +64,9 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
   /** clientId → WebSocket */
   private readonly clients = new Map<string, WebSocket>();
 
+  /** 用于 WebSocket 消息节流：clientId -> 时间戳数组 */
+  private readonly clientMessageTimestamps = new Map<string, number[]>();
+
   private heartbeatInterval: NodeJS.Timeout;
 
   constructor(
@@ -230,6 +233,19 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
 
     const msg = validationResult.validatedMsg as WsInboundMessage;
 
+    // 滑窗限频校验，仅对高耗能的会话创建和问答消息进行计次
+    if (msg.type === 'session:start' || msg.type === 'conversation:text') {
+      if (this.isWsThrottled(clientId)) {
+        this.logger.warn(`WS 客户端消息过载被节流: clientId=${clientId}`);
+        sendJson(client, {
+          type: 'error',
+          sessionId: '',
+          payload: { message: '请求过于频繁，请稍后再试' },
+        });
+        return;
+      }
+    }
+
     switch (msg.type) {
       case 'ping':
         sendJson(client, {
@@ -258,10 +274,29 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private isWsThrottled(clientId: string): boolean {
+    const limit = 30; // 10秒内最多30次
+    const windowMs = 10000;
+    const now = Date.now();
+
+    let timestamps = this.clientMessageTimestamps.get(clientId);
+    if (!timestamps) {
+      timestamps = [];
+      this.clientMessageTimestamps.set(clientId, timestamps);
+    }
+
+    const validTimestamps = timestamps.filter((ts) => now - ts < windowMs);
+    validTimestamps.push(now);
+    this.clientMessageTimestamps.set(clientId, validTimestamps);
+
+    return validTimestamps.length > limit;
+  }
+
   // ── 连接清理 ───────────────────────────────────────────────────────────────
 
   private async cleanupClientById(clientId: string): Promise<void> {
     this.clients.delete(clientId);
+    this.clientMessageTimestamps.delete(clientId);
     const session = this.sessionRegistry.findByWsClientId(clientId);
     if (session) {
       await this.cleanupSession(session.sessionId);

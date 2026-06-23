@@ -10,6 +10,7 @@ describe('AgentPipelineService', () => {
       personaId: 'persona-1',
       ownerId: 'owner-1',
       mode: 'voice',
+      voiceId: null,
       digitalHumanSessionId: null,
       digitalHumanSpeakMode: null,
       activeTurnId: 'turn-1',
@@ -40,8 +41,14 @@ describe('AgentPipelineService', () => {
     const conversationService = {
       addMessage: jest.fn().mockResolvedValue(undefined),
     };
+    const session = createSession();
     const sessionRegistry = {
-      update: jest.fn(),
+      update: jest.fn().mockImplementation((id, patch) => {
+        Object.assign(session, patch);
+      }),
+      appendToSentenceBuffer: jest.fn().mockImplementation((id, token) => {
+        session.sentenceBuffer += token;
+      }),
     };
     const ttsPipeline = {
       enqueue: jest.fn(),
@@ -65,7 +72,6 @@ describe('AgentPipelineService', () => {
       send: jest.fn(),
     } as unknown as WebSocket;
 
-    const session = createSession();
     await service.run(client, session, '你好', 'turn-1');
 
     expect(conversationService.addMessage).toHaveBeenCalledWith(
@@ -89,11 +95,10 @@ describe('AgentPipelineService', () => {
       expect.arrayContaining([
         expect.objectContaining({ type: 'conversation:start' }),
         expect.objectContaining({ type: 'conversation:text_chunk' }),
-        expect.objectContaining({
-          type: 'conversation:done',
-          payload: { status: 'interrupted' },
-        }),
       ]),
+    );
+    expect(sentMessages.some((message) => message.type === 'conversation:done')).toBe(
+      false,
     );
     expect(sentMessages.some((message) => message.type === 'error')).toBe(
       false,

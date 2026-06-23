@@ -40,7 +40,7 @@ export class TtsPipelineService {
     if (!text.trim()) return;
     if (session.ttsTurnId !== turnId) return;
 
-    session.ttsQueue.push(text);
+    this.sessionRegistry.pushTtsQueue(session.sessionId, text);
     void this.drain(client, session, turnId);
   }
 
@@ -53,7 +53,7 @@ export class TtsPipelineService {
     turnId: string,
   ): void {
     if (session.ttsTurnId !== turnId) return;
-    session.ttsFinalizeRequested = true;
+    this.sessionRegistry.update(session.sessionId, { ttsFinalizeRequested: true });
     this.completeTurnIfNeeded(client, session, turnId);
   }
 
@@ -68,7 +68,7 @@ export class TtsPipelineService {
     if (session.ttsProcessing) return;
     if (session.ttsTurnId !== turnId) return;
 
-    session.ttsProcessing = true;
+    this.sessionRegistry.update(session.sessionId, { ttsProcessing: true });
 
     const outputFormat = this.getOutputFormat(session);
     const codec = outputFormat === 'pcm' ? 'audio/pcm' : 'audio/mpeg';
@@ -81,17 +81,17 @@ export class TtsPipelineService {
         turnId,
         payload: { encoding: outputFormat },
       });
-      session.ttsStarted = true;
+      this.sessionRegistry.update(session.sessionId, { ttsStarted: true });
     }
 
     try {
-      const persona = await this.personaService.findOne(session.personaId);
-      const voiceId = persona.voiceId ?? null;
+      // 优化性能：直接使用缓存的 voiceId，不再每次访问数据库
+      const voiceId = session.voiceId;
 
       while (session.ttsQueue.length > 0) {
         if (session.ttsTurnId !== turnId) break;
 
-        const text = session.ttsQueue.shift();
+        const text = this.sessionRegistry.shiftTtsQueue(session.sessionId);
         if (!text) continue;
 
         let signal = session.abortController?.signal;
@@ -109,10 +109,13 @@ export class TtsPipelineService {
             if (session.ttsTurnId !== turnId) return;
             if (client.readyState !== WebSocket.OPEN) return;
 
+            const currentSeq = session.ttsSeq;
+            this.sessionRegistry.update(session.sessionId, { ttsSeq: currentSeq + 1 });
+
             const meta: TtsAudioFrameMeta = {
               sessionId: session.sessionId,
               turnId,
-              seq: session.ttsSeq++,
+              seq: currentSeq,
               codec,
             };
             client.send(this.wrapAudioFrame(meta, chunk));
@@ -121,7 +124,7 @@ export class TtsPipelineService {
         );
       }
     } catch (err) {
-      session.ttsQueue = [];
+      this.sessionRegistry.clearTtsQueue(session.sessionId);
       if ((err as { name?: string })?.name !== 'AbortError') {
         this.logger.error('TTS synthesize error', err);
         sendJson(client, {
@@ -131,7 +134,7 @@ export class TtsPipelineService {
         });
       }
     } finally {
-      session.ttsProcessing = false;
+      this.sessionRegistry.update(session.sessionId, { ttsProcessing: false });
       this.completeTurnIfNeeded(client, session, turnId);
     }
   }
@@ -161,14 +164,14 @@ export class TtsPipelineService {
   }
 
   private resetTurnState(session: RealtimeSession, turnId: string): void {
-    session.ttsTurnId = null;
-    session.ttsStarted = false;
-    session.ttsFinalizeRequested = false;
-    session.ttsSeq = 0;
-    if (session.activeTurnId === turnId) {
-      session.activeTurnId = null;
-    }
-    session.abortController = null;
+    this.sessionRegistry.update(session.sessionId, {
+      ttsTurnId: null,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
+      ttsSeq: 0,
+      activeTurnId: session.activeTurnId === turnId ? null : session.activeTurnId,
+      abortController: null,
+    });
   }
 
   private wrapAudioFrame(meta: TtsAudioFrameMeta, audioBytes: Buffer): Buffer {

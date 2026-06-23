@@ -27,8 +27,8 @@ import type {
 } from '@/knowledge/types/knowledge-content.types';
 
 @Injectable()
-export class ContentRuntimeService {
-  private readonly logger = new Logger(ContentRuntimeService.name);
+export class RagRuntimeService {
+  private readonly logger = new Logger(RagRuntimeService.name);
 
   readonly embeddingBatchSize: number;
   readonly embeddings: OpenAIEmbeddings;

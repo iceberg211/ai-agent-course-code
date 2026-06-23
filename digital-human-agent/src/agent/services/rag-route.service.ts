@@ -28,6 +28,27 @@ export class RagRouteService {
 
   private readonly llm: ChatOpenAI;
 
+  private static readonly CHAT_PATTERNS = [
+    /^(?:你好|您好|哈喽|hello|hi|hey|在吗|早上好|中午好|下午好|晚上好)$/i,
+    /^(?:谢谢|非常感谢|拜拜|再见|再会|晚安)$/i,
+  ];
+
+  private static readonly MULTI_STEP_PATTERNS = [
+    /先.*再/u,
+    /然后/u,
+    /以及/u,
+    /并且/u,
+    /分别/u,
+    /对比/u,
+    /原因/u,
+    /为什么/u,
+    /如何/u,
+    /后来/u,
+    /最终/u,
+    /结局/u,
+    /第几[集章节]/u,
+  ];
+
   constructor(@Optional() llmFactory?: LlmFactoryService) {
     this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
       {
@@ -50,12 +71,8 @@ export class RagRouteService {
       };
     }
 
-    const chatPatterns = [
-      /^(?:你好|您好|哈喽|hello|hi|hey|在吗|早上好|中午好|下午好|晚上好)$/i,
-      /^(?:谢谢|非常感谢|拜拜|再见|再会|晚安)$/i,
-    ];
     if (
-      chatPatterns.some((pattern) =>
+      RagRouteService.CHAT_PATTERNS.some((pattern) =>
         pattern.test(normalizedQuestion.replace(/\s+/g, '')),
       )
     ) {
@@ -123,36 +140,17 @@ export class RagRouteService {
 
   private buildFallbackDecision(question: string): RagRouteDecision {
     const normalized = question.replace(/\s+/g, '');
-    const chatPatterns = [
-      /^(?:你好|您好|哈喽|hello|hi|hey|在吗|早上好|中午好|下午好|晚上好)$/i,
-      /^(?:谢谢|非常感谢|拜拜|再见|再会|晚安)$/i,
-    ];
-    if (chatPatterns.some((pattern) => pattern.test(normalized))) {
+    if (RagRouteService.CHAT_PATTERNS.some((pattern) => pattern.test(normalized))) {
       return {
         strategy: 'none',
         reason: '启发式判断为普通问候或告别',
       };
     }
 
-    const multiStepPatterns = [
-      /先.*再/u,
-      /然后/u,
-      /以及/u,
-      /并且/u,
-      /分别/u,
-      /对比/u,
-      /原因/u,
-      /为什么/u,
-      /如何/u,
-      /后来/u,
-      /最终/u,
-      /结局/u,
-      /第几[集章节]/u,
-    ];
     const directRelationQuestion =
       /(?:和|与).{1,80}(?:是什么关系|的关系是什么|包含子主题关系是什么|关联关系是什么)/u.test(
         normalized,
-      ) && !multiStepPatterns.some((pattern) => pattern.test(normalized));
+      ) && !RagRouteService.MULTI_STEP_PATTERNS.some((pattern) => pattern.test(normalized));
 
     if (directRelationQuestion) {
       return {
@@ -161,7 +159,7 @@ export class RagRouteService {
       };
     }
 
-    const complexPatterns = [...multiStepPatterns, /关系/u];
+    const complexPatterns = [...RagRouteService.MULTI_STEP_PATTERNS, /关系/u];
     const hitCount = complexPatterns.filter((pattern) =>
       pattern.test(normalized),
     ).length;

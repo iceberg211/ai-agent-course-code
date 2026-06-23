@@ -19,11 +19,9 @@ import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
-import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
 import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
 import { ListDocumentsDto } from '@/knowledge/dto/list-documents.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
-import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
 const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -42,15 +40,26 @@ function isSupportedKnowledgeUpload(file: {
   );
 }
 
-@ApiTags('knowledge-content')
-@Controller('knowledge-bases')
-export class KnowledgeContentController {
+@ApiTags('documents')
+@Controller()
+export class KnowledgeDocumentController {
   constructor(
     private readonly documentService: KnowledgeDocumentService,
-    private readonly searchService: KnowledgeSearchService,
   ) {}
 
-  @Get(':kbId/documents')
+  // ==========================================
+  // 1. 跨知识库全局文档查询（原 DocumentManagementController）
+  // ==========================================
+  @Get('documents')
+  @ApiOperation({ summary: '跨知识库分页查询文档' })
+  listAllDocuments(@Query() query: ListDocumentsDto) {
+    return this.documentService.listDocuments(query);
+  }
+
+  // ==========================================
+  // 2. 属于特定知识库的文档管理接口（原 KnowledgeContentController）
+  // ==========================================
+  @Get('knowledge-bases/:kbId/documents')
   listDocuments(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Query() query: ListDocumentsDto,
@@ -61,7 +70,7 @@ export class KnowledgeContentController {
     return this.documentService.listDocumentsByKnowledgeId(kbId);
   }
 
-  @Post(':kbId/documents')
+  @Post('knowledge-bases/:kbId/documents')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: KNOWLEDGE_UPLOAD_MAX_FILE_SIZE },
@@ -85,7 +94,7 @@ export class KnowledgeContentController {
     return this.documentService.parseAndIngestDocument(kbId, file, category);
   }
 
-  @Delete(':kbId/documents/:docId')
+  @Delete('knowledge-bases/:kbId/documents/:docId')
   deleteDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
@@ -93,7 +102,7 @@ export class KnowledgeContentController {
     return this.documentService.deleteDocumentForKnowledge(kbId, docId);
   }
 
-  @Post(':kbId/documents/:docId/retry')
+  @Post('knowledge-bases/:kbId/documents/:docId/retry')
   @ApiOperation({ summary: '重试文档索引与图谱同步' })
   retryDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -102,7 +111,7 @@ export class KnowledgeContentController {
     return this.documentService.retryDocumentForKnowledge(kbId, docId);
   }
 
-  @Get(':kbId/documents/:docId/chunks')
+  @Get('knowledge-bases/:kbId/documents/:docId/chunks')
   listChunks(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
@@ -110,7 +119,7 @@ export class KnowledgeContentController {
     return this.documentService.listChunksByKnowledgeDocument(kbId, docId);
   }
 
-  @Get(':kbId/documents/:docId/chunks/:chunkId/context')
+  @Get('knowledge-bases/:kbId/documents/:docId/chunks/:chunkId/context')
   @ApiOperation({ summary: '查询 chunk 原文上下文' })
   getChunkContext(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -126,7 +135,7 @@ export class KnowledgeContentController {
     );
   }
 
-  @Patch(':kbId/chunks/:chunkId')
+  @Patch('knowledge-bases/:kbId/chunks/:chunkId')
   @ApiOperation({ summary: '启用或禁用单个 chunk' })
   async updateChunk(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -139,20 +148,6 @@ export class KnowledgeContentController {
       dto.enabled,
     );
     return { chunkId, enabled: dto.enabled };
-  }
-
-  @Post(':kbId/search')
-  @ApiOperation({ summary: '命中测试（混合检索召回 + 重排，单 KB）' })
-  search(
-    @Param('kbId', ParseUUIDPipe) kbId: string,
-    @Body() body: KnowledgeSearchDto,
-  ) {
-    return this.searchService.retrieveWithStages(kbId, body.query, {
-      rerank: body.rerank,
-      threshold: body.threshold,
-      retrievalLimit: body.retrievalLimit ?? body.stage1TopK,
-      rerankLimit: body.rerankLimit ?? body.finalTopK,
-    });
   }
 
   private hasDocumentListFilters(query: ListDocumentsDto): boolean {

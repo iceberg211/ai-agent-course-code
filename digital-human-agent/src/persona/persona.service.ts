@@ -56,7 +56,7 @@ export class PersonaService {
   async remove(id: string): Promise<DeletePersonaResult> {
     await this.findOne(id);
     const result = await this.withTransientRetry('remove', () =>
-      this.repo.delete(id),
+      this.repo.softDelete(id),
     );
     return { id, deleted: (result.affected ?? 0) > 0 };
   }

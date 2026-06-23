@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { throwIfAborted } from '@/common/utils';
 import { type RagGraph, buildRagGraph } from '@/agent/langgraph/rag.graph';
 import {
@@ -6,13 +6,13 @@ import {
   getRagWorkflowCitations,
   toRagWorkflowState,
 } from '@/agent/langgraph/rag.state';
-import { normalizePromptHistory } from '@/agent/langgraph/nodes/generation/load-context.node';
-import { AnswerGenerationService } from '@/agent/services/generation/answer-generation.service';
-import { EvidenceEvaluatorService } from '@/agent/services/evaluation/evidence-evaluator.service';
-import { MultiHopPlannerService } from '@/agent/services/planning/multi-hop-planner.service';
-import { QueryAugmentationService } from '@/agent/services/query/query-augmentation.service';
-import { RagRouteService } from '@/agent/services/planning/rag-route.service';
-import { WebFallbackService } from '@/agent/services/query/web-fallback.service';
+import { normalizePromptHistory } from '@/agent/langgraph/nodes/generation.nodes';
+import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
+import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
+import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
+import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
+import { RagRouteService } from '@/agent/services/rag-route.service';
+import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import type {
   RagOrchestrator,
   RagWorkflowInput,
@@ -28,8 +28,9 @@ import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/
 import { PersonaService } from '@/persona/persona.service';
 
 @Injectable()
-export class LangGraphRagOrchestratorService implements RagOrchestrator {
-  private readonly graph: RagGraph;
+export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModuleInit {
+  private readonly logger = new Logger(LangGraphRagOrchestratorService.name);
+  private graph: RagGraph;
 
   constructor(
     private readonly personaHybridRetrieverService: HybridRetrieverService,
@@ -42,7 +43,19 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
     private readonly rerankerService: RerankerService,
     private readonly evidenceEvaluatorService: EvidenceEvaluatorService,
     private readonly webFallbackService: WebFallbackService,
-  ) {
+  ) {}
+
+  onModuleInit(): void {
+    try {
+      this.compileGraph();
+      this.logger.log('LangGraph RAG Graph compiled successfully.');
+    } catch (error) {
+      this.logger.error('Failed to compile LangGraph RAG Graph', error);
+      throw error;
+    }
+  }
+
+  private compileGraph(): void {
     this.graph = buildRagGraph({
       personaHybridRetrieverService: this.personaHybridRetrieverService,
       personaService: this.personaService,
@@ -58,6 +71,9 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator {
   }
 
   async run(input: RagWorkflowInput): Promise<RagWorkflowResult> {
+    if (!this.graph) {
+      this.compileGraph();
+    }
     return runInTracedScope(
       {
         name: 'langgraph_rag_orchestrator',

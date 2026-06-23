@@ -1,0 +1,1 @@
+ALTER TABLE persona ADD COLUMN deleted_at TIMESTAMPTZ;

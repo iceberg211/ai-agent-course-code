@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import { MAX_CONTEXT_EXPANSION_WINDOW } from '@/common/constants/knowledge.constants';
+
 
 interface DocumentWindowRange {
   min: number;
@@ -48,7 +50,7 @@ export class ChunkExpansionService {
   private normalizeWindow(value: number): number {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
-    return Math.min(2, Math.max(0, Math.floor(parsed)));
+    return Math.min(MAX_CONTEXT_EXPANSION_WINDOW, Math.max(0, Math.floor(parsed)));
   }
 
   private buildDocumentRanges(
