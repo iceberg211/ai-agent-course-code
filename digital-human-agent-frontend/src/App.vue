@@ -13,11 +13,24 @@ import AppNav from '@/components/knowledge-base/AppNav.vue'
 .app-root {
   height: 100%;
   display: flex;
-  flex-direction: column;
-  background: var(--primary-bg);
+  flex-direction: row;
+  background: transparent;
+  overflow: hidden;
 }
 .app-root > :last-child {
   flex: 1;
-  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .app-root {
+    flex-direction: column;
+  }
+  .app-root > :last-child {
+    height: auto;
+    overflow-y: auto;
+  }
 }
 </style>

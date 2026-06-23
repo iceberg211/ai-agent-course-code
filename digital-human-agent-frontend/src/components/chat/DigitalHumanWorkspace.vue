@@ -42,7 +42,7 @@
             playsinline
           />
 
-          <div v-if="showPlaceholder" class="stage-placeholder">
+          <div v-if="showPlaceholder" class="stage-placeholder" :class="{ 'stage-placeholder--connecting': status === 'connecting' }">
             <SparklesIcon :size="26" class="sparkle-icon" aria-hidden="true" />
             <p class="stage-placeholder__title">{{ placeholderTitle }}</p>
             <p class="stage-placeholder__desc">{{ placeholderDesc }}</p>
@@ -384,8 +384,8 @@ watch(
 
 <style scoped>
 .digital-workspace {
-  width: min(300px, 100%);
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
   flex-shrink: 0;
 }
 
@@ -400,6 +400,9 @@ watch(
   box-shadow:
     0 18px 38px rgba(15, 23, 42, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .stage-head {
@@ -522,7 +525,8 @@ watch(
 .digital-stage__frame {
   position: relative;
   margin-top: 10px;
-  height: 292px;
+  flex: 1;
+  min-height: 200px;
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid rgba(191, 219, 254, 0.86);
@@ -576,6 +580,21 @@ watch(
   color: var(--text-secondary);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(239, 245, 255, 0.42));
   backdrop-filter: blur(4px);
+}
+
+.stage-placeholder--connecting {
+  background: linear-gradient(90deg, 
+    rgba(239, 245, 255, 0.45) 25%, 
+    rgba(255, 255, 255, 0.7) 37%, 
+    rgba(239, 245, 255, 0.45) 63%
+  ) !important;
+  background-size: 400% 100% !important;
+  animation: shimmer-bg 2.5s ease infinite !important;
+}
+
+@keyframes shimmer-bg {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
 }
 
 .stage-placeholder__title {
@@ -1083,6 +1102,34 @@ watch(
 
   .config-section {
     padding: 16px;
+  }
+}
+
+/* 适配父级防挤压折叠状态，隐藏描述性文本和设置按钮，仅将视频画面以最大可用尺寸纯净展示 */
+@media (max-width: 1300px) {
+  .chat-body--drawer-open .digital-workspace .stage-head,
+  .chat-body--drawer-open .digital-workspace .stage-meta,
+  .chat-body--drawer-open .digital-workspace .stage-footer,
+  .chat-body--drawer-open .digital-workspace .stage-overlay,
+  .chat-body--drawer-open .digital-workspace .stage-desc {
+    display: none !important;
+  }
+  
+  .chat-body--drawer-open .digital-workspace .stage-panel {
+    padding: 8px !important;
+    border-radius: var(--radius-xl) !important;
+    height: 100% !important;
+  }
+
+  .chat-body--drawer-open .digital-workspace .digital-stage__frame {
+    margin-top: 0 !important;
+    height: 100% !important;
+    flex: 1 !important;
+  }
+
+  .chat-body--drawer-open .digital-workspace .digital-stage__viewport {
+    inset: 4px !important;
+    border-radius: var(--radius-md) !important;
   }
 }
 </style>

@@ -67,8 +67,10 @@ defineProps<{
 .persona-panel {
   width: 236px;
   flex-shrink: 0;
-  background: linear-gradient(180deg, #f7faff, #f2f7ff);
-  border-right: 1px solid var(--border-muted);
+  background: rgba(247, 250, 255, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(226, 232, 240, 0.6);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -177,6 +179,12 @@ defineProps<{
   }
   .panel-footer {
     padding: 10px 8px;
+  }
+  .panel-footer :deep(.conn) {
+    justify-content: center;
+  }
+  .panel-footer :deep(.conn span:not(.dot)) {
+    display: none;
   }
 }
 </style>

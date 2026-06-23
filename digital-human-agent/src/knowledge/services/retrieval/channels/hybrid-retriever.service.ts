@@ -108,83 +108,119 @@ export class HybridRetrieverService {
           Math.max(params.retrievalQueries.length, 1),
       ),
     );
-    const retrievalTasks = params.retrievalQueries.map(
+    const taskResults = await mapWithConcurrency(
+      params.retrievalQueries,
+      3, // 限制单知识库内部多查询并发为 3，避免连接池枯竭和 API 限流
       async (retrievalQuery) => {
-        throwIfAborted(params.signal);
-        let queryEmbedding: number[] | undefined;
-        if (params.strategy.useVector) {
-          try {
-            queryEmbedding = await this.runtime.withTransientRetry(
-              'embed query',
-              () => {
-                throwIfAborted(params.signal);
-                return this.runtime.embeddings.embedQuery(retrievalQuery.query);
-              },
-              3,
-            );
-          } catch (error) {
-            if (isAbortError(error)) {
-              throw error;
+        try {
+          throwIfAborted(params.signal);
+          let queryEmbedding: number[] | undefined;
+          if (params.strategy.useVector) {
+            try {
+              queryEmbedding = await this.runtime.withTransientRetry(
+                'embed query',
+                () => {
+                  throwIfAborted(params.signal);
+                  return this.runtime.embeddings.embedQuery(retrievalQuery.query);
+                },
+                3,
+              );
+            } catch (error) {
+              if (isAbortError(error)) {
+                throw error;
+              }
+              this.logger.warn(
+                `query embedding 失败，跳过向量通道：${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
             }
-            this.logger.warn(
-              `query embedding 失败，跳过向量通道：${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
           }
+
+          throwIfAborted(params.signal);
+
+          const hybridResult = await this.retrieveHybridChannels({
+            knowledgeId: params.knowledgeId,
+            queryEmbedding,
+            retrievalQuery: retrievalQuery.query,
+            keywordTerms: retrievalQuery.keywords,
+            threshold: params.threshold,
+            matchCount: perQueryTopK,
+            strategy: params.strategy,
+            signal: params.signal,
+          });
+
+          const keywordBackend: KeywordBackend | undefined =
+            hybridResult.keywordBackend === 'disabled'
+              ? undefined
+              : hybridResult.keywordBackend;
+
+          const chunks = hybridResult.chunks.map((chunk) => ({
+            ...chunk,
+            matched_queries: Array.from(
+              new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
+            ),
+            keyword_backend: keywordBackend ?? chunk.keyword_backend,
+            vector_backend: this.resolveChunkVectorBackend(chunk),
+          }));
+
+          const traceItem: RetrieveKnowledgeTraceItem = {
+            knowledgeId: params.knowledgeId,
+            queryIndex: retrievalQuery.index,
+            query: retrievalQuery.query,
+            keywords: retrievalQuery.keywords,
+            angle: retrievalQuery.angle,
+            vectorBackend: params.strategy.useVector ? 'pgvector' : 'disabled',
+            keywordBackend: params.strategy.useKeyword
+              ? hybridResult.keywordBackend
+              : 'disabled',
+            vectorResultCount: hybridResult.vectorResultCount,
+            keywordResultCount: hybridResult.keywordResultCount,
+            graphBackend: hybridResult.graphBackend,
+            graphResultCount: hybridResult.graphResultCount,
+            mergedResultCount: chunks.length,
+            fallbackToPg: hybridResult.fallbackToPg,
+            skippedChannels: hybridResult.skippedChannels,
+          };
+
+          return { chunks, traceItem };
+        } catch (error) {
+          if (isAbortError(error)) {
+            throw error;
+          }
+          if (isTransientInfrastructureError(error)) {
+            throw error;
+          }
+
+          this.logger.error(
+            `子查询检索失败（query=${retrievalQuery.query}）：${
+              error instanceof Error ? error.stack ?? error.message : String(error)
+            }`,
+          );
+
+          // 容错返回空结果，避免单个子查询挂掉拖垮整体 RAG
+          return {
+            chunks: [],
+            traceItem: {
+              knowledgeId: params.knowledgeId,
+              queryIndex: retrievalQuery.index,
+              query: retrievalQuery.query,
+              keywords: retrievalQuery.keywords,
+              angle: retrievalQuery.angle,
+              vectorBackend: 'disabled',
+              keywordBackend: 'disabled',
+              vectorResultCount: 0,
+              keywordResultCount: 0,
+              graphBackend: 'disabled',
+              graphResultCount: 0,
+              mergedResultCount: 0,
+              fallbackToPg: false,
+              skippedChannels: ['vector', 'keyword', 'graph'],
+            } as RetrieveKnowledgeTraceItem,
+          };
         }
-
-        throwIfAborted(params.signal);
-
-        const hybridResult = await this.retrieveHybridChannels({
-          knowledgeId: params.knowledgeId,
-          queryEmbedding,
-          retrievalQuery: retrievalQuery.query,
-          keywordTerms: retrievalQuery.keywords,
-          threshold: params.threshold,
-          matchCount: perQueryTopK,
-          strategy: params.strategy,
-          signal: params.signal,
-        });
-
-        const keywordBackend: KeywordBackend | undefined =
-          hybridResult.keywordBackend === 'disabled'
-            ? undefined
-            : hybridResult.keywordBackend;
-
-        const chunks = hybridResult.chunks.map((chunk) => ({
-          ...chunk,
-          matched_queries: Array.from(
-            new Set([...(chunk.matched_queries ?? []), retrievalQuery.index]),
-          ),
-          keyword_backend: keywordBackend ?? chunk.keyword_backend,
-          vector_backend: this.resolveChunkVectorBackend(chunk),
-        }));
-
-        const traceItem: RetrieveKnowledgeTraceItem = {
-          knowledgeId: params.knowledgeId,
-          queryIndex: retrievalQuery.index,
-          query: retrievalQuery.query,
-          keywords: retrievalQuery.keywords,
-          angle: retrievalQuery.angle,
-          vectorBackend: params.strategy.useVector ? 'pgvector' : 'disabled',
-          keywordBackend: params.strategy.useKeyword
-            ? hybridResult.keywordBackend
-            : 'disabled',
-          vectorResultCount: hybridResult.vectorResultCount,
-          keywordResultCount: hybridResult.keywordResultCount,
-          graphBackend: hybridResult.graphBackend,
-          graphResultCount: hybridResult.graphResultCount,
-          mergedResultCount: chunks.length,
-          fallbackToPg: hybridResult.fallbackToPg,
-          skippedChannels: hybridResult.skippedChannels,
-        };
-
-        return { chunks, traceItem };
       },
     );
-
-    const taskResults = await Promise.all(retrievalTasks);
     const results = taskResults.map((t) => t.chunks);
     const trace = taskResults.map((t) => t.traceItem);
 

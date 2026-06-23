@@ -255,6 +255,26 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
     textChat.messages = []
   }
 
+  function hydrate(history: ChatMessage[]) {
+    reset()
+    conversation.messages.value = []
+    textChat.messages = history.map((m) => {
+      const parts = [{ type: 'text' as const, text: m.content, state: 'ready' as const }]
+      return {
+        id: m.id,
+        role: m.role,
+        parts,
+        createdAt: new Date(),
+        metadata: {
+          turnId: m.turnId,
+          status: m.status,
+          citations: m.citations,
+        }
+      }
+    })
+    syncMessages()
+  }
+
   return {
     textChat,
     textRequestActive,
@@ -263,5 +283,6 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
     stopText,
     reset,
     syncMessages,
+    hydrate,
   }
 }

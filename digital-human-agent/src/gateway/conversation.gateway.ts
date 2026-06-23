@@ -87,18 +87,44 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
           clientWithState.isAlive = true;
           void this.handleMessage(client, clientId, data, isBinary).catch(
             (err) => {
-              this.logger.error(
-                `Handle message failed: ${
-                  err instanceof Error
-                    ? (err.stack ?? err.message)
-                    : String(err)
-                }`,
-              );
-              sendJson(client, {
-                type: 'error',
-                sessionId: '',
-                payload: { message: '消息处理失败' },
-              });
+              // 区分 NestJS 的业务异常和系统崩溃 Error
+              const isHttpException =
+                err &&
+                typeof err === 'object' &&
+                'getStatus' in err &&
+                'getResponse' in err;
+
+              if (isHttpException) {
+                const response = (err as any).getResponse();
+                const message =
+                  typeof response === 'object' &&
+                  response !== null &&
+                  'message' in response
+                    ? Array.isArray(response.message)
+                      ? response.message.join('; ')
+                      : String(response.message)
+                    : (err as Error).message || '业务请求失败';
+
+                this.logger.warn(`Ws business exception: ${message}`);
+                sendJson(client, {
+                  type: 'error',
+                  sessionId: '',
+                  payload: { message },
+                });
+              } else {
+                this.logger.error(
+                  `Handle message failed: ${
+                    err instanceof Error
+                      ? (err.stack ?? err.message)
+                      : String(err)
+                  }`,
+                );
+                sendJson(client, {
+                  type: 'error',
+                  sessionId: '',
+                  payload: { message: '服务器内部错误' },
+                });
+              }
             },
           );
         });
@@ -133,6 +159,19 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
+    // 主动关闭所有活跃客户端连接，防止内存泄漏和悬空 TCP
+    this.clients.forEach((client, clientId) => {
+      try {
+        client.close(1001, 'Going Away');
+      } catch (err) {
+        this.logger.warn(
+          `Failed to close client ${clientId} on destroy: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    });
+    this.clients.clear();
   }
 
   // ── 消息路由 ────────────────────────────────────────────────────────────────

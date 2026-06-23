@@ -81,7 +81,7 @@ async function onCreate(payload: { name: string; description?: string }) {
   padding: 32px 24px; 
   height: 100%; 
   overflow-y: auto; 
-  background: var(--page-bg-accent);
+  background: transparent;
 }
 .kb-list__head {
   display: flex;

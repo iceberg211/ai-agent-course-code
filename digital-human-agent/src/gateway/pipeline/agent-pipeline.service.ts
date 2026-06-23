@@ -115,16 +115,22 @@ export class AgentPipelineService {
       this.markFinalize(client, session, turnId);
       this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
 
-      await this.conversationService.addMessage({
-        conversationId: session.conversationId,
-        turnId,
-        role: 'assistant',
-        content: fullReply,
-        status,
-        citations,
-        ragTrace,
-        latencyMs: Date.now() - startedAt,
-      });
+      const isInterrupted = status === 'interrupted';
+      const hasWrittenReply = fullReply.trim().length > 0;
+
+      // 只有在未被打断，或者被打断但确实生成了部分有效文本时，才写入数据库，防止空数据污染
+      if (!isInterrupted || hasWrittenReply) {
+        await this.conversationService.addMessage({
+          conversationId: session.conversationId,
+          turnId,
+          role: 'assistant',
+          content: fullReply,
+          status,
+          citations,
+          ragTrace,
+          latencyMs: Date.now() - startedAt,
+        });
+      }
 
       if (shouldSendError) {
         sendJson(client, {
@@ -134,12 +140,16 @@ export class AgentPipelineService {
         });
       }
 
-      sendJson(client, {
-        type: 'conversation:done',
-        sessionId: session.sessionId,
-        turnId,
-        payload: { status },
-      });
+      // 如果是被打断，由 InterruptHandler 负责通知 conversation:interrupted
+      // 避免在此处重复发送 done 导致前端接收事件冲突和状态闪烁
+      if (!isInterrupted) {
+        sendJson(client, {
+          type: 'conversation:done',
+          sessionId: session.sessionId,
+          turnId,
+          payload: { status },
+        });
+      }
     }
   }
 
@@ -175,25 +185,72 @@ export class AgentPipelineService {
     if (session.ttsTurnId !== turnId) return;
     session.sentenceBuffer += token;
 
-    const shouldFlush =
-      AgentPipelineService.SENTENCE_END.test(token) ||
-      (AgentPipelineService.CLAUSE_END.test(token) &&
-        session.sentenceBuffer.length > AgentPipelineService.CLAUSE_MIN_LEN) ||
-      session.sentenceBuffer.length > AgentPipelineService.BUFFER_MAX_LEN ||
-      isEnd;
-
-    if (shouldFlush && session.sentenceBuffer.trim()) {
-      const text = session.sentenceBuffer.trim();
-      session.sentenceBuffer = '';
-
-      if (
-        session.mode === 'digital-human' &&
-        session.digitalHumanSpeakMode === 'text-direct'
-      ) {
-        this.speakPipeline.enqueue(client, session, turnId, text);
-      } else {
-        this.ttsPipeline.enqueue(client, session, turnId, text);
+    while (true) {
+      const buffer = session.sentenceBuffer;
+      if (!buffer.trim()) {
+        session.sentenceBuffer = '';
+        break;
       }
+
+      let splitIndex = -1;
+
+      // 1. 优先寻找最靠近前面的句末标点 (。？！；)
+      const sentenceEndMatch = /[。？！；]/.exec(buffer);
+      if (sentenceEndMatch) {
+        splitIndex = sentenceEndMatch.index + 1;
+      } else {
+        // 2. 如果没有句末标点，从前往后寻找满足最小长度限制的第一个子句标点 (，、：)
+        const clauseRegex = /[，、：]/g;
+        let match: RegExpExecArray | null;
+        while ((match = clauseRegex.exec(buffer)) !== null) {
+          if (match.index + 1 >= AgentPipelineService.CLAUSE_MIN_LEN) {
+            splitIndex = match.index + 1;
+            break;
+          }
+        }
+
+        // 3. 如果依然没有找到，且字数已经达到 BUFFER_MAX_LEN 强制切断，避免过大延迟
+        if (splitIndex === -1 && buffer.length >= AgentPipelineService.BUFFER_MAX_LEN) {
+          splitIndex = AgentPipelineService.BUFFER_MAX_LEN;
+        }
+      }
+
+      // 如果找到了断句位置，进行切割
+      if (splitIndex !== -1) {
+        const text = buffer.slice(0, splitIndex).trim();
+        session.sentenceBuffer = buffer.slice(splitIndex);
+
+        if (text) {
+          this.sendToPipeline(client, session, turnId, text);
+        }
+        // 继续循环处理剩下可能满足条件的句子
+        continue;
+      }
+
+      // 4. 如果是流结束，把剩余的部分全部刷出去
+      if (isEnd && session.sentenceBuffer.trim()) {
+        const text = session.sentenceBuffer.trim();
+        session.sentenceBuffer = '';
+        this.sendToPipeline(client, session, turnId, text);
+      }
+
+      break;
+    }
+  }
+
+  private sendToPipeline(
+    client: WebSocket,
+    session: RealtimeSession,
+    turnId: string,
+    text: string,
+  ): void {
+    if (
+      session.mode === 'digital-human' &&
+      session.digitalHumanSpeakMode === 'text-direct'
+    ) {
+      this.speakPipeline.enqueue(client, session, turnId, text);
+    } else {
+      this.ttsPipeline.enqueue(client, session, turnId, text);
     }
   }
 

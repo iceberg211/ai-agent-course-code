@@ -206,8 +206,10 @@ function submit() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (props.canStop) return
   if (e.key === 'Enter' && !e.shiftKey) {
+    if (sendDisabled.value) {
+      return
+    }
     e.preventDefault()
     submit()
   }

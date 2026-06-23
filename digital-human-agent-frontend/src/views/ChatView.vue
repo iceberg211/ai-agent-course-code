@@ -1,40 +1,43 @@
 <template>
   <div class="app-shell">
-    <!-- 左侧角色面板：直接从 personaStore / voiceClone 取数据 -->
-    <PersonaPanel
-      :personas="personaStore.personas"
-      :selected-id="personaStore.selectedId"
-      :connected="sessionStore.connected"
-      :loading="personaStore.loading"
-      @select="onSelectPersona"
-      @delete="onDeletePersona"
-      @create="createModalOpen = true"
-    />
-
-    <ConversationHistoryPanel
-      :persona-id="personaStore.selectedId"
-      :current-conversation-id="sessionStore.conversationId"
-      @select="onSelectHistoryConversation"
-      @new-conversation="onNewConversation"
-    />
+    <div
+      class="sidebar-wrapper"
+      :class="{ 'sidebar-wrapper--closed': !historySidebarOpen }"
+    >
+      <ConversationHistoryPanel
+        v-if="personaStore.selectedId"
+        :persona-id="personaStore.selectedId"
+        :current-conversation-id="sessionStore.conversationId || ''"
+        @select="onSelectConversation"
+        @new-conversation="onNewConversation"
+        @select-persona="onSelectPersona"
+        @delete-persona="onDeletePersona"
+        @create-persona="createModalOpen = true"
+      />
+    </div>
 
     <!-- 中间对话区 -->
     <main class="chat-main">
       <ChatHeader
         :persona="personaStore.selectedPersona"
         :knowledge-drawer-open="knowledgeDrawerOpen"
+        :sidebar-open="historySidebarOpen"
         :mode="mode"
         :knowledge-summary="knowledgeSummary"
         :knowledge-summary-compact="knowledgeSummaryCompact"
         :knowledge-summary-tone="knowledgeSummaryTone"
         @toggle-knowledge-drawer="knowledgeDrawerOpen = !knowledgeDrawerOpen"
+        @toggle-sidebar="historySidebarOpen = !historySidebarOpen"
         @change-mode="onChangeMode"
         @new-conversation="onNewConversation"
       />
 
       <div
         class="chat-body"
-        :class="{ 'chat-body--digital': mode === 'digital-human' }"
+        :class="{
+          'chat-body--digital': mode === 'digital-human',
+          'chat-body--drawer-open': citationDrawerOpen || knowledgeDrawerOpen
+        }"
       >
         <!-- 数字人视频窗口（仅数字人模式下呈现在左侧） -->
         <DigitalHumanWorkspace
@@ -69,6 +72,8 @@
             v-else
             :messages="conversationMessages"
             :loading="sessionStore.historyLoading"
+            @show-citation-detail="handleShowCitation"
+            @regenerate="handleRegenerate"
           />
 
           <!-- 输入区：统一收纳于聊天控制台面板内底栏，建立一致的边界感 -->
@@ -110,18 +115,26 @@
       @created="onPersonaCreated"
       @cancel="createModalOpen = false"
     />
+
+    <!-- 引用文献详情抽屉 -->
+    <Transition name="slide-drawer">
+      <CitationDetailDrawer
+        v-if="citationDrawerOpen && activeCitation"
+        :citation="activeCitation"
+        @close="citationDrawerOpen = false"
+      />
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppController } from '@/hooks/useAppController'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
-import PersonaPanel from '@/components/persona/PersonaPanel.vue'
 import ConversationHistoryPanel from '@/components/chat/ConversationHistoryPanel.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ChatEmptyState from '@/components/chat/ChatEmptyState.vue'
@@ -133,6 +146,7 @@ import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
 import type { Persona } from '@/types'
 import type { ChatMessage } from '@/types'
+import CitationDetailDrawer from '@/components/chat/CitationDetailDrawer.vue'
 
 type ChatActionType =
   | 'create-persona'
@@ -176,6 +190,7 @@ const {
   onDeletePersona,
   onChangeMode,
   onNewConversation,
+  onSelectConversation,
   onMicToggle,
   onSendText,
   onStopText,
@@ -192,8 +207,29 @@ const voiceCloneLoading = computed(() => voiceClone.loading.value)
 const voiceCloneUploading = computed(() => voiceClone.uploading.value)
 
 // ── Template refs ─────────────────────────────────────────────────────────────
+const historySidebarOpen = ref(window.innerWidth > 1024)
 const audioEl = ref<HTMLAudioElement | null>(null)
 const knowledgeDrawerOpen = ref(false)
+const activeCitation = ref<any | null>(null)
+const citationDrawerOpen = ref(false)
+
+function handleShowCitation(citation: any) {
+  activeCitation.value = citation
+  citationDrawerOpen.value = true
+}
+
+function handleRegenerate() {
+  const userMsgs = conversationMessages.value.filter((m) => m.role === 'user')
+  const lastUserMsg = userMsgs[userMsgs.length - 1]
+  if (lastUserMsg) {
+    const msgs = conversation.messages.value
+    const lastMsgIdx = msgs.length - 1
+    if (lastMsgIdx >= 0 && msgs[lastMsgIdx].role === 'assistant') {
+      msgs.splice(lastMsgIdx, 1)
+    }
+    void onSendText(lastUserMsg.content)
+  }
+}
 const createModalOpen = ref(false)
 const mountedKnowledgeBases = ref<Array<{ id: string; name: string }>>([])
 const loadingMountedKnowledgeBases = ref(false)
@@ -339,13 +375,26 @@ function onPersonaCreated(persona: Persona) {
   onSelectPersona(persona.id)
 }
 
-function onSelectHistoryConversation(payload: {
-  conversationId: string
-  messages: ChatMessage[]
-}) {
-  sessionStore.setSession(sessionStore.sessionId, payload.conversationId)
-  conversation.hydrateMessages(payload.messages)
-}
+onMounted(() => {
+  if (route.query.useSearchDraft === '1') {
+    const raw = localStorage.getItem('__draft_rag_search')
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw)
+        if (draft.query) {
+          // 开启新会话以装载新的 RAG 上下文并触发回答
+          onNewConversation()
+          setTimeout(() => {
+            void onSendText(draft.query)
+            localStorage.removeItem('__draft_rag_search')
+          }, 500)
+        }
+      } catch (e) {
+        console.error('Failed to load search draft:', e)
+      }
+    }
+  }
+})
 
 async function refreshMountedKnowledgeBases(personaId: string) {
   if (!personaId) {
@@ -432,10 +481,14 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   height: 100%;
   position: relative;
   overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
+  box-shadow: 
+    0 24px 64px rgba(15, 23, 42, 0.06),
+    0 4px 16px rgba(15, 23, 42, 0.02);
 }
 
 .chat-main {
@@ -443,17 +496,16 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f1f5f9; /* 使用更有质感的冷灰色作为全局大背景 */
+  background: transparent;
 }
 
 .chat-body {
   flex: 1;
   min-height: 0;
   display: flex;
-  padding: 20px 24px; /* 普通模式下也在四周包上 padding，将主视窗圈为精美的圆角卡片 */
+  padding: 20px 24px;
 }
 
-/* 默认模式下的聊天面板：统一升级为悬浮白色卡片，在冷灰背景的映衬下层次分明 */
 .chat-content-pane {
   flex: 1;
   display: flex;
@@ -461,39 +513,42 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   min-height: 0;
   position: relative;
   width: 100%;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: var(--radius-xl);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(226, 232, 240, 0.6);
   box-shadow: 
-    0 4px 20px rgba(15, 23, 42, 0.04),
-    0 1px 3px rgba(15, 23, 42, 0.02);
+    0 8px 32px rgba(15, 23, 42, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
   overflow: hidden;
 }
-
 /* 核心：数字人分栏独立滚动布局 */
 .chat-body--digital {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: row;
   gap: 24px;
-  padding: 20px 24px; /* 统一的间距和边距 */
+  padding: 20px 24px;
   position: relative;
   width: 100%;
-  height: 100%;
   overflow: hidden;
 }
 
-/* 数字人视频容器：高雅卡片化悬浮 */
+/* 数字人视频容器：外层仅控制骨架，内部组件自行渲染磨砂与阴影，防止出现双层边框重影 */
 .chat-body--digital .chat-body__stage {
   width: 340px;
   flex-shrink: 0;
   height: 100%;
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 
-    0 4px 20px rgba(15, 23, 42, 0.05),
-    0 1px 3px rgba(15, 23, 42, 0.02);
-  background: #090d16; /* 视频未加载时的极深夜空蓝底色 */
+  transition: width 0.3s var(--ease-spring);
+}
+
+/* 防挤压：当中屏（<1300px）且右侧抽屉拉出时，左侧数字人自动平滑收起至 160px，确保聊天气泡有足够宽度 */
+@media (max-width: 1300px) {
+  .chat-body--digital.chat-body--drawer-open .chat-body__stage {
+    width: 160px;
+  }
 }
 
 /* 数字人模式下的聊天控制台面板：完美复用卡片样式并限定高度 */

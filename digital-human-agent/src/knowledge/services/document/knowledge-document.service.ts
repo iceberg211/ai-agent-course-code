@@ -50,8 +50,8 @@ export class KnowledgeDocumentService {
   // 删除文档与索引清理
   // ==========================================
   async deleteDocument(documentId: string): Promise<void> {
-    await this.documentRepo.delete(documentId);
     await this.cleanupDocument(documentId, `删除文档 ${documentId}`);
+    await this.documentRepo.delete(documentId);
   }
 
   async deleteDocumentForKnowledge(

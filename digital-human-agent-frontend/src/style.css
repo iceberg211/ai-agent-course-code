@@ -78,7 +78,10 @@ body {
   background:
     radial-gradient(ellipse 80% 50% at 0% 0%, rgba(99, 155, 255, 0.12), transparent 55%),
     radial-gradient(ellipse 60% 40% at 100% 100%, rgba(147, 197, 253, 0.15), transparent 50%),
+    linear-gradient(rgba(147, 197, 253, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(147, 197, 253, 0.04) 1px, transparent 1px),
     linear-gradient(160deg, #eef3fd 0%, #e8eef8 100%);
+  background-size: 100% 100%, 100% 100%, 24px 24px, 24px 24px, 100% 100%;
   color: var(--text);
   font-family: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
@@ -90,12 +93,13 @@ body {
 #app {
   overflow: hidden;
   padding: 14px;
+  background: transparent;
 }
 
 /* ── 焦点 ─────────────────────────────────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
+  outline: 2px solid rgba(59, 130, 246, 0.4);
+  outline-offset: 1px;
 }
 
 /* ── 滚动条 ───────────────────────────────────────────────────────────────── */

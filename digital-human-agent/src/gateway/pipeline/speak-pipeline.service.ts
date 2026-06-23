@@ -90,6 +90,13 @@ export class SpeakPipelineService {
         const digitalSessionId = session.digitalHumanSessionId;
         if (!digitalSessionId) break;
 
+        if (!this.digitalHumanProvider.speak) {
+          this.logger.warn(
+            `当前数字人 Provider ${this.digitalHumanProvider.name} 不支持 speak 文本播报能力`,
+          );
+          break;
+        }
+
         sendJson(client, {
           type: 'digital-human:subtitle',
           sessionId: session.sessionId,
@@ -97,7 +104,7 @@ export class SpeakPipelineService {
           payload: { text: item.text },
         });
 
-        await this.digitalHumanProvider.speak?.(
+        await this.digitalHumanProvider.speak(
           digitalSessionId,
           turnId,
           item.text,

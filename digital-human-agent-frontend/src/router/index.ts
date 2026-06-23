@@ -9,13 +9,13 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/documents',
-    name: 'documents',
-    component: () => import('@/views/DocumentManagementView.vue'),
+    name: 'document-list',
+    component: () => import('@/views/DocumentListView.vue'),
   },
   {
     path: '/search',
-    name: 'search',
-    component: () => import('@/views/SearchView.vue'),
+    name: 'smart-search',
+    component: () => import('@/views/SmartSearchView.vue'),
   },
   {
     path: '/chat',

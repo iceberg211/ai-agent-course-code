@@ -40,7 +40,7 @@ export function useAppController() {
   const mic = useMicController(conversation, audio, send, sendBinary, showToast)
 
   const { mode, onSelectPersona, onDeletePersona, onChangeMode, onNewConversation } = usePersonaActions(
-    conversation, voiceClone, digitalHuman, textChat, send, showToast,
+    conversation, voiceClone, digitalHuman, textChat, audio, send, showToast,
   )
 
   useWsEventHandler(
@@ -97,6 +97,21 @@ export function useAppController() {
     onDeletePersona,
     onChangeMode,
     onNewConversation,
+    onSelectConversation: (payload: { conversationId: string; messages: any[] }) => {
+      sessionStore.setConversationId(payload.conversationId)
+      textChat.hydrate(payload.messages)
+      if (sessionStore.connected && personaStore.selectedId) {
+        send({
+          type: 'session:start',
+          sessionId: '',
+          payload: {
+            personaId: personaStore.selectedId,
+            mode: mode.value,
+            conversationId: payload.conversationId,
+          },
+        })
+      }
+    },
     onMicToggle: (mode_: string) => mic.onMicToggle(mode_),
     onSendText: async (text: string) => {
       const normalized = String(text ?? '').trim()

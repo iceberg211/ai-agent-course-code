@@ -18,6 +18,14 @@
           {{ message.role === 'assistant' ? (personaStore.selectedPersona?.name || 'Agent') : '你' }}
         </span>
         <div v-if="message.role === 'assistant' && !message.streaming" class="message-actions">
+          <button
+            v-if="isLast"
+            type="button"
+            title="重新生成"
+            @click="$emit('regenerate')"
+          >
+            <RefreshCwIcon :size="12" />
+          </button>
           <button type="button" title="复制回答" @click="copyMessage">
             <ClipboardIcon :size="12" />
           </button>
@@ -70,7 +78,7 @@
         </div>
 
         <!-- 引用来源 -->
-        <CitationChips :citations="message.citations" />
+        <CitationChips :citations="message.citations" @show-citation-detail="$emit('show-citation-detail', $event)" />
       </div>
     </div>
   </div>
@@ -78,7 +86,7 @@
 
 <script setup lang="ts">
 import { marked } from 'marked'
-import { ClipboardIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-vue-next'
+import { ClipboardIcon, ThumbsDownIcon, ThumbsUpIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
 import CitationChips from '@/components/chat/CitationChips.vue'
@@ -90,7 +98,20 @@ import type { ChatMessage } from '@/types'
 // marked 配置：开启 gfm（GitHub Flavored Markdown）
 marked.setOptions({ gfm: true })
 
-const props = defineProps<{ message: ChatMessage }>()
+const props = withDefaults(
+  defineProps<{
+    message: ChatMessage
+    isLast?: boolean
+  }>(),
+  {
+    isLast: false,
+  },
+)
+
+defineEmits<{
+  (e: 'show-citation-detail', citation: any): void
+  (e: 'regenerate'): void
+}>()
 
 const personaStore = usePersonaStore()
 const sessionStore = useSessionStore()

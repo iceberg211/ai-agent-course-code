@@ -16,9 +16,12 @@
 
     <template v-else>
       <MessageItem
-        v-for="msg in messages"
+        v-for="(msg, idx) in messages"
         :key="msg.id"
         :message="msg"
+        :is-last="idx === messages.length - 1"
+        @show-citation-detail="$emit('show-citation-detail', $event)"
+        @regenerate="$emit('regenerate')"
       />
     </template>
 
@@ -106,6 +109,11 @@ onMounted(async () => {
   await nextTick()
   scrollToLatest('auto')
 })
+
+defineEmits<{
+  (e: 'show-citation-detail', citation: any): void
+  (e: 'regenerate'): void
+}>()
 
 defineExpose({ listEl })
 </script>

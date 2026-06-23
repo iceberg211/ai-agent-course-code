@@ -48,9 +48,9 @@ export class PersonaService {
   }
 
   async update(id: string, dto: UpdatePersonaDto): Promise<Persona> {
-    await this.findOne(id);
-    await this.withTransientRetry('update', () => this.repo.update(id, dto));
-    return this.findOne(id);
+    const persona = await this.findOne(id);
+    const updated = this.repo.merge(persona, dto);
+    return this.withTransientRetry('update', () => this.repo.save(updated));
   }
 
   async remove(id: string): Promise<DeletePersonaResult> {

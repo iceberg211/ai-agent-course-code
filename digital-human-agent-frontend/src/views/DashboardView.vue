@@ -1,228 +1,595 @@
 <template>
-  <main class="page">
-    <header class="page-head">
+  <main class="dashboard">
+    <header class="dashboard__head">
       <div>
-        <p class="eyebrow">首页大盘</p>
-        <h1>企业知识资产概览</h1>
+        <h2>首页大盘</h2>
+        <p class="subtitle">监控企业知识底座与智能问答的运行状况</p>
       </div>
-      <button class="ghost-btn" type="button" @click="load">
-        <RefreshCwIcon :size="15" />
-        刷新
+      <button class="btn-primary" type="button" @click="router.push('/chat')">
+        <MessageSquareIcon :size="15" />
+        发起问答
       </button>
     </header>
 
-    <section class="metrics" aria-label="核心指标">
-      <article v-for="item in metricItems" :key="item.label" class="metric">
-        <component :is="item.icon" :size="20" aria-hidden="true" />
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-      </article>
-    </section>
+    <div v-if="loading && !summary" class="loading-state">
+      <div class="spinner"></div>
+      <p>正在加载系统指标…</p>
+    </div>
 
-    <section class="grid">
-      <article class="panel">
-        <header class="panel-head">
-          <h2>最近上传</h2>
-          <RouterLink to="/documents">查看文档</RouterLink>
-        </header>
-        <ul v-if="summary?.recentDocuments?.length" class="list">
-          <li v-for="doc in summary.recentDocuments" :key="doc.id">
-            <FileTextIcon :size="16" />
-            <div>
-              <strong>{{ doc.filename }}</strong>
-              <span>{{ resolveKnowledgeName(doc) }} · {{ statusLabel(doc.status) }}</span>
-            </div>
-          </li>
-        </ul>
-        <p v-else class="empty">暂无上传记录</p>
-      </article>
+    <div v-else-if="!summary" class="error-state">
+      <AlertCircleIcon :size="32" class="error-icon" />
+      <p>大盘数据获取失败，请稍后重试。</p>
+      <button class="btn-ghost" type="button" @click="loadData">重新加载</button>
+    </div>
 
-      <article class="panel">
-        <header class="panel-head">
-          <h2>最近会话</h2>
-          <RouterLink to="/chat">进入问答</RouterLink>
-        </header>
-        <ul v-if="summary?.recentConversations?.length" class="list">
-          <li v-for="conversation in summary.recentConversations" :key="conversation.id">
-            <MessageSquareIcon :size="16" />
-            <div>
-              <strong>{{ conversation.lastMessage?.content || '新会话' }}</strong>
-              <span>{{ formatDate(conversation.updatedAt) }}</span>
-            </div>
-          </li>
-        </ul>
-        <p v-else class="empty">暂无会话记录</p>
-      </article>
-    </section>
+    <div v-else class="dashboard__body">
+      <!-- 统计指标格 -->
+      <section class="stat-grid" aria-label="数据概览">
+        <div class="stat-card">
+          <div class="stat-card__icon bg-blue">
+            <LibraryIcon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">知识库</span>
+            <strong class="number">{{ summary.knowledgeBaseCount }}</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__icon bg-purple">
+            <FileTextIcon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">文档总数</span>
+            <strong class="number">{{ summary.documentCount }}</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__icon bg-indigo">
+            <SparklesIcon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">片段总数 (Chunks)</span>
+            <strong class="number">{{ summary.chunkCount }}</strong>
+          </div>
+        </div>
+        <div class="stat-card" :class="{ 'warning-border': summary.failedDocumentCount > 0 }">
+          <div class="stat-card__icon" :class="summary.failedDocumentCount > 0 ? 'bg-red' : 'bg-green'">
+            <AlertCircleIcon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">失败文档</span>
+            <strong class="number" :class="{ 'text-red': summary.failedDocumentCount > 0 }">
+              {{ summary.failedDocumentCount }}
+            </strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__icon bg-teal">
+            <MessageSquareIcon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">总会话数</span>
+            <strong class="number">{{ summary.conversationCount }}</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__icon bg-orange">
+            <BarChart3Icon :size="18" />
+          </div>
+          <div class="stat-card__data">
+            <span class="label">总消息数</span>
+            <strong class="number">{{ summary.messageCount }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- 双栏近态追踪 -->
+      <div class="dynamic-layout">
+        <!-- 最近文档 -->
+        <article class="feed-card">
+          <header class="feed-card__head">
+            <h3>最近上传文档</h3>
+            <button class="text-link" type="button" @click="router.push('/documents')">查看全部</button>
+          </header>
+          <ul v-if="summary.recentDocuments.length" class="doc-feed">
+            <li v-for="doc in summary.recentDocuments" :key="doc.id" class="doc-feed-item">
+              <div class="doc-feed-item__info">
+                <FileTextIcon :size="15" class="doc-icon" />
+                <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
+              </div>
+              <div class="doc-feed-item__status">
+                <span class="badge" :class="badgeClassOf(doc)">
+                  {{ statusLabelOf(doc) }}
+                </span>
+                <span class="time">{{ formatDate(doc.createdAt || doc.created_at) }}</span>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="empty-feed">暂无最近上传文档</p>
+        </article>
+
+        <!-- 最近问答 -->
+        <article class="feed-card">
+          <header class="feed-card__head">
+            <h3>最近对话历史</h3>
+            <button class="text-link" type="button" @click="router.push('/chat')">查看全部</button>
+          </header>
+          <ul v-if="summary.recentConversations.length" class="chat-feed">
+            <li v-for="conv in summary.recentConversations" :key="conv.id" class="chat-feed-item" @click="goChat(conv.id)">
+              <div class="chat-feed-item__meta">
+                <span class="icon-avatar">💬</span>
+                <div class="chat-details">
+                  <strong class="chat-question" :title="conv.lastMessage?.content || '新对话'">
+                    {{ conv.lastMessage?.content || '新对话' }}
+                  </strong>
+                  <span class="chat-time">{{ formatDate(conv.updatedAt) }}</span>
+                </div>
+              </div>
+              <ChevronRightIcon :size="14" class="arrow-icon" />
+            </li>
+          </ul>
+          <p v-else class="empty-feed">暂无最近会话历史</p>
+        </article>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  BoxesIcon,
+  AlertCircleIcon,
+  BarChart3Icon,
+  ChevronRightIcon,
   FileTextIcon,
   LibraryIcon,
   MessageSquareIcon,
-  RefreshCwIcon,
-  ShieldAlertIcon,
+  SparklesIcon,
 } from 'lucide-vue-next'
 import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
+import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
 import type { DashboardSummary, KnowledgeDocument } from '@/types'
 
-const api = useProductizedKnowledge()
+const router = useRouter()
+const { getDashboardSummary } = useProductizedKnowledge()
+
 const summary = ref<DashboardSummary | null>(null)
+const loading = ref(false)
 
-const metricItems = computed(() => [
-  { label: '知识库', value: summary.value?.knowledgeBaseCount ?? 0, icon: LibraryIcon },
-  { label: '文档', value: summary.value?.documentCount ?? 0, icon: FileTextIcon },
-  { label: '知识片段', value: summary.value?.chunkCount ?? 0, icon: BoxesIcon },
-  { label: '失败文档', value: summary.value?.failedDocumentCount ?? 0, icon: ShieldAlertIcon },
-  { label: '问答次数', value: summary.value?.messageCount ?? 0, icon: MessageSquareIcon },
-])
-
-onMounted(load)
-
-async function load() {
-  summary.value = await api.getDashboardSummary()
-}
-
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    pending: '排队中',
-    processing: '处理中',
-    completed: '就绪',
-    failed: '失败',
+async function loadData() {
+  loading.value = true
+  try {
+    const result = await getDashboardSummary()
+    if (result) {
+      summary.value = result
+    }
+  } finally {
+    loading.value = false
   }
-  return map[status] ?? status
 }
 
-function resolveKnowledgeName(doc: KnowledgeDocument) {
-  return doc.knowledge?.name ?? '未归属知识库'
+onMounted(loadData)
+
+function statusLabelOf(doc: KnowledgeDocument): string {
+  const status = doc.status || 'pending'
+  return KNOWLEDGE_DOCUMENT_STATUS_LABELS[status] ?? status
+}
+
+function badgeClassOf(doc: KnowledgeDocument): string {
+  const status = doc.status || 'pending'
+  if (status === 'completed') return 'badge--success'
+  if (status === 'failed') return 'badge--error'
+  if (status === 'processing') return 'badge--warning'
+  return 'badge--secondary'
+}
+
+function goChat(conversationId: string) {
+  router.push({
+    path: '/chat',
+    query: { conversationId },
+  })
 }
 
 function formatDate(value?: string) {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  const date = new Date(value)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin}分钟前`
+  
+  const diffHrs = Math.floor(diffMin / 60)
+  if (diffHrs < 24) return `${diffHrs}小时前`
+
+  return `${date.getMonth() + 1}/${date.getDate()}`
 }
 </script>
 
 <style scoped>
-.page {
+.dashboard {
+  padding: 32px 24px;
   height: 100%;
-  overflow: auto;
-  padding: 28px 24px;
-  background: var(--page-bg-accent);
+  overflow-y: auto;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
-.page-head,
-.panel-head {
+
+.dashboard__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
 }
-.eyebrow {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--primary);
-}
-h1 {
-  margin: 2px 0 0;
+
+.dashboard__head h2 {
+  margin: 0 0 4px;
   font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
 }
-.ghost-btn,
-.panel-head a {
+
+.subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--primary);
+  padding: 8px 16px;
+  background: var(--primary-gradient, linear-gradient(135deg, #3b82f6, #2563eb));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  font-size: 13px;
   font-weight: 700;
-  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-btn);
+  transition: all 0.2s ease;
 }
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-  margin: 22px 0;
+
+.btn-primary:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-btn-hover);
 }
-.metric,
-.panel {
+
+.loading-state,
+.error-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 32px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-lg, 12px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  min-height: 320px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(59, 130, 246, 0.15);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+
+.error-icon {
+  color: var(--error, #dc2626);
+  margin-bottom: 12px;
+}
+
+.error-state p,
+.loading-state p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+
+.btn-ghost {
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.metric {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
-}
-.metric svg {
+
+.btn-ghost:hover {
+  background: rgba(59, 130, 246, 0.05);
   color: var(--primary);
 }
-.metric span {
-  color: var(--text-muted);
+
+.dashboard__body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
-.metric strong {
-  font-size: 28px;
-  line-height: 1;
-}
-.grid {
+
+.stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
 }
-.panel {
-  padding: 18px;
-}
-.panel h2 {
-  margin: 0;
-  font-size: 16px;
-}
-.list {
-  list-style: none;
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-.list li {
+
+.stat-card {
   display: flex;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--border-muted);
-  border-radius: 8px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 
+    0 4px 20px rgba(15, 23, 42, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out), border-color 0.25s ease;
 }
-.list svg {
-  color: var(--primary);
-  flex-shrink: 0;
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 
+    0 12px 24px rgba(15, 23, 42, 0.04),
+    0 4px 8px rgba(15, 23, 42, 0.02);
+}
+
+.stat-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bg-blue { background: rgba(59, 130, 246, 0.08); color: #2563eb; }
+.bg-purple { background: rgba(168, 85, 247, 0.08); color: #9333ea; }
+.bg-indigo { background: rgba(99, 102, 241, 0.08); color: #4f46e5; }
+.bg-red { background: rgba(239, 68, 68, 0.08); color: #dc2626; }
+.bg-green { background: rgba(16, 185, 129, 0.08); color: #059669; }
+.bg-teal { background: rgba(20, 184, 166, 0.08); color: #0d9488; }
+.bg-orange { background: rgba(249, 115, 22, 0.08); color: #ea580c; }
+
+.warning-border {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.text-red {
+  color: #dc2626;
+}
+
+.stat-card__data {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-card__data .label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.stat-card__data .number {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
   margin-top: 2px;
+  line-height: 1;
 }
-.list div {
+
+.dynamic-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.feed-card {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px;
+  box-shadow: 
+    0 4px 20px rgba(15, 23, 42, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+
+.feed-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-muted, #f1f5f9);
+}
+
+.feed-card__head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.doc-feed,
+.chat-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.doc-feed-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--page-bg-accent, #f8fafc);
+  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.4);
+}
+
+.doc-feed-item__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
 }
-.list strong,
-.list span {
-  display: block;
+
+.doc-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.doc-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.list span,
-.empty {
+
+.doc-feed-item__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.badge--success { background: #ecfdf5; color: #059669; }
+.badge--warning { background: #fffbeb; color: #d97706; }
+.badge--error { background: #fef2f2; color: #dc2626; }
+.badge--secondary { background: #f1f5f9; color: #475569; }
+
+.time,
+.chat-time {
+  font-size: 10px;
   color: var(--text-muted);
-  font-size: 12px;
 }
-.empty {
-  margin-top: 18px;
+
+.chat-feed-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
-@media (max-width: 980px) {
-  .metrics,
-  .grid {
+
+.chat-feed-item:hover {
+  background: var(--page-bg-accent, #f8fafc);
+  border-color: rgba(59, 130, 246, 0.25);
+  transform: translateX(1px);
+}
+
+.chat-feed-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.icon-avatar {
+  font-size: 16px;
+}
+
+.chat-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-question {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-time {
+  margin-top: 2px;
+}
+
+.arrow-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.empty-feed {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  border: 1px dashed rgba(226, 232, 240, 0.8);
+  border-radius: 8px;
+  margin: 0;
+  min-height: 120px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 880px) {
+  .dynamic-layout {
     grid-template-columns: 1fr;
   }
 }

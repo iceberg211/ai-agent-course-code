@@ -27,6 +27,9 @@ const MIGRATIONS = [
   '007_drop_legacy_shim.sql',
   '008_keyword_retrieval_index.sql',
   '014_knowledge_document_graph_sync_status.sql',
+  '015_conversation_owner_id.sql',
+  '016_productized_rag_fields.sql',
+  '017_knowledge_eval_case.sql',
 ];
 
 function hasFlag(name) {

@@ -43,6 +43,7 @@ export class ElasticsearchIndexService implements OnModuleInit {
   private readonly indexPrefix: string;
   private readonly indexVersion: string;
   private indexEnsured = false;
+  private ensureIndexPromise: Promise<void> | null = null;
 
   constructor(
     @Optional()
@@ -94,23 +95,36 @@ export class ElasticsearchIndexService implements OnModuleInit {
   }
 
   async ensureKnowledgeChunkIndex(): Promise<void> {
-    if (!this.client) return;
+    const client = this.client;
+    if (!client) return;
     if (this.indexEnsured) return;
 
-    const indexName = this.getKnowledgeChunkIndexName();
-    const exists = await this.client.indices.exists({ index: indexName });
-    if (!exists) {
-      await this.client.indices.create({
-        index: indexName,
-        settings: KNOWLEDGE_INDEX_SETTINGS,
-        mappings: KNOWLEDGE_INDEX_MAPPINGS,
-      });
-      this.logger.log(`ES 索引已创建：${indexName}`);
+    if (!this.ensureIndexPromise) {
+      this.ensureIndexPromise = (async () => {
+        try {
+          const indexName = this.getKnowledgeChunkIndexName();
+          const exists = await client.indices.exists({ index: indexName });
+          if (!exists) {
+            await client.indices.create({
+              index: indexName,
+              settings: KNOWLEDGE_INDEX_SETTINGS,
+              mappings: KNOWLEDGE_INDEX_MAPPINGS,
+            });
+            this.logger.log(`ES 索引已创建：${indexName}`);
+          }
+
+          await this.ensureAlias(this.getKnowledgeChunkReadAlias(), indexName);
+          await this.ensureAlias(this.getKnowledgeChunkWriteAlias(), indexName, true);
+          this.indexEnsured = true;
+        } catch (error) {
+          // 初始化失败时清除 Promise 缓存，允许后续重试
+          this.ensureIndexPromise = null;
+          throw error;
+        }
+      })();
     }
 
-    await this.ensureAlias(this.getKnowledgeChunkReadAlias(), indexName);
-    await this.ensureAlias(this.getKnowledgeChunkWriteAlias(), indexName, true);
-    this.indexEnsured = true;
+    return this.ensureIndexPromise;
   }
 
   async ping(): Promise<boolean> {

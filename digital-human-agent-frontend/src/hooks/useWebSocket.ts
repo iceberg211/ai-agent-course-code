@@ -20,8 +20,14 @@ export function useWebSocket() {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let manualClose = false
+  let lastActiveTime = Date.now()
 
   function connect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+
     if (
       ws.value &&
       (ws.value.readyState === WebSocket.OPEN ||
@@ -35,6 +41,7 @@ export function useWebSocket() {
 
     ws.value.onopen = () => {
       connected.value = true
+      lastActiveTime = Date.now()
       console.log('[WS] connected')
       startHeartbeat()
     }
@@ -51,6 +58,7 @@ export function useWebSocket() {
     ws.value.onerror = (e) => console.error('[WS] error', e)
 
     ws.value.onmessage = async (event) => {
+      lastActiveTime = Date.now()
       // Binary：TTS 音频帧（[4-byte metaLength][meta JSON][audio bytes]）
       if (event.data instanceof Blob) {
         emit('audio:chunk', await decodeAudioFrame(event.data))
@@ -101,8 +109,15 @@ export function useWebSocket() {
 
   function startHeartbeat() {
     stopHeartbeat()
+    lastActiveTime = Date.now()
     heartbeatTimer = setInterval(() => {
-      send({ type: 'ping', payload: { ts: Date.now() } })
+      const now = Date.now()
+      if (now - lastActiveTime > 30000) {
+        console.warn('[WS] Heartbeat timeout, active close to trigger reconnect')
+        ws.value?.close()
+        return
+      }
+      send({ type: 'ping', payload: { ts: now } })
     }, 15000)
   }
 

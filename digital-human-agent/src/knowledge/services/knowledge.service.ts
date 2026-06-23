@@ -102,21 +102,20 @@ export class KnowledgeService {
 
   async attachPersona(personaId: string, knowledgeId: string): Promise<void> {
     await this.findOne(knowledgeId);
-    const existing = await this.personaKnowledgeRepo.findOneBy({
-      personaId,
-      knowledgeBaseId: knowledgeId,
-    });
 
-    if (existing) {
-      throw new BadRequestException('该知识库已挂载到此 persona');
+    try {
+      await this.personaKnowledgeRepo.save(
+        this.personaKnowledgeRepo.create({
+          personaId,
+          knowledgeBaseId: knowledgeId,
+        }),
+      );
+    } catch (error) {
+      if ((error as any).code === '23505') {
+        throw new BadRequestException('该知识库已挂载到此 persona');
+      }
+      throw error;
     }
-
-    await this.personaKnowledgeRepo.save(
-      this.personaKnowledgeRepo.create({
-        personaId,
-        knowledgeBaseId: knowledgeId,
-      }),
-    );
   }
 
   async detachPersona(personaId: string, knowledgeId: string): Promise<void> {

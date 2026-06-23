@@ -126,16 +126,34 @@ export class ConversationService {
       () => qb.getManyAndCount(),
     );
 
-    const items = await Promise.all(
-      conversations.map(async (conversation) => ({
-        id: conversation.id,
-        personaId: conversation.personaId,
-        ownerId: conversation.ownerId,
-        createdAt: conversation.createdAt,
-        updatedAt: conversation.updatedAt,
-        lastMessage: await this.getLatestMessage(conversation.id),
-      })),
+    let lastMessages: ConversationMessage[] = [];
+    if (conversations.length > 0) {
+      const convIds = conversations.map((c) => c.id);
+      lastMessages = await this.withTransientRetry('batchGetLatestMessages', () =>
+        this.msgRepo
+          .createQueryBuilder('message')
+          .select()
+          .distinctOn(['message.conversation_id'])
+          .where('message.conversation_id IN (:...convIds)', { convIds })
+          .orderBy('message.conversation_id', 'ASC')
+          .addOrderBy('message.seq', 'DESC')
+          .addOrderBy('message.created_at', 'DESC')
+          .getMany(),
+      );
+    }
+
+    const messageMap = new Map(
+      lastMessages.map((msg) => [msg.conversationId, msg]),
     );
+
+    const items = conversations.map((conversation) => ({
+      id: conversation.id,
+      personaId: conversation.personaId,
+      ownerId: conversation.ownerId,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      lastMessage: messageMap.get(conversation.id) ?? null,
+    }));
 
     return { items, total, page, pageSize };
   }

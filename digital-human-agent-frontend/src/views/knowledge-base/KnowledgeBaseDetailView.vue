@@ -105,7 +105,7 @@ function goToChatValidation() {
   display: flex; 
   flex-direction: column; 
   overflow: hidden; 
-  background: var(--page-bg-accent);
+  background: transparent;
 }
 .kb-detail--empty { align-items: center; justify-content: center; color: var(--text-muted); }
 .kb-detail__head {

@@ -5,6 +5,7 @@ import { useConversation } from '@/hooks/useConversation'
 import { useVoiceClone } from '@/hooks/useVoiceClone'
 import { useDigitalHuman } from '@/hooks/useDigitalHuman'
 import { useTextChat } from '@/hooks/useTextChat'
+import { useAudio } from '@/hooks/useAudio'
 
 /**
  * Persona 相关操作 Hook。
@@ -22,6 +23,7 @@ export function usePersonaActions(
   voiceClone: ReturnType<typeof useVoiceClone>,
   digitalHuman: ReturnType<typeof useDigitalHuman>,
   textChat: ReturnType<typeof useTextChat>,
+  audio: ReturnType<typeof useAudio>,
   send: (msg: object) => void,
   showToast: (msg: string) => void,
 ) {
@@ -33,6 +35,7 @@ export function usePersonaActions(
     if (id === personaStore.selectedId) return
 
     textChat.reset()
+    audio.stopPlayback()
     void digitalHuman.close()
 
     personaStore.select(id)
@@ -76,6 +79,7 @@ export function usePersonaActions(
       sessionStore.reset()
       sessionStore.setHistoryLoading(false)
       textChat.reset()
+      audio.stopPlayback()
       void digitalHuman.close()
       conversation.clearMessages()
       conversation.state.value = 'idle'
@@ -88,6 +92,7 @@ export function usePersonaActions(
   async function onChangeMode(nextMode: string) {
     if (mode.value === nextMode) return
     mode.value = nextMode
+    audio.stopPlayback()
     void digitalHuman.close()
 
     if (!personaStore.selectedId || !sessionStore.connected) return
@@ -104,6 +109,7 @@ export function usePersonaActions(
     if (!personaStore.selectedId || !sessionStore.connected) return
 
     textChat.reset()
+    audio.stopPlayback()
     conversation.clearMessages()
     sessionStore.setHistoryLoading(true)
 

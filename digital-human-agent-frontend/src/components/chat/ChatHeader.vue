@@ -210,7 +210,6 @@ const knowledgeHint = computed(() => {
   gap: 10px;
   flex-shrink: 0;
 }
-
 .header-btn {
   display: flex;
   align-items: center;
@@ -223,28 +222,36 @@ const knowledgeHint = computed(() => {
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s var(--ease-out);
+  transition: transform 0.15s var(--ease-out), background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   font-family: inherit;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  outline: none;
 }
 
 .header-btn:hover {
   background: #ffffff;
-  border-color: var(--primary-muted);
+  border-color: rgba(59, 130, 246, 0.4);
   color: var(--primary);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.04);
+  transform: translateY(-0.5px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.06);
 }
 
 .header-btn:active {
-  transform: scale(0.96);
+  transform: scale(0.97);
+}
+
+.header-btn:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.4);
+  outline-offset: 1px;
 }
 
 .header-btn.active {
-  background: var(--primary-bg);
+  background: var(--primary-bg) !important;
   border-color: var(--primary) !important;
-  color: var(--primary);
+  color: var(--primary) !important;
   border-style: solid !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08) !important;
 }
 
 .header-btn--primary {
@@ -263,11 +270,16 @@ const knowledgeHint = computed(() => {
   background: #ffedd5;
   border-color: #f59e0b;
   color: #9a3412;
+  transform: translateY(-0.5px);
 }
 
 .header-btn--feature {
   color: var(--text-muted);
   border-style: dashed;
+}
+
+.header-btn--feature.active {
+  border-style: solid !important;
 }
 
 .header-btn--ghost {
