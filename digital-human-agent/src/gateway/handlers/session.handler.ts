@@ -159,10 +159,21 @@ export class SessionHandler {
     personaId: string,
     voiceId?: string,
   ): Promise<void> {
-    const created = await this.digitalHumanProvider.createSession(
-      personaId,
-      voiceId,
+    /** 数字人 Provider 会话创建超时保护（ms） */
+    const DIGITAL_HUMAN_SESSION_TIMEOUT_MS = 10_000;
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('数字人会话创建超时（10s），请检查 Provider 服务状态')),
+        DIGITAL_HUMAN_SESSION_TIMEOUT_MS,
+      ),
     );
+
+    const created = await Promise.race([
+      this.digitalHumanProvider.createSession(personaId, voiceId),
+      timeout,
+    ]);
+
     const session = this.sessionRegistry.get(sessionId);
 
     if (!session) {

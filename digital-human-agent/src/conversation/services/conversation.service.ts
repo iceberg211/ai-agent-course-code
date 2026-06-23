@@ -12,6 +12,8 @@ import {
 import {
   formatErrorMessage,
   isTransientDbError,
+  normalizePage,
+  normalizePageSize,
   withRetry,
 } from '@/common/utils';
 
@@ -97,8 +99,8 @@ export class ConversationService {
     page: number;
     pageSize: number;
   }> {
-    const page = this.normalizePage(params.page);
-    const pageSize = this.normalizePageSize(params.pageSize);
+    const page = normalizePage(params.page);
+    const pageSize = normalizePageSize(params.pageSize);
     const qb = this.convRepo
       .createQueryBuilder('conversation')
       .orderBy('conversation.updated_at', 'DESC')
@@ -252,16 +254,5 @@ export class ConversationService {
           error,
         )}`,
     });
-  }
-
-  private normalizePage(page: number | undefined): number {
-    const value = Number(page ?? 1);
-    return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
-  }
-
-  private normalizePageSize(pageSize: number | undefined): number {
-    const value = Number(pageSize ?? 20);
-    if (!Number.isFinite(value)) return 20;
-    return Math.min(Math.max(Math.floor(value), 1), 100);
   }
 }

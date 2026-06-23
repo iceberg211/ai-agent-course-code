@@ -24,6 +24,25 @@ import { WsInboundMessage } from '@/gateway/gateway.types';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 import { validateInboundMessage } from '@/gateway/utils/ws-validate.util';
 
+/** NestJS HttpException 的结构接口，用于类型守卫以替代 as any */
+interface NestHttpException {
+  getStatus(): number;
+  getResponse(): string | Record<string, unknown>;
+  message: string;
+}
+
+/** 判断 err 是否为 NestJS HttpException 的类型守卫函数 */
+function isNestHttpException(err: unknown): err is NestHttpException {
+  return (
+    err !== null &&
+    typeof err === 'object' &&
+    'getStatus' in err &&
+    'getResponse' in err &&
+    typeof (err as NestHttpException).getStatus === 'function' &&
+    typeof (err as NestHttpException).getResponse === 'function'
+  );
+}
+
 /**
  * ConversationGateway — WebSocket 入口与消息路由。
  *
@@ -87,15 +106,9 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
           clientWithState.isAlive = true;
           void this.handleMessage(client, clientId, data, isBinary).catch(
             (err) => {
-              // 区分 NestJS 的业务异常和系统崩溃 Error
-              const isHttpException =
-                err &&
-                typeof err === 'object' &&
-                'getStatus' in err &&
-                'getResponse' in err;
-
-              if (isHttpException) {
-                const response = (err as any).getResponse();
+              // T-1 修复：用类型守卫替代 as any，消除类型不安全的强制断言
+              if (isNestHttpException(err)) {
+                const response = err.getResponse();
                 const message =
                   typeof response === 'object' &&
                   response !== null &&
@@ -103,7 +116,7 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
                     ? Array.isArray(response.message)
                       ? response.message.join('; ')
                       : String(response.message)
-                    : (err as Error).message || '业务请求失败';
+                    : err.message || '业务请求失败';
 
                 this.logger.warn(`Ws business exception: ${message}`);
                 sendJson(client, {

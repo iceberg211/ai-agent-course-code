@@ -1,21 +1,38 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import type { IncomingMessage } from 'node:http';
 
 @Injectable()
 export class AccessControlService {
+  private readonly logger = new Logger(AccessControlService.name);
+
   constructor(private readonly configService: ConfigService) {}
 
   isEnabled(): boolean {
     return this.requiredToken.length > 0;
   }
 
+  /**
+   * 使用 timingSafeEqual 进行常量时间比较，防止时序攻击（timing attack）。
+   * 攻击者无法通过响应时间差异逐位推断 Token 内容。
+   */
   validateToken(token: string | undefined): boolean {
     if (!this.isEnabled()) {
       return true;
     }
-    return token === this.requiredToken;
+    if (!token) return false;
+
+    const required = this.requiredToken;
+    // 长度不同时直接返回 false，但仍进行一次 timingSafeEqual 防止长度信息泄露
+    if (token.length !== required.length) {
+      // 执行一次无意义比较以保持时间恒定
+      timingSafeEqual(Buffer.from(required), Buffer.from(required));
+      return false;
+    }
+
+    return timingSafeEqual(Buffer.from(token), Buffer.from(required));
   }
 
   assertHttpRequest(request: Request): void {
@@ -34,31 +51,26 @@ export class AccessControlService {
     ).trim();
   }
 
+  /**
+   * 仅从 Header 中提取 Token（x-api-key 或 Authorization: Bearer）。
+   * 不再支持 URL Query String 传 Token，防止 Token 被写入服务器日志或浏览器历史。
+   */
   private extractHttpToken(request: Request): string | undefined {
-    const headerToken = this.extractHeaderToken(
+    return this.extractHeaderToken(
       request.headers['x-api-key'],
       request.headers.authorization,
     );
-    if (headerToken) return headerToken;
-
-    const queryToken = request.query?.api_key ?? request.query?.access_token;
-    return this.normalizeToken(queryToken);
   }
 
+  /**
+   * WebSocket 握手阶段仅从 Header 中提取 Token。
+   * 不再支持 ?api_key= / ?access_token= 查询参数，防止 Token 明文泄漏到日志。
+   */
   private extractWsToken(request?: IncomingMessage): string | undefined {
     if (!request) return undefined;
-    const headerToken = this.extractHeaderToken(
+    return this.extractHeaderToken(
       request.headers['x-api-key'],
       request.headers.authorization,
-    );
-    if (headerToken) return headerToken;
-
-    const rawUrl = String(request.url ?? '');
-    const query = rawUrl.includes('?') ? rawUrl.slice(rawUrl.indexOf('?')) : '';
-    const params = new URLSearchParams(query);
-    return (
-      this.normalizeToken(params.get('api_key')) ??
-      this.normalizeToken(params.get('access_token'))
     );
   }
 

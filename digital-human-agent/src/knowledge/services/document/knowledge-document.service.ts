@@ -12,6 +12,7 @@ import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
 } from '@/common/constants';
+import { normalizePage, normalizePageSize } from '@/common/utils';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import {
   DocumentProcessingStage,
@@ -189,8 +190,8 @@ export class KnowledgeDocumentService {
     page: number;
     pageSize: number;
   }> {
-    const page = this.normalizePage(filters.page);
-    const pageSize = this.normalizePageSize(filters.pageSize);
+    const page = normalizePage(filters.page);
+    const pageSize = normalizePageSize(filters.pageSize);
     const qb = this.documentRepo
       .createQueryBuilder('document')
       .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
@@ -231,8 +232,8 @@ export class KnowledgeDocumentService {
     page: number;
     pageSize: number;
   }> {
-    const page = this.normalizePage(filters.page);
-    const pageSize = this.normalizePageSize(filters.pageSize);
+    const page = normalizePage(filters.page);
+    const pageSize = normalizePageSize(filters.pageSize);
     const qb = this.documentRepo
       .createQueryBuilder('document')
       .leftJoinAndSelect('document.knowledge', 'knowledge')
@@ -269,10 +270,12 @@ export class KnowledgeDocumentService {
   }
 
   listChunksByDocumentId(documentId: string): Promise<KnowledgeChunkEntity[]> {
+    // P-1 修复：添加 take(500) 防止大文档单次返回全量 chunks 导致 OOM
     return this.chunkRepo
       .createQueryBuilder('chunk')
       .where('chunk.document_id = :documentId', { documentId })
       .orderBy('chunk.chunk_index', 'ASC')
+      .take(500)
       .getMany();
   }
 
@@ -332,14 +335,24 @@ export class KnowledgeDocumentService {
 
     await this.documentRepo.update(document.id, {
       status: 'processing',
-      processingStage: 'keyword_indexing',
+      processingStage: 'embedding',
       processingError: null,
       graphSyncStatus: 'pending',
       graphSyncError: null,
       graphSyncedAt: null,
     });
 
-    const rows = chunks.map((chunk) => ({
+    // E-2 修复：重新生成真实 embedding 向量，不再写入空占位 '[]'
+    // 原代码直接 embedding: '[]' 会导致向量检索无法使用这些 chunks（静默数据损坏）
+    const texts = chunks.map((c) => c.content);
+    this.logger.log(
+      `[重试 Embedding] doc=${documentId} chunks=${texts.length}`,
+    );
+    await this.updateDocumentStage(document.id, 'embedding');
+    const embeddings = await this.runtime.embeddings.embedDocuments(texts);
+    this.logger.log(`[重试 Embedding 完成] dims=${embeddings[0]?.length}`);
+
+    const rows = chunks.map((chunk, index) => ({
       id: chunk.id,
       document_id: document.id,
       chunk_index: chunk.chunkIndex,
@@ -347,9 +360,11 @@ export class KnowledgeDocumentService {
       source: chunk.source,
       category: chunk.category,
       enabled: chunk.enabled,
-      embedding: '[]',
+      // 使用真实 embedding 向量而非空占位
+      embedding: JSON.stringify(embeddings[index]),
     }));
 
+    await this.updateDocumentStage(document.id, 'keyword_indexing');
     await this.syncDocumentIndex({
       documentId: document.id,
       knowledgeId,
@@ -753,16 +768,5 @@ export class KnowledgeDocumentService {
       processingStage,
       processingError: null,
     });
-  }
-
-  private normalizePage(page: number | undefined): number {
-    const value = Number(page ?? 1);
-    return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
-  }
-
-  private normalizePageSize(pageSize: number | undefined): number {
-    const value = Number(pageSize ?? 20);
-    if (!Number.isFinite(value)) return 20;
-    return Math.min(Math.max(Math.floor(value), 1), 100);
   }
 }

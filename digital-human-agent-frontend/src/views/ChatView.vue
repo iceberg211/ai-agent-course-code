@@ -1,35 +1,35 @@
 <template>
   <div class="app-shell">
-    <div
-      class="sidebar-wrapper"
-      :class="{ 'sidebar-wrapper--closed': !historySidebarOpen }"
-    >
-      <ConversationHistoryPanel
-        v-if="personaStore.selectedId"
-        :persona-id="personaStore.selectedId"
-        :current-conversation-id="sessionStore.conversationId || ''"
-        @select="onSelectConversation"
-        @new-conversation="onNewConversation"
-        @select-persona="onSelectPersona"
-        @delete-persona="onDeletePersona"
-        @create-persona="createModalOpen = true"
-      />
-    </div>
+    <Transition name="sidebar">
+      <div
+        v-if="historySidebarOpen"
+        class="sidebar-wrapper"
+      >
+        <ConversationHistoryPanel
+          :persona-id="personaStore.selectedId || ''"
+          :current-conversation-id="sessionStore.conversationId || ''"
+          @select="onSelectConversation"
+          @new-conversation="onNewConversation"
+        />
+      </div>
+    </Transition>
 
     <!-- 中间对话区 -->
     <main class="chat-main">
       <ChatHeader
-        :persona="personaStore.selectedPersona"
-        :knowledge-drawer-open="knowledgeDrawerOpen"
         :sidebar-open="historySidebarOpen"
+        :knowledge-drawer-open="knowledgeDrawerOpen"
         :mode="mode"
         :knowledge-summary="knowledgeSummary"
         :knowledge-summary-compact="knowledgeSummaryCompact"
         :knowledge-summary-tone="knowledgeSummaryTone"
-        @toggle-knowledge-drawer="knowledgeDrawerOpen = !knowledgeDrawerOpen"
         @toggle-sidebar="historySidebarOpen = !historySidebarOpen"
+        @toggle-knowledge-drawer="knowledgeDrawerOpen = !knowledgeDrawerOpen"
         @change-mode="onChangeMode"
         @new-conversation="onNewConversation"
+        @select-persona="onSelectPersona"
+        @delete-persona="onDeletePersona"
+        @create-persona="createModalOpen = true"
       />
 
       <div
@@ -136,6 +136,7 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import ConversationHistoryPanel from '@/components/chat/ConversationHistoryPanel.vue'
+import type { Persona } from '@/types'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ChatEmptyState from '@/components/chat/ChatEmptyState.vue'
 import DigitalHumanWorkspace from '@/components/chat/DigitalHumanWorkspace.vue'
@@ -144,7 +145,6 @@ import ChatComposer from '@/components/chat/ChatComposer.vue'
 import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
-import type { Persona } from '@/types'
 import type { ChatMessage } from '@/types'
 import CitationDetailDrawer from '@/components/chat/CitationDetailDrawer.vue'
 
@@ -481,14 +481,41 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   height: 100%;
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(248, 250, 252, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-xl);
-  box-shadow: 
-    0 24px 64px rgba(15, 23, 42, 0.06),
-    0 4px 16px rgba(15, 23, 42, 0.02);
+  box-shadow:
+    0 24px 64px rgba(15, 23, 42, 0.08),
+    0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+/* 侧边栏容器 */
+.sidebar-wrapper {
+  width: 240px;
+  flex-shrink: 0;
+  height: 100%;
+  border-right: 1px solid rgba(226, 232, 240, 0.6);
+  background: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+}
+
+/* 侧边栏进出动画 (ChatGPT 风格平滑推拉) */
+.sidebar-enter-active {
+  transition: width 0.28s var(--ease-spring), opacity 0.2s ease;
+  overflow: hidden;
+}
+
+.sidebar-leave-active {
+  transition: width 0.22s ease-in, opacity 0.18s ease-in;
+  overflow: hidden;
+}
+
+.sidebar-enter-from,
+.sidebar-leave-to {
+  width: 0 !important;
+  opacity: 0;
 }
 
 .chat-main {

@@ -8,6 +8,9 @@ export class RealtimeSessionRegistry {
   /** 反向索引 Map: wsClientId -> sessionId */
   private readonly wsClientIndex = new Map<string, string>();
 
+  /** 活跃 session 超过此数量时输出告警日志，提示可能存在内存泄漏或心跳清理异常 */
+  private static readonly SESSION_WARN_THRESHOLD = 500;
+
   create(
     sessionId: string,
     params: Omit<RealtimeSession, 'sessionId'>,
@@ -18,6 +21,16 @@ export class RealtimeSessionRegistry {
       this.wsClientIndex.set(params.wsClientId, sessionId);
     }
     this.logger.log(`Session created: ${sessionId}`);
+
+    // P-3 修复：容量监控，超阈值时输出告警日志
+    const count = this.sessions.size;
+    if (count >= RealtimeSessionRegistry.SESSION_WARN_THRESHOLD) {
+      this.logger.warn(
+        `[SessionRegistry] 活跃 session 数量达到 ${count}，超过阈值 ${RealtimeSessionRegistry.SESSION_WARN_THRESHOLD}，` +
+          '请检查是否存在内存泄漏或心跳清理异常。',
+      );
+    }
+
     return session;
   }
 
