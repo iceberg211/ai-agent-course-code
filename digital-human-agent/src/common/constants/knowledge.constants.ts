@@ -80,3 +80,30 @@ export const CHUNK_LIST_MAX_TAKE = 500;
 export const CHUNK_INSERT_BATCH_SIZE = 50;
 /** 文档上传最大文件大小（字节） */
 export const UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+// ==========================================
+// RAG 检索配置预设
+// ==========================================
+
+export const KNOWLEDGE_PRESETS = {
+  precise: {
+    threshold: 0.7,
+    retrievalLimit: 20,
+    rerankLimit: 5,
+    rerank: true,
+  },
+  balanced: {
+    threshold: 0.6,
+    retrievalLimit: 20,
+    rerankLimit: 5,
+    rerank: true,
+  },
+  broad: {
+    threshold: 0.3,
+    retrievalLimit: 40,
+    rerankLimit: 10,
+    rerank: true,
+  },
+} as const;
+
+export type KnowledgePresetType = keyof typeof KNOWLEDGE_PRESETS;

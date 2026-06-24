@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -24,6 +25,7 @@ import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
 import { ListDocumentsDto } from '@/knowledge/dto/list-documents.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 
 function isSupportedKnowledgeUpload(file: {
@@ -42,6 +44,7 @@ function isSupportedKnowledgeUpload(file: {
 
 @ApiTags('documents')
 @Controller()
+@UseGuards(JwtAuthGuard)
 export class KnowledgeDocumentController {
   constructor(
     private readonly documentService: KnowledgeDocumentService,
@@ -111,6 +114,16 @@ export class KnowledgeDocumentController {
     return this.documentService.retryDocumentForKnowledge(kbId, docId);
   }
 
+  @Post('knowledge-bases/:kbId/documents/batch-retry')
+  @ApiOperation({ summary: '批量重试解析失败的文档' })
+  async batchRetry(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Body('documentIds') documentIds: string[],
+  ) {
+    await this.documentService.batchRetryDocuments(kbId, documentIds);
+    return { success: true };
+  }
+
   @Get('knowledge-bases/:kbId/documents/:docId/chunks')
   listChunks(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -155,6 +168,7 @@ export class KnowledgeDocumentController {
       query.q ||
         query.status ||
         query.graphStatus ||
+        query.processingStage ||
         query.page ||
         query.pageSize,
     );

@@ -12,7 +12,7 @@ import {
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
-import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
+import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG, KNOWLEDGE_PRESETS } from '@/common/constants';
 
 @Injectable()
 export class KnowledgeService {
@@ -36,8 +36,10 @@ export class KnowledgeService {
   }
 
   async create(dto: CreateKnowledgeDto): Promise<Knowledge> {
+    const presetConfig = dto.preset ? KNOWLEDGE_PRESETS[dto.preset] : {};
     const retrievalConfig: KnowledgeRetrievalConfig = {
       ...DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
+      ...presetConfig,
       ...(dto.retrievalConfig ?? {}),
     };
 
@@ -61,12 +63,22 @@ export class KnowledgeService {
     if (dto.ownerPersonaId !== undefined) {
       knowledge.ownerPersonaId = dto.ownerPersonaId ?? null;
     }
+
+    let newRetrievalConfig = { ...knowledge.retrievalConfig };
+    if (dto.preset !== undefined) {
+      const presetConfig = dto.preset ? KNOWLEDGE_PRESETS[dto.preset] : {};
+      newRetrievalConfig = {
+        ...newRetrievalConfig,
+        ...presetConfig,
+      };
+    }
     if (dto.retrievalConfig !== undefined) {
-      knowledge.retrievalConfig = {
-        ...knowledge.retrievalConfig,
+      newRetrievalConfig = {
+        ...newRetrievalConfig,
         ...dto.retrievalConfig,
       };
     }
+    knowledge.retrievalConfig = newRetrievalConfig;
 
     return this.knowledgeRepo.save(knowledge);
   }

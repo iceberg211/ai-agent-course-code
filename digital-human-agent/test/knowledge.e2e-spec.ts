@@ -1,13 +1,14 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { KnowledgeContentController } from '@/knowledge/controllers/knowledge-content.controller';
-import { PersonaKnowledgeSearchController } from '@/knowledge/controllers/persona-knowledge-search.controller';
+import { KnowledgeDocumentController } from '@/knowledge/controllers/knowledge-document.controller';
+import { KnowledgeSearchController } from '@/knowledge/controllers/knowledge-search.controller';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { KnowledgeController } from '@/knowledge/controllers/knowledge.controller';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 describe('Knowledge API (e2e)', () => {
   let app: INestApplication;
@@ -34,6 +35,7 @@ describe('Knowledge API (e2e)', () => {
   const knowledgeSearchService = {
     retrieveForPersona: jest.fn(),
     retrieveForPersonaWithStages: jest.fn(),
+    retrieveForPersonaWithDebug: jest.fn(),
     retrieveWithStages: jest.fn(),
   };
 
@@ -54,8 +56,8 @@ describe('Knowledge API (e2e)', () => {
       controllers: [
         KnowledgeController,
         PersonaKnowledgeController,
-        KnowledgeContentController,
-        PersonaKnowledgeSearchController,
+        KnowledgeDocumentController,
+        KnowledgeSearchController,
       ],
       providers: [
         {
@@ -71,9 +73,19 @@ describe('Knowledge API (e2e)', () => {
           useValue: knowledgeCatalogService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context: any) => {
+          const req = context.switchToHttp().getRequest();
+          req.user = { id: 'mock-user-id', username: 'mock-user', role: 'user' };
+          return true;
+        },
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
   });
 
@@ -377,7 +389,7 @@ describe('Knowledge API (e2e)', () => {
   });
 
   it('POST /personas/:personaId/search/stages 返回 persona 分阶段检索结果', async () => {
-    knowledgeSearchService.retrieveForPersonaWithStages.mockResolvedValue({
+    knowledgeSearchService.retrieveForPersonaWithDebug.mockResolvedValue({
       query: '产品如何部署？',
       retrievalQuery: '产品如何部署？',
       retrievalQueries: [],
@@ -402,7 +414,7 @@ describe('Knowledge API (e2e)', () => {
       .expect(201);
 
     expect(
-      knowledgeSearchService.retrieveForPersonaWithStages,
+      knowledgeSearchService.retrieveForPersonaWithDebug,
     ).toHaveBeenCalledWith(personaId, '产品如何部署？', {
       rerank: undefined,
       threshold: undefined,

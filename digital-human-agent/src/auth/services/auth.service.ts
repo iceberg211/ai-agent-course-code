@@ -1,13 +1,19 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { scryptSync, timingSafeEqual } from 'node:crypto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { scryptSync, timingSafeEqual, randomBytes } from 'node:crypto';
 import { UserService } from '@/user/services/user.service';
+import { ApiKey } from '@/auth/entities/api-key.entity';
+import { User } from '@/user/entities/user.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
+    @InjectRepository(ApiKey)
+    private readonly apiKeyRepo: Repository<ApiKey>,
   ) {}
 
   async register(username: string, passwordPlain: string) {
@@ -49,6 +55,38 @@ export class AuthService {
     }
 
     return this.userService.updatePassword(userId, newPasswordPlain);
+  }
+
+  async createApiKey(userId: string, name: string): Promise<ApiKey> {
+    const key = `dh_${randomBytes(24).toString('hex')}`;
+    const apiKey = this.apiKeyRepo.create({
+      userId,
+      name,
+      key,
+    });
+    return this.apiKeyRepo.save(apiKey);
+  }
+
+  async listApiKeys(userId: string): Promise<ApiKey[]> {
+    return this.apiKeyRepo.find({
+      where: { userId, isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async revokeApiKey(userId: string, id: string): Promise<void> {
+    await this.apiKeyRepo.update({ id, userId }, { isActive: false });
+  }
+
+  async validateApiKey(key: string): Promise<User | null> {
+    const record = await this.apiKeyRepo.findOne({
+      where: { key, isActive: true },
+      relations: ['user'],
+    });
+    if (!record || !record.user) {
+      return null;
+    }
+    return record.user;
   }
 
   private comparePassword(password: string, stored: string): boolean {

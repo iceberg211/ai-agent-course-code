@@ -26,19 +26,20 @@ export { normalizeKeywordTerms, escapeLike, extractFallbackKeywordTerms } from '
 function buildElasticKeywordShouldClauses(
   terms: string[],
   options: { useExactPhrase: boolean },
-) {
-  return terms.flatMap((term) =>
-    [
-      options.useExactPhrase
-        ? {
-            match_phrase: {
-              content: {
-                query: term,
-                boost: 8,
-              },
-            },
-          }
-        : null,
+): estypes.QueryDslQueryContainer[] {
+  return terms.flatMap((term) => {
+    const clauses: estypes.QueryDslQueryContainer[] = [];
+    if (options.useExactPhrase) {
+      clauses.push({
+        match_phrase: {
+          content: {
+            query: term,
+            boost: 8,
+          },
+        },
+      });
+    }
+    clauses.push(
       {
         match: {
           content: {
@@ -87,8 +88,9 @@ function buildElasticKeywordShouldClauses(
           },
         },
       },
-    ].filter((query) => query !== null),
-  );
+    );
+    return clauses;
+  });
 }
 
 // ==========================================

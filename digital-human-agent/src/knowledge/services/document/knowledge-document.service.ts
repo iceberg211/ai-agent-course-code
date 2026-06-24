@@ -183,6 +183,7 @@ export class KnowledgeDocumentService {
       q?: string;
       status?: string;
       graphStatus?: string;
+      processingStage?: string;
       page?: number;
       pageSize?: number;
     } = {},
@@ -213,9 +214,28 @@ export class KnowledgeDocumentService {
         graphStatus: filters.graphStatus,
       });
     }
+    if (filters.processingStage) {
+      qb.andWhere('document.processing_stage = :processingStage', {
+        processingStage: filters.processingStage,
+      });
+    }
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, pageSize };
+  }
+
+  async batchRetryDocuments(
+    knowledgeId: string,
+    documentIds: string[],
+  ): Promise<void> {
+    for (const documentId of documentIds) {
+      // 触发重跑，不阻塞整体接口返回，静默记录错误
+      this.retryDocumentForKnowledge(knowledgeId, documentId).catch((err) => {
+        this.logger.error(
+          `Failed to retry document ${documentId} in knowledge ${knowledgeId}: ${err.message}`,
+        );
+      });
+    }
   }
 
   async listDocuments(

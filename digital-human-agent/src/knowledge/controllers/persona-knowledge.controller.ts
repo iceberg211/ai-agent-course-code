@@ -6,13 +6,16 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AttachKnowledgeDto } from '@/knowledge/dto/attach-knowledge.dto';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 @ApiTags('persona-knowledge-bases')
 @Controller('personas/:personaId')
+@UseGuards(JwtAuthGuard)
 export class PersonaKnowledgeController {
   constructor(
     private readonly knowledgeService: KnowledgeService,

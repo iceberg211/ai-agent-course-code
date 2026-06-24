@@ -3,6 +3,7 @@ import {
   INestApplication,
   ValidationError,
   ValidationPipe,
+  ExecutionContext,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -11,6 +12,7 @@ import { ChatController } from '@/conversation/controllers/chat.controller';
 import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { PersonaService } from '@/persona/persona.service';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 jest.mock('uuid', () => {
   let mockUuidCounter = 0;
@@ -48,7 +50,16 @@ describe('Chat API (e2e)', () => {
         { provide: ConversationService, useValue: conversationService },
         { provide: PersonaService, useValue: personaService },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context: ExecutionContext) => {
+          const req = context.switchToHttp().getRequest();
+          req.user = { id: 'mock-user-id', username: 'mock-user', role: 'user' };
+          return true;
+        },
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
@@ -79,10 +90,7 @@ describe('Chat API (e2e)', () => {
       name: '李老师',
     });
 
-    conversationService.getLatestConversationByPersona.mockResolvedValue({
-      id: conversationId,
-      personaId,
-    });
+    conversationService.getLatestConversationByPersona.mockResolvedValue(null);
 
     conversationService.createConversation.mockResolvedValue({
       id: conversationId,
@@ -108,6 +116,15 @@ describe('Chat API (e2e)', () => {
             similarity: 0.92,
           },
         ]);
+        return {
+          state: {
+            strategy: 'test',
+            subQuestions: [],
+            retrievalHistory: [],
+            retrievalTrace: {},
+            webSearchQueries: [],
+          },
+        };
       },
     );
   });
@@ -128,10 +145,10 @@ describe('Chat API (e2e)', () => {
     expect(personaService.findOne).toHaveBeenCalledWith(personaId);
     expect(
       conversationService.getLatestConversationByPersona,
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith(personaId, 'mock-user-id');
     expect(conversationService.createConversation).toHaveBeenCalledWith(
       personaId,
-      null,
+      'mock-user-id',
     );
     expect(agentService.run).toHaveBeenCalledWith(
       expect.objectContaining({

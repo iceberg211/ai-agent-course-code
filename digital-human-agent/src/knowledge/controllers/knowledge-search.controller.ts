@@ -4,10 +4,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 /**
  * 知识检索控制器。
@@ -17,6 +19,7 @@ import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
  */
 @ApiTags('knowledge-search')
 @Controller()
+@UseGuards(JwtAuthGuard)
 export class KnowledgeSearchController {
   constructor(
     private readonly searchService: KnowledgeSearchService,

@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { VoiceCloneController } from '@/speech/voice-clone/voice-clone.controller';
 import { VoiceCloneService } from '@/speech/voice-clone/voice-clone.service';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 describe('VoiceClone API (e2e)', () => {
   let app: INestApplication;
@@ -21,7 +22,16 @@ describe('VoiceClone API (e2e)', () => {
           useValue: service,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context: any) => {
+          const req = context.switchToHttp().getRequest();
+          req.user = { id: 'mock-user-id', username: 'mock-user', role: 'user' };
+          return true;
+        },
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();

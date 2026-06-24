@@ -1,4 +1,4 @@
-import { IsString, MinLength, MaxLength } from 'class-validator';
+import { IsString, MinLength, MaxLength, IsNotEmpty } from 'class-validator';
 
 export class RegisterDto {
   @IsString({ message: '用户名必须为字符串' })
@@ -28,4 +28,11 @@ export class ChangePasswordDto {
   @IsString({ message: '新密码必须为字符串' })
   @MinLength(6, { message: '密码长度不能低于 6 位' })
   newPassword!: string;
+}
+
+export class CreateApiKeyDto {
+  @IsString({ message: 'API Key 名称必须为字符串' })
+  @IsNotEmpty({ message: 'API Key 名称不能为空' })
+  @MaxLength(100, { message: 'API Key 名称长度不能高于 100 位' })
+  name: string;
 }

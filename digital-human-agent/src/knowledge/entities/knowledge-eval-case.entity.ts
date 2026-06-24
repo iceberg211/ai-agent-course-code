@@ -27,6 +27,27 @@ export class KnowledgeEvalCase {
   @Column({ name: 'expected_answer', type: 'text', nullable: true })
   expectedAnswer: string | null;
 
+  @Column({ name: 'last_run_actual_answer', type: 'text', nullable: true })
+  lastRunActualAnswer: string | null;
+
+  @Column({ name: 'last_run_status', type: 'varchar', default: 'unrun' })
+  lastRunStatus: string;
+
+  @Column({ name: 'last_run_hit_rate', type: 'double precision', nullable: true })
+  lastRunHitRate: number | null;
+
+  @Column({ name: 'last_run_recall', type: 'double precision', nullable: true })
+  lastRunRecall: number | null;
+
+  @Column({ name: 'last_run_error', type: 'text', nullable: true })
+  lastRunError: string | null;
+
+  @Column({ name: 'user_review_status', type: 'varchar', default: 'unreviewed' })
+  userReviewStatus: string;
+
+  @Column({ name: 'last_run_at', type: 'timestamptz', nullable: true })
+  lastRunAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

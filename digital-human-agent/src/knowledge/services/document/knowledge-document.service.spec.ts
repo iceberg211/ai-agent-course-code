@@ -56,6 +56,16 @@ describe('KnowledgeDocumentService', () => {
       processingStage: 'uploaded',
       processingError: null,
     };
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[document], 1]),
+    };
+
     const documentRepo = {
       create: jest.fn(
         (input: Partial<MockDocument>): MockDocument => ({
@@ -73,6 +83,7 @@ describe('KnowledgeDocumentService', () => {
       ),
       delete: jest.fn(),
       find: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
     const chunkRepo = {
       delete: jest.fn(),
@@ -146,6 +157,7 @@ describe('KnowledgeDocumentService', () => {
       updateEq,
       elasticsearchService,
       graphService,
+      queryBuilder,
     };
   }
 
@@ -414,5 +426,30 @@ describe('KnowledgeDocumentService', () => {
         graphSyncedAt: null,
       }),
     );
+  });
+
+  it('listDocumentsForKnowledge 会支持由 DTO 传递的 processingStage 筛选参数', async () => {
+    const { service, queryBuilder } = createService();
+
+    await service.listDocumentsForKnowledge('kb-1', {
+      processingStage: 'embedding',
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'document.processing_stage = :processingStage',
+      { processingStage: 'embedding' },
+    );
+  });
+
+  it('batchRetryDocuments 可以批量并异步触发多个文档的解析重试', async () => {
+    const { service } = createService();
+    const spy = jest.spyOn(service, 'retryDocumentForKnowledge').mockResolvedValue({} as any);
+
+    await service.batchRetryDocuments('kb-1', ['doc-1', 'doc-2']);
+    await flushPromises();
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenNthCalledWith(1, 'kb-1', 'doc-1');
+    expect(spy).toHaveBeenNthCalledWith(2, 'kb-1', 'doc-2');
   });
 });

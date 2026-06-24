@@ -42,4 +42,9 @@ export class ListDocumentsDto {
   @Min(1)
   @Max(100)
   pageSize?: number;
+
+  @ApiPropertyOptional({ description: '文档解析/处理子阶段' })
+  @IsOptional()
+  @IsString()
+  processingStage?: string;
 }

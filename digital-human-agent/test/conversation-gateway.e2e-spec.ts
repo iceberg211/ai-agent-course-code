@@ -17,6 +17,8 @@ import { RealtimeSessionRegistry } from '@/conversation/services/realtime-sessio
 import { ConfigService } from '@nestjs/config';
 import { AccessControlService } from '@/common/security/access-control.service';
 
+import { JwtService } from '@nestjs/jwt';
+
 type JsonMessage = Record<string, unknown>;
 
 jest.mock('uuid', () => {
@@ -85,6 +87,12 @@ describe('Conversation Gateway (e2e)', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockReturnValue(undefined),
+          },
+        },
+        {
+          provide: JwtService,
+          useValue: {
+            verifyAsync: jest.fn().mockResolvedValue({ sub: 'mock-user-id', username: 'mock-user' }),
           },
         },
       ],
@@ -326,7 +334,8 @@ describe('Conversation Gateway (e2e)', () => {
 });
 
 async function connectSocket(url: string): Promise<WebSocket> {
-  const socket = new WebSocket(url);
+  const finalUrl = url.includes('?') ? url : `${url}?token=mock-token`;
+  const socket = new WebSocket(finalUrl);
 
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {

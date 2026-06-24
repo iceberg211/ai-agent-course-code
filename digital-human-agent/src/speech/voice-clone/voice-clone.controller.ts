@@ -6,12 +6,14 @@ import {
   ParseUUIDPipe,
   Post,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'node:path';
 import { VoiceCloneService } from '@/speech/voice-clone/voice-clone.service';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 const VOICE_CLONE_SAMPLE_MAX_FILE_SIZE = 20 * 1024 * 1024;
 const VOICE_CLONE_SAMPLE_EXTENSIONS = new Set(['.wav', '.mp3', '.m4a', '.aac']);
@@ -32,6 +34,7 @@ function isSupportedVoiceSample(file: {
 
 @ApiTags('voice-clone')
 @Controller('voice-clone')
+@UseGuards(JwtAuthGuard)
 export class VoiceCloneController {
   constructor(private readonly voiceCloneService: VoiceCloneService) {}
 

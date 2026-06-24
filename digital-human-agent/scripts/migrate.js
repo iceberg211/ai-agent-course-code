@@ -32,6 +32,8 @@ const MIGRATIONS = [
   '017_knowledge_eval_case.sql',
   '018_persona_soft_delete.sql',
   '019_user_system.sql',
+  '020_user_roles_and_api_tokens.sql',
+  '021_knowledge_eval_case_upgrade.sql',
 ];
 
 function hasFlag(name) {

@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  IsIn,
 } from 'class-validator';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 
@@ -96,4 +97,13 @@ export class CreateKnowledgeDto {
   @ValidateNested()
   @Type(() => RetrievalConfigDto)
   retrievalConfig?: RetrievalConfigDto;
+
+  @ApiPropertyOptional({
+    description: '检索预设配置模板（precise: 精确模式, balanced: 均衡模式, broad: 宽泛模式）',
+    enum: ['precise', 'balanced', 'broad'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['precise', 'balanced', 'broad'], { message: '预设名称必须为 precise、balanced 或 broad' })
+  preset?: 'precise' | 'balanced' | 'broad';
 }

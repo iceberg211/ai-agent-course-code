@@ -9,6 +9,7 @@ import request from 'supertest';
 import { PersonaController } from '@/persona/persona.controller';
 import { PersonaService } from '@/persona/persona.service';
 import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 describe('Persona API (e2e)', () => {
   let app: INestApplication;
@@ -30,7 +31,16 @@ describe('Persona API (e2e)', () => {
           useValue: service,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (context: any) => {
+          const req = context.switchToHttp().getRequest();
+          req.user = { id: 'mock-user-id', username: 'mock-user', role: 'user' };
+          return true;
+        },
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
