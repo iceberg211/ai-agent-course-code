@@ -66,7 +66,7 @@ export class RagRuntimeService {
   normalizeRetrieveOptions(
     options: RetrieveKnowledgeOptions,
   ): NormalizedRetrieveKnowledgeOptions {
-    const rawRerankLimit = options.rerankLimit ?? options.finalTopK;
+    const rawRerankLimit = options.rerankLimit;
     const rerankLimit = this.toBoundedNumber(
       rawRerankLimit,
       DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
@@ -76,7 +76,7 @@ export class RagRuntimeService {
     const rerank = options.rerank !== false;
     const retrievalDefault = rerank ? Math.max(20, rerankLimit) : rerankLimit;
 
-    const rawRetrievalLimit = options.retrievalLimit ?? options.stage1TopK;
+    const rawRetrievalLimit = options.retrievalLimit;
     const retrievalLimit = this.toBoundedNumber(
       rawRetrievalLimit,
       retrievalDefault,

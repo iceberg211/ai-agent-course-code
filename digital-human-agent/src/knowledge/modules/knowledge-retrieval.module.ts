@@ -1,7 +1,8 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '@/common/common.module';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
+import { KnowledgeSearchController } from '@/knowledge/controllers/knowledge-search.controller';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
@@ -17,7 +18,7 @@ import { KnowledgeBaseModule } from './knowledge-base.module';
     TypeOrmModule.forFeature([KnowledgeChunk]),
     KnowledgeDocumentModule,
     KnowledgeGraphModule,
-    forwardRef(() => KnowledgeBaseModule),
+    KnowledgeBaseModule,
   ],
   providers: [
     KnowledgeSearchService,
@@ -25,6 +26,9 @@ import { KnowledgeBaseModule } from './knowledge-base.module';
     FulltextRetrieverService,
     QueryRewriteService,
     RerankerService,
+  ],
+  controllers: [
+    KnowledgeSearchController,
   ],
   exports: [
     KnowledgeSearchService,

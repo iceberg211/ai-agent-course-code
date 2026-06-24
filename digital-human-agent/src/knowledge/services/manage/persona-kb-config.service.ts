@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Knowledge, KnowledgeRetrievalConfig } from '@/knowledge/entities/knowledge.entity';
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
@@ -31,33 +31,25 @@ export class PersonaKbConfigService {
   async listMountedKnowledgeConfigs(
     personaId: string,
   ): Promise<MountedKnowledgeConfig[]> {
-    const mounts = await this.runtime.withTransientRetry(
-      `查询 persona ${personaId} 挂载知识库`,
-      () =>
-        this.personaKnowledgeRepo.find({
-          where: { personaId },
-          select: ['knowledgeBaseId'],
-        }),
-      PersonaKbConfigService.DB_RETRY_ATTEMPTS,
-    );
-
-    if (!mounts || mounts.length === 0) {
-      this.logger.log(`persona ${personaId} 未挂载任何知识库`);
-      return [];
-    }
-
-    const knowledgeIds = mounts.map((item) => item.knowledgeBaseId);
+    // 单条 JOIN 查询替代原先的两次独立查询，减少一次数据库往返
     const knowledgeRows = await this.runtime.withTransientRetry(
-      '查询已挂载知识库配置',
+      `查询 persona ${personaId} 挂载知识库配置`,
       () =>
-        this.knowledgeRepo.find({
-          where: { id: In(knowledgeIds) },
-          select: ['id', 'retrievalConfig', 'updatedAt'],
-        }),
+        this.knowledgeRepo
+          .createQueryBuilder('kb')
+          .innerJoin(
+            PersonaKnowledge,
+            'pk',
+            'pk.knowledgeBaseId = kb.id',
+          )
+          .where('pk.personaId = :personaId', { personaId })
+          .select(['kb.id', 'kb.retrievalConfig', 'kb.updatedAt'])
+          .getMany(),
       PersonaKbConfigService.DB_RETRY_ATTEMPTS,
     );
 
     if (!knowledgeRows || knowledgeRows.length === 0) {
+      this.logger.log(`persona ${personaId} 未挂载任何知识库`);
       return [];
     }
 
@@ -74,7 +66,7 @@ export class PersonaKbConfigService {
           THRESHOLD_MAX,
         ),
         retrievalLimit: this.runtime.toBoundedNumber(
-          config.retrievalLimit ?? config.stage1TopK,
+          config.retrievalLimit,
           DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.retrievalLimit,
           1,
           RETRIEVAL_LIMIT_MAX,
@@ -87,5 +79,3 @@ export class PersonaKbConfigService {
     });
   }
 }
-
-

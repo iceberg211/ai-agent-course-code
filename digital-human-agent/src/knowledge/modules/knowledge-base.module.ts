@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '@/common/common.module';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
@@ -8,14 +8,12 @@ import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-know
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { KnowledgeDocumentModule } from './knowledge-document.module';
-import { KnowledgeRetrievalModule } from './knowledge-retrieval.module';
 
 @Module({
   imports: [
     CommonModule,
     TypeOrmModule.forFeature([Knowledge, PersonaKnowledge]),
     KnowledgeDocumentModule,
-    forwardRef(() => KnowledgeRetrievalModule),
   ],
   providers: [
     KnowledgeService,

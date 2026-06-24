@@ -18,13 +18,13 @@ import { extname } from 'node:path';
 import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
+  UPLOAD_MAX_FILE_SIZE,
 } from '@/common/constants';
 import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
 import { ListDocumentsDto } from '@/knowledge/dto/list-documents.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 
-const KNOWLEDGE_UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 function isSupportedKnowledgeUpload(file: {
   originalname?: string;
@@ -73,7 +73,7 @@ export class KnowledgeDocumentController {
   @Post('knowledge-bases/:kbId/documents')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: KNOWLEDGE_UPLOAD_MAX_FILE_SIZE },
+      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
       fileFilter: (_req, file, cb) => {
         if (isSupportedKnowledgeUpload(file)) {
           cb(null, true);

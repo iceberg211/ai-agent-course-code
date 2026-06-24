@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   isAbortError,
   isTransientInfrastructureError,
+  mapWithConcurrency,
   throwIfAborted,
 } from '@/common/utils';
 import {
@@ -10,7 +11,11 @@ import {
   type RetrievalStrategy,
 } from '@/common/rag';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
-import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
+import {
+  DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG,
+  HYBRID_PER_QUERY_MIN_TOP_K,
+  HYBRID_MULTI_QUERY_CONCURRENCY,
+} from '@/common/constants';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import {
@@ -54,33 +59,6 @@ interface PersonaKnowledgeRetrievalAttempt {
   result: KnowledgeHybridRetrievalResult;
 }
 
-// ==========================================
-// 辅助并发限制工具
-// ==========================================
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex;
-        nextIndex += 1;
-        if (index >= items.length) return;
-        results[index] = await mapper(items[index], index);
-      }
-    }),
-  );
-
-  return results;
-}
-
 @Injectable()
 export class HybridRetrieverService {
   private readonly logger = new Logger(HybridRetrieverService.name);
@@ -102,7 +80,7 @@ export class HybridRetrieverService {
     params: KnowledgeHybridRetrievalParams,
   ): Promise<KnowledgeHybridRetrievalResult> {
     const perQueryTopK = Math.max(
-      4,
+      HYBRID_PER_QUERY_MIN_TOP_K,
       Math.ceil(
         params.globalRetrievalLimit /
           Math.max(params.retrievalQueries.length, 1),
@@ -110,7 +88,7 @@ export class HybridRetrieverService {
     );
     const taskResults = await mapWithConcurrency(
       params.retrievalQueries,
-      3, // 限制单知识库内部多查询并发为 3，避免连接池枯竭和 API 限流
+      HYBRID_MULTI_QUERY_CONCURRENCY,
       async (retrievalQuery) => {
         try {
           throwIfAborted(params.signal);

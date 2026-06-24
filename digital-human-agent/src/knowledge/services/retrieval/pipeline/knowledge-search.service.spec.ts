@@ -33,17 +33,15 @@ describe('KnowledgeSearchService', () => {
             RetrieveKnowledgeOptions,
             | 'rerank'
             | 'retrievalLimit'
-            | 'stage1TopK'
             | 'rerankLimit'
-            | 'finalTopK'
             | 'threshold'
             | 'skipQueryRewrite'
           > = {},
         ) => ({
           threshold: options.threshold ?? 0.6,
           rerank: options.rerank !== false,
-          retrievalLimit: options.retrievalLimit ?? options.stage1TopK ?? 10,
-          rerankLimit: options.rerankLimit ?? options.finalTopK ?? 5,
+          retrievalLimit: options.retrievalLimit ?? 10,
+          rerankLimit: options.rerankLimit ?? 5,
           skipQueryRewrite: options.skipQueryRewrite === true,
         }),
       ),

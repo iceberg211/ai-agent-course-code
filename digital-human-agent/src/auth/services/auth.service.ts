@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { UserService } from '@/user/services/user.service';
@@ -35,6 +35,20 @@ export class AuthService {
         username: user.username,
       },
     };
+  }
+
+  async changePassword(userId: string, oldPasswordPlain: string, newPasswordPlain: string) {
+    const user = await this.userService.findOne(userId);
+    if (!user || !user.password) {
+      throw new UnauthorizedException('用户不存在');
+    }
+
+    const matched = this.comparePassword(oldPasswordPlain, user.password);
+    if (!matched) {
+      throw new BadRequestException('旧密码错误');
+    }
+
+    return this.userService.updatePassword(userId, newPasswordPlain);
   }
 
   private comparePassword(password: string, stored: string): boolean {

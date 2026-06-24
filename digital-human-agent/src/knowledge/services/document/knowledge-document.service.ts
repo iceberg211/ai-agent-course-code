@@ -11,6 +11,8 @@ import { extname } from 'node:path';
 import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
+  CHUNK_LIST_MAX_TAKE,
+  CHUNK_INSERT_BATCH_SIZE,
 } from '@/common/constants';
 import { normalizePage, normalizePageSize } from '@/common/utils';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
@@ -275,7 +277,7 @@ export class KnowledgeDocumentService {
       .createQueryBuilder('chunk')
       .where('chunk.document_id = :documentId', { documentId })
       .orderBy('chunk.chunk_index', 'ASC')
-      .take(500)
+      .take(CHUNK_LIST_MAX_TAKE)
       .getMany();
   }
 
@@ -465,7 +467,7 @@ export class KnowledgeDocumentService {
   ): Promise<void> {
     this.logger.log(`[开始 Insert] doc=${documentId} rows=${rows.length}`);
 
-    const batchSize = 50;
+    const batchSize = CHUNK_INSERT_BATCH_SIZE;
     for (let index = 0; index < rows.length; index += batchSize) {
       const batch = rows.slice(index, index + batchSize);
       const result = await this.runtime.withTransientRetry<{

@@ -5,7 +5,7 @@ import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 import {
   DEFAULT_QUERY_REWRITE_MAX_EXPANSIONS,
 } from '@/common/constants';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
+import { normalizeKeywords, extractFallbackKeywordTerms } from '@/knowledge/utils/keyword.utils';
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type {
@@ -17,7 +17,7 @@ import type {
   RetrievalQueryItem,
   KnowledgeHybridRetrievalResult,
 } from '@/knowledge/types/knowledge-content.types';
-import { QueryRewriteService, normalizeKeywords } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
+import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 
 // ==========================================
@@ -159,8 +159,8 @@ export class KnowledgeSearchService {
           knowledgeId,
           query,
           rerank: options.rerank,
-          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
-          rerankLimit: options.rerankLimit ?? options.finalTopK,
+          retrievalLimit: options.retrievalLimit,
+          rerankLimit: options.rerankLimit,
           threshold: options.threshold,
           skipQueryRewrite: options.skipQueryRewrite,
         },
@@ -202,8 +202,8 @@ export class KnowledgeSearchService {
           personaId,
           query,
           rerank: options.rerank,
-          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
-          rerankLimit: options.rerankLimit ?? options.finalTopK,
+          retrievalLimit: options.retrievalLimit,
+          rerankLimit: options.rerankLimit,
           threshold: options.threshold,
         },
         outputProcessor: (output) => ({
@@ -232,8 +232,8 @@ export class KnowledgeSearchService {
           personaId,
           query,
           rerank: options.rerank,
-          retrievalLimit: options.retrievalLimit ?? options.stage1TopK,
-          rerankLimit: options.rerankLimit ?? options.finalTopK,
+          retrievalLimit: options.retrievalLimit,
+          rerankLimit: options.rerankLimit,
           threshold: options.threshold,
           strategy: options.strategy ? JSON.stringify(options.strategy) : undefined,
           skipQueryRewrite: options.skipQueryRewrite,

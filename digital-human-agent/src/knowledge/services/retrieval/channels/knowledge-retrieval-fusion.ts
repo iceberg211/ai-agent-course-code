@@ -1,6 +1,5 @@
+import { HYBRID_FUSION_RRF_K } from '@/common/constants';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
-
-const HYBRID_FUSION_RRF_K = 60;
 
 export function mergeHybridResults(
   hybridResults: KnowledgeChunk[][],

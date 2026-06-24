@@ -25,15 +25,22 @@
       </RouterLink>
     </nav>
 
-    <!-- 底部状态指示器 -->
-    <div
-      class="status-indicator"
-      :class="{ 'status-indicator--offline': !sessionStore.connected }"
-    >
-      <span class="status-indicator__dot" />
-      <span class="status-indicator__text">
-        {{ sessionStore.connected ? '系统就绪' : '连接中断' }}
-      </span>
+    <!-- 底部 Footer 整合退出与状态 -->
+    <div class="sidebar-footer">
+      <button class="logout-btn" type="button" @click="handleLogout" title="退出登录">
+        <LogOutIcon :size="13" aria-hidden="true" />
+        <span>退出登录</span>
+      </button>
+
+      <div
+        class="status-indicator"
+        :class="{ 'status-indicator--offline': !sessionStore.connected }"
+      >
+        <span class="status-indicator__dot" />
+        <span class="status-indicator__text">
+          {{ sessionStore.connected ? '系统就绪' : '连接中断' }}
+        </span>
+      </div>
     </div>
   </aside>
 </template>
@@ -47,9 +54,12 @@ import {
   SearchIcon,
   SparklesIcon,
   UserCircleIcon,
+  LogOutIcon,
 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { APP_NAV_ITEMS } from '@/common/constants'
 import { useSessionStore } from '@/stores/session'
+import { useAuthStore } from '@/stores/auth'
 
 const iconMap = {
   dashboard: BarChart3Icon,
@@ -61,11 +71,19 @@ const iconMap = {
 } as const
 
 const sessionStore = useSessionStore()
+const router = useRouter()
+const authStore = useAuthStore()
 
 const items = APP_NAV_ITEMS.map((item) => ({
   ...item,
   icon: iconMap[item.icon],
 }))
+
+function handleLogout() {
+  if (!confirm('确定退出当前登录吗？')) return
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <style scoped>
@@ -208,6 +226,36 @@ const items = APP_NAV_ITEMS.map((item) => ({
   color: var(--warning) !important;
 }
 
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  width: 100%;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.1);
+  color: var(--error, #ef4444);
+  font-size: 11.5px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
+}
+
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.18);
+}
+
 @keyframes pulse-green {
   0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.25); }
   70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
@@ -249,6 +297,20 @@ const items = APP_NAV_ITEMS.map((item) => ({
     width: 32px;
     height: 32px;
   }
+  .sidebar-footer {
+    align-items: center;
+    width: 100%;
+  }
+  .logout-btn {
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+  }
+  .logout-btn span {
+    display: none !important;
+  }
 }
 
 /* 手机端适配：固定在底部的横向胶囊导航 */
@@ -275,6 +337,7 @@ const items = APP_NAV_ITEMS.map((item) => ({
   }
   .brand,
   .status-indicator,
+  .sidebar-footer,
   .tab-label {
     display: none !important;
   }

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { scryptSync, randomBytes } from 'node:crypto';
@@ -35,6 +35,18 @@ export class UserService {
 
     const saved = await this.repo.save(user);
     // 不将密码散列值泄露回上层
+    delete saved.password;
+    return saved;
+  }
+
+  async updatePassword(id: string, passwordPlain: string): Promise<User> {
+    const user = await this.findOne(id);
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+    const hashedPassword = this.hashPassword(passwordPlain);
+    user.password = hashedPassword;
+    const saved = await this.repo.save(user);
     delete saved.password;
     return saved;
   }

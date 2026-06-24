@@ -50,3 +50,33 @@ export const THRESHOLD_MAX = 1;
 export const STRUCTURED_CHUNK_MAX_LENGTH = 900;
 export const MAX_CONTEXT_EXPANSION_WINDOW = 2;
 
+// ==========================================
+// 混合检索融合参数
+// ==========================================
+
+/** Reciprocal Rank Fusion 的 K 参数，影响向量 + 关键词混合排序的权重分布 */
+export const HYBRID_FUSION_RRF_K = 60;
+/** 单知识库内部多查询的最大并发数，避免连接池枯竭和 API 限流 */
+export const HYBRID_MULTI_QUERY_CONCURRENCY = 3;
+/** 每个子查询的最小 topK 下限 */
+export const HYBRID_PER_QUERY_MIN_TOP_K = 4;
+
+// ==========================================
+// Reranker 参数
+// ==========================================
+
+/** Rerank 后的最低相关性分数阈值（10 分制），低于此分数的结果将被过滤 */
+export const RERANKER_MIN_RELEVANCE_SCORE = 3.0;
+/** Rerank 前粗筛截断：送入 LLM 重排的最大候选数 */
+export const RERANKER_MAX_CANDIDATES = 12;
+
+// ==========================================
+// 文档处理参数
+// ==========================================
+
+/** 单次查询 chunks 的最大条数限制，防止大文档 OOM */
+export const CHUNK_LIST_MAX_TAKE = 500;
+/** 批量写入 Supabase 的每批 chunk 数量 */
+export const CHUNK_INSERT_BATCH_SIZE = 50;
+/** 文档上传最大文件大小（字节） */
+export const UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;

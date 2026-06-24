@@ -19,3 +19,13 @@ export class LoginDto {
   @IsString({ message: '密码必须为字符串' })
   password: string;
 }
+
+export class ChangePasswordDto {
+  @IsString({ message: '旧密码必须为字符串' })
+  @MinLength(6, { message: '密码长度不能低于 6 位' })
+  oldPassword!: string;
+
+  @IsString({ message: '新密码必须为字符串' })
+  @MinLength(6, { message: '密码长度不能低于 6 位' })
+  newPassword!: string;
+}

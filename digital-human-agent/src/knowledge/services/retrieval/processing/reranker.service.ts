@@ -2,7 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
 import { isAbortError, throwIfAborted } from '@/common/utils';
-import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
+import { DEFAULT_LLM_MODEL_NAME, RERANKER_MIN_RELEVANCE_SCORE, RERANKER_MAX_CANDIDATES } from '@/common/constants';
 import { buildLangSmithRunnableConfig } from '@/common/langsmith/langsmith.utils';
 import {
   createDefaultLlmFactoryService,
@@ -34,8 +34,6 @@ export class RerankerService {
   private readonly model: string;
   private readonly llm: ChatOpenAI;
 
-  private static readonly MIN_RELEVANCE_SCORE = 3.0;
-  private static readonly MAX_RERANK_CANDIDATES = 12;
 
   constructor(@Optional() llmFactory?: LlmFactoryService) {
     const factory = llmFactory ?? createDefaultLlmFactoryService();
@@ -61,13 +59,13 @@ export class RerankerService {
       return [];
     }
 
-    // 1. Rerank 前粗筛截断：保留 Stage1 融合后的当前顺序，避免纯 keyword / graph
+    // Rerank 前粗筛截断：保留混合召回后的当前顺序，避免纯 keyword / graph
     // 命中因为 similarity=0 被提前误删。
     let rerankCandidates = candidates;
-    if (candidates.length > RerankerService.MAX_RERANK_CANDIDATES) {
+    if (candidates.length > RERANKER_MAX_CANDIDATES) {
       rerankCandidates = candidates.slice(
         0,
-        RerankerService.MAX_RERANK_CANDIDATES,
+        RERANKER_MAX_CANDIDATES,
       );
     }
 
@@ -100,7 +98,7 @@ export class RerankerService {
         return reranked;
       }
 
-      this.logger.warn('LLM Rerank 未返回有效分数，回退 Stage1 当前排序');
+      this.logger.warn('LLM Rerank 未返回有效分数，回退混合召回当前排序');
       return rerankCandidates.slice(0, safeTopK);
     } catch (error) {
       if (isAbortError(error)) {
@@ -137,15 +135,15 @@ export class RerankerService {
     const maxScore = parsed.length > 0 ? Math.max(...parsed.map(p => p.score)) : 0;
     const isDecimalScale = maxScore <= 1.0;
     const threshold = isDecimalScale
-      ? RerankerService.MIN_RELEVANCE_SCORE * 0.1
-      : RerankerService.MIN_RELEVANCE_SCORE;
+      ? RERANKER_MIN_RELEVANCE_SCORE * 0.1
+      : RERANKER_MIN_RELEVANCE_SCORE;
 
     const reranked = candidates
       .map((chunk, index) => ({
         ...chunk,
         rerank_score: scoreMap.get(index) ?? 0,
       }))
-      // 2. Rerank 后分数阈值精滤 (Post-rerank Filtering)
+      // Rerank 后分数阈值精滤 (Post-rerank Filtering)
       .filter((chunk) => (chunk.rerank_score ?? 0) >= threshold);
 
     reranked.sort((a, b) => {

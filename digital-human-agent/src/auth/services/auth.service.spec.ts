@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { scryptSync, randomBytes } from 'node:crypto';
 import { AuthService } from '@/auth/services/auth.service';
@@ -19,7 +19,9 @@ describe('AuthService', () => {
   beforeEach(() => {
     userService = {
       create: jest.fn(),
+      findOne: jest.fn(),
       findOneByUsername: jest.fn(),
+      updatePassword: jest.fn(),
     } as unknown as UserService;
 
     jwtService = {
@@ -88,6 +90,47 @@ describe('AuthService', () => {
           username: 'testuser',
         },
       });
+    });
+  });
+
+  describe('changePassword', () => {
+    it('旧密码不匹配时应抛出 BadRequestException', async () => {
+      const storedPassword = mockHashPassword('correct_password');
+      const mockUser = {
+        id: 'uuid',
+        username: 'testuser',
+        password: storedPassword,
+      } as User;
+      jest.spyOn(userService, 'findOne').mockResolvedValue(mockUser);
+
+      await expect(
+        authService.changePassword('uuid', 'wrong_password', 'new_password123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('旧密码正确时应成功更新密码并返回结果', async () => {
+      const storedPassword = mockHashPassword('correct_password');
+      const mockUser = {
+        id: 'uuid',
+        username: 'testuser',
+        password: storedPassword,
+      } as User;
+      const updatedUser = {
+        id: 'uuid',
+        username: 'testuser',
+      } as User;
+      jest.spyOn(userService, 'findOne').mockResolvedValue(mockUser);
+      jest.spyOn(userService, 'updatePassword').mockResolvedValue(updatedUser);
+
+      const result = await authService.changePassword(
+        'uuid',
+        'correct_password',
+        'new_password123',
+      );
+
+      expect(userService.findOne).toHaveBeenCalledWith('uuid');
+      expect(userService.updatePassword).toHaveBeenCalledWith('uuid', 'new_password123');
+      expect(result).toEqual(updatedUser);
     });
   });
 });

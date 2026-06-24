@@ -15,18 +15,22 @@ import {
   buildLangSmithRunnableConfig,
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
-import { extractFallbackKeywordTerms } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
+import {
+  normalizeKeywords,
+  extractFallbackKeywordTerms,
+} from '@/knowledge/utils/keyword.utils';
 import type {
   KnowledgeQueryRewriteResult,
   RetrievalQueryAngle,
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
 
+// Re-export for backward compatibility with existing consumers
+export { normalizeKeywords } from '@/knowledge/utils/keyword.utils';
+
 // ==========================================
 // Schema 定义（原 query-rewrite-utils.ts）
 // ==========================================
-
-export const KEYWORD_SPLIT_PATTERN = /[、,，;；\s]+/u;
 
 const KeywordListSchema = z.union([
   z.array(z.string().min(1).max(50)).min(1).max(6),
@@ -51,33 +55,6 @@ const KnowledgeQueryRewriteSchema = z.object({
     .optional(),
   reason: z.string().min(1).max(200),
 });
-
-// ==========================================
-// 关键词标准化工具
-// ==========================================
-
-export function normalizeKeywords(keywords: unknown, query: string): string[] {
-  const keywordItems = Array.isArray(keywords)
-    ? keywords
-    : typeof keywords === 'string'
-      ? keywords.split(KEYWORD_SPLIT_PATTERN)
-      : [];
-
-  const normalized = Array.from(
-    new Set(
-      keywordItems
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length >= 2),
-    ),
-  ).slice(0, 6);
-
-  if (normalized.length > 0) {
-    return normalized;
-  }
-
-  return extractFallbackKeywordTerms(query).slice(0, 6);
-}
 
 function padExpandedQueries(
   items: Array<{

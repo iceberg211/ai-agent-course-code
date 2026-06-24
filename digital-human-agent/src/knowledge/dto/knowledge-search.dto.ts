@@ -12,6 +12,7 @@ import {
   Min,
 } from 'class-validator';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
+import type { RetrieveKnowledgeOptions } from '@/knowledge/types/knowledge-content.types';
 
 export class KnowledgeSearchDto {
   @ApiProperty({
@@ -88,4 +89,19 @@ export class KnowledgeSearchDto {
   @Min(0)
   @Max(1)
   threshold?: number;
+
+  /**
+   * 将 DTO 转换为检索选项，统一处理旧字段兼容。
+   *
+   * `stage1TopK → retrievalLimit`、`finalTopK → rerankLimit` 的映射
+   * 在此一次性完成，下游代码不再需要处理旧字段。
+   */
+  toRetrieveOptions(): RetrieveKnowledgeOptions {
+    return {
+      rerank: this.rerank,
+      threshold: this.threshold,
+      retrievalLimit: this.retrievalLimit ?? this.stage1TopK,
+      rerankLimit: this.rerankLimit ?? this.finalTopK,
+    };
+  }
 }
