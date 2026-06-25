@@ -5,6 +5,8 @@ import { useSessionStore } from '@/stores/session'
 export interface UserInfo {
   id: string
   username: string
+  role?: string
+  department?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {

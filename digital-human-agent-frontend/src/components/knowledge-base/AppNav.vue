@@ -27,6 +27,12 @@
 
     <!-- 底部 Footer 整合退出与状态 -->
     <div class="sidebar-footer">
+      <button class="notice-btn" type="button" @click="toggleNotifications">
+        <BellIcon :size="13" aria-hidden="true" />
+        <span>通知中心</span>
+        <strong v-if="notificationApi.unreadCount.value">{{ notificationApi.unreadCount.value }}</strong>
+      </button>
+
       <button class="logout-btn" type="button" @click="handleLogout" title="退出登录">
         <LogOutIcon :size="13" aria-hidden="true" />
         <span>退出登录</span>
@@ -42,12 +48,45 @@
         </span>
       </div>
     </div>
+
+    <div v-if="showNotifications" class="notice-panel" role="dialog" aria-label="通知中心">
+      <header>
+        <strong>通知中心</strong>
+        <button type="button" @click="showNotifications = false" aria-label="关闭通知">
+          <XIcon :size="14" />
+        </button>
+      </header>
+      <div class="notice-actions">
+        <button type="button" :disabled="notificationApi.loading.value" @click="loadNotifications">
+          刷新
+        </button>
+        <button type="button" :disabled="!notificationApi.unreadCount.value" @click="markAllRead">
+          全部已读
+        </button>
+      </div>
+      <ol v-if="notifications.length" class="notice-list">
+        <li
+          v-for="item in notifications"
+          :key="item.id"
+          :class="{ 'is-unread': !resolveReadAt(item) }"
+        >
+          <button type="button" @click="readNotification(item.id)">
+            <span>{{ item.title }}</span>
+            <small>{{ item.message || notificationTypeLabel(item.type) }}</small>
+            <em>{{ formatDate(resolveCreatedAt(item)) }}</em>
+          </button>
+        </li>
+      </ol>
+      <p v-else class="notice-empty">暂无通知</p>
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import {
   BarChart3Icon,
+  BellIcon,
   FileTextIcon,
   LibraryIcon,
   MessageSquareIcon,
@@ -55,11 +94,14 @@ import {
   SparklesIcon,
   UserCircleIcon,
   LogOutIcon,
+  XIcon,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { APP_NAV_ITEMS } from '@/common/constants'
 import { useSessionStore } from '@/stores/session'
 import { useAuthStore } from '@/stores/auth'
+import { useNotifications } from '@/hooks/useNotifications'
+import type { NotificationItem } from '@/types'
 
 const iconMap = {
   dashboard: BarChart3Icon,
@@ -73,21 +115,72 @@ const iconMap = {
 const sessionStore = useSessionStore()
 const router = useRouter()
 const authStore = useAuthStore()
+const notificationApi = useNotifications()
+const notifications = ref<NotificationItem[]>([])
+const showNotifications = ref(false)
 
 const items = APP_NAV_ITEMS.map((item) => ({
   ...item,
   icon: iconMap[item.icon],
 }))
 
+onMounted(() => {
+  void loadNotifications()
+})
+
+async function loadNotifications() {
+  const result = await notificationApi.list({ page: 1, pageSize: 8 })
+  notifications.value = result.items
+}
+
+async function toggleNotifications() {
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value) await loadNotifications()
+}
+
+async function readNotification(id: string) {
+  await notificationApi.markRead(id)
+  await loadNotifications()
+}
+
+async function markAllRead() {
+  await notificationApi.markAllRead()
+  await loadNotifications()
+}
+
 function handleLogout() {
   if (!confirm('确定退出当前登录吗？')) return
   authStore.logout()
   router.push('/login')
 }
+
+function resolveReadAt(item: NotificationItem) {
+  return item.readAt ?? item.read_at
+}
+
+function resolveCreatedAt(item: NotificationItem) {
+  return item.createdAt ?? item.created_at
+}
+
+function notificationTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    document_failed: '文档处理失败',
+    eval_batch_completed: '验证任务完成',
+    answer_low_rated: '低评分回答',
+    api_key_created: 'API Key 已创建',
+    api_key_revoked: 'API Key 已废弃',
+  }
+  return labels[type] ?? '系统通知'
+}
+
+function formatDate(value?: string) {
+  return value ? new Date(value).toLocaleString() : '-'
+}
 </script>
 
 <style scoped>
 .app-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -234,6 +327,7 @@ function handleLogout() {
   width: 100%;
 }
 
+.notice-btn,
 .logout-btn {
   display: flex;
   align-items: center;
@@ -251,9 +345,131 @@ function handleLogout() {
   transition: all 0.2s var(--ease-out);
 }
 
+.notice-btn {
+  justify-content: space-between;
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.14);
+  color: var(--primary);
+}
+
+.notice-btn span {
+  margin-right: auto;
+}
+
+.notice-btn strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--error);
+  color: #fff;
+  font-size: 10px;
+}
+
 .logout-btn:hover {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.18);
+}
+
+.notice-panel {
+  position: absolute;
+  left: 212px;
+  bottom: 18px;
+  width: 320px;
+  max-height: 420px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+  overflow: auto;
+  z-index: 80;
+}
+
+.notice-panel header,
+.notice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notice-panel header button,
+.notice-actions button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notice-panel header button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+}
+
+.notice-actions {
+  margin: 12px 0;
+}
+
+.notice-actions button {
+  height: 28px;
+  padding: 0 10px;
+}
+
+.notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notice-list li {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.notice-list li.is-unread {
+  border-color: rgba(59, 130, 246, 0.28);
+  background: #eff6ff;
+}
+
+.notice-list button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notice-list small,
+.notice-list em,
+.notice-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.notice-empty {
+  margin: 18px 0 4px;
+  text-align: center;
 }
 
 @keyframes pulse-green {

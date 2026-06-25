@@ -83,6 +83,34 @@
         </div>
       </section>
 
+      <section class="health-grid" aria-label="知识库健康">
+        <button type="button" class="health-card" @click="goDocuments({ status: 'failed' })">
+          <span>失败文档趋势</span>
+          <strong>{{ summary.failedDocumentTrend?.at(-1)?.count ?? summary.failedDocumentCount }}</strong>
+          <small>最近失败：{{ summary.recentFailedDocuments?.length ?? 0 }} 个</small>
+        </button>
+        <button type="button" class="health-card" @click="goDocuments({ processingStage: 'completed' })">
+          <span>无片段文档</span>
+          <strong>{{ summary.unchunkedDocumentCount ?? 0 }}</strong>
+          <small>需要重新解析或检查文件内容</small>
+        </button>
+        <button type="button" class="health-card" @click="goDocuments({ graphStatus: 'failed' })">
+          <span>图谱同步失败</span>
+          <strong>{{ summary.graphFailedDocumentCount ?? 0 }}</strong>
+          <small>影响关系检索与图谱探索</small>
+        </button>
+        <button type="button" class="health-card" @click="router.push('/kb')">
+          <span>验证通过率</span>
+          <strong>{{ percent(summary.evalPassRate) }}</strong>
+          <small>来自问答验证用例</small>
+        </button>
+        <button type="button" class="health-card" @click="router.push('/chat')">
+          <span>无引用回答率</span>
+          <strong>{{ percent(summary.noCitationRate) }}</strong>
+          <small>需要关注可信回答质量</small>
+        </button>
+      </section>
+
       <!-- 双栏近态追踪 -->
       <div class="dynamic-layout">
         <!-- 最近文档 -->
@@ -129,6 +157,41 @@
             </li>
           </ul>
           <p v-else class="empty-feed">暂无最近会话历史</p>
+        </article>
+      </div>
+
+      <div class="dynamic-layout">
+        <article class="feed-card">
+          <header class="feed-card__head">
+            <h3>最近失败文档</h3>
+            <button class="text-link" type="button" @click="goDocuments({ status: 'failed' })">查看失败</button>
+          </header>
+          <ul v-if="summary.recentFailedDocuments?.length" class="doc-feed">
+            <li v-for="doc in summary.recentFailedDocuments" :key="doc.id" class="doc-feed-item">
+              <div class="doc-feed-item__info">
+                <AlertCircleIcon :size="15" class="doc-icon" />
+                <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
+              </div>
+              <span class="time">{{ doc.processingError ?? doc.processing_error ?? '处理失败' }}</span>
+            </li>
+          </ul>
+          <p v-else class="empty-feed">暂无失败文档</p>
+        </article>
+
+        <article class="feed-card">
+          <header class="feed-card__head">
+            <h3>热门问题与低评分回答</h3>
+            <button class="text-link" type="button" @click="router.push('/chat')">进入问答</button>
+          </header>
+          <ul v-if="summary.hotQuestions?.length" class="chat-feed">
+            <li v-for="item in summary.hotQuestions" :key="item.question" class="chat-feed-item">
+              <div class="chat-details">
+                <strong class="chat-question">{{ item.question }}</strong>
+                <span class="chat-time">出现 {{ item.count }} 次</span>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="empty-feed">暂无热门问题统计</p>
         </article>
       </div>
     </div>
@@ -189,6 +252,16 @@ function goChat(conversationId: string) {
     path: '/chat',
     query: { conversationId },
   })
+}
+
+function goDocuments(query: Record<string, string>) {
+  router.push({ path: '/documents', query })
+}
+
+function percent(value?: number) {
+  const n = Number(value ?? 0)
+  if (!Number.isFinite(n)) return '0%'
+  return `${Math.round(n * 100)}%`
 }
 
 function formatDate(value?: string) {
@@ -326,6 +399,49 @@ function formatDate(value?: string) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.health-card {
+  display: flex;
+  min-height: 112px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.health-card:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.health-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.health-card strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.health-card small {
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .stat-card {

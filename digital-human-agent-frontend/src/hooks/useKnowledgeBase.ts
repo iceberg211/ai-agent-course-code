@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { apiFetch, apiJson } from '@/api/client'
 import type {
   KnowledgeBase,
   ChunkContext,
@@ -26,6 +27,12 @@ export interface DocumentListQuery {
   fileType?: string
   status?: string
   graphStatus?: string
+  processingStage?: string
+  tags?: string
+  department?: string
+  businessCategory?: string
+  visibility?: 'private' | 'department' | 'company' | ''
+  expiresBefore?: string
   page?: number
   pageSize?: number
 }
@@ -35,18 +42,13 @@ export interface EvalCasePayload {
   expectedAnswer?: string
 }
 
-async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null> {
-  try {
-    const res = await fetch(input, init)
-    if (!res.ok) {
-      console.error(`[useKnowledgeBase] ${init?.method ?? 'GET'} ${input} -> HTTP ${res.status}`)
-      return null
-    }
-    return (await res.json()) as T
-  } catch (e) {
-    console.error(`[useKnowledgeBase] network error ${input}:`, e)
-    return null
-  }
+export interface UploadDocumentMetadata {
+  category?: string
+  tags?: string[]
+  department?: string
+  businessCategory?: string
+  visibility?: 'private' | 'department' | 'company'
+  expiresAt?: string
 }
 
 function toQuery(params: object): string {
@@ -70,7 +72,7 @@ export function useKnowledgeBase() {
   async function listAll(): Promise<KnowledgeBase[]> {
     listLoading.value = true
     try {
-      return (await fetchJson<KnowledgeBase[]>('/api/knowledge-bases')) ?? []
+      return (await apiJson<KnowledgeBase[]>('/api/knowledge-bases')) ?? []
     } finally {
       listLoading.value = false
     }
@@ -79,7 +81,7 @@ export function useKnowledgeBase() {
   async function getById(kbId: string): Promise<KnowledgeBase | null> {
     detailLoading.value = true
     try {
-      return await fetchJson<KnowledgeBase>(`/api/knowledge-bases/${kbId}`)
+      return await apiJson<KnowledgeBase>(`/api/knowledge-bases/${kbId}`)
     } finally {
       detailLoading.value = false
     }
@@ -88,7 +90,7 @@ export function useKnowledgeBase() {
   async function create(
     payload: CreateKnowledgeBasePayload,
   ): Promise<KnowledgeBase | null> {
-    return fetchJson<KnowledgeBase>('/api/knowledge-bases', {
+    return apiJson<KnowledgeBase>('/api/knowledge-bases', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
@@ -99,7 +101,7 @@ export function useKnowledgeBase() {
     kbId: string,
     payload: UpdateKnowledgeBasePayload,
   ): Promise<KnowledgeBase | null> {
-    return fetchJson<KnowledgeBase>(`/api/knowledge-bases/${kbId}`, {
+    return apiJson<KnowledgeBase>(`/api/knowledge-bases/${kbId}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
@@ -107,7 +109,7 @@ export function useKnowledgeBase() {
   }
 
   async function remove(kbId: string): Promise<boolean> {
-    const res = await fetchJson<{ deleted: true }>(
+    const res = await apiJson<{ deleted: true }>(
       `/api/knowledge-bases/${kbId}`,
       { method: 'DELETE' },
     )
@@ -118,7 +120,7 @@ export function useKnowledgeBase() {
     documentsLoading.value = true
     try {
       return (
-        (await fetchJson<KnowledgeDocumentDetail[]>(
+        (await apiJson<KnowledgeDocumentDetail[]>(
           `/api/knowledge-bases/${kbId}/documents`,
         )) ?? []
       )
@@ -134,7 +136,7 @@ export function useKnowledgeBase() {
     documentsLoading.value = true
     try {
       return (
-        (await fetchJson<PaginatedResult<KnowledgeDocumentDetail>>(
+        (await apiJson<PaginatedResult<KnowledgeDocumentDetail>>(
           `/api/knowledge-bases/${kbId}/documents${toQuery(query)}`,
         )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
       )
@@ -149,7 +151,7 @@ export function useKnowledgeBase() {
     documentsLoading.value = true
     try {
       return (
-        (await fetchJson<PaginatedResult<KnowledgeDocumentDetail>>(
+        (await apiJson<PaginatedResult<KnowledgeDocumentDetail>>(
           `/api/documents${toQuery(query)}`,
         )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
       )
@@ -161,14 +163,14 @@ export function useKnowledgeBase() {
   async function uploadDocument(
     kbId: string,
     file: File,
-    category?: string,
+    metadata: UploadDocumentMetadata | string = {},
   ): Promise<KnowledgeDocumentDetail | null> {
     uploading.value = true
     try {
       const form = new FormData()
       form.append('file', file)
-      if (category) form.append('category', category)
-      const res = await fetch(`/api/knowledge-bases/${kbId}/documents`, {
+      appendUploadMetadata(form, metadata)
+      const res = await apiFetch(`/api/knowledge-bases/${kbId}/documents`, {
         method: 'POST',
         body: form,
       }).catch(() => null)
@@ -179,19 +181,135 @@ export function useKnowledgeBase() {
     }
   }
 
+  async function uploadDocumentWithProgress(
+    kbId: string,
+    file: File,
+    metadata: UploadDocumentMetadata | string = {},
+    onProgress?: (percent: number) => void,
+  ): Promise<KnowledgeDocumentDetail | null> {
+    uploading.value = true
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      appendUploadMetadata(form, metadata)
+      return await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `/api/knowledge-bases/${kbId}/documents`)
+        const token = localStorage.getItem('jwt_token')
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return
+          onProgress?.(Math.round((event.loaded / event.total) * 100))
+        }
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            resolve(null)
+            return
+          }
+          try {
+            resolve(JSON.parse(xhr.responseText) as KnowledgeDocumentDetail)
+          } catch {
+            resolve(null)
+          }
+        }
+        xhr.onerror = () => resolve(null)
+        xhr.send(form)
+      })
+    } finally {
+      uploading.value = false
+    }
+  }
+
   async function deleteDocument(kbId: string, docId: string): Promise<boolean> {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/knowledge-bases/${kbId}/documents/${docId}`,
       { method: 'DELETE' },
     ).catch(() => null)
     return !!res?.ok
   }
 
+  async function batchRetryDocuments(
+    kbId: string,
+    documentIds: string[],
+  ): Promise<{ success: boolean; results: Array<{ documentId: string; success: boolean; error?: string }> } | null> {
+    return apiJson(`/api/knowledge-bases/${kbId}/documents/batch-retry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ documentIds }),
+    })
+  }
+
+  async function uploadDocumentVersion(
+    kbId: string,
+    docId: string,
+    file: File,
+    metadata: UploadDocumentMetadata | string = {},
+  ): Promise<KnowledgeDocumentDetail | null> {
+    const form = new FormData()
+    form.append('file', file)
+    appendUploadMetadata(form, metadata)
+    const res = await apiFetch(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/versions`,
+      { method: 'POST', body: form },
+    ).catch(() => null)
+    if (!res?.ok) return null
+    return (await res.json()) as KnowledgeDocumentDetail
+  }
+
+  async function listDocumentVersions(
+    kbId: string,
+    docId: string,
+  ): Promise<KnowledgeDocumentDetail[]> {
+    return (
+      (await apiJson<KnowledgeDocumentDetail[]>(
+        `/api/knowledge-bases/${kbId}/documents/${docId}/versions`,
+      )) ?? []
+    )
+  }
+
+  async function setCurrentDocumentVersion(
+    kbId: string,
+    docId: string,
+  ): Promise<KnowledgeDocumentDetail | null> {
+    return apiJson<KnowledgeDocumentDetail>(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/current-version`,
+      { method: 'PATCH' },
+    )
+  }
+
+  async function archiveDocument(
+    kbId: string,
+    docId: string,
+  ): Promise<KnowledgeDocumentDetail | null> {
+    return apiJson<KnowledgeDocumentDetail>(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/archive`,
+      { method: 'PATCH' },
+    )
+  }
+
+  async function updateDocumentGovernance(
+    kbId: string,
+    docId: string,
+    metadata: UploadDocumentMetadata,
+  ): Promise<KnowledgeDocumentDetail | null> {
+    return apiJson<KnowledgeDocumentDetail>(
+      `/api/knowledge-bases/${kbId}/documents/${docId}/governance`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...metadata,
+          tags: metadata.tags?.join(','),
+        }),
+      },
+    )
+  }
+
   async function retryDocument(
     kbId: string,
     docId: string,
   ): Promise<KnowledgeDocumentDetail | null> {
-    return fetchJson<KnowledgeDocumentDetail>(
+    return apiJson<KnowledgeDocumentDetail>(
       `/api/knowledge-bases/${kbId}/documents/${docId}/retry`,
       { method: 'POST' },
     )
@@ -204,7 +322,7 @@ export function useKnowledgeBase() {
     chunksLoading.value = true
     try {
       return (
-        (await fetchJson<KnowledgeChunk[]>(
+        (await apiJson<KnowledgeChunk[]>(
           `/api/knowledge-bases/${kbId}/documents/${docId}/chunks`,
         )) ?? []
       )
@@ -218,7 +336,7 @@ export function useKnowledgeBase() {
     chunkId: string,
     enabled: boolean,
   ): Promise<boolean> {
-    const res = await fetchJson<{ enabled: boolean }>(
+    const res = await apiJson<{ enabled: boolean }>(
       `/api/knowledge-bases/${kbId}/chunks/${chunkId}`,
       {
         method: 'PATCH',
@@ -236,7 +354,7 @@ export function useKnowledgeBase() {
     before = 1,
     after = 1,
   ): Promise<ChunkContext | null> {
-    return fetchJson<ChunkContext>(
+    return apiJson<ChunkContext>(
       `/api/knowledge-bases/${kbId}/documents/${docId}/chunks/${chunkId}/context${toQuery({ before, after })}`,
     )
   }
@@ -255,7 +373,7 @@ export function useKnowledgeBase() {
     if (!q) return null
     searching.value = true
     try {
-      return await fetchJson<KnowledgeSearchResult>(
+      return await apiJson<KnowledgeSearchResult>(
         `/api/knowledge-bases/${kbId}/search`,
         {
           method: 'POST',
@@ -282,7 +400,7 @@ export function useKnowledgeBase() {
     if (!q || !personaId) return null
     searching.value = true
     try {
-      return await fetchJson<KnowledgeSearchResult>(
+      return await apiJson<KnowledgeSearchResult>(
         `/api/personas/${personaId}/search/stages`,
         {
           method: 'POST',
@@ -297,7 +415,7 @@ export function useKnowledgeBase() {
 
   async function listEvalCases(kbId: string): Promise<KnowledgeEvalCase[]> {
     return (
-      (await fetchJson<KnowledgeEvalCase[]>(
+      (await apiJson<KnowledgeEvalCase[]>(
         `/api/knowledge-bases/${kbId}/eval-cases`,
       )) ?? []
     )
@@ -307,7 +425,7 @@ export function useKnowledgeBase() {
     kbId: string,
     payload: EvalCasePayload,
   ): Promise<KnowledgeEvalCase | null> {
-    return fetchJson<KnowledgeEvalCase>(
+    return apiJson<KnowledgeEvalCase>(
       `/api/knowledge-bases/${kbId}/eval-cases`,
       {
         method: 'POST',
@@ -322,7 +440,7 @@ export function useKnowledgeBase() {
     evalCaseId: string,
     payload: Partial<EvalCasePayload>,
   ): Promise<KnowledgeEvalCase | null> {
-    return fetchJson<KnowledgeEvalCase>(
+    return apiJson<KnowledgeEvalCase>(
       `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}`,
       {
         method: 'PATCH',
@@ -336,16 +454,40 @@ export function useKnowledgeBase() {
     kbId: string,
     evalCaseId: string,
   ): Promise<boolean> {
-    const res = await fetchJson<{ deleted: true }>(
+    const res = await apiJson<{ deleted: true }>(
       `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}`,
       { method: 'DELETE' },
     )
     return res?.deleted === true
   }
 
+  async function runEvalBatch(kbId: string): Promise<KnowledgeEvalCase[]> {
+    return (
+      (await apiJson<KnowledgeEvalCase[]>(
+        `/api/knowledge-bases/${kbId}/eval-cases/run-batch`,
+        { method: 'POST' },
+      )) ?? []
+    )
+  }
+
+  async function updateEvalReview(
+    kbId: string,
+    evalCaseId: string,
+    status: 'passed' | 'failed' | 'unreviewed',
+  ): Promise<KnowledgeEvalCase | null> {
+    return apiJson<KnowledgeEvalCase>(
+      `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}/review`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+      },
+    )
+  }
+
   async function listKbsForPersona(personaId: string): Promise<KnowledgeBase[]> {
     return (
-      (await fetchJson<KnowledgeBase[]>(
+      (await apiJson<KnowledgeBase[]>(
         `/api/personas/${personaId}/knowledge-bases`,
       )) ?? []
     )
@@ -355,7 +497,7 @@ export function useKnowledgeBase() {
     personaId: string,
     knowledgeBaseId: string,
   ): Promise<boolean> {
-    const res = await fetchJson<{ attached: boolean }>(
+    const res = await apiJson<{ attached: boolean }>(
       `/api/personas/${personaId}/knowledge-bases`,
       {
         method: 'POST',
@@ -370,7 +512,7 @@ export function useKnowledgeBase() {
     personaId: string,
     kbId: string,
   ): Promise<boolean> {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/personas/${personaId}/knowledge-bases/${kbId}`,
       { method: 'DELETE' },
     ).catch(() => null)
@@ -393,8 +535,15 @@ export function useKnowledgeBase() {
     listDocumentsPaged,
     listAllDocuments,
     uploadDocument,
+    uploadDocumentWithProgress,
     deleteDocument,
     retryDocument,
+    batchRetryDocuments,
+    uploadDocumentVersion,
+    listDocumentVersions,
+    setCurrentDocumentVersion,
+    archiveDocument,
+    updateDocumentGovernance,
     listChunks,
     setChunkEnabled,
     getChunkContext,
@@ -404,8 +553,28 @@ export function useKnowledgeBase() {
     createEvalCase,
     updateEvalCase,
     deleteEvalCase,
+    runEvalBatch,
+    updateEvalReview,
     listKbsForPersona,
     attachToPersona,
     detachFromPersona,
   }
+}
+
+function appendUploadMetadata(
+  form: FormData,
+  metadata: UploadDocumentMetadata | string,
+) {
+  if (typeof metadata === 'string') {
+    if (metadata) form.append('category', metadata)
+    return
+  }
+  if (metadata.category) form.append('category', metadata.category)
+  if (metadata.tags?.length) form.append('tags', metadata.tags.join(','))
+  if (metadata.department) form.append('department', metadata.department)
+  if (metadata.businessCategory) {
+    form.append('businessCategory', metadata.businessCategory)
+  }
+  if (metadata.visibility) form.append('visibility', metadata.visibility)
+  if (metadata.expiresAt) form.append('expiresAt', metadata.expiresAt)
 }

@@ -1,6 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+  IsIn,
+} from 'class-validator';
 
 export class ListDocumentsDto {
   @ApiPropertyOptional({ description: '按文件名搜索' })
@@ -47,4 +57,36 @@ export class ListDocumentsDto {
   @IsOptional()
   @IsString()
   processingStage?: string;
+
+  @ApiPropertyOptional({ description: '标签，多个以逗号分隔' })
+  @IsOptional()
+  @IsString()
+  tags?: string;
+
+  @ApiPropertyOptional({ description: '所属部门' })
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @ApiPropertyOptional({ description: '业务分类' })
+  @IsOptional()
+  @IsString()
+  businessCategory?: string;
+
+  @ApiPropertyOptional({ description: '权限范围' })
+  @IsOptional()
+  @IsIn(['private', 'department', 'company'])
+  visibility?: 'private' | 'department' | 'company';
+
+  @ApiPropertyOptional({ description: '过期时间早于该时间的文档' })
+  @IsOptional()
+  @IsString()
+  expiresBefore?: string;
+}
+
+export class BatchRetryDocumentsDto {
+  @IsArray({ message: 'documentIds 必须是数组' })
+  @ArrayMinSize(1, { message: 'documentIds 至少包含一个文档 ID' })
+  @IsUUID('4', { each: true, message: 'documentIds 中存在非法文档 ID' })
+  documentIds: string[];
 }

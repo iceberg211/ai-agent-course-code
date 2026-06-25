@@ -181,6 +181,7 @@ export class KnowledgeSearchService {
             strategy: params.strategy,
             threshold: params.options.threshold,
             globalRetrievalLimit: params.options.retrievalLimit,
+            accessScope: options.accessScope,
             signal: params.signal,
           }),
         })),
@@ -260,6 +261,7 @@ export class KnowledgeSearchService {
         strategy: params.strategy,
         retrievalLimit: params.options.retrievalLimit,
         threshold: params.options.threshold,
+        accessScope: options.accessScope,
         channels: {
           useVector: params.strategy.useVector,
           useKeyword: params.strategy.useKeyword,

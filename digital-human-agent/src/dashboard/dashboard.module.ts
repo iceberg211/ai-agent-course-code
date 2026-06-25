@@ -7,6 +7,7 @@ import { DashboardService } from '@/dashboard/dashboard.service';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
+import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Knowledge } from '@/knowledge/entities/knowledge.entity';
       KnowledgeChunk,
       Conversation,
       ConversationMessage,
+      KnowledgeEvalCase,
     ]),
   ],
   controllers: [DashboardController],

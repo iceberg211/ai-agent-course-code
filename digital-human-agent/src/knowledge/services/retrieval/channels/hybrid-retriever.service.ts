@@ -1,5 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import {
   isAbortError,
   isTransientInfrastructureError,
@@ -24,6 +26,7 @@ import {
   fuseVectorAndKeywordResults,
 } from '@/knowledge/services/retrieval/channels/knowledge-retrieval-fusion';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
+import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import { FulltextRetrieverService } from './fulltext-retriever.service';
 import type {
   GraphBackend,
@@ -33,6 +36,7 @@ import type {
   RetrieveKnowledgeTraceItem,
   KnowledgeHybridRetrievalParams,
   KnowledgeHybridRetrievalResult,
+  KnowledgeAccessScope,
   PersonaHybridRetrievalInput,
   PersonaHybridRetrievalResult,
 } from '@/knowledge/types/knowledge-content.types';
@@ -71,6 +75,9 @@ export class HybridRetrieverService {
     private readonly graphRetriever?: KnowledgeGraphService,
     @Optional()
     private readonly personaKnowledgeConfigService?: PersonaKbConfigService,
+    @Optional()
+    @InjectRepository(KnowledgeChunkEntity)
+    private readonly chunkRepo?: Repository<KnowledgeChunkEntity>,
   ) {}
 
   // ==========================================
@@ -125,6 +132,7 @@ export class HybridRetrieverService {
             threshold: params.threshold,
             matchCount: perQueryTopK,
             strategy: params.strategy,
+            accessScope: params.accessScope,
             signal: params.signal,
           });
 
@@ -249,6 +257,7 @@ export class HybridRetrieverService {
             retrievalQueries: input.retrievalQueries,
             strategy,
             threshold: this.resolveThreshold(input.threshold, config),
+            accessScope: input.accessScope,
             globalRetrievalLimit: this.resolveRetrievalLimit(
               input.retrievalLimit,
               config,
@@ -342,6 +351,7 @@ export class HybridRetrieverService {
     matchCount: number;
     strategy: RetrievalStrategy;
     signal?: AbortSignal;
+    accessScope?: KnowledgeAccessScope;
   }): Promise<
     HybridRetrieveResult & {
       graphBackend: GraphBackend | 'disabled';
@@ -361,6 +371,7 @@ export class HybridRetrieverService {
             useKeyword: params.strategy.useKeyword,
             useExactPhrase: params.strategy.useExactPhrase,
             signal: params.signal,
+            accessScope: params.accessScope,
           })
         : Promise.resolve(this.buildSkippedHybridResult(params.strategy));
 
@@ -371,6 +382,7 @@ export class HybridRetrieverService {
       params.matchCount,
       params.strategy,
       params.signal,
+      params.accessScope,
     );
 
     const [hybridResult, graphChunks] = await Promise.all([
@@ -413,6 +425,7 @@ export class HybridRetrieverService {
     useKeyword?: boolean;
     useExactPhrase?: boolean;
     signal?: AbortSignal;
+    accessScope?: KnowledgeAccessScope;
   }): Promise<HybridRetrieveResult> {
     return runInTracedScope(
       {
@@ -455,6 +468,7 @@ export class HybridRetrieverService {
                 threshold: params.threshold,
                 matchCount: params.matchCount,
                 signal: params.signal,
+                accessScope: params.accessScope,
               })
             : Promise.resolve([] as KnowledgeChunk[]);
         if (!useVector || !params.queryEmbedding) {
@@ -468,6 +482,7 @@ export class HybridRetrieverService {
               matchCount: params.matchCount,
               useExactPhrase: params.useExactPhrase,
               signal: params.signal,
+              accessScope: params.accessScope,
             })
           : Promise.resolve({
               chunks: [] as KnowledgeChunk[],
@@ -539,6 +554,7 @@ export class HybridRetrieverService {
     threshold: number;
     matchCount: number;
     signal?: AbortSignal;
+    accessScope?: KnowledgeAccessScope;
   }): Promise<KnowledgeChunk[]> {
     return runInTracedScope(
       {
@@ -579,10 +595,15 @@ export class HybridRetrieverService {
         );
         throwIfAborted(params.signal);
         if (error) throw new Error(error.message);
-        return (data ?? []).map((chunk) => ({
+        const chunks = (data ?? []).map((chunk) => ({
           ...chunk,
           retrieval_sources: ['vector' as const],
         }));
+        return this.filterCurrentChunks(
+          params.knowledgeId,
+          chunks,
+          params.accessScope,
+        );
       },
     );
   }
@@ -593,6 +614,7 @@ export class HybridRetrieverService {
     matchCount: number;
     useExactPhrase?: boolean;
     signal?: AbortSignal;
+    accessScope?: KnowledgeAccessScope;
   }): Promise<KeywordRetrieveResult> {
     return this.fulltextRetriever.retrieve(params);
   }
@@ -604,12 +626,13 @@ export class HybridRetrieverService {
     matchCount: number,
     strategy: RetrievalStrategy,
     signal?: AbortSignal,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeChunk[]> {
     const graphRetriever = this.graphRetriever;
     if (!this.isGraphRetrieverEnabled(strategy) || !graphRetriever) return [];
 
     try {
-      return await graphRetriever.retrieve({
+      const chunks = await graphRetriever.retrieve({
         knowledgeId,
         retrievalQuery,
         keywordTerms,
@@ -618,6 +641,7 @@ export class HybridRetrieverService {
         graphMode: strategy.graphMode,
         signal,
       });
+      return this.filterCurrentChunks(knowledgeId, chunks, accessScope);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -727,6 +751,44 @@ export class HybridRetrieverService {
       1,
       8,
     );
+  }
+
+  private async filterCurrentChunks(
+    knowledgeId: string,
+    chunks: KnowledgeChunk[],
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeChunk[]> {
+    if (!this.chunkRepo || chunks.length === 0) return chunks;
+    const rows = await this.chunkRepo.find({
+      where: {
+        id: In(chunks.map((chunk) => chunk.id)),
+        enabled: true,
+        document: {
+          knowledgeBaseId: knowledgeId,
+          isCurrentVersion: true,
+          archivedAt: IsNull(),
+        },
+      },
+      relations: { document: true },
+    });
+    if (accessScope?.role !== 'admin') {
+      const ownerId = accessScope?.ownerId ?? '';
+      const department = accessScope?.department ?? '';
+      rows.splice(
+        0,
+        rows.length,
+        ...rows.filter((row) => {
+          const document = row.document;
+          if (document.visibility === 'company') return true;
+          if (document.visibility === 'department') {
+            return Boolean(department && document.department === department);
+          }
+          return Boolean(ownerId && document.ownerId === ownerId);
+        }),
+      );
+    }
+    const allowed = new Set(rows.map((row) => row.id));
+    return chunks.filter((chunk) => allowed.has(chunk.id));
   }
 
   private buildSkippedHybridResult(

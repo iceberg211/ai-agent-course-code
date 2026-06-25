@@ -10,12 +10,13 @@ export class ApiKeyStrategy extends PassportStrategy(Strategy, 'api-key') {
   }
 
   async validate(req: any) {
-    let key = req.headers['x-api-key'];
+    let key = this.normalizeHeader(req.headers['x-api-key']);
 
     if (!key) {
-      const authHeader = req.headers['authorization'];
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
+      const authHeader = this.normalizeHeader(req.headers['authorization']);
+      const bearerMatch = authHeader ? /^Bearer\s+(.+)$/i.exec(authHeader) : null;
+      if (bearerMatch?.[1]) {
+        const token = bearerMatch[1].trim();
         if (token.startsWith('dh_')) {
           key = token;
         }
@@ -36,5 +37,12 @@ export class ApiKeyStrategy extends PassportStrategy(Strategy, 'api-key') {
       username: user.username,
       role: user.role,
     };
+  }
+
+  private normalizeHeader(value: unknown): string | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (typeof raw !== 'string') return undefined;
+    const normalized = raw.trim();
+    return normalized || undefined;
   }
 }

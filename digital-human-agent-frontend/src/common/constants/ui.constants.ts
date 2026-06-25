@@ -11,7 +11,7 @@ export type DigitalHumanUiStatus =
   | 'mock'
   | 'error';
 
-export type KnowledgeTabKey = 'documents' | 'hit-test' | 'settings';
+export type KnowledgeTabKey = 'documents' | 'health' | 'hit-test' | 'settings';
 
 export const CHAT_CONTROL_STATE_LABELS: Record<ConversationState, string> = {
   idle: '待命',
@@ -75,6 +75,7 @@ export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
   label: string;
 }> = [
   { key: 'documents', label: '文档' },
+  { key: 'health', label: '健康' },
   { key: 'settings', label: '配置' },
   { key: 'hit-test', label: '问答验证' },
 ];

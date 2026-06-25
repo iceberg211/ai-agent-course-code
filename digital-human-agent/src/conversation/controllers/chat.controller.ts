@@ -114,6 +114,7 @@ export class ChatController {
             userMessage,
             turnId,
             signal: abortController.signal,
+            accessScope: this.accessScope(req),
             onToken: (token: string) => {
               assistantReply += token;
               writer.write({
@@ -241,6 +242,15 @@ export class ChatController {
       throw new BadRequestException('未检测到合法用户登录信息');
     }
     return user.id;
+  }
+
+  private accessScope(req: Request) {
+    const user = (req as any).user;
+    return {
+      ownerId: user?.id ?? null,
+      department: user?.department ?? null,
+      role: user?.role ?? null,
+    };
   }
 
   private normalizeOwnerId(value: unknown): string | null {

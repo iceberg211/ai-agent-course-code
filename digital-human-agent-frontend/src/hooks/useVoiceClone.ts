@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { VoiceCloneState } from '@/types'
+import { apiFetch } from '@/api/client'
 
 export function useVoiceClone() {
   const state = ref<VoiceCloneState | null>(null)
@@ -11,7 +12,7 @@ export function useVoiceClone() {
     if (!personaId) return { ok: false, message: '缺少 personaId' }
     loading.value = true
     try {
-      const res = await fetch(`/api/voice-clone/${personaId}/status`).catch(() => null)
+      const res = await apiFetch(`/api/voice-clone/${personaId}/status`).catch(() => null)
       if (!res) {
         return { ok: false, message: '网络错误' }
       }
@@ -39,7 +40,7 @@ export function useVoiceClone() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`/api/voice-clone/${personaId}`, {
+      const res = await apiFetch(`/api/voice-clone/${personaId}`, {
         method: 'POST',
         body: form,
       }).catch(() => null)

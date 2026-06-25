@@ -22,7 +22,10 @@ describe('DashboardService', () => {
 
   const mockMessageRepo = {
     count: jest.fn().mockResolvedValue(300),
-    find: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockEvalCaseRepo = {
     createQueryBuilder: jest.fn(),
   };
 
@@ -36,6 +39,7 @@ describe('DashboardService', () => {
       mockChunkRepo as never,
       mockConversationRepo as never,
       mockMessageRepo as never,
+      mockEvalCaseRepo as never,
     );
   });
 
@@ -68,7 +72,18 @@ describe('DashboardService', () => {
       getRawMany: jest.fn().mockResolvedValue(mockHotQuestionsRaw),
     };
 
-    // 3. Mock 点踩回答的 queryBuilder
+    // 3. Mock 无引用率 SQL 聚合
+    const citationStatsQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({
+        total: '3',
+        noCitationCount: '2',
+      }),
+    };
+
+    // 4. Mock 点踩回答的 queryBuilder
     const mockLowRatedRaw = [
       {
         question: '不好用的提问',
@@ -95,16 +110,21 @@ describe('DashboardService', () => {
       if (alias === 'answer') {
         return lowRatedQueryBuilder;
       }
+      if (alias === 'citationMsg') {
+        return citationStatsQueryBuilder;
+      }
       return {};
     });
 
-    // 4. Mock assistant 消息以计算无引用占比
-    const mockAssistantMessages = [
-      { citations: ['cit-1'] }, // 有引用
-      { citations: [] },        // 无引用
-      { citations: null },      // 无引用
-    ];
-    mockMessageRepo.find.mockResolvedValue(mockAssistantMessages);
+    const evalQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({
+        total: '4',
+        passed: '3',
+      }),
+    };
+    mockEvalCaseRepo.createQueryBuilder.mockReturnValue(evalQueryBuilder);
 
     // 执行方法
     const result = await service.summary();
@@ -136,5 +156,6 @@ describe('DashboardService', () => {
 
     // 无引用率占比校验 (总数 3，无引用 2，占比 2/3 ≈ 0.6667)
     expect(result.noCitationRate).toBe(0.6667);
+    expect(result.evalPassRate).toBe(0.75);
   });
 });

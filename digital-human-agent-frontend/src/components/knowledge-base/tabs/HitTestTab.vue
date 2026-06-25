@@ -66,7 +66,12 @@
           <p class="eyebrow">用例库</p>
           <h3>常用验证问题</h3>
         </div>
-        <span>{{ evalCases.length }} 条</span>
+        <div class="case-actions">
+          <span>{{ evalCases.length }} 条</span>
+          <button type="button" :disabled="!evalCases.length || batchRunning" @click="runBatch">
+            {{ batchRunning ? '运行中' : '批量运行' }}
+          </button>
+        </div>
       </header>
       <div v-if="evalCases.length" class="case-list">
         <article
@@ -79,15 +84,26 @@
             <strong>{{ item.question }}</strong>
             <small v-if="resolveExpectedAnswer(item)">{{ resolveExpectedAnswer(item) }}</small>
             <small v-else>未填写期望答案</small>
+            <span class="case-meta">
+              {{ runStatusLabel(resolveRunStatus(item)) }}
+              <template v-if="resolveHitRate(item) != null"> · 命中率 {{ fmtPercent(resolveHitRate(item)) }}</template>
+              <template v-if="resolveRecall(item) != null"> · 召回率 {{ fmtPercent(resolveRecall(item)) }}</template>
+              · {{ reviewStatusLabel(resolveReviewStatus(item)) }}
+            </span>
           </button>
-          <button
-            class="icon-button"
-            type="button"
-            aria-label="删除验证用例"
-            @click="deleteEvalCase(item.id)"
-          >
-            <Trash2Icon :size="14" />
-          </button>
+          <div class="case-tools">
+            <button type="button" @click="reviewEvalCase(item.id, 'passed')">通过</button>
+            <button type="button" @click="reviewEvalCase(item.id, 'failed')">未通过</button>
+            <button type="button" @click="sendFailedToSearch(item)">搜索</button>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="删除验证用例"
+              @click="deleteEvalCase(item.id)"
+            >
+              <Trash2Icon :size="14" />
+            </button>
+          </div>
         </article>
       </div>
       <p v-else class="muted">还没有保存验证问题。</p>
@@ -192,6 +208,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { SaveIcon, SearchIcon, Trash2Icon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type {
@@ -203,6 +220,7 @@ import type {
 
 const props = defineProps<{ kb: KnowledgeBase }>()
 const hook = useKnowledgeBase()
+const router = useRouter()
 
 const query = ref('')
 const threshold = ref(props.kb.retrievalConfig.threshold)
@@ -213,6 +231,7 @@ const expectedAnswer = ref('')
 const evalCases = ref<KnowledgeEvalCase[]>([])
 const activeEvalCaseId = ref<string | null>(null)
 const loadingCases = ref(false)
+const batchRunning = ref(false)
 
 const result = ref<KnowledgeSearchResult | null>(null)
 const selected = ref<KnowledgeSearchChunk | null>(null)
@@ -297,6 +316,33 @@ async function saveEvalCase() {
   await loadEvalCases()
 }
 
+async function runBatch() {
+  batchRunning.value = true
+  errorMsg.value = ''
+  try {
+    evalCases.value = await hook.runEvalBatch(props.kb.id)
+  } finally {
+    batchRunning.value = false
+  }
+}
+
+async function reviewEvalCase(
+  evalCaseId: string,
+  status: 'passed' | 'failed' | 'unreviewed',
+) {
+  const saved = await hook.updateEvalReview(props.kb.id, evalCaseId, status)
+  if (!saved) {
+    errorMsg.value = '人工审核状态保存失败'
+    return
+  }
+  await loadEvalCases()
+}
+
+function sendFailedToSearch(item: KnowledgeEvalCase) {
+  localStorage.setItem('__draft_rag_search', item.question)
+  router.push({ path: '/search', query: { q: item.question, knowledgeBaseId: props.kb.id } })
+}
+
 async function applyEvalCase(item: KnowledgeEvalCase) {
   activeEvalCaseId.value = item.id
   query.value = item.question
@@ -318,9 +364,38 @@ function resolveExpectedAnswer(item: KnowledgeEvalCase): string {
   return item.expectedAnswer ?? item.expected_answer ?? ''
 }
 
+function resolveRunStatus(item: KnowledgeEvalCase): string {
+  return item.lastRunStatus ?? item.last_run_status ?? 'not_run'
+}
+
+function resolveHitRate(item: KnowledgeEvalCase): number | null {
+  return item.lastRunHitRate ?? item.last_run_hit_rate ?? null
+}
+
+function resolveRecall(item: KnowledgeEvalCase): number | null {
+  return item.lastRunRecall ?? item.last_run_recall ?? null
+}
+
+function resolveReviewStatus(item: KnowledgeEvalCase): string {
+  return item.userReviewStatus ?? item.user_review_status ?? 'unreviewed'
+}
+
+function runStatusLabel(status: string) {
+  return ({ passed: '最近通过', failed: '最近失败', error: '运行异常', not_run: '未运行' } as Record<string, string>)[status] ?? status
+}
+
+function reviewStatusLabel(status: string) {
+  return ({ passed: '人工通过', failed: '人工未通过', unreviewed: '待审核' } as Record<string, string>)[status] ?? status
+}
+
 function fmt(n: number | undefined): string {
   const v = Number(n)
   return Number.isFinite(v) ? v.toFixed(3) : '-'
+}
+
+function fmtPercent(n: number | null): string {
+  const v = Number(n)
+  return Number.isFinite(v) ? `${Math.round(v * 100)}%` : '-'
 }
 </script>
 
@@ -561,10 +636,35 @@ function fmt(n: number | undefined): string {
   color: var(--text);
 }
 
-.case-panel > header > span {
+.case-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.case-actions span {
   color: var(--text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.case-actions button,
+.case-tools button {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.case-actions button:hover,
+.case-tools button:hover {
+  border-color: var(--primary-muted);
+  color: var(--primary);
 }
 
 .case-list {
@@ -576,8 +676,8 @@ function fmt(n: number | undefined): string {
 .case-item {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  align-items: stretch;
   gap: 6px;
   padding: 7px;
   border: 1px solid var(--border-muted);
@@ -617,6 +717,21 @@ function fmt(n: number | undefined): string {
 .case-item small {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.case-meta {
+  overflow: hidden;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.case-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .icon-button {

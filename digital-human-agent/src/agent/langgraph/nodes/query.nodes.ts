@@ -76,6 +76,7 @@ export function createRetrieveNode(
       personaId: input.personaId,
       retrievalQueries: augmentation.retrievalQueries,
       strategy: augmentation.strategy,
+      accessScope: input.accessScope,
       signal: input.signal,
     });
 

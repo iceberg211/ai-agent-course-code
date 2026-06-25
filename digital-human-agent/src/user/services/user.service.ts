@@ -21,7 +21,11 @@ export class UserService {
     return this.repo.findOneBy({ id });
   }
 
-  async create(username: string, passwordPlain: string): Promise<User> {
+  async create(
+    username: string,
+    passwordPlain: string,
+    department?: string | null,
+  ): Promise<User> {
     const existing = await this.findOneByUsername(username);
     if (existing) {
       throw new ConflictException('用户名已存在');
@@ -31,6 +35,7 @@ export class UserService {
     const user = this.repo.create({
       username,
       password: hashedPassword,
+      department: department?.trim() || null,
     });
 
     const saved = await this.repo.save(user);
@@ -46,6 +51,22 @@ export class UserService {
     }
     const hashedPassword = this.hashPassword(passwordPlain);
     user.password = hashedPassword;
+    const saved = await this.repo.save(user);
+    delete saved.password;
+    return saved;
+  }
+
+  async updateProfile(
+    id: string,
+    input: { department?: string | null },
+  ): Promise<User> {
+    const user = await this.findOne(id);
+    if (!user) {
+      throw new NotFoundException('用户不存在');
+    }
+    if (input.department !== undefined) {
+      user.department = input.department?.trim() || null;
+    }
     const saved = await this.repo.save(user);
     delete saved.password;
     return saved;

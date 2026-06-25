@@ -6,6 +6,7 @@ import { Conversation } from '@/conversation/entities/conversation.entity';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
+import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.entity';
 
 @Injectable()
 export class DashboardService {
@@ -20,6 +21,8 @@ export class DashboardService {
     private readonly conversationRepo: Repository<Conversation>,
     @InjectRepository(ConversationMessage)
     private readonly messageRepo: Repository<ConversationMessage>,
+    @InjectRepository(KnowledgeEvalCase)
+    private readonly evalCaseRepo: Repository<KnowledgeEvalCase>,
   ) {}
 
   async summary() {
@@ -39,7 +42,11 @@ export class DashboardService {
       failedDocs,
       hotQuestionsRaw,
       lowRatedRaw,
-      assistantMessages,
+      citationStatsRaw,
+      recentFailedDocuments,
+      unchunkedDocumentCount,
+      graphFailedDocumentCount,
+      evalReviewStatsRaw,
     ] = await Promise.all([
       this.knowledgeRepo.count(),
       this.documentRepo.count(),
@@ -93,11 +100,36 @@ export class DashboardService {
         .orderBy('answer.createdAt', 'DESC')
         .limit(5)
         .getRawMany(),
-      // P5: 机器人回答的引用字段拉取
-      this.messageRepo.find({
-        where: { role: 'assistant' },
-        select: ['citations'],
+      // P5: 机器人回答引用统计，避免拉取全量消息到内存
+      this.messageRepo
+        .createQueryBuilder('citationMsg')
+        .select('COUNT(*)', 'total')
+        .addSelect(
+          `SUM(CASE WHEN citationMsg.citations IS NULL OR jsonb_array_length(citationMsg.citations) = 0 THEN 1 ELSE 0 END)`,
+          'noCitationCount',
+        )
+        .where("citationMsg.role = 'assistant'")
+        .getRawOne(),
+      this.documentRepo.find({
+        relations: ['knowledge'],
+        where: { status: 'failed' },
+        order: { updatedAt: 'DESC' },
+        take: 5,
       }),
+      this.documentRepo.count({
+        where: { status: 'completed', chunkCount: 0 },
+      }),
+      this.documentRepo.count({
+        where: { graphSyncStatus: 'failed' },
+      }),
+      this.evalCaseRepo
+        .createQueryBuilder('evalCase')
+        .select('COUNT(*)', 'total')
+        .addSelect(
+          `SUM(CASE WHEN evalCase.user_review_status = 'passed' THEN 1 ELSE 0 END)`,
+          'passed',
+        )
+        .getRawOne(),
     ]);
 
     // 1. 失败文档趋势折线数据构造
@@ -126,14 +158,16 @@ export class DashboardService {
     }));
 
     // 3. 机器人无引用率计算
-    const totalAssistant = assistantMessages.length;
-    let noCitationCount = 0;
-    for (const msg of assistantMessages) {
-      if (!msg.citations || (Array.isArray(msg.citations) && msg.citations.length === 0)) {
-        noCitationCount++;
-      }
-    }
-    const noCitationRate = totalAssistant > 0 ? parseFloat((noCitationCount / totalAssistant).toFixed(4)) : 0;
+    const totalAssistant = Number(citationStatsRaw?.total ?? 0);
+    const noCitationCount = Number(citationStatsRaw?.noCitationCount ?? 0);
+    const noCitationRate =
+      totalAssistant > 0
+        ? parseFloat((noCitationCount / totalAssistant).toFixed(4))
+        : 0;
+    const evalTotal = Number(evalReviewStatsRaw?.total ?? 0);
+    const evalPassed = Number(evalReviewStatsRaw?.passed ?? 0);
+    const evalPassRate =
+      evalTotal > 0 ? parseFloat((evalPassed / evalTotal).toFixed(4)) : 0;
 
     return {
       knowledgeBaseCount,
@@ -148,6 +182,10 @@ export class DashboardService {
       hotQuestions,
       lowRatedAnswers: lowRatedRaw,
       noCitationRate,
+      recentFailedDocuments,
+      unchunkedDocumentCount,
+      graphFailedDocumentCount,
+      evalPassRate,
     };
   }
 

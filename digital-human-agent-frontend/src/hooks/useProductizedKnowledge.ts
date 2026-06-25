@@ -5,16 +5,7 @@ import type {
   DashboardSummary,
   PaginatedResult,
 } from '@/types'
-
-async function fetchJson<T>(input: string, init?: RequestInit): Promise<T | null> {
-  try {
-    const res = await fetch(input, init)
-    if (!res.ok) return null
-    return (await res.json()) as T
-  } catch {
-    return null
-  }
-}
+import { apiJson } from '@/api/client'
 
 function toQuery(params: Record<string, unknown>): string {
   const search = new URLSearchParams()
@@ -32,7 +23,7 @@ export function useProductizedKnowledge() {
   async function getDashboardSummary(): Promise<DashboardSummary | null> {
     loading.value = true
     try {
-      return await fetchJson<DashboardSummary>('/api/dashboard/summary')
+      return await apiJson<DashboardSummary>('/api/dashboard/summary')
     } finally {
       loading.value = false
     }
@@ -47,7 +38,7 @@ export function useProductizedKnowledge() {
     loading.value = true
     try {
       return (
-        (await fetchJson<PaginatedResult<ConversationSummary>>(
+        (await apiJson<PaginatedResult<ConversationSummary>>(
           `/api/conversations${toQuery(query)}`,
         )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
       )
@@ -60,7 +51,7 @@ export function useProductizedKnowledge() {
     conversationId: string,
   ): Promise<ChatMessage[]> {
     return (
-      (await fetchJson<ChatMessage[]>(
+      (await apiJson<ChatMessage[]>(
         `/api/conversations/${conversationId}/messages`,
       )) ?? []
     )
@@ -71,7 +62,7 @@ export function useProductizedKnowledge() {
     messageId: string,
     feedback: 'up' | 'down' | null,
   ): Promise<boolean> {
-    const res = await fetchJson<ChatMessage>(
+    const res = await apiJson<ChatMessage>(
       `/api/conversations/${conversationId}/messages/${messageId}/feedback`,
       {
         method: 'PATCH',
@@ -83,7 +74,7 @@ export function useProductizedKnowledge() {
   }
 
   async function deleteConversation(conversationId: string): Promise<boolean> {
-    const res = await fetchJson<{ deleted: boolean }>(
+    const res = await apiJson<{ deleted: boolean }>(
       `/api/conversations/${conversationId}`,
       { method: 'DELETE' },
     )

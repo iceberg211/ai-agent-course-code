@@ -5,12 +5,14 @@ import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.enti
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { KnowledgeEvalCaseController } from '@/knowledge/controllers/knowledge-eval-case.controller';
 import { KnowledgeEvalCaseService } from '@/knowledge/services/evaluation/knowledge-eval-case.service';
+import { NotificationModule } from '@/notification/notification.module';
 import { KnowledgeRetrievalModule } from './knowledge-retrieval.module';
 
 @Module({
   imports: [
     CommonModule,
     KnowledgeRetrievalModule,
+    NotificationModule,
     TypeOrmModule.forFeature([KnowledgeEvalCase, PersonaKnowledge]),
   ],
   providers: [

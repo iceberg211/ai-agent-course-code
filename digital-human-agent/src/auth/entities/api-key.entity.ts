@@ -17,8 +17,14 @@ export class ApiKey {
   @Column()
   name: string;
 
-  @Column({ unique: true })
-  key: string;
+  @Column({ name: 'key_hash', type: 'text' })
+  keyHash: string;
+
+  @Column({ name: 'key_prefix', length: 16 })
+  keyPrefix: string;
+
+  @Column({ name: 'key_last_four', length: 4 })
+  keyLastFour: string;
 
   @Column({ name: 'user_id' })
   userId: string;

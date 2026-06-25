@@ -1,4 +1,8 @@
-import { UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { scryptSync, randomBytes } from 'node:crypto';
 import { AuthService } from '@/auth/services/auth.service';
@@ -47,7 +51,11 @@ describe('AuthService', () => {
 
       const result = await authService.register('testuser', 'password123');
 
-      expect(userService.create).toHaveBeenCalledWith('testuser', 'password123');
+      expect(userService.create).toHaveBeenCalledWith(
+        'testuser',
+        'password123',
+        undefined,
+      );
       expect(result).toEqual(mockUser);
     });
   });
@@ -144,26 +152,44 @@ describe('AuthService', () => {
   });
 
   describe('createApiKey', () => {
-    it('应该成功创建并返回 API Key', async () => {
-      const mockApiKey = { id: 'key-id', name: 'my-key', key: 'dh_xxx', userId: 'user-id' };
-      mockApiKeyRepo.create.mockReturnValue(mockApiKey);
-      mockApiKeyRepo.save.mockResolvedValue(mockApiKey);
+    it('应该成功创建 API Key，存储哈希并仅在创建结果返回明文', async () => {
+      mockApiKeyRepo.create.mockImplementation((input: any) => ({
+        id: 'key-id',
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        ...input,
+      }));
+      mockApiKeyRepo.save.mockImplementation(async (input: any) => input);
 
       const result = await authService.createApiKey('user-id', 'my-key');
 
       expect(mockApiKeyRepo.create).toHaveBeenCalledWith(expect.objectContaining({
         userId: 'user-id',
         name: 'my-key',
-        key: expect.stringMatching(/^dh_[a-f0-9]+$/),
+        keyHash: expect.stringMatching(/^[a-f0-9]+:[a-f0-9]+$/),
+        keyPrefix: expect.stringMatching(/^dh_[a-f0-9]{8}$/),
+        keyLastFour: expect.stringMatching(/^[a-f0-9]{4}$/),
       }));
-      expect(mockApiKeyRepo.save).toHaveBeenCalledWith(mockApiKey);
-      expect(result).toEqual(mockApiKey);
+      expect(result.key).toMatch(/^dh_[a-f0-9]+$/);
+      expect(result).not.toHaveProperty('keyHash');
     });
   });
 
   describe('listApiKeys', () => {
-    it('应该返回用户所有有效的 API Key', async () => {
-      const mockList = [{ id: 'key-id', name: 'my-key', isActive: true }];
+    it('应该返回用户所有有效 API Key 的安全摘要', async () => {
+      const mockList = [
+        {
+          id: 'key-id',
+          name: 'my-key',
+          keyHash: 'secret',
+          keyPrefix: 'dh_abcd1234',
+          keyLastFour: '7890',
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          updatedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ];
       mockApiKeyRepo.find.mockResolvedValue(mockList);
 
       const result = await authService.listApiKeys('user-id');
@@ -172,7 +198,18 @@ describe('AuthService', () => {
         where: { userId: 'user-id', isActive: true },
         order: { createdAt: 'DESC' },
       });
-      expect(result).toEqual(mockList);
+      expect(result).toEqual([
+        {
+          id: 'key-id',
+          name: 'my-key',
+          keyPrefix: 'dh_abcd1234',
+          keyLastFour: '7890',
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          updatedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]);
+      expect(result[0]).not.toHaveProperty('keyHash');
     });
   });
 
@@ -187,27 +224,50 @@ describe('AuthService', () => {
         { isActive: false },
       );
     });
+
+    it('注销不存在的 API Key 时应抛出 NotFoundException', async () => {
+      mockApiKeyRepo.update.mockResolvedValue({ affected: 0 });
+
+      await expect(authService.revokeApiKey('user-id', 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('validateApiKey', () => {
     it('若 API Key 无效应返回 null', async () => {
-      mockApiKeyRepo.findOne.mockResolvedValue(null);
+      const invalidKey = 'dh_aaaaaaaaaaaaaaaa';
+      mockApiKeyRepo.find.mockResolvedValue([]);
 
-      const result = await authService.validateApiKey('dh_invalid');
+      const result = await authService.validateApiKey(invalidKey);
 
-      expect(mockApiKeyRepo.findOne).toHaveBeenCalledWith({
-        where: { key: 'dh_invalid', isActive: true },
+      expect(mockApiKeyRepo.find).toHaveBeenCalledWith({
+        where: { keyPrefix: 'dh_aaaaaaaa', isActive: true },
         relations: ['user'],
       });
       expect(result).toBeNull();
     });
 
     it('若 API Key 有效且关联用户存在应返回用户对象', async () => {
+      mockApiKeyRepo.create.mockImplementation((input: any) => ({
+        id: 'key-id',
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        ...input,
+      }));
+      mockApiKeyRepo.save.mockImplementation(async (input: any) => input);
       const mockUser = { id: 'user-id', username: 'testuser', role: 'user' };
-      const mockRecord = { id: 'key-id', key: 'dh_valid', user: mockUser };
-      mockApiKeyRepo.findOne.mockResolvedValue(mockRecord);
+      const created = await authService.createApiKey('user-id', 'my-key');
+      const savedInput = mockApiKeyRepo.create.mock.calls.at(-1)?.[0];
+      const mockRecord = {
+        id: 'key-id',
+        ...savedInput,
+        user: mockUser,
+      };
+      mockApiKeyRepo.find.mockResolvedValue([mockRecord]);
 
-      const result = await authService.validateApiKey('dh_valid');
+      const result = await authService.validateApiKey(created.key);
 
       expect(result).toEqual(mockUser);
     });

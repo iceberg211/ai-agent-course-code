@@ -11,6 +11,7 @@ import {
   ElasticsearchIndexService,
   elasticsearchProvider,
 } from '@/knowledge/elasticsearch/elasticsearch-index.service';
+import { NotificationModule } from '@/notification/notification.module';
 import { KnowledgeGraphModule } from './knowledge-graph.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { KnowledgeGraphModule } from './knowledge-graph.module';
     CommonModule,
     TypeOrmModule.forFeature([KnowledgeDocument, KnowledgeChunk]),
     KnowledgeGraphModule,
+    NotificationModule,
   ],
   providers: [
     KnowledgeDocumentService,

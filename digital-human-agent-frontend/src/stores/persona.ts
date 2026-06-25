@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Persona } from '@/types'
+import { apiFetch } from '@/api/client'
 
 export interface CreatePersonaPayload {
   name: string
@@ -23,7 +24,7 @@ export const usePersonaStore = defineStore('persona', () => {
   async function fetchPersonas() {
     loading.value = true
     loadError.value = ''
-    const res = await fetch('/api/personas').catch(() => null)
+    const res = await apiFetch('/api/personas').catch(() => null)
     if (!res) {
       console.error('[Persona] 请求 /api/personas 失败：网络错误')
       loadError.value = '网络错误'
@@ -46,7 +47,7 @@ export const usePersonaStore = defineStore('persona', () => {
 
   async function deletePersona(id: string) {
     if (!id) return { ok: false, message: '缺少角色 ID' }
-    const res = await fetch(`/api/personas/${id}`, { method: 'DELETE' }).catch(() => null)
+    const res = await apiFetch(`/api/personas/${id}`, { method: 'DELETE' }).catch(() => null)
 
     if (!res) {
       console.error(`[Persona] 删除 /api/personas/${id} 失败：网络错误`)
@@ -71,7 +72,7 @@ export const usePersonaStore = defineStore('persona', () => {
   }
 
   async function createPersona(payload: CreatePersonaPayload): Promise<{ ok: boolean; persona?: Persona; message?: string }> {
-    const res = await fetch('/api/personas', {
+    const res = await apiFetch('/api/personas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

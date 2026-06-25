@@ -48,6 +48,7 @@ export interface RetrieveKnowledgeOptions {
   strategy?: RetrievalStrategy;
   skipQueryRewrite?: boolean;
   signal?: AbortSignal;
+  accessScope?: KnowledgeAccessScope;
   /** @deprecated 旧字段兼容 */
   stage1TopK?: number;
   /** @deprecated 旧字段兼容 */
@@ -60,6 +61,7 @@ export type NormalizedRetrieveKnowledgeOptions = Required<
     | 'signal'
     | 'strategy'
     | 'skipQueryRewrite'
+    | 'accessScope'
     | 'stage1TopK'
     | 'finalTopK'
   >
@@ -124,6 +126,21 @@ export interface IngestKnowledgeDocumentOptions {
   mimeType?: string;
   fileSize?: number;
   category?: string;
+  ownerId?: string | null;
+  tags?: string[];
+  department?: string | null;
+  businessCategory?: string | null;
+  visibility?: 'private' | 'department' | 'company';
+  expiresAt?: Date | null;
+  versionGroupId?: string | null;
+  versionNo?: number;
+  isCurrentVersion?: boolean;
+}
+
+export interface KnowledgeAccessScope {
+  ownerId?: string | null;
+  department?: string | null;
+  role?: string | null;
 }
 
 export interface KeywordRetrieveParams {
@@ -131,6 +148,7 @@ export interface KeywordRetrieveParams {
   terms: string[];
   matchCount: number;
   useExactPhrase?: boolean;
+  accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
 
@@ -146,6 +164,7 @@ export interface KnowledgeHybridRetrievalParams {
   strategy: RetrievalStrategy;
   threshold: number;
   globalRetrievalLimit: number;
+  accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
 
@@ -168,6 +187,7 @@ export interface PersonaHybridRetrievalInput {
   channels?: PersonaHybridRetrievalChannels;
   threshold?: number;
   retrievalLimit?: number;
+  accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
 

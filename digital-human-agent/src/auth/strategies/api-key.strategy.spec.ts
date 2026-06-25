@@ -48,7 +48,7 @@ describe('ApiKeyStrategy', () => {
   });
 
   it('若通过 Authorization Bearer 提供有效 dh_ 开头的 Key，应成功返回用户信息', async () => {
-    const req = { headers: { authorization: 'Bearer dh_valid_key' } };
+    const req = { headers: { authorization: 'bearer dh_valid_key' } };
     const mockUser = { id: 'user-id', username: 'testuser', role: 'user' } as User;
     jest.spyOn(authService, 'validateApiKey').mockResolvedValue(mockUser);
 

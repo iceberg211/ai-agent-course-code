@@ -25,6 +25,7 @@ export type DocumentGraphSyncStatus =
   | 'indexed'
   | 'failed'
   | 'skipped';
+export type DocumentVisibility = 'private' | 'department' | 'company';
 
 @Entity('knowledge_document')
 export class KnowledgeDocument {
@@ -56,6 +57,9 @@ export class KnowledgeDocument {
   @Column({ name: 'source_type', type: 'text', default: 'upload' })
   sourceType: DocumentSourceType;
 
+  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
+  ownerId: string | null;
+
   @Column({ name: 'processing_stage', type: 'text', default: 'completed' })
   processingStage: DocumentProcessingStage;
 
@@ -70,6 +74,33 @@ export class KnowledgeDocument {
 
   @Column({ name: 'graph_synced_at', type: 'timestamptz', nullable: true })
   graphSyncedAt: Date | null;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  tags: string[];
+
+  @Column({ type: 'text', nullable: true })
+  department: string | null;
+
+  @Column({ name: 'business_category', type: 'text', nullable: true })
+  businessCategory: string | null;
+
+  @Column({ type: 'text', default: 'company' })
+  visibility: DocumentVisibility;
+
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
+
+  @Column({ name: 'version_group_id', type: 'uuid', nullable: true })
+  versionGroupId: string | null;
+
+  @Column({ name: 'version_no', type: 'int', default: 1 })
+  versionNo: number;
+
+  @Column({ name: 'is_current_version', type: 'boolean', default: true })
+  isCurrentVersion: boolean;
+
+  @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

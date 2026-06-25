@@ -9,6 +9,7 @@ import { ConversationController } from '@/conversation/controllers/conversation.
 import { AgentModule } from '@/agent/agent.module';
 import { PersonaModule } from '@/persona/persona.module';
 import { AuthModule } from '@/auth/auth.module';
+import { NotificationModule } from '@/notification/notification.module';
 
 @Global()
 @Module({
@@ -17,6 +18,7 @@ import { AuthModule } from '@/auth/auth.module';
     AgentModule,
     PersonaModule,
     AuthModule,
+    NotificationModule,
   ],
   controllers: [ChatController, ConversationController],
   providers: [ConversationService, RealtimeSessionRegistry],

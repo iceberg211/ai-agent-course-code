@@ -52,39 +52,20 @@ export class AccessControlService {
   }
 
   /**
-   * 仅从 Header 中提取 Token（x-api-key 或 Authorization: Bearer）。
+   * 服务级访问令牌只读取 x-service-token，避免和用户 JWT / API Key 认证头冲突。
    * 不再支持 URL Query String 传 Token，防止 Token 被写入服务器日志或浏览器历史。
    */
   private extractHttpToken(request: Request): string | undefined {
-    return this.extractHeaderToken(
-      request.headers['x-api-key'],
-      request.headers.authorization,
-    );
+    return this.normalizeToken(request.headers['x-service-token']);
   }
 
   /**
-   * WebSocket 握手阶段仅从 Header 中提取 Token。
+   * WebSocket 握手阶段仅从 Header 中提取服务级 Token。
    * 不再支持 ?api_key= / ?access_token= 查询参数，防止 Token 明文泄漏到日志。
    */
   private extractWsToken(request?: IncomingMessage): string | undefined {
     if (!request) return undefined;
-    return this.extractHeaderToken(
-      request.headers['x-api-key'],
-      request.headers.authorization,
-    );
-  }
-
-  private extractHeaderToken(
-    apiKeyHeader: string | string[] | undefined,
-    authorizationHeader: string | string[] | undefined,
-  ): string | undefined {
-    const apiKey = this.normalizeToken(apiKeyHeader);
-    if (apiKey) return apiKey;
-
-    const authorization = this.normalizeToken(authorizationHeader);
-    if (!authorization) return undefined;
-    const bearerMatch = /^Bearer\s+(.+)$/i.exec(authorization);
-    return bearerMatch?.[1]?.trim() || authorization;
+    return this.normalizeToken(request.headers['x-service-token']);
   }
 
   private normalizeToken(value: unknown): string | undefined {

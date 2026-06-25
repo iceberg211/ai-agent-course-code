@@ -441,15 +441,24 @@ describe('KnowledgeDocumentService', () => {
     );
   });
 
-  it('batchRetryDocuments 可以批量并异步触发多个文档的解析重试', async () => {
+  it('batchRetryDocuments 会返回每个文档的重试结果', async () => {
     const { service } = createService();
-    const spy = jest.spyOn(service, 'retryDocumentForKnowledge').mockResolvedValue({} as any);
+    const spy = jest
+      .spyOn(service, 'retryDocumentForKnowledge')
+      .mockResolvedValueOnce({} as any)
+      .mockRejectedValueOnce(new Error('retry failed'));
 
-    await service.batchRetryDocuments('kb-1', ['doc-1', 'doc-2']);
-    await flushPromises();
+    const result = await service.batchRetryDocuments('kb-1', [
+      'doc-1',
+      'doc-2',
+    ]);
 
     expect(spy).toHaveBeenCalledTimes(2);
-    expect(spy).toHaveBeenNthCalledWith(1, 'kb-1', 'doc-1');
-    expect(spy).toHaveBeenNthCalledWith(2, 'kb-1', 'doc-2');
+    expect(spy).toHaveBeenNthCalledWith(1, 'kb-1', 'doc-1', undefined);
+    expect(spy).toHaveBeenNthCalledWith(2, 'kb-1', 'doc-2', undefined);
+    expect(result).toEqual([
+      { documentId: 'doc-1', success: true },
+      { documentId: 'doc-2', success: false, error: 'retry failed' },
+    ]);
   });
 });

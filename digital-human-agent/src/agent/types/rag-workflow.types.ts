@@ -5,6 +5,7 @@ import type {
 } from '@/common/rag';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type {
+  KnowledgeAccessScope,
   KnowledgeQueryRewriteResult,
   RetrieveKnowledgeTraceItem,
   RetrievalQueryItem,
@@ -51,6 +52,7 @@ export interface RagWorkflowInput {
   signal: AbortSignal;
   onToken: (token: string) => void;
   onCitations: (citations: RagCitation[]) => void;
+  accessScope?: KnowledgeAccessScope;
   maxHops?: number;
 }
 

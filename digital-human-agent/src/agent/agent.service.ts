@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RAG_ORCHESTRATOR } from '@/agent/agent.constants';
 import type {
+  KnowledgeAccessScope,
+} from '@/knowledge/types/knowledge-content.types';
+import type {
   RagCitation,
   RagOrchestrator,
   RagWorkflowResult,
@@ -14,6 +17,7 @@ export interface RunAgentParams {
   userMessage: string;
   turnId: string;
   signal: AbortSignal;
+  accessScope?: KnowledgeAccessScope;
   onToken: (token: string) => void;
   onCitations: (citations: RagCitation[]) => void;
 }
@@ -64,6 +68,7 @@ export class AgentService {
       question: params.userMessage,
       turnId: params.turnId,
       signal: params.signal,
+      accessScope: params.accessScope,
       onToken: params.onToken,
       onCitations: params.onCitations,
     };

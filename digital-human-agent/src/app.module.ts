@@ -15,6 +15,7 @@ import { PersonaModule } from '@/persona/persona.module';
 import { SpeechModule } from '@/speech/speech.module';
 import { UserModule } from '@/user/user.module';
 import { AuthModule } from '@/auth/auth.module';
+import { NotificationModule } from '@/notification/notification.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AuthModule } from '@/auth/auth.module';
     DatabaseModule,
     UserModule,
     AuthModule,
+    NotificationModule,
     PersonaModule,
     ConversationModule,
     DashboardModule,

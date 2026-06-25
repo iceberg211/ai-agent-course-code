@@ -17,12 +17,16 @@ import { ConversationQueryDto } from '@/conversation/controllers/dto/conversatio
 import { MessageFeedbackDto } from '@/conversation/controllers/dto/message-feedback.dto';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { NotificationService } from '@/notification/notification.service';
 
 @ApiTags('conversations')
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
 export class ConversationController {
-  constructor(private readonly conversationService: ConversationService) {}
+  constructor(
+    private readonly conversationService: ConversationService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: '分页查询会话列表' })
@@ -71,6 +75,19 @@ export class ConversationController {
     );
     if (!message) {
       throw new NotFoundException('消息不存在或不属于当前会话');
+    }
+    if (dto.feedback === 'down' && message.role === 'assistant') {
+      void this.notificationService.create({
+        ownerId: req.user.id,
+        type: 'answer_low_rated',
+        title: '低评分回答',
+        message: '有一条回答被标记为无用',
+        payload: {
+          conversationId,
+          messageId,
+          turnId: message.turnId,
+        },
+      });
     }
     return message;
   }

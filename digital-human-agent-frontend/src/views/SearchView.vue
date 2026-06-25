@@ -57,12 +57,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { SearchIcon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import type { KnowledgeBase, KnowledgeSearchChunk, KnowledgeSearchResult } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const kbApi = useKnowledgeBase()
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const kbId = ref('')
@@ -77,7 +78,9 @@ const chunks = computed<KnowledgeSearchChunk[]>(() => {
 
 onMounted(async () => {
   knowledgeBases.value = await kbApi.listAll()
-  kbId.value = knowledgeBases.value[0]?.id ?? ''
+  kbId.value = String(route.query.knowledgeBaseId ?? knowledgeBases.value[0]?.id ?? '')
+  query.value = String(route.query.q ?? localStorage.getItem('__draft_rag_search') ?? '')
+  if (kbId.value && query.value.trim()) await runSearch()
 })
 
 async function runSearch() {

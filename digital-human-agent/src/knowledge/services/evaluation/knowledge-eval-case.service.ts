@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +12,7 @@ import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.enti
 import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { LlmFactoryService } from '@/common/llm/llm-factory.service';
+import { NotificationService } from '@/notification/notification.service';
 
 @Injectable()
 export class KnowledgeEvalCaseService {
@@ -21,6 +23,8 @@ export class KnowledgeEvalCaseService {
     private readonly personaKbRepo: Repository<PersonaKnowledge>,
     private readonly searchService: KnowledgeSearchService,
     private readonly llmFactory: LlmFactoryService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
   ) {}
 
   listByKnowledge(knowledgeId: string): Promise<KnowledgeEvalCase[]> {
@@ -114,7 +118,7 @@ export class KnowledgeEvalCaseService {
 
         const contextText = chunks.map((c) => c.content).join('\n---\n');
 
-        const systemPrompt = `你是一个知识库问答机器人。根据以下提供的背景知识，回答用户的问题。如果背景知识不足以回答，请根据已有知识进行合理推测，或者礼貌指出。
+        const systemPrompt = `你是一个知识库问答机器人。只能根据以下提供的背景知识回答用户的问题。如果背景知识不足以回答，必须明确说明无法从当前知识库证据确认，不要编造或推测。
 
 背景知识：
 ${contextText || '无背景知识'}
@@ -170,7 +174,18 @@ ${contextText}
       await this.evalCaseRepo.save(caseItem);
     }
 
-    return this.listByKnowledge(knowledgeId);
+    const result = await this.listByKnowledge(knowledgeId);
+    void this.notificationService?.create({
+      type: 'eval_batch_completed',
+      title: '问答验证批量运行完成',
+      message: `知识库验证用例已完成运行，共 ${result.length} 条`,
+      payload: {
+        knowledgeId,
+        total: result.length,
+        failed: result.filter((item) => item.lastRunStatus === 'failed').length,
+      },
+    });
+    return result;
   }
 
   async updateReviewStatus(

@@ -3,4 +3,5 @@ node_modules/
 *-lock.json
 *-lock.*
 *.lock
+!digital-human-agent/pnpm-lock.yaml
 *.env

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import type { estypes } from '@elastic/elasticsearch';
 import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
@@ -17,8 +17,10 @@ import {
 } from '@/knowledge/utils/keyword.utils';
 import type {
   KeywordBackend,
+  KnowledgeAccessScope,
   KnowledgeChunk,
 } from '@/knowledge/types/knowledge-content.types';
+import { applyDocumentAccessScope } from '@/knowledge/utils/document-access.util';
 
 // Re-export for backward compatibility with existing consumers
 export { normalizeKeywordTerms, escapeLike, extractFallbackKeywordTerms } from '@/knowledge/utils/keyword.utils';
@@ -127,6 +129,7 @@ export class FulltextRetrieverService {
     terms: string[];
     matchCount: number;
     useExactPhrase?: boolean;
+    accessScope?: KnowledgeAccessScope;
     signal?: AbortSignal;
   }): Promise<{
     chunks: KnowledgeChunk[];
@@ -177,6 +180,7 @@ export class FulltextRetrieverService {
       terms: string[];
       matchCount: number;
       useExactPhrase?: boolean;
+      accessScope?: KnowledgeAccessScope;
       signal?: AbortSignal;
     },
     backend: KeywordBackend,
@@ -215,6 +219,7 @@ export class FulltextRetrieverService {
     knowledgeId: string;
     terms: string[];
     matchCount: number;
+    accessScope?: KnowledgeAccessScope;
     signal?: AbortSignal;
   }): Promise<KnowledgeChunk[]> {
     throwIfAborted(params.signal);
@@ -256,7 +261,7 @@ export class FulltextRetrieverService {
     });
 
     const scoreSql = `(${scoreClauses.join(' + ')})`;
-    const rows = await this.chunkRepo
+    const qb = this.chunkRepo
       .createQueryBuilder('chunk')
       .innerJoin(
         KnowledgeDocument,
@@ -274,7 +279,11 @@ export class FulltextRetrieverService {
         knowledgeId: params.knowledgeId,
       })
       .andWhere('chunk.enabled = true')
-      .andWhere(`(${matchClauses.join(' OR ')})`)
+      .andWhere('document.is_current_version = true')
+      .andWhere('document.archived_at IS NULL')
+      .andWhere(`(${matchClauses.join(' OR ')})`);
+    applyDocumentAccessScope(qb, 'document', params.accessScope);
+    const rows = await qb
       .orderBy('keyword_score', 'DESC')
       .addOrderBy('chunk.chunk_index', 'ASC')
       .limit(params.matchCount)
@@ -309,6 +318,7 @@ export class FulltextRetrieverService {
     terms: string[];
     matchCount: number;
     useExactPhrase?: boolean;
+    accessScope?: KnowledgeAccessScope;
     signal?: AbortSignal;
   }): Promise<KnowledgeChunk[]> {
     throwIfAborted(params.signal);
@@ -358,12 +368,17 @@ export class FulltextRetrieverService {
     throwIfAborted(params.signal);
 
     const chunks = this.mapResponseToChunks(response);
-    return this.filterExistingChunks(params.knowledgeId, chunks);
+      return this.filterExistingChunks(
+        params.knowledgeId,
+        chunks,
+        params.accessScope,
+      );
   }
 
   private async filterExistingChunks(
     knowledgeId: string,
     chunks: KnowledgeChunk[],
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeChunk[]> {
     if (chunks.length === 0) {
       return [];
@@ -378,11 +393,27 @@ export class FulltextRetrieverService {
         enabled: true,
         document: {
           knowledgeBaseId: knowledgeId,
+          isCurrentVersion: true,
+          archivedAt: IsNull(),
         },
       },
       relations: { document: true },
     });
-    const existingById = new Map(rows.map((row) => [row.id, row]));
+    const visibleRows =
+      accessScope?.role === 'admin'
+        ? rows
+        : rows.filter((row) => {
+            const doc = row.document;
+            if (!doc) return true;
+            if (doc.visibility === 'company') return true;
+            if (doc.visibility === 'department') {
+              return Boolean(
+                accessScope?.department && doc.department === accessScope.department,
+              );
+            }
+            return Boolean(accessScope?.ownerId && doc.ownerId === accessScope.ownerId);
+          });
+    const existingById = new Map(visibleRows.map((row) => [row.id, row]));
 
     return chunks
       .map((chunk): KnowledgeChunk | null => {

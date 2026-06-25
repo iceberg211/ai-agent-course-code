@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -23,13 +24,39 @@ import {
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
-import type { IngestKnowledgeDocumentOptions } from '@/knowledge/types/knowledge-content.types';
+import type {
+  IngestKnowledgeDocumentOptions,
+  KnowledgeAccessScope,
+} from '@/knowledge/types/knowledge-content.types';
 import { splitKnowledgeDocumentContent } from './markdown-splitter';
+import type { UploadDocumentDto } from '@/knowledge/dto/upload-document.dto';
+import { NotificationService } from '@/notification/notification.service';
+import {
+  applyDocumentAccessScope,
+  isDocumentVisibleToScope,
+} from '@/knowledge/utils/document-access.util';
 
 import type {
   KnowledgeDocumentChunk,
   KnowledgeDocumentChunkRow,
 } from '@/knowledge/types/knowledge-document.types';
+
+type UploadMetadataInput =
+  | string
+  | (Omit<Partial<IngestKnowledgeDocumentOptions>, 'tags' | 'expiresAt'> & {
+      category?: string;
+      ownerId?: string | null;
+      tags?: string | string[];
+      department?: string | null;
+      businessCategory?: string | null;
+      visibility?: 'private' | 'department' | 'company';
+      expiresAt?: string | Date | null;
+      versionGroupId?: string | null;
+      versionNo?: number;
+      isCurrentVersion?: boolean;
+    })
+  | UploadDocumentDto
+  | undefined;
 
 // ==========================================
 // 核心 Service 实现
@@ -47,6 +74,8 @@ export class KnowledgeDocumentService {
     private readonly runtime: RagRuntimeService,
     private readonly elasticsearchService: ElasticsearchIndexService,
     private readonly graphService: KnowledgeGraphService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
   ) {}
 
   // ==========================================
@@ -60,8 +89,9 @@ export class KnowledgeDocumentService {
   async deleteDocumentForKnowledge(
     knowledgeId: string,
     documentId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<void> {
-    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId);
+    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId, accessScope);
     await this.deleteDocument(documentId);
   }
 
@@ -83,8 +113,22 @@ export class KnowledgeDocumentService {
         processingError: null,
         mimeType: options.mimeType ?? null,
         fileSize: options.fileSize ?? null,
+        ownerId: options.ownerId ?? null,
+        tags: options.tags ?? [],
+        department: options.department ?? null,
+        businessCategory: options.businessCategory ?? null,
+        visibility: options.visibility ?? 'company',
+        expiresAt: options.expiresAt ?? null,
+        versionGroupId: options.versionGroupId ?? null,
+        versionNo: options.versionNo ?? 1,
+        isCurrentVersion: options.isCurrentVersion ?? true,
       }),
     );
+
+    if (!document.versionGroupId) {
+      document.versionGroupId = document.id;
+      await this.documentRepo.save(document);
+    }
 
     return this.ingestPreparedDocument(document, knowledgeId, filename, content, options);
   }
@@ -170,11 +214,14 @@ export class KnowledgeDocumentService {
 
   listDocumentsByKnowledgeId(
     knowledgeId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeDocument[]> {
-    return this.documentRepo.find({
-      where: { knowledgeBaseId: knowledgeId },
-      order: { createdAt: 'DESC' },
-    });
+    const qb = this.documentRepo
+      .createQueryBuilder('document')
+      .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .orderBy('document.created_at', 'DESC');
+    applyDocumentAccessScope(qb, 'document', accessScope);
+    return qb.getMany();
   }
 
   async listDocumentsForKnowledge(
@@ -184,8 +231,14 @@ export class KnowledgeDocumentService {
       status?: string;
       graphStatus?: string;
       processingStage?: string;
+      tags?: string;
+      department?: string;
+      businessCategory?: string;
+      visibility?: 'private' | 'department' | 'company';
+      expiresBefore?: string;
       page?: number;
       pageSize?: number;
+      accessScope?: KnowledgeAccessScope;
     } = {},
   ): Promise<{
     items: KnowledgeDocument[];
@@ -201,6 +254,7 @@ export class KnowledgeDocumentService {
       .orderBy('document.created_at', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
+    applyDocumentAccessScope(qb, 'document', filters.accessScope);
 
     const q = String(filters.q ?? '').trim();
     if (q) {
@@ -214,11 +268,7 @@ export class KnowledgeDocumentService {
         graphStatus: filters.graphStatus,
       });
     }
-    if (filters.processingStage) {
-      qb.andWhere('document.processing_stage = :processingStage', {
-        processingStage: filters.processingStage,
-      });
-    }
+    this.applyDocumentGovernanceFilters(qb, filters);
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, pageSize };
@@ -227,15 +277,22 @@ export class KnowledgeDocumentService {
   async batchRetryDocuments(
     knowledgeId: string,
     documentIds: string[],
-  ): Promise<void> {
-    for (const documentId of documentIds) {
-      // 触发重跑，不阻塞整体接口返回，静默记录错误
-      this.retryDocumentForKnowledge(knowledgeId, documentId).catch((err) => {
-        this.logger.error(
-          `Failed to retry document ${documentId} in knowledge ${knowledgeId}: ${err.message}`,
-        );
-      });
-    }
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<Array<{ documentId: string; success: boolean; error?: string }>> {
+    return Promise.all(
+      documentIds.map(async (documentId) => {
+        try {
+          await this.retryDocumentForKnowledge(knowledgeId, documentId, accessScope);
+          return { documentId, success: true };
+        } catch (err: any) {
+          const error = err?.message || String(err);
+          this.logger.error(
+            `Failed to retry document ${documentId} in knowledge ${knowledgeId}: ${error}`,
+          );
+          return { documentId, success: false, error };
+        }
+      }),
+    );
   }
 
   async listDocuments(
@@ -245,8 +302,15 @@ export class KnowledgeDocumentService {
       fileType?: string;
       status?: string;
       graphStatus?: string;
+      processingStage?: string;
+      tags?: string;
+      department?: string;
+      businessCategory?: string;
+      visibility?: 'private' | 'department' | 'company';
+      expiresBefore?: string;
       page?: number;
       pageSize?: number;
+      accessScope?: KnowledgeAccessScope;
     } = {},
   ): Promise<{
     items: KnowledgeDocument[];
@@ -262,6 +326,7 @@ export class KnowledgeDocumentService {
       .orderBy('document.created_at', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
+    applyDocumentAccessScope(qb, 'document', filters.accessScope);
 
     const q = String(filters.q ?? '').trim();
     if (q) {
@@ -286,6 +351,7 @@ export class KnowledgeDocumentService {
         graphStatus: filters.graphStatus,
       });
     }
+    this.applyDocumentGovernanceFilters(qb, filters);
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, pageSize };
@@ -304,8 +370,9 @@ export class KnowledgeDocumentService {
   async listChunksByKnowledgeDocument(
     knowledgeId: string,
     documentId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeChunkEntity[]> {
-    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId);
+    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId, accessScope);
     return this.listChunksByDocumentId(documentId);
   }
 
@@ -314,10 +381,12 @@ export class KnowledgeDocumentService {
     documentId: string,
     chunkId: string,
     options: { before?: number; after?: number } = {},
+    accessScope?: KnowledgeAccessScope,
   ) {
     const document = await this.findDocumentInKnowledgeOrThrow(
       knowledgeId,
       documentId,
+      accessScope,
     );
     const chunk = await this.findChunkInDocumentOrThrow(documentId, chunkId);
     const before = Math.min(Math.max(Number(options.before ?? 1), 0), 5);
@@ -343,10 +412,12 @@ export class KnowledgeDocumentService {
   async retryDocumentForKnowledge(
     knowledgeId: string,
     documentId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeDocument> {
     const document = await this.findDocumentInKnowledgeOrThrow(
       knowledgeId,
       documentId,
+      accessScope,
     );
     const chunks = await this.listChunksByDocumentId(documentId);
     if (chunks.length === 0) {
@@ -431,19 +502,24 @@ export class KnowledgeDocumentService {
     knowledgeId: string,
     chunkId: string,
     enabled: boolean,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<void> {
-    await this.findChunkInKnowledgeOrThrow(knowledgeId, chunkId);
+    await this.findChunkInKnowledgeOrThrow(knowledgeId, chunkId, accessScope);
     return this.updateChunkEnabled(chunkId, enabled);
   }
 
   private async findDocumentInKnowledgeOrThrow(
     knowledgeId: string,
     documentId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<KnowledgeDocument> {
     const document = await this.documentRepo.findOne({
       where: { id: documentId, knowledgeBaseId: knowledgeId },
     });
     if (!document) {
+      throw new NotFoundException('文档不属于当前知识库或不存在');
+    }
+    if (!isDocumentVisibleToScope(document, accessScope)) {
       throw new NotFoundException('文档不属于当前知识库或不存在');
     }
     return document;
@@ -452,13 +528,15 @@ export class KnowledgeDocumentService {
   private async findChunkInKnowledgeOrThrow(
     knowledgeId: string,
     chunkId: string,
+    accessScope?: KnowledgeAccessScope,
   ): Promise<void> {
-    const row = await this.chunkRepo
+    const qb = this.chunkRepo
       .createQueryBuilder('chunk')
       .innerJoin('chunk.document', 'document')
       .where('chunk.id = :chunkId', { chunkId })
-      .andWhere('document.knowledge_base_id = :knowledgeId', { knowledgeId })
-      .getOne();
+      .andWhere('document.knowledge_base_id = :knowledgeId', { knowledgeId });
+    applyDocumentAccessScope(qb, 'document', accessScope);
+    const row = await qb.getOne();
 
     if (!row) {
       throw new NotFoundException('chunk 不属于当前知识库或不存在');
@@ -703,8 +781,9 @@ export class KnowledgeDocumentService {
       buffer: Buffer;
       size: number;
     },
-    category?: string,
+    input: UploadMetadataInput = {},
   ): Promise<KnowledgeDocument> {
+    const metadata = this.normalizeUploadMetadata(input);
     const document = await this.documentRepo.save(
       this.documentRepo.create({
         knowledgeBaseId: knowledgeId,
@@ -714,8 +793,21 @@ export class KnowledgeDocumentService {
         processingError: null,
         mimeType: file.mimetype,
         fileSize: file.size,
+        ownerId: metadata.ownerId,
+        tags: metadata.tags,
+        department: metadata.department,
+        businessCategory: metadata.businessCategory,
+        visibility: metadata.visibility,
+        expiresAt: metadata.expiresAt,
+        versionGroupId: metadata.versionGroupId,
+        versionNo: metadata.versionNo,
+        isCurrentVersion: metadata.isCurrentVersion,
       }),
     );
+    if (!document.versionGroupId) {
+      document.versionGroupId = document.id;
+      await this.documentRepo.save(document);
+    }
 
     try {
       await this.updateDocumentStage(document.id, 'parsing');
@@ -728,7 +820,16 @@ export class KnowledgeDocumentService {
         {
           mimeType: file.mimetype,
           fileSize: file.size,
-          category,
+          category: metadata.category,
+          ownerId: metadata.ownerId,
+          tags: metadata.tags,
+          department: metadata.department,
+          businessCategory: metadata.businessCategory,
+          visibility: metadata.visibility,
+          expiresAt: metadata.expiresAt,
+          versionGroupId: document.versionGroupId,
+          versionNo: document.versionNo,
+          isCurrentVersion: document.isCurrentVersion,
         },
       );
     } catch (error) {
@@ -739,8 +840,167 @@ export class KnowledgeDocumentService {
         processingStage: 'failed',
         processingError: error instanceof Error ? error.message : String(error),
       });
+      void this.notificationService?.create({
+        type: 'document_failed',
+        title: '文档处理失败',
+        message: `${file.originalname} 处理失败`,
+        payload: {
+          knowledgeId,
+          documentId: document.id,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       throw error;
     }
+  }
+
+  async uploadDocumentVersion(
+    knowledgeId: string,
+    baseDocumentId: string,
+    file: {
+      originalname: string;
+      mimetype: string;
+      buffer: Buffer;
+      size: number;
+    },
+    input: UploadDocumentDto = {},
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument> {
+    const base = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      baseDocumentId,
+      accessScope,
+    );
+    const versionGroupId = base.versionGroupId ?? base.id;
+    if (!base.versionGroupId) {
+      await this.documentRepo.update(base.id, { versionGroupId });
+    }
+    const latest = await this.documentRepo.findOne({
+      where: { knowledgeBaseId: knowledgeId, versionGroupId },
+      order: { versionNo: 'DESC' },
+    });
+    const metadata = this.normalizeUploadMetadata(input, base);
+    const document = await this.parseAndIngestDocument(knowledgeId, file, {
+      ...metadata,
+      versionGroupId,
+      versionNo: (latest?.versionNo ?? base.versionNo ?? 1) + 1,
+      isCurrentVersion: true,
+    });
+    await this.documentRepo
+      .createQueryBuilder()
+      .update(KnowledgeDocument)
+      .set({ isCurrentVersion: false })
+      .where('version_group_id = :versionGroupId', { versionGroupId })
+      .andWhere('id != :documentId', { documentId: document.id })
+      .execute();
+    await this.cleanupNonCurrentVersionIndexes(
+      knowledgeId,
+      versionGroupId,
+      document.id,
+    );
+    return this.documentRepo.findOneByOrFail({ id: document.id });
+  }
+
+  async listDocumentVersions(
+    knowledgeId: string,
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument[]> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+      accessScope,
+    );
+    const versionGroupId = document.versionGroupId ?? document.id;
+    return this.documentRepo.find({
+      where: { knowledgeBaseId: knowledgeId, versionGroupId },
+      order: { versionNo: 'DESC', createdAt: 'DESC' },
+    });
+  }
+
+  async setCurrentDocumentVersion(
+    knowledgeId: string,
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+      accessScope,
+    );
+    if (document.archivedAt) {
+      throw new BadRequestException('归档版本不能设为当前版本');
+    }
+    const versionGroupId = document.versionGroupId ?? document.id;
+    await this.documentRepo
+      .createQueryBuilder()
+      .update(KnowledgeDocument)
+      .set({ isCurrentVersion: false })
+      .where('version_group_id = :versionGroupId', { versionGroupId })
+      .execute();
+    await this.documentRepo.update(document.id, { isCurrentVersion: true });
+    await this.cleanupNonCurrentVersionIndexes(
+      knowledgeId,
+      versionGroupId,
+      document.id,
+    );
+    const chunks = await this.listChunksByDocumentId(document.id);
+    await this.syncDocumentIndex({
+      documentId: document.id,
+      knowledgeId,
+      rows: chunks.map((chunk) => ({
+        id: chunk.id,
+        document_id: document.id,
+        chunk_index: chunk.chunkIndex,
+        content: chunk.content,
+        source: chunk.source,
+        category: chunk.category,
+        enabled: chunk.enabled,
+        embedding: '[]',
+      })),
+    });
+    return this.documentRepo.findOneByOrFail({ id: document.id });
+  }
+
+  async archiveDocument(
+    knowledgeId: string,
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+      accessScope,
+    );
+    await this.documentRepo.update(document.id, {
+      archivedAt: new Date(),
+      isCurrentVersion: false,
+    });
+    await this.cleanupDocument(document.id, `归档文档 ${document.id}`);
+    return this.documentRepo.findOneByOrFail({ id: document.id });
+  }
+
+  async updateDocumentGovernance(
+    knowledgeId: string,
+    documentId: string,
+    input: UploadDocumentDto,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+      accessScope,
+    );
+    const metadata = this.normalizeUploadMetadata(input, document);
+    await this.documentRepo.update(document.id, {
+      tags: metadata.tags,
+      department: metadata.department,
+      businessCategory: metadata.businessCategory,
+      visibility: metadata.visibility,
+      expiresAt: metadata.expiresAt,
+    });
+    return this.documentRepo.findOneByOrFail({ id: document.id });
   }
 
   private async extractDocumentText(file: {
@@ -790,5 +1050,133 @@ export class KnowledgeDocumentService {
       processingStage,
       processingError: null,
     });
+  }
+
+  private applyDocumentGovernanceFilters(
+    qb: {
+      andWhere: (condition: string, parameters?: Record<string, unknown>) => unknown;
+    },
+    filters: {
+      processingStage?: string;
+      tags?: string;
+      department?: string;
+      businessCategory?: string;
+      visibility?: 'private' | 'department' | 'company';
+      expiresBefore?: string;
+    },
+  ): void {
+    if (filters.processingStage) {
+      qb.andWhere('document.processing_stage = :processingStage', {
+        processingStage: filters.processingStage,
+      });
+    }
+    const tags = this.parseTags(filters.tags);
+    if (tags.length > 0) {
+      qb.andWhere('document.tags ?| ARRAY[:...tags]', { tags });
+    }
+    if (filters.department) {
+      qb.andWhere('document.department = :department', {
+        department: filters.department,
+      });
+    }
+    if (filters.businessCategory) {
+      qb.andWhere('document.business_category = :businessCategory', {
+        businessCategory: filters.businessCategory,
+      });
+    }
+    if (filters.visibility) {
+      qb.andWhere('document.visibility = :visibility', {
+        visibility: filters.visibility,
+      });
+    }
+    if (filters.expiresBefore) {
+      const expiresBefore = new Date(filters.expiresBefore);
+      if (!Number.isNaN(expiresBefore.getTime())) {
+        qb.andWhere('document.expires_at IS NOT NULL');
+        qb.andWhere('document.expires_at <= :expiresBefore', {
+          expiresBefore,
+        });
+      }
+    }
+  }
+
+  private normalizeUploadMetadata(
+    input: UploadMetadataInput,
+    fallback?: KnowledgeDocument,
+  ): IngestKnowledgeDocumentOptions & {
+    category?: string;
+    ownerId: string | null;
+    tags: string[];
+    department: string | null;
+    businessCategory: string | null;
+    visibility: 'private' | 'department' | 'company';
+    expiresAt: Date | null;
+    versionGroupId: string | null;
+    versionNo: number;
+    isCurrentVersion: boolean;
+  } {
+    const raw = (typeof input === 'string' ? { category: input } : (input ?? {})) as {
+      category?: string;
+      ownerId?: string | null;
+      tags?: string | string[];
+      department?: string | null;
+      businessCategory?: string | null;
+      visibility?: 'private' | 'department' | 'company';
+      expiresAt?: string | Date | null;
+      versionGroupId?: string | null;
+      versionNo?: number;
+      isCurrentVersion?: boolean;
+    };
+    const expiresAt =
+      typeof raw.expiresAt === 'object' && raw.expiresAt instanceof Date
+        ? raw.expiresAt
+        : raw.expiresAt
+          ? new Date(raw.expiresAt)
+          : fallback?.expiresAt ?? null;
+    return {
+      category: raw.category,
+      ownerId: raw.ownerId ?? fallback?.ownerId ?? null,
+      tags: Array.isArray(raw.tags)
+        ? raw.tags
+        : this.parseTags(raw.tags).length > 0
+          ? this.parseTags(raw.tags)
+          : fallback?.tags ?? [],
+      department: raw.department ?? fallback?.department ?? null,
+      businessCategory: raw.businessCategory ?? fallback?.businessCategory ?? null,
+      visibility: raw.visibility ?? fallback?.visibility ?? 'company',
+      expiresAt:
+        expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+      versionGroupId: raw.versionGroupId ?? fallback?.versionGroupId ?? null,
+      versionNo: raw.versionNo ?? fallback?.versionNo ?? 1,
+      isCurrentVersion: raw.isCurrentVersion ?? fallback?.isCurrentVersion ?? true,
+    };
+  }
+
+  private parseTags(value?: string | string[]): string[] {
+    if (!value) return [];
+    const items = Array.isArray(value) ? value : value.split(',');
+    return Array.from(
+      new Set(items.map((item) => item.trim()).filter(Boolean)),
+    );
+  }
+
+  private async cleanupNonCurrentVersionIndexes(
+    knowledgeId: string,
+    versionGroupId: string,
+    currentDocumentId: string,
+  ): Promise<void> {
+    const versions = await this.documentRepo.find({
+      where: { knowledgeBaseId: knowledgeId, versionGroupId },
+    });
+    await Promise.all(
+      versions
+        .filter((item) => item.id !== currentDocumentId)
+        .map((item) =>
+          this.cleanupDocument(
+            item.id,
+            `切换当前版本，清理旧版本 ${item.id}`,
+          ),
+        ),
+    );
   }
 }

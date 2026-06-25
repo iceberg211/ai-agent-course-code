@@ -9,10 +9,13 @@ import { AuthService } from '@/auth/services/auth.service';
 import { AuthController } from '@/auth/controllers/auth.controller';
 import { JwtStrategy } from '@/auth/strategies/jwt.strategy';
 import { ApiKeyStrategy } from '@/auth/strategies/api-key.strategy';
+import { RolesGuard } from '@/auth/guards/roles.guard';
+import { NotificationModule } from '@/notification/notification.module';
 
 @Module({
   imports: [
     UserModule,
+    NotificationModule,
     TypeOrmModule.forFeature([ApiKey]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -27,7 +30,7 @@ import { ApiKeyStrategy } from '@/auth/strategies/api-key.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, ApiKeyStrategy],
+  providers: [AuthService, JwtStrategy, ApiKeyStrategy, RolesGuard],
   exports: [AuthService, JwtModule, PassportModule],
 })
 export class AuthModule {}

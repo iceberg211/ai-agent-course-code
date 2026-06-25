@@ -78,6 +78,8 @@ export interface KnowledgeDocument {
   knowledge_base_id?: string
   knowledge?: KnowledgeBase
   filename: string
+  ownerId?: string | null
+  owner_id?: string | null
   status: string
   processingStage?: string
   processing_stage?: string
@@ -87,6 +89,21 @@ export interface KnowledgeDocument {
   graph_sync_status?: string
   graphSyncError?: string | null
   graph_sync_error?: string | null
+  tags?: string[]
+  department?: string | null
+  businessCategory?: string | null
+  business_category?: string | null
+  visibility?: 'private' | 'department' | 'company'
+  expiresAt?: string | null
+  expires_at?: string | null
+  versionGroupId?: string | null
+  version_group_id?: string | null
+  versionNo?: number
+  version_no?: number
+  isCurrentVersion?: boolean
+  is_current_version?: boolean
+  archivedAt?: string | null
+  archived_at?: string | null
   chunkCount?: number
   chunk_count?: number
   createdAt?: string
@@ -188,6 +205,17 @@ export interface KnowledgeDocumentDetail extends KnowledgeDocument {
   sourceType: 'upload'
 }
 
+export interface ApiKeyItem {
+  id: string
+  name: string
+  keyPrefix: string
+  keyLastFour: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  key?: string
+}
+
 export interface PaginatedResult<T> {
   items: T[]
   total: number
@@ -213,6 +241,19 @@ export interface DashboardSummary {
   messageCount: number
   recentDocuments: KnowledgeDocument[]
   recentConversations: ConversationSummary[]
+  failedDocumentTrend?: Array<{ date: string; count: number }>
+  hotQuestions?: Array<{ question: string; count: number }>
+  lowRatedAnswers?: Array<{
+    question: string
+    answer: string
+    answerId: string
+    createdAt: string
+  }>
+  noCitationRate?: number
+  recentFailedDocuments?: KnowledgeDocument[]
+  unchunkedDocumentCount?: number
+  graphFailedDocumentCount?: number
+  evalPassRate?: number
 }
 
 export interface ChunkContext {
@@ -230,8 +271,40 @@ export interface KnowledgeEvalCase {
   question: string
   expectedAnswer?: string | null
   expected_answer?: string | null
+  lastRunActualAnswer?: string | null
+  last_run_actual_answer?: string | null
+  lastRunStatus?: string
+  last_run_status?: string
+  lastRunHitRate?: number | null
+  last_run_hit_rate?: number | null
+  lastRunRecall?: number | null
+  last_run_recall?: number | null
+  lastRunError?: string | null
+  last_run_error?: string | null
+  userReviewStatus?: 'passed' | 'failed' | 'unreviewed' | string
+  user_review_status?: 'passed' | 'failed' | 'unreviewed' | string
+  lastRunAt?: string | null
+  last_run_at?: string | null
   createdAt: string
   created_at?: string
   updatedAt: string
   updated_at?: string
+}
+
+export interface NotificationItem {
+  id: string
+  ownerId?: string | null
+  owner_id?: string | null
+  type: string
+  title: string
+  message?: string | null
+  payload?: Record<string, unknown>
+  readAt?: string | null
+  read_at?: string | null
+  createdAt: string
+  created_at?: string
+}
+
+export interface NotificationListResult extends PaginatedResult<NotificationItem> {
+  unreadCount: number
 }

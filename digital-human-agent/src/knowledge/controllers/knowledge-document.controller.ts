@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -22,10 +23,15 @@ import {
   UPLOAD_MAX_FILE_SIZE,
 } from '@/common/constants';
 import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
-import { ListDocumentsDto } from '@/knowledge/dto/list-documents.dto';
+import {
+  BatchRetryDocumentsDto,
+  ListDocumentsDto,
+} from '@/knowledge/dto/list-documents.dto';
+import { UploadDocumentDto } from '@/knowledge/dto/upload-document.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
 
 function isSupportedKnowledgeUpload(file: {
@@ -55,8 +61,11 @@ export class KnowledgeDocumentController {
   // ==========================================
   @Get('documents')
   @ApiOperation({ summary: '跨知识库分页查询文档' })
-  listAllDocuments(@Query() query: ListDocumentsDto) {
-    return this.documentService.listDocuments(query);
+  listAllDocuments(@Query() query: ListDocumentsDto, @Req() req: any) {
+    return this.documentService.listDocuments({
+      ...query,
+      accessScope: this.accessScope(req),
+    });
   }
 
   // ==========================================
@@ -66,11 +75,18 @@ export class KnowledgeDocumentController {
   listDocuments(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Query() query: ListDocumentsDto,
+    @Req() req: any,
   ) {
     if (this.hasDocumentListFilters(query)) {
-      return this.documentService.listDocumentsForKnowledge(kbId, query);
+      return this.documentService.listDocumentsForKnowledge(kbId, {
+        ...query,
+        accessScope: this.accessScope(req),
+      });
     }
-    return this.documentService.listDocumentsByKnowledgeId(kbId);
+    return this.documentService.listDocumentsByKnowledgeId(
+      kbId,
+      this.accessScope(req),
+    );
   }
 
   @Post('knowledge-bases/:kbId/documents')
@@ -89,20 +105,116 @@ export class KnowledgeDocumentController {
   async uploadDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body('category') category?: string,
+    @Body() dto: UploadDocumentDto,
+    @Req() req: any,
   ) {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
-    return this.documentService.parseAndIngestDocument(kbId, file, category);
+    return this.documentService.parseAndIngestDocument(kbId, file, {
+      ...dto,
+      ownerId: req.user?.id,
+    });
+  }
+
+  @Post('knowledge-bases/:kbId/documents/:docId/versions')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
+      fileFilter: (_req, file, cb) => {
+        if (isSupportedKnowledgeUpload(file)) {
+          cb(null, true);
+          return;
+        }
+        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+      },
+    }),
+  )
+  @ApiOperation({ summary: '上传文档新版本，并设为当前版本' })
+  uploadDocumentVersion(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadDocumentDto,
+    @Req() req: any,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
+    }
+    return this.documentService.uploadDocumentVersion(
+      kbId,
+      docId,
+      file,
+      dto,
+      this.accessScope(req),
+    );
+  }
+
+  @Get('knowledge-bases/:kbId/documents/:docId/versions')
+  @ApiOperation({ summary: '查看文档版本历史' })
+  listDocumentVersions(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.listDocumentVersions(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Patch('knowledge-bases/:kbId/documents/:docId/current-version')
+  @ApiOperation({ summary: '设为当前文档版本' })
+  setCurrentDocumentVersion(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.setCurrentDocumentVersion(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Patch('knowledge-bases/:kbId/documents/:docId/archive')
+  @ApiOperation({ summary: '归档文档版本' })
+  archiveDocument(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.archiveDocument(kbId, docId, this.accessScope(req));
+  }
+
+  @Patch('knowledge-bases/:kbId/documents/:docId/governance')
+  @ApiOperation({ summary: '更新文档标签、分类、权限与过期时间' })
+  updateDocumentGovernance(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Body() dto: UploadDocumentDto,
+    @Req() req: any,
+  ) {
+    return this.documentService.updateDocumentGovernance(
+      kbId,
+      docId,
+      dto,
+      this.accessScope(req),
+    );
   }
 
   @Delete('knowledge-bases/:kbId/documents/:docId')
   deleteDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
   ) {
-    return this.documentService.deleteDocumentForKnowledge(kbId, docId);
+    return this.documentService.deleteDocumentForKnowledge(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
   }
 
   @Post('knowledge-bases/:kbId/documents/:docId/retry')
@@ -110,26 +222,44 @@ export class KnowledgeDocumentController {
   retryDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
   ) {
-    return this.documentService.retryDocumentForKnowledge(kbId, docId);
+    return this.documentService.retryDocumentForKnowledge(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
   }
 
   @Post('knowledge-bases/:kbId/documents/batch-retry')
   @ApiOperation({ summary: '批量重试解析失败的文档' })
   async batchRetry(
     @Param('kbId', ParseUUIDPipe) kbId: string,
-    @Body('documentIds') documentIds: string[],
+    @Body() dto: BatchRetryDocumentsDto,
+    @Req() req: any,
   ) {
-    await this.documentService.batchRetryDocuments(kbId, documentIds);
-    return { success: true };
+    const results = await this.documentService.batchRetryDocuments(
+      kbId,
+      dto.documentIds,
+      this.accessScope(req),
+    );
+    return {
+      success: results.every((item) => item.success),
+      results,
+    };
   }
 
   @Get('knowledge-bases/:kbId/documents/:docId/chunks')
   listChunks(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
   ) {
-    return this.documentService.listChunksByKnowledgeDocument(kbId, docId);
+    return this.documentService.listChunksByKnowledgeDocument(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
   }
 
   @Get('knowledge-bases/:kbId/documents/:docId/chunks/:chunkId/context')
@@ -139,12 +269,14 @@ export class KnowledgeDocumentController {
     @Param('docId', ParseUUIDPipe) docId: string,
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Query() query: ChunkContextDto,
+    @Req() req: any,
   ) {
     return this.documentService.getChunkContextForKnowledge(
       kbId,
       docId,
       chunkId,
       query,
+      this.accessScope(req),
     );
   }
 
@@ -154,13 +286,23 @@ export class KnowledgeDocumentController {
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('chunkId', ParseUUIDPipe) chunkId: string,
     @Body() dto: UpdateChunkDto,
+    @Req() req: any,
   ) {
     await this.documentService.updateChunkEnabledForKnowledge(
       kbId,
       chunkId,
       dto.enabled,
+      this.accessScope(req),
     );
     return { chunkId, enabled: dto.enabled };
+  }
+
+  private accessScope(req: any): KnowledgeAccessScope {
+    return {
+      ownerId: req.user?.id ?? null,
+      department: req.user?.department ?? null,
+      role: req.user?.role ?? null,
+    };
   }
 
   private hasDocumentListFilters(query: ListDocumentsDto): boolean {
@@ -169,6 +311,11 @@ export class KnowledgeDocumentController {
         query.status ||
         query.graphStatus ||
         query.processingStage ||
+        query.tags ||
+        query.department ||
+        query.businessCategory ||
+        query.visibility ||
+        query.expiresBefore ||
         query.page ||
         query.pageSize,
     );

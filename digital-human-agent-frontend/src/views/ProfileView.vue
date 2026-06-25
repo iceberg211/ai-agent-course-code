@@ -47,6 +47,70 @@
         </div>
       </section>
 
+      <section class="settings-block">
+        <div class="block-title">
+          <h4>部门信息</h4>
+          <p>部门会用于判断“部门可见”文档的检索范围。</p>
+        </div>
+        <form class="api-key-form" @submit.prevent="saveDepartment">
+          <input
+            v-model="departmentInput"
+            type="text"
+            placeholder="例如 财务部、产品研发部"
+            :disabled="profileLoading"
+          />
+          <button class="btn-primary" type="submit" :disabled="profileLoading">
+            保存
+          </button>
+        </form>
+      </section>
+
+      <section class="settings-block">
+        <div class="block-title">
+          <h4>API Key 管理</h4>
+          <p>用于脚本、服务端任务或内部系统调用知识库与问答接口。</p>
+        </div>
+
+        <form class="api-key-form" @submit.prevent="createApiKey">
+          <input
+            v-model="apiKeyName"
+            type="text"
+            placeholder="输入用途名称，例如 数据同步任务"
+            :disabled="apiKeyLoading"
+          />
+          <button class="btn-primary" type="submit" :disabled="apiKeyLoading || !apiKeyName.trim()">
+            <KeyRoundIcon :size="14" />
+            创建
+          </button>
+        </form>
+
+        <div v-if="createdPlainKey" class="secret-once">
+          <div>
+            <span class="label">新 API Key 仅展示一次</span>
+            <code>{{ createdPlainKey }}</code>
+          </div>
+          <button class="btn-copy" type="button" @click="copyApiKey(createdPlainKey)">复制</button>
+        </div>
+
+        <div class="api-key-list">
+          <article v-for="item in apiKeys" :key="item.id" class="api-key-item">
+            <div>
+              <strong>{{ item.name }}</strong>
+              <span>{{ item.keyPrefix }}••••{{ item.keyLastFour }} · {{ formatDate(item.createdAt) }}</span>
+            </div>
+            <button
+              class="btn-revoke"
+              type="button"
+              :disabled="apiKeyLoading || !item.isActive"
+              @click="revokeApiKey(item.id)"
+            >
+              {{ item.isActive ? '废弃' : '已废弃' }}
+            </button>
+          </article>
+          <p v-if="!apiKeys.length" class="action-desc">暂无 API Key。</p>
+        </div>
+      </section>
+
       <!-- 修改密码模块 -->
       <section class="settings-block">
         <div class="block-title">
@@ -140,9 +204,12 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Trash2Icon, LogOutIcon, KeyRoundIcon } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import { apiFetch, apiJson } from '@/api/client'
+import type { ApiKeyItem } from '@/types'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -150,6 +217,12 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const errorMsg = ref('')
 const toastMsg = ref('')
+const apiKeyLoading = ref(false)
+const profileLoading = ref(false)
+const apiKeyName = ref('')
+const apiKeys = ref<ApiKeyItem[]>([])
+const createdPlainKey = ref('')
+const departmentInput = ref('')
 
 const passwordForm = reactive({
   oldPassword: '',
@@ -165,6 +238,11 @@ const initial = computed(() => {
 const username = computed(() => authStore.user?.username || '企业管理员')
 const ownerId = computed(() => authStore.user?.id || '无凭证')
 
+onMounted(() => {
+  void loadProfile()
+  void loadApiKeys()
+})
+
 function showToast(msg: string) {
   toastMsg.value = msg
   setTimeout(() => {
@@ -176,6 +254,93 @@ function copyId() {
   if (!ownerId.value || ownerId.value === '无凭证') return
   navigator.clipboard.writeText(ownerId.value)
   showToast('用户凭证已成功复制到剪贴板。')
+}
+
+async function loadApiKeys() {
+  apiKeyLoading.value = true
+  try {
+    apiKeys.value = (await apiJson<ApiKeyItem[]>('/api/auth/api-keys')) ?? []
+  } finally {
+    apiKeyLoading.value = false
+  }
+}
+
+async function loadProfile() {
+  profileLoading.value = true
+  try {
+    const profile = await apiJson<typeof authStore.user>('/api/auth/me')
+    if (profile) {
+      authStore.user = profile
+      localStorage.setItem('user_info', JSON.stringify(profile))
+      departmentInput.value = profile.department ?? ''
+    }
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function saveDepartment() {
+  profileLoading.value = true
+  try {
+    const profile = await apiJson<typeof authStore.user>('/api/auth/me', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ department: departmentInput.value.trim() }),
+    })
+    if (!profile) {
+      showToast('部门保存失败')
+      return
+    }
+    authStore.user = profile
+    localStorage.setItem('user_info', JSON.stringify(profile))
+    showToast('部门信息已保存')
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function createApiKey() {
+  const name = apiKeyName.value.trim()
+  if (!name) return
+  apiKeyLoading.value = true
+  try {
+    const created = await apiJson<ApiKeyItem>('/api/auth/api-keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!created?.key) {
+      showToast('API Key 创建失败')
+      return
+    }
+    createdPlainKey.value = created.key
+    apiKeyName.value = ''
+    showToast('API Key 已创建')
+    await loadApiKeys()
+  } finally {
+    apiKeyLoading.value = false
+  }
+}
+
+async function revokeApiKey(id: string) {
+  if (!confirm('确定废弃这个 API Key 吗？已接入的调用会立即失效。')) return
+  apiKeyLoading.value = true
+  try {
+    const res = await apiFetch(`/api/auth/api-keys/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res?.ok) {
+      showToast('API Key 废弃失败')
+      return
+    }
+    showToast('API Key 已废弃')
+    await loadApiKeys()
+  } finally {
+    apiKeyLoading.value = false
+  }
+}
+
+function copyApiKey(value: string) {
+  navigator.clipboard.writeText(value)
+  showToast('API Key 已复制到剪贴板。')
 }
 
 function resetLocalCache() {
@@ -204,7 +369,7 @@ async function handleChangePassword() {
   loading.value = true
 
   try {
-    const res = await fetch('/api/auth/change-password', {
+    const res = await apiFetch('/api/auth/change-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -237,6 +402,10 @@ function handleLogout() {
   if (!confirm('确定退出当前登录吗？')) return
   authStore.logout()
   router.push('/login')
+}
+
+function formatDate(value?: string) {
+  return value ? new Date(value).toLocaleString() : '-'
 }
 </script>
 
@@ -427,6 +596,95 @@ function handleLogout() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.api-key-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.api-key-form input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
+.secret-once {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.secret-once > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.secret-once code {
+  max-width: 420px;
+  overflow: auto;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.api-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.api-key-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.api-key-item div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-key-item span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.btn-revoke {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 7px;
+  background: rgba(239, 68, 68, 0.06);
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-revoke:disabled {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 .form-field {

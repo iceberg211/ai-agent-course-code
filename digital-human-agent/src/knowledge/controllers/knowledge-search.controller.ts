@@ -4,12 +4,14 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
 /**
  * 知识检索控制器。
@@ -34,11 +36,15 @@ export class KnowledgeSearchController {
   search(
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
     @Body() body: KnowledgeSearchDto,
+    @Req() req: any,
   ) {
     return this.searchService.retrieveWithDebug(
       knowledgeId,
       body.query,
-      body.toRetrieveOptions(),
+      {
+        ...body.toRetrieveOptions(),
+        accessScope: this.accessScope(req),
+      },
     );
   }
 
@@ -53,12 +59,16 @@ export class KnowledgeSearchController {
   async searchForPersona(
     @Param('personaId', ParseUUIDPipe) personaId: string,
     @Body() body: KnowledgeSearchDto,
+    @Req() req: any,
   ) {
     const normalizedQuery = String(body.query ?? '').trim();
     const results = await this.searchService.retrieveForPersona(
       personaId,
       normalizedQuery,
-      body.toRetrieveOptions(),
+      {
+        ...body.toRetrieveOptions(),
+        accessScope: this.accessScope(req),
+      },
     );
     return { query: normalizedQuery, results };
   }
@@ -70,12 +80,24 @@ export class KnowledgeSearchController {
   async searchForPersonaWithDebug(
     @Param('personaId', ParseUUIDPipe) personaId: string,
     @Body() body: KnowledgeSearchDto,
+    @Req() req: any,
   ) {
     const normalizedQuery = String(body.query ?? '').trim();
     return this.searchService.retrieveForPersonaWithDebug(
       personaId,
       normalizedQuery,
-      body.toRetrieveOptions(),
+      {
+        ...body.toRetrieveOptions(),
+        accessScope: this.accessScope(req),
+      },
     );
+  }
+
+  private accessScope(req: any): KnowledgeAccessScope {
+    return {
+      ownerId: req.user?.id ?? null,
+      department: req.user?.department ?? null,
+      role: req.user?.role ?? null,
+    };
   }
 }
