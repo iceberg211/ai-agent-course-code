@@ -1,4 +1,13 @@
+export type RetrievalPreset =
+  | 'precise'
+  | 'balanced'
+  | 'broad'
+  | 'graph_first'
+  | 'memory_aware'
+  | 'multimodal';
+
 export interface RetrievalStrategy {
+  name: string;
   needRetrieval: boolean;
   useVector: boolean;
   useKeyword: boolean;
@@ -11,6 +20,17 @@ export interface RetrievalStrategy {
   graphMode?: 'neighbors' | 'path';
   graphMaxHops?: number;
   reason: string;
+
+  // 阶段 3 升级字段
+  useMemory: boolean;
+  useMultimodal: boolean;
+  vectorTopK: number;
+  keywordTopK: number;
+  graphTopK: number;
+  memoryTopK: number;
+  rrfK: number;
+  rerankTopK: number;
+  minRerankScore: number;
 }
 
 export type RagStopReason =

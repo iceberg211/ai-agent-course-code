@@ -95,12 +95,21 @@ export interface RetrieveKnowledgeTraceItem {
   vectorBackend: VectorBackend | 'disabled';
   keywordBackend: KeywordBackend | 'disabled';
   graphBackend: GraphBackend | 'disabled';
+  memoryBackend?: string | 'disabled';
+  multimodalBackend?: string | 'disabled';
   vectorResultCount: number;
   keywordResultCount: number;
   graphResultCount?: number;
+  memoryResultCount?: number;
+  multimodalResultCount?: number;
   mergedResultCount: number;
   fallbackToPg: boolean;
-  skippedChannels: Array<'vector' | 'keyword' | 'graph'>;
+  skippedChannels: Array<'vector' | 'keyword' | 'graph' | 'memory' | 'multimodal'>;
+
+  // 阶段 3 升级统计 Trace 字段
+  avgVectorScore?: number;
+  avgKeywordScore?: number;
+  avgGraphScore?: number;
 }
 
 export interface RetrieveKnowledgeDebugResult {

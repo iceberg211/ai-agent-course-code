@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import { Readable } from 'node:stream';
 import {
   DocumentTask,
   type DocumentTaskStatus,
@@ -11,7 +13,12 @@ import {
   type DocumentTaskStepStatus,
 } from '@/knowledge/entities/document-task-step.entity';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
+import { ObjectStorageProviderToken } from '@/storage/object-storage.provider';
+import type { ObjectStorageProvider } from '@/storage/object-storage.provider';
 import type { UploadTaskExecutionInput } from './document-task.types';
+import { DocumentAsset } from '@/knowledge/entities/document-asset.entity';
+import { DocumentParserService } from './parsers/document-parser.service';
+import type { IngestKnowledgeDocumentOptions } from '@/knowledge/types/knowledge-content.types';
 
 type TaskPatch = Partial<
   Pick<
@@ -38,6 +45,14 @@ type StepPatch = Partial<
   >
 >;
 
+async function streamToString(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
 @Injectable()
 export class DocumentTaskRunnerService {
   private readonly logger = new Logger(DocumentTaskRunnerService.name);
@@ -47,91 +62,306 @@ export class DocumentTaskRunnerService {
     private readonly taskRepo: Repository<DocumentTask>,
     @InjectRepository(DocumentTaskStep)
     private readonly stepRepo: Repository<DocumentTaskStep>,
+    @InjectRepository(DocumentAsset)
+    private readonly assetRepo: Repository<DocumentAsset>,
     private readonly documentService: KnowledgeDocumentService,
+    private readonly configService: ConfigService,
+    @Inject(ObjectStorageProviderToken)
+    private readonly storageProvider: ObjectStorageProvider,
+    private readonly parserService: DocumentParserService,
   ) {}
 
   async runUploadIngestTask(params: UploadTaskExecutionInput): Promise<void> {
     const { taskId, knowledgeBaseId, file, input } = params;
+
+    // 1. 获取最新任务和步骤状态
+    const task = await this.taskRepo.findOne({ where: { id: taskId } });
+    if (!task) {
+      this.logger.error(`[Runner] 任务未找到 taskId=${taskId}`);
+      return;
+    }
+
+    const steps = await this.stepRepo.find({ where: { taskId } });
+    const parseStep = steps.find((s) => s.step === 'parse');
+    const indexStep = steps.find((s) => s.step === 'index');
+    const graphSyncStep = steps.find((s) => s.step === 'graph_sync');
+
+    if (!parseStep || !indexStep || !graphSyncStep) {
+      this.logger.error(`[Runner] 任务步骤未完全初始化 taskId=${taskId}`);
+      return;
+    }
+
     await this.updateTask(taskId, {
       status: 'running',
-      stage: 'parsing',
-      progress: 10,
-      startedAt: new Date(),
-    });
-    await this.updateStep(taskId, 'parse', {
-      status: 'running',
       startedAt: new Date(),
     });
 
-    try {
-      const document = await this.documentService.parseAndIngestDocument(
-        knowledgeBaseId,
-        file,
-        input,
-      );
+    const bucket = this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
+    let documentId = task.documentId;
+    let markdownStorageKey = (task.checkpointData as any)?.markdownStorageKey;
+    const ingestRunId = task.ingestRunId ?? input.currentIngestRunId ?? taskId;
+    const ingestOptions = this.toIngestOptions(input);
 
-      const checkpoint = {
-        documentId: document.id,
-        legacyPipeline: true,
-        note: '当前切片复用旧 parseAndIngestDocument，后续再拆分 parse 和 index。',
-      };
+    // ==========================================
+    // 步骤 1：Parse
+    // ==========================================
+    if (parseStep.status !== 'completed') {
+      await this.updateTask(taskId, { stage: 'parsing', progress: 10 });
+      await this.updateStep(taskId, 'parse', {
+        status: 'running',
+        startedAt: new Date(),
+      });
 
-      await this.updateStep(taskId, 'parse', {
-        status: 'completed',
-        documentId: document.id,
-        checkpoint,
-        finishedAt: new Date(),
-      });
-      await this.updateStep(taskId, 'index', {
-        status: 'completed',
-        documentId: document.id,
-        checkpoint: {
-          ...checkpoint,
-          chunkCount: document.chunkCount,
-          processingStage: document.processingStage,
-        },
-        startedAt: new Date(),
-        finishedAt: new Date(),
-      });
-      await this.updateStep(taskId, 'graph_sync', {
-        status: 'skipped',
-        documentId: document.id,
-        checkpoint: {
-          reason: '旧流水线内部已调度图谱同步，本任务切片暂不重复执行。',
-          graphSyncStatus: document.graphSyncStatus,
-        },
-        startedAt: new Date(),
-        finishedAt: new Date(),
-      });
-      await this.updateTask(taskId, {
-        documentId: document.id,
-        status: 'completed',
-        stage: 'completed',
-        progress: 100,
-        checkpointData: {
-          documentId: document.id,
-          chunkCount: document.chunkCount,
-          processingStage: document.processingStage,
-          graphSyncStatus: document.graphSyncStatus,
-        },
-        finishedAt: new Date(),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`文档任务执行失败 task=${taskId}: ${message}`);
-      await this.updateStep(taskId, 'parse', {
-        status: 'failed',
-        error: message,
-        finishedAt: new Date(),
-      });
-      await this.updateTask(taskId, {
-        status: 'failed',
-        stage: 'failed',
-        progress: 100,
-        error: message,
-        finishedAt: new Date(),
-      });
+      try {
+        // 调用多模态解析器
+        const parseResult = await this.parserService.parse(
+          {
+            filename: file.originalname,
+            mimetype: file.mimetype,
+            buffer: file.buffer,
+            size: file.size,
+          },
+          {
+            knowledgeBaseId,
+            ingestRunId,
+          },
+        );
+        
+        markdownStorageKey = `knowledge-bases/${knowledgeBaseId}/markdown/${ingestRunId}.md`;
+        
+        // 保存解析后的 Markdown 到 S3 对象存储
+        await this.storageProvider.putObject({
+          bucket,
+          key: markdownStorageKey,
+          body: Buffer.from(parseResult.markdown, 'utf-8'),
+          contentType: 'text/markdown',
+        });
+
+        // 创建/获取 KnowledgeDocument 占位符
+        let document: any;
+        if (!documentId) {
+          document = await this.documentService.createDocument(
+            knowledgeBaseId,
+            file.originalname,
+            file.size,
+            file.mimetype,
+            ingestOptions,
+          );
+          documentId = document.id;
+        }
+
+        if (!documentId) {
+          throw new Error('创建/匹配文档记录失败');
+        }
+        const docId: string = documentId;
+
+        // 保存多模态解析资产（图片、音频段、视频段）到数据库
+        if (parseResult.assets && parseResult.assets.length > 0) {
+          const assetEntities = parseResult.assets.map((asset) =>
+            this.assetRepo.create({
+              documentId: docId,
+              knowledgeBaseId,
+              assetType: asset.assetType,
+              mimeType: asset.mimeType,
+              filename: asset.filename,
+              storageKey: asset.storageKey,
+              pageNo: asset.pageNo || null,
+              startMs: asset.startMs || null,
+              endMs: asset.endMs || null,
+              caption: asset.caption || null,
+              ocrText: asset.ocrText || null,
+              metadata: asset.metadata || null,
+            }),
+          );
+          await this.assetRepo.save(assetEntities);
+
+          // 更新文档中的资产计数
+          await this.documentService.updateDocument(docId, {
+            assetCount: parseResult.assets.length,
+          });
+        }
+
+        // 绑定 documentId
+        await this.updateStep(taskId, 'parse', {
+          status: 'completed',
+          documentId,
+          checkpoint: { markdownStorageKey },
+          finishedAt: new Date(),
+        });
+
+        await this.updateTask(taskId, {
+          documentId,
+          checkpointData: {
+            ...(task.checkpointData || {}),
+            markdownStorageKey,
+            documentId,
+            assetCount: parseResult.assets ? parseResult.assets.length : 0,
+          },
+        });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await this.updateStep(taskId, 'parse', {
+          status: 'failed',
+          error: errMsg,
+          finishedAt: new Date(),
+        });
+        await this.updateTask(taskId, {
+          status: 'failed',
+          stage: 'failed',
+          error: `步骤 parse 失败: ${errMsg}`,
+          finishedAt: new Date(),
+        });
+        return;
+      }
+    } else {
+      // 已经完成过 parse，保证 documentId 正确加载
+      documentId = parseStep.documentId;
+      markdownStorageKey = (parseStep.checkpoint as any)?.markdownStorageKey || markdownStorageKey;
     }
+
+    if (!documentId) {
+      throw new Error('未关联的文档 ID，流程不可推进');
+    }
+    const docId: string = documentId;
+
+    // ==========================================
+    // 步骤 2：Index
+    // ==========================================
+    let chunkRows: any[] = [];
+    if (indexStep.status !== 'completed') {
+      await this.updateTask(taskId, { stage: 'indexing', progress: 50 });
+      await this.updateStep(taskId, 'index', {
+        status: 'running',
+        startedAt: new Date(),
+      });
+
+      try {
+        if (!markdownStorageKey) {
+          throw new Error('解析步骤的 markdownStorageKey 丢失，无法执行索引');
+        }
+
+        // 从 S3/MinIO 下载已解析的 Markdown
+        const stream = await this.storageProvider.getObject({
+          bucket,
+          key: markdownStorageKey,
+        });
+        const contentStr = await streamToString(stream);
+
+        // 获取对应的 document
+        const document = await this.documentService.findOneDocument(docId);
+        if (!document) {
+          throw new Error(`关联的文档记录不存在 id=${docId}`);
+        }
+
+        // 写入索引（分片、PG、ES）
+        chunkRows = await this.documentService.indexDocumentChunks(
+          document,
+          knowledgeBaseId,
+          file.originalname,
+          contentStr,
+          ingestOptions,
+        );
+
+        await this.updateStep(taskId, 'index', {
+          status: 'completed',
+          documentId: docId,
+          checkpoint: {
+            chunkCount: chunkRows.length,
+          },
+          finishedAt: new Date(),
+        });
+
+        await this.updateTask(taskId, {
+          checkpointData: {
+            ...(task.checkpointData || {}),
+            markdownStorageKey,
+            documentId: docId,
+            chunkCount: chunkRows.length,
+          },
+        });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await this.updateStep(taskId, 'index', {
+          status: 'failed',
+          error: errMsg,
+          finishedAt: new Date(),
+        });
+        await this.updateTask(taskId, {
+          status: 'failed',
+          stage: 'failed',
+          error: `步骤 index 失败: ${errMsg}`,
+          finishedAt: new Date(),
+        });
+        return;
+      }
+    }
+
+    // ==========================================
+    // 步骤 3：Graph Sync
+    // ==========================================
+    if (graphSyncStep.status !== 'completed' && graphSyncStep.status !== 'skipped') {
+      await this.updateTask(taskId, { stage: 'graph_syncing', progress: 80 });
+      await this.updateStep(taskId, 'graph_sync', {
+        status: 'running',
+        startedAt: new Date(),
+      });
+
+      try {
+        const document = await this.documentService.findOneDocument(docId);
+        if (!document) {
+          throw new Error(`关联的文档记录不存在 id=${docId}`);
+        }
+
+        // 如果在刚才 index 已经跑过了，直接用刚才返回 of chunkRows。
+        // 如果 index 被跳过，就需要通过 listChunksByDocumentId 来读取。
+        if (!chunkRows || chunkRows.length === 0) {
+          const dbChunks = await this.documentService.listChunksByDocumentId(docId);
+          chunkRows = dbChunks.map((c) => ({
+            id: c.id,
+            document_id: docId,
+            chunk_index: c.chunkIndex,
+            content: c.content,
+            source: file.originalname,
+            category: (input as any).category ?? null,
+            enabled: c.enabled,
+            embedding: '[]',
+          }));
+        }
+
+        await this.documentService.syncGraphOnly(
+          document,
+          knowledgeBaseId,
+          file.originalname,
+          chunkRows,
+        );
+
+        await this.updateStep(taskId, 'graph_sync', {
+          status: 'completed',
+          documentId: docId,
+          checkpoint: {
+            graphSyncStatus: document.graphSyncStatus,
+          },
+          finishedAt: new Date(),
+        });
+
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`图谱同步失败（不影响基础检索）：${errMsg}`);
+        await this.updateStep(taskId, 'graph_sync', {
+          status: 'failed',
+          error: errMsg,
+          finishedAt: new Date(),
+        });
+      }
+    }
+
+    // 最终更新任务为完成
+    await this.updateTask(taskId, {
+      status: 'completed',
+      stage: 'completed',
+      progress: 100,
+      finishedAt: new Date(),
+    });
   }
 
   private async updateTask(taskId: string, patch: TaskPatch): Promise<void> {
@@ -144,5 +374,32 @@ export class DocumentTaskRunnerService {
     patch: StepPatch & { status?: DocumentTaskStepStatus },
   ): Promise<void> {
     await this.stepRepo.update({ taskId, step }, patch as never);
+  }
+
+  private toIngestOptions(
+    input: UploadTaskExecutionInput['input'],
+  ): IngestKnowledgeDocumentOptions {
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+    return {
+      category: input.category,
+      ownerId: input.ownerId ?? null,
+      tags: this.parseTags(input.tags),
+      department: input.department ?? null,
+      businessCategory: input.businessCategory ?? null,
+      visibility: input.visibility,
+      expiresAt:
+        expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+      currentIngestRunId: input.currentIngestRunId ?? null,
+      parseStrategy: 'multimodal_parser',
+      parserVersion: 'multimodal-v1',
+    };
+  }
+
+  private parseTags(value?: string | string[]): string[] {
+    if (!value) return [];
+    const items = Array.isArray(value) ? value : value.split(',');
+    return Array.from(
+      new Set(items.map((item) => item.trim()).filter(Boolean)),
+    );
   }
 }

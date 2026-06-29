@@ -38,6 +38,15 @@ export class DocumentTaskWorkerService
   ) {}
 
   onModuleInit() {
+    const enabled =
+      String(
+        this.configService.get<string>('DOCUMENT_WORKER_ENABLED') ?? 'false',
+      ).toLowerCase() === 'true';
+    if (!enabled) {
+      this.logger.log('文档任务 Worker 未启用，当前进程不消费队列');
+      return;
+    }
+
     const redisUrl =
       this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
     this.redisClient = new Redis(redisUrl, {

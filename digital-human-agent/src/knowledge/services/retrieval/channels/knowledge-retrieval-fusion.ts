@@ -26,40 +26,12 @@ export function fuseHybridAndGraphChannels(
   hybridChunks: KnowledgeChunk[],
   graphChunks: KnowledgeChunk[],
   globalRetrievalLimit: number,
+  rrfK?: number,
 ): KnowledgeChunk[] {
-  const dedupedChunks = new Map<string, KnowledgeChunk>();
-  const hybridRanks = new Map<string, number>();
-  const graphRanks = new Map<string, number>();
-
-  hybridChunks.forEach((chunk, index) => {
-    hybridRanks.set(chunk.id, index + 1);
-    const current = dedupedChunks.get(chunk.id);
-    dedupedChunks.set(
-      chunk.id,
-      current ? mergeRetrievedChunk(current, chunk) : chunk,
-    );
-  });
-
-  graphChunks.forEach((chunk, index) => {
-    graphRanks.set(chunk.id, index + 1);
-    const current = dedupedChunks.get(chunk.id);
-    dedupedChunks.set(
-      chunk.id,
-      current ? mergeRetrievedChunk(current, chunk) : chunk,
-    );
-  });
-
-  return Array.from(dedupedChunks.values())
-    .map((chunk) => ({
-      ...chunk,
-      hybrid_score: resolveHybridFusionScore(
-        chunk,
-        hybridRanks.get(chunk.id),
-        graphRanks.get(chunk.id),
-      ),
-    }))
-    .sort((left, right) => compareRetrievalChunks(right, left))
-    .slice(0, globalRetrievalLimit);
+  const channels = new Map<string, KnowledgeChunk[]>();
+  channels.set('hybrid', hybridChunks);
+  channels.set('graph', graphChunks);
+  return fuseMultiChannelResults(channels, { globalRetrievalLimit, rrfK });
 }
 
 function resolveHybridFusionScore(
@@ -146,58 +118,99 @@ function mergeGraphEvidence(
   });
 }
 
+export interface FuseMultiChannelOptions {
+  rrfK?: number;
+  globalRetrievalLimit?: number;
+}
+
+export function fuseMultiChannelResults(
+  channels: Map<string, KnowledgeChunk[]>,
+  options: FuseMultiChannelOptions = {},
+): KnowledgeChunk[] {
+  const rrfK = options.rrfK ?? HYBRID_FUSION_RRF_K;
+  const limit = options.globalRetrievalLimit ?? 20;
+
+  const merged = new Map<string, KnowledgeChunk>();
+  const chunkRanks = new Map<string, Map<string, number>>();
+  const chunkRawScores = new Map<string, Map<string, number>>();
+
+  for (const [channelName, chunks] of channels.entries()) {
+    chunks.forEach((chunk, index) => {
+      let ranks = chunkRanks.get(chunk.id);
+      if (!ranks) {
+        ranks = new Map<string, number>();
+        chunkRanks.set(chunk.id, ranks);
+      }
+      ranks.set(channelName, index + 1);
+
+      let rawScores = chunkRawScores.get(chunk.id);
+      if (!rawScores) {
+        rawScores = new Map<string, number>();
+        chunkRawScores.set(chunk.id, rawScores);
+      }
+      let score = 0;
+      if (channelName === 'vector') {
+        score = chunk.similarity ?? 0;
+      } else if (channelName === 'keyword') {
+        score = chunk.keyword_score ?? 0;
+      } else if (channelName === 'graph') {
+        score = chunk.graph_score ?? 0;
+      } else {
+        score = chunk.hybrid_score ?? 0;
+      }
+      rawScores.set(channelName, score);
+
+      const existing = merged.get(chunk.id);
+      if (existing) {
+        merged.set(chunk.id, mergeRetrievedChunk(existing, chunk));
+      } else {
+        merged.set(chunk.id, { ...chunk });
+      }
+    });
+  }
+
+  return Array.from(merged.values())
+    .map((chunk) => {
+      let totalRrfScore = 0;
+      const ranks = chunkRanks.get(chunk.id);
+      const sources: string[] = [];
+      const channelRank: Record<string, number> = {};
+      const rawScore: Record<string, number> = {};
+
+      if (ranks) {
+        for (const [channelName, rank] of ranks.entries()) {
+          totalRrfScore += 1 / (rrfK + rank);
+          sources.push(channelName);
+          channelRank[channelName] = rank;
+          
+          const raw = chunkRawScores.get(chunk.id)?.get(channelName) ?? 0;
+          rawScore[channelName] = raw;
+        }
+      }
+
+      return {
+        ...chunk,
+        hybrid_score: totalRrfScore,
+        retrieval_sources: Array.from(
+          new Set([...(chunk.retrieval_sources ?? []), ...sources]),
+        ),
+        channel_rank: channelRank,
+        raw_score: rawScore,
+      } as any;
+    })
+    .sort((left, right) => (right.hybrid_score ?? 0) - (left.hybrid_score ?? 0))
+    .slice(0, limit);
+}
+
 export function fuseVectorAndKeywordResults(
   vectorResults: KnowledgeChunk[],
   keywordResults: KnowledgeChunk[],
+  rrfK?: number,
 ): KnowledgeChunk[] {
-  const merged = new Map<string, KnowledgeChunk>();
-  const vectorRanks = new Map<string, number>();
-  const keywordRanks = new Map<string, number>();
-
-  vectorResults.forEach((chunk, index) => {
-    vectorRanks.set(chunk.id, index + 1);
-    const existing = merged.get(chunk.id);
-    merged.set(
-      chunk.id,
-      existing
-        ? {
-            ...existing,
-            similarity: Math.max(
-              existing.similarity ?? 0,
-              chunk.similarity ?? 0,
-            ),
-            retrieval_sources: Array.from(new Set([...(existing.retrieval_sources ?? []), 'vector' as const])),
-          }
-        : { ...chunk, retrieval_sources: ['vector' as const] },
-    );
-  });
-
-  keywordResults.forEach((chunk, index) => {
-    keywordRanks.set(chunk.id, index + 1);
-    const existing = merged.get(chunk.id);
-    merged.set(
-      chunk.id,
-      existing
-        ? {
-            ...existing,
-            keyword_score: Math.max(
-              existing.keyword_score ?? 0,
-              chunk.keyword_score ?? 0,
-            ),
-            retrieval_sources: Array.from(new Set([...(existing.retrieval_sources ?? []), 'keyword' as const])),
-          }
-        : { ...chunk, retrieval_sources: ['keyword' as const] },
-    );
-  });
-
-  return Array.from(merged.values())
-    .map((chunk) => ({
-      ...chunk,
-      hybrid_score:
-        rrf(vectorRanks.get(chunk.id)) +
-        rrf(keywordRanks.get(chunk.id)),
-    }))
-    .sort((left, right) => compareRetrievalChunks(right, left));
+  const channels = new Map<string, KnowledgeChunk[]>();
+  channels.set('vector', vectorResults);
+  channels.set('keyword', keywordResults);
+  return fuseMultiChannelResults(channels, { globalRetrievalLimit: 1000, rrfK });
 }
 
 function rrf(rank?: number): number {

@@ -41,13 +41,55 @@ function isSupportedKnowledgeUpload(file: {
 }): boolean {
   const ext = extname(file.originalname ?? '').toLowerCase();
   const mime = String(file.mimetype ?? '').toLowerCase();
-  return (
-    ext === '.pdf' ||
-    mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE ||
+
+  // 1. 文本与 Markdown、HTML网页
+  if (
     mime.startsWith('text/') ||
-    KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET.has(ext)
-  );
+    mime === 'application/json' ||
+    mime === 'application/xhtml+xml' ||
+    ['.txt', '.md', '.csv', '.json', '.html', '.htm', '.xhtml'].includes(ext)
+  ) {
+    return true;
+  }
+
+  // 2. PDF
+  if (ext === '.pdf' || mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE) {
+    return true;
+  }
+
+  // 3. Office
+  if (['.docx', '.xlsx', '.pptx'].includes(ext)) {
+    return true;
+  }
+
+  // 4. 图片
+  if (
+    mime.startsWith('image/') ||
+    ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'].includes(ext)
+  ) {
+    return true;
+  }
+
+  // 5. 音频
+  if (
+    mime.startsWith('audio/') ||
+    ['.mp3', '.wav', '.mpeg', '.ogg', '.m4a', '.flac'].includes(ext)
+  ) {
+    return true;
+  }
+
+  // 6. 视频
+  if (
+    mime.startsWith('video/') ||
+    ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'].includes(ext)
+  ) {
+    return true;
+  }
+
+  return false;
 }
+
+const MULTIPART_MAX_FILE_SIZE = 100 * 1024 * 1024; // 上调至 100MB 以承接大视频
 
 @ApiTags('documents')
 @Controller()
@@ -94,13 +136,13 @@ export class KnowledgeDocumentController {
   @Post('knowledge-bases/:kbId/documents')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
+      limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
       fileFilter: (_req, file, cb) => {
         if (isSupportedKnowledgeUpload(file)) {
           cb(null, true);
           return;
         }
-        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+        cb(new BadRequestException('不支持的文件格式。仅支持 txt、md、pdf、docx、xlsx、pptx、html 网页以及图片、音频、视频文件上传'), false);
       },
     }),
   )
@@ -113,6 +155,7 @@ export class KnowledgeDocumentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
+    this.validateUploadFileSize(file);
     return this.documentService.parseAndIngestDocument(kbId, file, {
       ...dto,
       ownerId: req.user?.id,
@@ -122,13 +165,13 @@ export class KnowledgeDocumentController {
   @Post('knowledge-bases/:kbId/documents/upload')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
+      limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
       fileFilter: (_req, file, cb) => {
         if (isSupportedKnowledgeUpload(file)) {
           cb(null, true);
           return;
         }
-        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+        cb(new BadRequestException('不支持的文件格式。仅支持 txt、md、pdf、docx、xlsx、pptx、html 网页以及图片、音频、视频文件上传'), false);
       },
     }),
   )
@@ -142,6 +185,7 @@ export class KnowledgeDocumentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
+    this.validateUploadFileSize(file);
     return this.documentTaskService.createUploadIngestTask(kbId, file, {
       ...dto,
       ownerId: req.user?.id,
@@ -151,13 +195,13 @@ export class KnowledgeDocumentController {
   @Post('knowledge-bases/:kbId/documents/:docId/versions')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
+      limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
       fileFilter: (_req, file, cb) => {
         if (isSupportedKnowledgeUpload(file)) {
           cb(null, true);
           return;
         }
-        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+        cb(new BadRequestException('不支持的文件格式。仅支持 txt、md、pdf、docx、xlsx、pptx、html 网页以及图片、音频、视频文件上传'), false);
       },
     }),
   )
@@ -172,6 +216,7 @@ export class KnowledgeDocumentController {
     if (!file?.buffer) {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
+    this.validateUploadFileSize(file);
     return this.documentService.uploadDocumentVersion(
       kbId,
       docId,
@@ -380,6 +425,56 @@ export class KnowledgeDocumentController {
       department: req.user?.department ?? null,
       role: req.user?.role ?? null,
     };
+  }
+
+  private validateUploadFileSize(file: Express.Multer.File): void {
+    const ext = extname(file.originalname ?? '').toLowerCase();
+    const mime = String(file.mimetype ?? '').toLowerCase();
+    const size = file.size;
+
+    // 1. 视频限制 100MB
+    if (
+      mime.startsWith('video/') ||
+      ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'].includes(ext)
+    ) {
+      if (size > 100 * 1024 * 1024) {
+        throw new BadRequestException('视频文件大小超出 100MB 限制');
+      }
+      return;
+    }
+
+    // 2. 音频 / 图片 / Office 限制 20MB
+    if (
+      mime.startsWith('audio/') ||
+      mime.startsWith('image/') ||
+      [
+        '.mp3',
+        '.wav',
+        '.mpeg',
+        '.ogg',
+        '.m4a',
+        '.flac',
+        '.png',
+        '.jpg',
+        '.jpeg',
+        '.webp',
+        '.bmp',
+        '.gif',
+        '.docx',
+        '.xlsx',
+        '.pptx',
+      ].includes(ext)
+    ) {
+      if (size > 20 * 1024 * 1024) {
+        throw new BadRequestException('媒体或 Office 文件大小超出 20MB 限制');
+      }
+      return;
+    }
+
+    // 3. 普通文本 / PDF / HTML 网页限制 10MB
+    if (size > 10 * 1024 * 1024) {
+      throw new BadRequestException('文本或网页文件大小超出 10MB 限制');
+    }
   }
 
   private hasDocumentListFilters(query: ListDocumentsDto): boolean {

@@ -6,6 +6,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CreateBucketCommand,
+  HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
@@ -22,6 +24,7 @@ export class S3ObjectStorageProvider implements ObjectStorageProvider {
   private readonly s3Client: S3Client;
   private readonly endpointInternal: string;
   private readonly endpointExternal: string;
+  private readonly ensuredBuckets = new Set<string>();
 
   constructor(private readonly configService: ConfigService) {
     this.endpointInternal =
@@ -54,6 +57,7 @@ export class S3ObjectStorageProvider implements ObjectStorageProvider {
   }
 
   async putObject(input: PutObjectInput): Promise<void> {
+    await this.ensureBucket(input.bucket);
     let bodyData: any = input.body;
     if (typeof input.body === 'string') {
       bodyData = Buffer.from(input.body, 'utf-8');
@@ -67,6 +71,25 @@ export class S3ObjectStorageProvider implements ObjectStorageProvider {
         ContentType: input.contentType,
       }),
     );
+  }
+
+  private async ensureBucket(bucket: string): Promise<void> {
+    if (this.ensuredBuckets.has(bucket)) return;
+    try {
+      await this.s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+      this.ensuredBuckets.add(bucket);
+      return;
+    } catch (error) {
+      const statusCode = (error as { $metadata?: { httpStatusCode?: number } })
+        ?.$metadata?.httpStatusCode;
+      if (statusCode && statusCode !== 404) {
+        throw error;
+      }
+    }
+
+    await this.s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+    this.ensuredBuckets.add(bucket);
+    this.logger.log(`S3 bucket 已创建或确认可用：${bucket}`);
   }
 
   async getObject(input: GetObjectInput): Promise<Readable> {

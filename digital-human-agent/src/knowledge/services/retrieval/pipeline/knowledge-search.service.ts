@@ -329,6 +329,7 @@ export class KnowledgeSearchService {
       searchInput.query,
       hybridChunks,
       searchInput.options,
+      searchInput.strategy,
       options.signal,
     );
 
@@ -348,15 +349,24 @@ export class KnowledgeSearchService {
     query: string,
     hybridChunks: KnowledgeChunk[],
     options: NormalizedRetrieveKnowledgeOptions,
+    strategy: RetrievalStrategy,
     signal?: AbortSignal,
   ): Promise<KnowledgeChunk[]> {
-    const fallbackRerankedChunks = hybridChunks.slice(0, options.rerankLimit);
+    const rerankLimit = strategy.rerankTopK ?? options.rerankLimit ?? 5;
+    const minRerankScore = strategy.minRerankScore;
+    const fallbackRerankedChunks = hybridChunks.slice(0, rerankLimit);
     if (!options.rerank || hybridChunks.length <= 1) {
       return fallbackRerankedChunks;
     }
 
     try {
-      return await this.rerankerService.rerank(query, hybridChunks, options.rerankLimit, signal);
+      return await this.rerankerService.rerank(
+        query,
+        hybridChunks,
+        rerankLimit,
+        signal,
+        minRerankScore,
+      );
     } catch (error) {
       if (isAbortError(error)) {
         throw error;

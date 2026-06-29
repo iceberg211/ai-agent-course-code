@@ -203,6 +203,7 @@ describe('KnowledgeSearchService', () => {
       ],
       5,
       undefined,
+      expect.any(Number),
     );
     expect(result.query).toBe('原始问题');
     expect(result.retrievalQuery).toBe('改写后的检索问题');
@@ -390,6 +391,7 @@ describe('KnowledgeSearchService', () => {
       ]),
       5,
       undefined,
+      expect.any(Number),
     );
     expect(result.hybridChunks.map((item) => item.id)).toEqual([
       'chunk-1',
@@ -523,6 +525,7 @@ describe('KnowledgeSearchService', () => {
       [hybridChunk, hybridChunk2],
       5,
       undefined,
+      expect.any(Number),
     );
     expect(result.retrievalTrace).toEqual([
       expect.objectContaining({

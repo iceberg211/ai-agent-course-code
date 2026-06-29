@@ -781,26 +781,23 @@ export class KnowledgeDocumentService {
   // ==========================================
   // 从门面服务迁入：文档上传解析与摄入
   // ==========================================
-  async parseAndIngestDocument(
+  async createDocument(
     knowledgeId: string,
-    file: {
-      originalname: string;
-      mimetype: string;
-      buffer: Buffer;
-      size: number;
-    },
+    filename: string,
+    fileSize: number,
+    mimeType: string,
     input: UploadMetadataInput = {},
   ): Promise<KnowledgeDocument> {
     const metadata = this.normalizeUploadMetadata(input);
     const document = await this.documentRepo.save(
       this.documentRepo.create({
         knowledgeBaseId: knowledgeId,
-        filename: file.originalname,
+        filename,
         status: 'processing',
         processingStage: 'uploaded',
         processingError: null,
-        mimeType: file.mimetype,
-        fileSize: file.size,
+        mimeType,
+        fileSize,
         ownerId: metadata.ownerId,
         tags: metadata.tags,
         department: metadata.department,
@@ -820,6 +817,27 @@ export class KnowledgeDocumentService {
       document.versionGroupId = document.id;
       await this.documentRepo.save(document);
     }
+    return document;
+  }
+
+  async parseAndIngestDocument(
+    knowledgeId: string,
+    file: {
+      originalname: string;
+      mimetype: string;
+      buffer: Buffer;
+      size: number;
+    },
+    input: UploadMetadataInput = {},
+  ): Promise<KnowledgeDocument> {
+    const metadata = this.normalizeUploadMetadata(input);
+    const document = await this.createDocument(
+      knowledgeId,
+      file.originalname,
+      file.size,
+      file.mimetype,
+      input,
+    );
 
     try {
       await this.updateDocumentStage(document.id, 'parsing');
@@ -1208,5 +1226,144 @@ export class KnowledgeDocumentService {
           ),
         ),
     );
+  }
+
+  async parseDocument(file: {
+    originalname: string;
+    mimetype: string;
+    buffer: Buffer;
+  }): Promise<string> {
+    return this.extractDocumentText(file);
+  }
+
+  async indexDocumentChunks(
+    document: KnowledgeDocument,
+    knowledgeId: string,
+    filename: string,
+    content: string,
+    options: IngestKnowledgeDocumentOptions = {},
+  ): Promise<KnowledgeDocumentChunkRow[]> {
+    // 幂等清理旧的 chunk、ES 索引
+    try {
+      await this.chunkRepo.delete({ documentId: document.id });
+      await this.elasticsearchService.safeDeleteByDocumentId(
+        document.id,
+        `重新索引幂等清理 docId=${document.id}`,
+      );
+    } catch (err) {
+      this.logger.warn(`幂等清理旧索引失败 docId=${document.id}: ${err.message}`);
+    }
+
+    await this.updateDocumentStage(document.id, 'chunking');
+    const splitDocuments = await splitKnowledgeDocumentContent(
+      content,
+      this.runtime.splitter,
+    );
+    this.logger.log(
+      `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
+    );
+
+    const texts = splitDocuments.map((item) => item.pageContent);
+    await this.updateDocumentStage(document.id, 'embedding');
+    this.logger.log(
+      `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
+    );
+    const embeddings = await this.runtime.embeddings.embedDocuments(texts);
+    this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
+
+    const chunkRows = splitDocuments.map((item, index) => ({
+      id: randomUUID(),
+      document_id: document.id,
+      chunk_index: index,
+      content: item.pageContent,
+      source: filename,
+      category: options.category ?? null,
+      enabled: true,
+      embedding: JSON.stringify(embeddings[index]),
+    })) satisfies KnowledgeDocumentChunkRow[];
+
+    // 1. 写入 Supabase PG 数据库
+    await this.insertChunkRows(document.id, chunkRows);
+
+    // 2. 写入 Elasticsearch 索引
+    await this.updateDocumentStage(document.id, 'keyword_indexing');
+    await this.syncDocumentIndex({
+      documentId: document.id,
+      knowledgeId,
+      rows: chunkRows,
+    });
+
+    await this.documentRepo.update(document.id, {
+      status: 'completed',
+      chunkCount: splitDocuments.length,
+      processingStage: 'completed',
+      processingError: null,
+    });
+
+    return chunkRows;
+  }
+
+  findDocumentById(documentId: string): Promise<KnowledgeDocument | null> {
+    return this.documentRepo.findOne({ where: { id: documentId } });
+  }
+
+  async updateDocumentAssetCount(
+    documentId: string,
+    assetCount: number,
+  ): Promise<void> {
+    await this.documentRepo.update(documentId, { assetCount });
+  }
+
+  async syncGraphOnly(
+    document: KnowledgeDocument,
+    knowledgeId: string,
+    filename: string,
+    chunkRows: KnowledgeDocumentChunkRow[],
+  ): Promise<void> {
+    try {
+      await this.graphService.safeDeleteByDocumentId(
+        document.id,
+        `重新同步图谱幂等清理 docId=${document.id}`,
+      );
+    } catch (err) {
+      this.logger.warn(`幂等清理图谱失败 docId=${document.id}: ${err.message}`);
+    }
+
+    await this.documentRepo.update(document.id, {
+      processingStage: 'graph_indexing',
+      graphSyncStatus: 'pending',
+      graphSyncError: null,
+    });
+
+    const graphSyncResult = await this.syncDocumentGraph({
+      documentId: document.id,
+      knowledgeId,
+      source: filename,
+      chunks: chunkRows.map((row) => ({
+        id: row.id,
+        chunkIndex: row.chunk_index,
+        source: row.source,
+        category: row.category,
+        content: row.content,
+      })),
+    });
+
+    await this.documentRepo.update(document.id, {
+      graphSyncStatus: graphSyncResult.status,
+      graphSyncError:
+        graphSyncResult.status === 'failed'
+          ? graphSyncResult.errorMessage
+          : null,
+      graphSyncedAt: graphSyncResult.status === 'indexed' ? new Date() : null,
+      processingStage: 'completed',
+    });
+  }
+
+  async updateDocument(documentId: string, update: Partial<KnowledgeDocument>): Promise<void> {
+    await this.documentRepo.update(documentId, update);
+  }
+
+  async findOneDocument(documentId: string): Promise<KnowledgeDocument | null> {
+    return this.documentRepo.findOne({ where: { id: documentId } });
   }
 }

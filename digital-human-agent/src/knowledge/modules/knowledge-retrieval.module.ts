@@ -8,6 +8,8 @@ import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/
 import { FulltextRetrieverService } from '@/knowledge/services/retrieval/channels/fulltext-retriever.service';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
+import { LlmRerankerProvider } from '@/knowledge/services/retrieval/processing/llm-reranker.provider';
+import { NoopRerankerProvider } from '@/knowledge/services/retrieval/processing/noop-reranker.provider';
 import { KnowledgeDocumentModule } from './knowledge-document.module';
 import { KnowledgeGraphModule } from './knowledge-graph.module';
 import { KnowledgeBaseModule } from './knowledge-base.module';
@@ -26,6 +28,8 @@ import { KnowledgeBaseModule } from './knowledge-base.module';
     FulltextRetrieverService,
     QueryRewriteService,
     RerankerService,
+    LlmRerankerProvider,
+    NoopRerankerProvider,
   ],
   controllers: [
     KnowledgeSearchController,
@@ -35,6 +39,8 @@ import { KnowledgeBaseModule } from './knowledge-base.module';
     HybridRetrieverService,
     QueryRewriteService,
     RerankerService,
+    LlmRerankerProvider,
+    NoopRerankerProvider,
   ],
 })
 export class KnowledgeRetrievalModule {}

@@ -166,7 +166,16 @@ export class HybridRetrieverService {
             graphResultCount: hybridResult.graphResultCount,
             mergedResultCount: chunks.length,
             fallbackToPg: hybridResult.fallbackToPg,
-            skippedChannels: hybridResult.skippedChannels,
+            skippedChannels: hybridResult.skippedChannels as any[],
+            avgVectorScore: chunks.length > 0
+              ? chunks.reduce((acc, c) => acc + (c.similarity ?? 0), 0) / chunks.length
+              : 0,
+            avgKeywordScore: chunks.length > 0
+              ? chunks.reduce((acc, c) => acc + (c.keyword_score ?? 0), 0) / chunks.length
+              : 0,
+            avgGraphScore: chunks.length > 0
+              ? chunks.reduce((acc, c) => acc + (c.graph_score ?? 0), 0) / chunks.length
+              : 0,
           };
 
           return { chunks, traceItem };
@@ -367,9 +376,7 @@ export class HybridRetrieverService {
             keywordTerms: params.keywordTerms,
             threshold: params.threshold,
             matchCount: params.matchCount,
-            useVector: params.strategy.useVector,
-            useKeyword: params.strategy.useKeyword,
-            useExactPhrase: params.strategy.useExactPhrase,
+            strategy: params.strategy,
             signal: params.signal,
             accessScope: params.accessScope,
           })
@@ -404,6 +411,7 @@ export class HybridRetrieverService {
         hybridResult.chunks,
         graphChunks,
         params.matchCount,
+        params.strategy.rrfK,
       ),
       graphBackend,
       graphResultCount: graphChunks.length,
@@ -421,12 +429,18 @@ export class HybridRetrieverService {
     keywordTerms: string[];
     threshold: number;
     matchCount: number;
-    useVector?: boolean;
-    useKeyword?: boolean;
-    useExactPhrase?: boolean;
+    strategy: RetrievalStrategy;
     signal?: AbortSignal;
     accessScope?: KnowledgeAccessScope;
   }): Promise<HybridRetrieveResult> {
+    const useVector = params.strategy.useVector !== false;
+    const useKeyword = params.strategy.useKeyword !== false;
+    const useExactPhrase = params.strategy.useExactPhrase === true;
+    const skippedChannels: Array<'vector' | 'keyword'> = [];
+
+    const vectorTopK = params.strategy.vectorTopK ?? params.matchCount;
+    const keywordTopK = params.strategy.keywordTopK ?? params.matchCount;
+
     return runInTracedScope(
       {
         name: 'knowledge_hybrid_retrieve',
@@ -437,9 +451,9 @@ export class HybridRetrieverService {
           threshold: params.threshold,
           matchCount: params.matchCount,
           keywordTermCount: params.keywordTerms.length,
-          useVector: params.useVector !== false,
-          useKeyword: params.useKeyword !== false,
-          useExactPhrase: params.useExactPhrase === true,
+          useVector,
+          useKeyword,
+          useExactPhrase,
         },
         input: {
           knowledgeId: params.knowledgeId,
@@ -456,17 +470,13 @@ export class HybridRetrieverService {
         }),
       },
       async () => {
-        const useVector = params.useVector !== false;
-        const useKeyword = params.useKeyword !== false;
-        const skippedChannels: Array<'vector' | 'keyword'> = [];
-
         const vectorPromise =
           useVector && params.queryEmbedding
             ? this.vectorRetrieve({
                 knowledgeId: params.knowledgeId,
                 queryEmbedding: params.queryEmbedding,
                 threshold: params.threshold,
-                matchCount: params.matchCount,
+                matchCount: vectorTopK,
                 signal: params.signal,
                 accessScope: params.accessScope,
               })
@@ -479,8 +489,8 @@ export class HybridRetrieverService {
           ? this.keywordRetrieve({
               knowledgeId: params.knowledgeId,
               terms: params.keywordTerms,
-              matchCount: params.matchCount,
-              useExactPhrase: params.useExactPhrase,
+              matchCount: keywordTopK,
+              useExactPhrase: useExactPhrase,
               signal: params.signal,
               accessScope: params.accessScope,
             })
@@ -536,6 +546,7 @@ export class HybridRetrieverService {
           chunks: fuseVectorAndKeywordResults(
             vectorResults,
             keywordChunks,
+            params.strategy.rrfK,
           ).slice(0, params.matchCount),
           keywordBackend:
             useKeyword && keywordResult ? keywordResult.backend : 'disabled',
