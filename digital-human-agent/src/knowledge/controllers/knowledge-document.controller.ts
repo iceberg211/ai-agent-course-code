@@ -23,16 +23,17 @@ import {
   UPLOAD_MAX_FILE_SIZE,
 } from '@/common/constants';
 import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
+import { ListDocumentTasksDto } from '@/knowledge/dto/list-document-tasks.dto';
 import {
   BatchRetryDocumentsDto,
   ListDocumentsDto,
 } from '@/knowledge/dto/list-documents.dto';
 import { UploadDocumentDto } from '@/knowledge/dto/upload-document.dto';
 import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledge-document.service';
+import { DocumentTaskService } from '@/knowledge/services/document/document-task.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
-
 
 function isSupportedKnowledgeUpload(file: {
   originalname?: string;
@@ -54,6 +55,7 @@ function isSupportedKnowledgeUpload(file: {
 export class KnowledgeDocumentController {
   constructor(
     private readonly documentService: KnowledgeDocumentService,
+    private readonly documentTaskService: DocumentTaskService,
   ) {}
 
   // ==========================================
@@ -112,6 +114,35 @@ export class KnowledgeDocumentController {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
     return this.documentService.parseAndIngestDocument(kbId, file, {
+      ...dto,
+      ownerId: req.user?.id,
+    });
+  }
+
+  @Post('knowledge-bases/:kbId/documents/upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: UPLOAD_MAX_FILE_SIZE },
+      fileFilter: (_req, file, cb) => {
+        if (isSupportedKnowledgeUpload(file)) {
+          cb(null, true);
+          return;
+        }
+        cb(new BadRequestException('仅支持 txt、md、pdf 文档上传'), false);
+      },
+    }),
+  )
+  @ApiOperation({ summary: '创建文档上传处理任务' })
+  async uploadDocumentTask(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadDocumentDto,
+    @Req() req: any,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
+    }
+    return this.documentTaskService.createUploadIngestTask(kbId, file, {
       ...dto,
       ownerId: req.user?.id,
     });
@@ -185,7 +216,11 @@ export class KnowledgeDocumentController {
     @Param('docId', ParseUUIDPipe) docId: string,
     @Req() req: any,
   ) {
-    return this.documentService.archiveDocument(kbId, docId, this.accessScope(req));
+    return this.documentService.archiveDocument(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
   }
 
   @Patch('knowledge-bases/:kbId/documents/:docId/governance')
@@ -262,6 +297,48 @@ export class KnowledgeDocumentController {
     );
   }
 
+  @Get('documents/:docId/tasks')
+  @ApiOperation({ summary: '查询文档处理任务列表' })
+  listDocumentTasks(
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentTaskService.listTasksByDocument(
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Get('document-tasks')
+  @ApiOperation({ summary: '分页查询文档处理任务' })
+  listDocumentTaskPage(@Query() query: ListDocumentTasksDto, @Req() req: any) {
+    return this.documentTaskService.listTasks({
+      ...query,
+      accessScope: this.accessScope(req),
+    });
+  }
+
+  @Get('document-tasks/:taskId')
+  @ApiOperation({ summary: '查询文档处理任务详情' })
+  getDocumentTask(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Req() req: any,
+  ) {
+    return this.documentTaskService.getTaskDetail(
+      taskId,
+      this.accessScope(req),
+    );
+  }
+
+  @Post('document-tasks/:taskId/retry')
+  @ApiOperation({ summary: '重试文档处理任务' })
+  retryDocumentTask(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Req() req: any,
+  ) {
+    return this.documentTaskService.retryTask(taskId, this.accessScope(req));
+  }
+
   @Get('knowledge-bases/:kbId/documents/:docId/chunks/:chunkId/context')
   @ApiOperation({ summary: '查询 chunk 原文上下文' })
   getChunkContext(
@@ -308,16 +385,16 @@ export class KnowledgeDocumentController {
   private hasDocumentListFilters(query: ListDocumentsDto): boolean {
     return Boolean(
       query.q ||
-        query.status ||
-        query.graphStatus ||
-        query.processingStage ||
-        query.tags ||
-        query.department ||
-        query.businessCategory ||
-        query.visibility ||
-        query.expiresBefore ||
-        query.page ||
-        query.pageSize,
+      query.status ||
+      query.graphStatus ||
+      query.processingStage ||
+      query.tags ||
+      query.department ||
+      query.businessCategory ||
+      query.visibility ||
+      query.expiresBefore ||
+      query.page ||
+      query.pageSize,
     );
   }
 }

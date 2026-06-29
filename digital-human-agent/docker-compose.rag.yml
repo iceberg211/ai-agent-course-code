@@ -50,7 +50,30 @@ services:
       - neo4j-data:/data
       - neo4j-logs:/logs
 
+  redis:
+    image: docker.m.daocloud.io/redis:7.2-alpine
+    container_name: digital-human-agent-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: docker.m.daocloud.io/minio/minio:RELEASE.2024-01-28T22-35-53Z
+    container_name: digital-human-agent-minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
 volumes:
   elasticsearch-data:
   neo4j-data:
   neo4j-logs:
+  redis-data:
+  minio-data:

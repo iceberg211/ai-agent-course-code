@@ -9,6 +9,7 @@ import { KnowledgeController } from '@/knowledge/controllers/knowledge.controlle
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { DocumentTaskService } from '@/knowledge/services/document/document-task.service';
 
 describe('Knowledge API (e2e)', () => {
   let app: INestApplication;
@@ -51,6 +52,14 @@ describe('Knowledge API (e2e)', () => {
     detachPersona: jest.fn(),
   };
 
+  const documentTaskService = {
+    createUploadIngestTask: jest.fn(),
+    getTaskDetail: jest.fn(),
+    listTasksByDocument: jest.fn(),
+    listTasks: jest.fn(),
+    retryTask: jest.fn(),
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [
@@ -63,6 +72,10 @@ describe('Knowledge API (e2e)', () => {
         {
           provide: KnowledgeDocumentService,
           useValue: knowledgeDocumentService,
+        },
+        {
+          provide: DocumentTaskService,
+          useValue: documentTaskService,
         },
         {
           provide: KnowledgeSearchService,
@@ -156,7 +169,7 @@ describe('Knowledge API (e2e)', () => {
         mimetype: 'text/plain',
         buffer: expect.any(Buffer),
       }),
-      'faq',
+      expect.objectContaining({ category: 'faq' }),
     );
     expect(res.body).toEqual({
       id: docId,
@@ -218,7 +231,7 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeDocumentService.listDocumentsByKnowledgeId,
-    ).toHaveBeenCalledWith(kbId);
+    ).toHaveBeenCalledWith(kbId, expect.anything());
     expect(res.body).toEqual([
       {
         id: docId,
@@ -240,7 +253,7 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeDocumentService.deleteDocumentForKnowledge,
-    ).toHaveBeenCalledWith(kbId, docId);
+    ).toHaveBeenCalledWith(kbId, docId, expect.anything());
   });
 
   it('GET /knowledge-bases/:kbId/documents/:docId/chunks 返回 chunk 列表', async () => {
@@ -260,7 +273,7 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeDocumentService.listChunksByKnowledgeDocument,
-    ).toHaveBeenCalledWith(kbId, docId);
+    ).toHaveBeenCalledWith(kbId, docId, expect.anything());
     expect(res.body).toEqual([
       {
         id: chunkId,
@@ -284,7 +297,7 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeDocumentService.updateChunkEnabledForKnowledge,
-    ).toHaveBeenCalledWith(kbId, chunkId, false);
+    ).toHaveBeenCalledWith(kbId, chunkId, false, expect.anything());
     expect(res.body).toEqual({ chunkId, enabled: false });
   });
 
@@ -367,12 +380,12 @@ describe('Knowledge API (e2e)', () => {
     expect(knowledgeSearchService.retrieveForPersona).toHaveBeenCalledWith(
       personaId,
       '产品如何部署？',
-      {
+      expect.objectContaining({
         rerank: undefined,
         threshold: undefined,
         retrievalLimit: undefined,
         rerankLimit: undefined,
-      },
+      }),
     );
     expect(res.body).toEqual({
       query: '产品如何部署？',
@@ -415,12 +428,16 @@ describe('Knowledge API (e2e)', () => {
 
     expect(
       knowledgeSearchService.retrieveForPersonaWithDebug,
-    ).toHaveBeenCalledWith(personaId, '产品如何部署？', {
-      rerank: undefined,
-      threshold: undefined,
-      retrievalLimit: undefined,
-      rerankLimit: undefined,
-    });
+    ).toHaveBeenCalledWith(
+      personaId,
+      '产品如何部署？',
+      expect.objectContaining({
+        rerank: undefined,
+        threshold: undefined,
+        retrievalLimit: undefined,
+        rerankLimit: undefined,
+      }),
+    );
     expect(res.body.rerankedChunks).toHaveLength(1);
   });
 });

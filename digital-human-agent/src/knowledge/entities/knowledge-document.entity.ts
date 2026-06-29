@@ -102,6 +102,30 @@ export class KnowledgeDocument {
   @Column({ name: 'archived_at', type: 'timestamptz', nullable: true })
   archivedAt: Date | null;
 
+  @Column({ name: 'original_storage_key', type: 'text', nullable: true })
+  originalStorageKey: string | null;
+
+  @Column({ name: 'markdown_storage_key', type: 'text', nullable: true })
+  markdownStorageKey: string | null;
+
+  @Column({ name: 'parse_result_storage_key', type: 'text', nullable: true })
+  parseResultStorageKey: string | null;
+
+  @Column({ name: 'chunk_manifest_storage_key', type: 'text', nullable: true })
+  chunkManifestStorageKey: string | null;
+
+  @Column({ name: 'parse_strategy', type: 'text', nullable: true })
+  parseStrategy: string | null;
+
+  @Column({ name: 'parser_version', type: 'text', nullable: true })
+  parserVersion: string | null;
+
+  @Column({ name: 'asset_count', type: 'int', default: 0 })
+  assetCount: number;
+
+  @Column({ name: 'current_ingest_run_id', type: 'uuid', nullable: true })
+  currentIngestRunId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

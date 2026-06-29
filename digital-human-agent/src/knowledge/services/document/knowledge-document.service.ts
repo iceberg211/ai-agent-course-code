@@ -54,6 +54,10 @@ type UploadMetadataInput =
       versionGroupId?: string | null;
       versionNo?: number;
       isCurrentVersion?: boolean;
+      currentIngestRunId?: string | null;
+      parseStrategy?: string | null;
+      parserVersion?: string | null;
+      assetCount?: number;
     })
   | UploadDocumentDto
   | undefined;
@@ -122,6 +126,10 @@ export class KnowledgeDocumentService {
         versionGroupId: options.versionGroupId ?? null,
         versionNo: options.versionNo ?? 1,
         isCurrentVersion: options.isCurrentVersion ?? true,
+        currentIngestRunId: options.currentIngestRunId ?? null,
+        parseStrategy: options.parseStrategy ?? 'legacy_text_pdf',
+        parserVersion: options.parserVersion ?? 'legacy-v1',
+        assetCount: options.assetCount ?? 0,
       }),
     );
 
@@ -802,6 +810,10 @@ export class KnowledgeDocumentService {
         versionGroupId: metadata.versionGroupId,
         versionNo: metadata.versionNo,
         isCurrentVersion: metadata.isCurrentVersion,
+        currentIngestRunId: metadata.currentIngestRunId,
+        parseStrategy: metadata.parseStrategy,
+        parserVersion: metadata.parserVersion,
+        assetCount: metadata.assetCount,
       }),
     );
     if (!document.versionGroupId) {
@@ -830,6 +842,10 @@ export class KnowledgeDocumentService {
           versionGroupId: document.versionGroupId,
           versionNo: document.versionNo,
           isCurrentVersion: document.isCurrentVersion,
+          currentIngestRunId: document.currentIngestRunId,
+          parseStrategy: document.parseStrategy,
+          parserVersion: document.parserVersion,
+          assetCount: document.assetCount,
         },
       );
     } catch (error) {
@@ -1114,6 +1130,10 @@ export class KnowledgeDocumentService {
     versionGroupId: string | null;
     versionNo: number;
     isCurrentVersion: boolean;
+    currentIngestRunId: string | null;
+    parseStrategy: string | null;
+    parserVersion: string | null;
+    assetCount: number;
   } {
     const raw = (typeof input === 'string' ? { category: input } : (input ?? {})) as {
       category?: string;
@@ -1126,6 +1146,10 @@ export class KnowledgeDocumentService {
       versionGroupId?: string | null;
       versionNo?: number;
       isCurrentVersion?: boolean;
+      currentIngestRunId?: string | null;
+      parseStrategy?: string | null;
+      parserVersion?: string | null;
+      assetCount?: number;
     };
     const expiresAt =
       typeof raw.expiresAt === 'object' && raw.expiresAt instanceof Date
@@ -1149,6 +1173,12 @@ export class KnowledgeDocumentService {
       versionGroupId: raw.versionGroupId ?? fallback?.versionGroupId ?? null,
       versionNo: raw.versionNo ?? fallback?.versionNo ?? 1,
       isCurrentVersion: raw.isCurrentVersion ?? fallback?.isCurrentVersion ?? true,
+      currentIngestRunId:
+        raw.currentIngestRunId ?? fallback?.currentIngestRunId ?? null,
+      parseStrategy:
+        raw.parseStrategy ?? fallback?.parseStrategy ?? 'legacy_text_pdf',
+      parserVersion: raw.parserVersion ?? fallback?.parserVersion ?? 'legacy-v1',
+      assetCount: raw.assetCount ?? fallback?.assetCount ?? 0,
     };
   }
 

@@ -135,6 +135,10 @@ export interface IngestKnowledgeDocumentOptions {
   versionGroupId?: string | null;
   versionNo?: number;
   isCurrentVersion?: boolean;
+  currentIngestRunId?: string | null;
+  parseStrategy?: string | null;
+  parserVersion?: string | null;
+  assetCount?: number;
 }
 
 export interface KnowledgeAccessScope {
