@@ -90,6 +90,9 @@ describe('KnowledgeDocumentService', () => {
       createQueryBuilder: jest.fn(),
       findOne: jest.fn(),
     };
+    const assetRepo = {
+      find: jest.fn().mockResolvedValue([]),
+    };
     const insert = jest.fn().mockResolvedValue({
       error: options.insertError
         ? {
@@ -142,6 +145,7 @@ describe('KnowledgeDocumentService', () => {
     const service = new KnowledgeDocumentService(
       documentRepo as never,
       chunkRepo as never,
+      assetRepo as never,
       runtime as never,
       elasticsearchService as never,
       graphService as never,
@@ -151,6 +155,7 @@ describe('KnowledgeDocumentService', () => {
       service,
       documentRepo,
       chunkRepo,
+      assetRepo,
       runtime,
       insert,
       update,

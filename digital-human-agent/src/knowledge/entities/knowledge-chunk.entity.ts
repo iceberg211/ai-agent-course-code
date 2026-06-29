@@ -41,6 +41,15 @@ export class KnowledgeChunk {
   @Column({ type: 'text', nullable: true })
   category: string | null;
 
+  @Column({ name: 'source_asset_key', type: 'text', nullable: true })
+  sourceAssetKey: string | null;
+
+  @Column({ name: 'start_ms', type: 'int', nullable: true })
+  startMs: number | null;
+
+  @Column({ name: 'end_ms', type: 'int', nullable: true })
+  endMs: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

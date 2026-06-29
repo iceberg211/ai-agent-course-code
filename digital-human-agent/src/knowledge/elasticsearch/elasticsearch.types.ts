@@ -7,6 +7,9 @@ export interface KnowledgeChunkIndexDocument {
   source: string;
   category: string | null;
   enabled: boolean;
+  source_asset_key?: string | null;
+  start_ms?: number | null;
+  end_ms?: number | null;
 }
 
 export interface KnowledgeChunkIndexCursor {

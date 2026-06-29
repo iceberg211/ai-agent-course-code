@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   Optional,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -31,6 +32,11 @@ import type {
 import { splitKnowledgeDocumentContent } from './markdown-splitter';
 import type { UploadDocumentDto } from '@/knowledge/dto/upload-document.dto';
 import { NotificationService } from '@/notification/notification.service';
+import { DocumentAsset } from '@/knowledge/entities/document-asset.entity';
+import {
+  ObjectStorageProviderToken,
+  type ObjectStorageProvider,
+} from '@/storage/object-storage.provider';
 import {
   applyDocumentAccessScope,
   isDocumentVisibleToScope,
@@ -75,11 +81,16 @@ export class KnowledgeDocumentService {
     private readonly documentRepo: Repository<KnowledgeDocument>,
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
+    @InjectRepository(DocumentAsset)
+    private readonly assetRepo: Repository<DocumentAsset>,
     private readonly runtime: RagRuntimeService,
     private readonly elasticsearchService: ElasticsearchIndexService,
     private readonly graphService: KnowledgeGraphService,
     @Optional()
     private readonly notificationService?: NotificationService,
+    @Optional()
+    @Inject(ObjectStorageProviderToken)
+    private readonly storageProvider?: ObjectStorageProvider,
   ) {}
 
   // ==========================================
@@ -167,14 +178,14 @@ export class KnowledgeDocumentService {
       this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
       const chunkRows = splitDocuments.map((item, index) => ({
-        id: randomUUID(),
-        document_id: document.id,
-        chunk_index: index,
-        content: item.pageContent,
-        source: filename,
-        category: options.category ?? null,
-        enabled: true,
-        embedding: JSON.stringify(embeddings[index]),
+        ...this.buildChunkRow({
+          documentId: document.id,
+          chunkIndex: index,
+          content: item.pageContent,
+          filename,
+          category: options.category ?? null,
+          embedding: embeddings[index],
+        }),
       })) satisfies KnowledgeDocumentChunkRow[];
 
       // 1. 写入 Supabase PG 数据库
@@ -382,6 +393,41 @@ export class KnowledgeDocumentService {
   ): Promise<KnowledgeChunkEntity[]> {
     await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId, accessScope);
     return this.listChunksByDocumentId(documentId);
+  }
+
+  async listAssetsByKnowledgeDocument(
+    knowledgeId: string,
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<Array<DocumentAsset & { url: string | null }>> {
+    await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId, accessScope);
+    const assets = await this.assetRepo.find({
+      where: { documentId },
+      order: { createdAt: 'ASC' },
+    });
+
+    const bucket = process.env.S3_BUCKET || 'enterprise-kb';
+    return Promise.all(
+      assets.map(async (asset) => {
+        let url = asset.url ?? null;
+        if (!url && this.storageProvider) {
+          try {
+            url = await this.storageProvider.createPresignedGetUrl({
+              bucket,
+              key: asset.storageKey,
+              expiresInSeconds: 3600,
+            });
+          } catch (error) {
+            this.logger.warn(
+              `生成资产访问 URL 失败 asset=${asset.id}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+        return Object.assign(asset, { url });
+      }),
+    );
   }
 
   async getChunkContextForKnowledge(
@@ -602,6 +648,54 @@ export class KnowledgeDocumentService {
     );
   }
 
+  private buildChunkRow(input: {
+    documentId: string;
+    chunkIndex: number;
+    content: string;
+    filename: string;
+    category: string | null;
+    embedding: number[];
+  }): KnowledgeDocumentChunkRow {
+    const media = this.extractChunkMediaMetadata(input.content);
+    return {
+      id: randomUUID(),
+      document_id: input.documentId,
+      chunk_index: input.chunkIndex,
+      content: input.content,
+      source: input.filename,
+      category: input.category,
+      enabled: true,
+      embedding: JSON.stringify(input.embedding),
+      source_asset_key: media.sourceAssetKey,
+      start_ms: media.startMs,
+      end_ms: media.endMs,
+    };
+  }
+
+  private extractChunkMediaMetadata(content: string): {
+    sourceAssetKey: string | null;
+    startMs: number | null;
+    endMs: number | null;
+  } {
+    const assetMatch = content.match(/s3:\/\/[^/\s)]+\/([^\s)]+)/);
+    const timeMatch = content.match(
+      /\[(\d{2}):(\d{2})(?:\.(\d{1,3}))?\s*-\s*(\d{2}):(\d{2})(?:\.(\d{1,3}))?\]/,
+    );
+
+    return {
+      sourceAssetKey: assetMatch?.[1] ?? null,
+      startMs: timeMatch ? this.parseTimeTagToMs(timeMatch, 1) : null,
+      endMs: timeMatch ? this.parseTimeTagToMs(timeMatch, 4) : null,
+    };
+  }
+
+  private parseTimeTagToMs(match: RegExpMatchArray, offset: number): number {
+    const minutes = Number(match[offset] ?? 0);
+    const seconds = Number(match[offset + 1] ?? 0);
+    const millis = Number(String(match[offset + 2] ?? '0').padEnd(3, '0'));
+    return minutes * 60_000 + seconds * 1000 + millis;
+  }
+
   private async syncDocumentIndex(input: {
     documentId: string;
     knowledgeId: string;
@@ -617,6 +711,9 @@ export class KnowledgeDocumentService {
         source: row.source,
         category: row.category,
         enabled: row.enabled,
+        source_asset_key: row.source_asset_key ?? null,
+        start_ms: row.start_ms ?? null,
+        end_ms: row.end_ms ?? null,
       })),
       `写入文档 ${input.documentId}`,
     );
@@ -1272,14 +1369,14 @@ export class KnowledgeDocumentService {
     this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
 
     const chunkRows = splitDocuments.map((item, index) => ({
-      id: randomUUID(),
-      document_id: document.id,
-      chunk_index: index,
-      content: item.pageContent,
-      source: filename,
-      category: options.category ?? null,
-      enabled: true,
-      embedding: JSON.stringify(embeddings[index]),
+      ...this.buildChunkRow({
+        documentId: document.id,
+        chunkIndex: index,
+        content: item.pageContent,
+        filename,
+        category: options.category ?? null,
+        embedding: embeddings[index],
+      }),
     })) satisfies KnowledgeDocumentChunkRow[];
 
     // 1. 写入 Supabase PG 数据库

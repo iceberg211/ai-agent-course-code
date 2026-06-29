@@ -128,6 +128,7 @@ export class DocumentTaskRunnerService {
         );
         
         markdownStorageKey = `knowledge-bases/${knowledgeBaseId}/markdown/${ingestRunId}.md`;
+        const parseResultStorageKey = `knowledge-bases/${knowledgeBaseId}/parse-results/${ingestRunId}.json`;
         
         // 保存解析后的 Markdown 到 S3 对象存储
         await this.storageProvider.putObject({
@@ -135,6 +136,12 @@ export class DocumentTaskRunnerService {
           key: markdownStorageKey,
           body: Buffer.from(parseResult.markdown, 'utf-8'),
           contentType: 'text/markdown',
+        });
+        await this.storageProvider.putObject({
+          bucket,
+          key: parseResultStorageKey,
+          body: Buffer.from(JSON.stringify(parseResult, null, 2), 'utf-8'),
+          contentType: 'application/json',
         });
 
         // 创建/获取 KnowledgeDocument 占位符
@@ -165,27 +172,33 @@ export class DocumentTaskRunnerService {
               mimeType: asset.mimeType,
               filename: asset.filename,
               storageKey: asset.storageKey,
-              pageNo: asset.pageNo || null,
-              startMs: asset.startMs || null,
-              endMs: asset.endMs || null,
-              caption: asset.caption || null,
-              ocrText: asset.ocrText || null,
-              metadata: asset.metadata || null,
+              pageNo: asset.pageNo ?? null,
+              startMs: asset.startMs ?? null,
+              endMs: asset.endMs ?? null,
+              caption: asset.caption ?? null,
+              ocrText: asset.ocrText ?? null,
+              metadata: asset.metadata ?? null,
             }),
           );
           await this.assetRepo.save(assetEntities);
 
           // 更新文档中的资产计数
-          await this.documentService.updateDocument(docId, {
-            assetCount: parseResult.assets.length,
-          });
         }
+
+        await this.documentService.updateDocument(docId, {
+          originalStorageKey: (task.checkpointData as any)?.originalStorageKey ?? null,
+          markdownStorageKey,
+          parseResultStorageKey,
+          parseStrategy: ingestOptions.parseStrategy ?? 'multimodal_parser',
+          parserVersion: ingestOptions.parserVersion ?? 'multimodal-v1',
+          assetCount: parseResult.assets?.length ?? 0,
+        });
 
         // 绑定 documentId
         await this.updateStep(taskId, 'parse', {
           status: 'completed',
           documentId,
-          checkpoint: { markdownStorageKey },
+          checkpoint: { markdownStorageKey, parseResultStorageKey },
           finishedAt: new Date(),
         });
 
@@ -194,6 +207,7 @@ export class DocumentTaskRunnerService {
           checkpointData: {
             ...(task.checkpointData || {}),
             markdownStorageKey,
+            parseResultStorageKey,
             documentId,
             assetCount: parseResult.assets ? parseResult.assets.length : 0,
           },
@@ -261,12 +275,23 @@ export class DocumentTaskRunnerService {
           contentStr,
           ingestOptions,
         );
+        const chunkManifestStorageKey = `knowledge-bases/${knowledgeBaseId}/chunk-manifests/${task.ingestRunId ?? taskId}.json`;
+        await this.storageProvider.putObject({
+          bucket,
+          key: chunkManifestStorageKey,
+          body: Buffer.from(JSON.stringify(chunkRows, null, 2), 'utf-8'),
+          contentType: 'application/json',
+        });
+        await this.documentService.updateDocument(docId, {
+          chunkManifestStorageKey,
+        });
 
         await this.updateStep(taskId, 'index', {
           status: 'completed',
           documentId: docId,
           checkpoint: {
             chunkCount: chunkRows.length,
+            chunkManifestStorageKey,
           },
           finishedAt: new Date(),
         });
@@ -277,6 +302,7 @@ export class DocumentTaskRunnerService {
             markdownStorageKey,
             documentId: docId,
             chunkCount: chunkRows.length,
+            chunkManifestStorageKey,
           },
         });
       } catch (err) {
@@ -325,6 +351,9 @@ export class DocumentTaskRunnerService {
             category: (input as any).category ?? null,
             enabled: c.enabled,
             embedding: '[]',
+            source_asset_key: c.sourceAssetKey,
+            start_ms: c.startMs,
+            end_ms: c.endMs,
           }));
         }
 

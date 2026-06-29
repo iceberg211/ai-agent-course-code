@@ -25,4 +25,7 @@ export interface KnowledgeDocumentChunkRow {
   category: string | null;
   enabled: boolean;
   embedding: string;
+  source_asset_key?: string | null;
+  start_ms?: number | null;
+  end_ms?: number | null;
 }

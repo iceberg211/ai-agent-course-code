@@ -66,6 +66,7 @@ describe('DocumentParserService & Individual Parsers', () => {
     videoParser = new VideoParser(
       storageProviderMock,
       configServiceMock,
+      llmFactoryMock,
     );
     webPageParser = new WebPageParser();
 

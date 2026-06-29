@@ -20,7 +20,6 @@ import { extname } from 'node:path';
 import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
-  UPLOAD_MAX_FILE_SIZE,
 } from '@/common/constants';
 import { ChunkContextDto } from '@/knowledge/dto/chunk-context.dto';
 import { ListDocumentTasksDto } from '@/knowledge/dto/list-document-tasks.dto';
@@ -90,6 +89,14 @@ function isSupportedKnowledgeUpload(file: {
 }
 
 const MULTIPART_MAX_FILE_SIZE = 100 * 1024 * 1024; // 上调至 100MB 以承接大视频
+const FILE_SIZE_LIMITS = {
+  text: 10 * 1024 * 1024,
+  pdf: 30 * 1024 * 1024,
+  office: 30 * 1024 * 1024,
+  image: 20 * 1024 * 1024,
+  audio: 50 * 1024 * 1024,
+  video: 100 * 1024 * 1024,
+};
 
 @ApiTags('documents')
 @Controller()
@@ -342,6 +349,20 @@ export class KnowledgeDocumentController {
     );
   }
 
+  @Get('knowledge-bases/:kbId/documents/:docId/assets')
+  @ApiOperation({ summary: '查询文档多模态资源列表' })
+  listDocumentAssets(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.listAssetsByKnowledgeDocument(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
+  }
+
   @Get('documents/:docId/tasks')
   @ApiOperation({ summary: '查询文档处理任务列表' })
   listDocumentTasks(
@@ -432,48 +453,57 @@ export class KnowledgeDocumentController {
     const mime = String(file.mimetype ?? '').toLowerCase();
     const size = file.size;
 
-    // 1. 视频限制 100MB
+    if (ext === '.pdf' || mime === KNOWLEDGE_UPLOAD_PDF_MIME_TYPE) {
+      this.assertFileSize(size, FILE_SIZE_LIMITS.pdf, 'PDF 文件');
+      return;
+    }
+
+    if (['.docx', '.xlsx', '.pptx'].includes(ext)) {
+      this.assertFileSize(size, FILE_SIZE_LIMITS.office, 'Office 文件');
+      return;
+    }
+
+    if (
+      mime.startsWith('image/') ||
+      ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'].includes(ext)
+    ) {
+      this.assertFileSize(size, FILE_SIZE_LIMITS.image, '图片文件');
+      return;
+    }
+
+    if (
+      mime.startsWith('audio/') ||
+      ['.mp3', '.wav', '.mpeg', '.ogg', '.m4a', '.flac'].includes(ext)
+    ) {
+      this.assertFileSize(size, FILE_SIZE_LIMITS.audio, '音频文件');
+      return;
+    }
+
     if (
       mime.startsWith('video/') ||
       ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'].includes(ext)
     ) {
-      if (size > 100 * 1024 * 1024) {
-        throw new BadRequestException('视频文件大小超出 100MB 限制');
-      }
+      this.assertFileSize(size, FILE_SIZE_LIMITS.video, '视频文件');
       return;
     }
 
-    // 2. 音频 / 图片 / Office 限制 20MB
     if (
-      mime.startsWith('audio/') ||
-      mime.startsWith('image/') ||
-      [
-        '.mp3',
-        '.wav',
-        '.mpeg',
-        '.ogg',
-        '.m4a',
-        '.flac',
-        '.png',
-        '.jpg',
-        '.jpeg',
-        '.webp',
-        '.bmp',
-        '.gif',
-        '.docx',
-        '.xlsx',
-        '.pptx',
-      ].includes(ext)
+      mime.startsWith('text/') ||
+      mime === 'application/json' ||
+      mime === 'application/xhtml+xml' ||
+      ['.txt', '.md', '.csv', '.json', '.html', '.htm', '.xhtml'].includes(ext)
     ) {
-      if (size > 20 * 1024 * 1024) {
-        throw new BadRequestException('媒体或 Office 文件大小超出 20MB 限制');
-      }
+      this.assertFileSize(size, FILE_SIZE_LIMITS.text, '文本或网页文件');
       return;
     }
 
-    // 3. 普通文本 / PDF / HTML 网页限制 10MB
-    if (size > 10 * 1024 * 1024) {
-      throw new BadRequestException('文本或网页文件大小超出 10MB 限制');
+    this.assertFileSize(size, FILE_SIZE_LIMITS.text, '上传文件');
+  }
+
+  private assertFileSize(size: number, limit: number, label: string): void {
+    if (size > limit) {
+      const limitMb = Math.floor(limit / 1024 / 1024);
+      throw new BadRequestException(`${label}大小超出 ${limitMb}MB 限制`);
     }
   }
 

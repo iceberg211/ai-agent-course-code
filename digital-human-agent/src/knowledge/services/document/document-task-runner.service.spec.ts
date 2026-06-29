@@ -69,6 +69,8 @@ describe('DocumentTaskRunnerService', () => {
             filename: 'img.png',
             mimeType: 'image/png',
             storageKey: 'key-123',
+            startMs: 0,
+            endMs: 0,
             caption: 'description',
             ocrText: 'extracted-text',
           },
@@ -130,6 +132,12 @@ describe('DocumentTaskRunnerService', () => {
     );
     expect(documentServiceMock.createDocument).toHaveBeenCalled();
     expect(assetRepo.save).toHaveBeenCalled(); // 验证保存了图片资产
+    expect(assetRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startMs: 0,
+        endMs: 0,
+      }),
+    );
     expect(documentServiceMock.indexDocumentChunks).toHaveBeenCalled();
     expect(documentServiceMock.syncGraphOnly).toHaveBeenCalled();
   });
@@ -164,7 +172,12 @@ describe('DocumentTaskRunnerService', () => {
 
     // 验证 parse 没有被重复调用
     expect(parserServiceMock.parse).not.toHaveBeenCalled();
-    expect(storageProviderMock.putObject).not.toHaveBeenCalled();
+    expect(storageProviderMock.putObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'knowledge-bases/kb-1/chunk-manifests/run-1.json',
+        contentType: 'application/json',
+      }),
+    );
     expect(documentServiceMock.createDocument).not.toHaveBeenCalled();
     expect(assetRepo.save).not.toHaveBeenCalled();
 

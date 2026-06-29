@@ -63,5 +63,8 @@ export const KNOWLEDGE_INDEX_MAPPINGS = {
         keyword: { type: 'keyword' as const, ignore_above: 256 },
       },
     },
+    source_asset_key: { type: 'keyword' as const, ignore_above: 512 },
+    start_ms: { type: 'integer' as const },
+    end_ms: { type: 'integer' as const },
   },
 };
