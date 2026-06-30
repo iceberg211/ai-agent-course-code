@@ -22,6 +22,8 @@ import { ChatRequestDto } from '@/conversation/controllers/dto/chat-request.dto'
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 
 interface MessagePartLike {
   type?: unknown;
@@ -35,7 +37,8 @@ interface MessageLike {
 
 @ApiTags('chat')
 @Controller('chat')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermissions('chat:view')
 export class ChatController {
   private readonly logger = new Logger(ChatController.name);
 

@@ -8,12 +8,14 @@ import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-know
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { KnowledgeDocumentModule } from './knowledge-document.module';
+import { KnowledgeGraphModule } from './knowledge-graph.module';
 
 @Module({
   imports: [
     CommonModule,
     TypeOrmModule.forFeature([Knowledge, PersonaKnowledge]),
     KnowledgeDocumentModule,
+    KnowledgeGraphModule,
   ],
   providers: [
     KnowledgeService,

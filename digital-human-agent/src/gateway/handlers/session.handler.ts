@@ -13,6 +13,7 @@ import {
   WsSessionStartMessage,
 } from '@/gateway/gateway.types';
 import { sendJson } from '@/gateway/utils/ws-send.util';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
 
 /**
  * 处理 `session:start` 消息。
@@ -38,6 +39,7 @@ export class SessionHandler {
     private readonly digitalHumanProvider: DigitalHumanProvider,
     private readonly sessionRegistry: RealtimeSessionRegistry,
     private readonly configService: ConfigService,
+    private readonly authorizationService: AuthorizationService,
   ) {
     this.historyLimit = Math.min(
       Math.max(
@@ -67,11 +69,26 @@ export class SessionHandler {
     const mode = this.parseMode(msg.payload?.mode);
     const forceNew = msg.payload?.forceNew === true;
     const ownerId = (client as any).__userId;
+    const user = (client as any).__user as
+      | {
+          id: string;
+          role: string | null;
+          department: string | null;
+        }
+      | undefined;
     if (!ownerId) {
       sendJson(client, {
         type: 'error',
         sessionId: '',
         payload: { message: 'Unauthorized: Session owner not found' },
+      });
+      return;
+    }
+    if (!user) {
+      sendJson(client, {
+        type: 'error',
+        sessionId: '',
+        payload: { message: '无权访问该资源' },
       });
       return;
     }
@@ -108,6 +125,9 @@ export class SessionHandler {
       conversationId: conversation.id,
       personaId,
       ownerId,
+      role: user.role,
+      department: user.department,
+      accessScope: this.authorizationService.toAccessScope(user),
       mode,
       voiceId: persona.voiceId ?? null,
       digitalHumanSessionId: null,

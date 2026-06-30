@@ -23,6 +23,8 @@ import {
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { RolesGuard } from '@/auth/guards/roles.guard';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 
 @ApiTags('认证与用户')
 @Controller('auth')
@@ -73,24 +75,27 @@ export class AuthController {
   }
 
   @Post('api-keys')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionGuard)
   @Roles('user', 'admin')
+  @RequirePermissions('api-key:manage')
   @ApiOperation({ summary: '创建 API Key' })
   async createApiKey(@Body() dto: CreateApiKeyDto, @Req() req: any) {
     return this.authService.createApiKey(req.user.id, dto.name);
   }
 
   @Get('api-keys')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionGuard)
   @Roles('user', 'admin')
+  @RequirePermissions('api-key:manage')
   @ApiOperation({ summary: '获取 API Key 列表' })
   async listApiKeys(@Req() req: any) {
     return this.authService.listApiKeys(req.user.id);
   }
 
   @Delete('api-keys/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionGuard)
   @Roles('user', 'admin')
+  @RequirePermissions('api-key:manage')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '废弃/注销 API Key' })
   async revokeApiKey(@Param('id') id: string, @Req() req: any) {

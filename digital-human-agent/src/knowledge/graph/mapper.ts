@@ -70,9 +70,10 @@ export function extractMarkdownHeadings(content: string) {
 export function normalizeDisplayName(value: string): string {
   return value
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[`*_~]/g, '')
+    .replace(/[`*_~#]/g, '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .toLowerCase();
 }
 
 export function extractPartyTerms(content: string): string[] {

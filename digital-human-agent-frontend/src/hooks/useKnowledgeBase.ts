@@ -519,6 +519,22 @@ export function useKnowledgeBase() {
     return !!res?.ok
   }
 
+  async function listGraphEntities(kbId: string, q = '', limit = 50): Promise<any[]> {
+    return (await apiJson<any[]>(`/api/knowledge-bases/${kbId}/graph/entities?q=${encodeURIComponent(q)}&limit=${limit}`)) ?? []
+  }
+
+  async function listGraphRelations(kbId: string, limit = 100): Promise<any[]> {
+    return (await apiJson<any[]>(`/api/knowledge-bases/${kbId}/graph/relations?limit=${limit}`)) ?? []
+  }
+
+  async function getGraphNeighborhood(kbId: string, nodeKey: string): Promise<any[]> {
+    return (await apiJson<any[]>(`/api/knowledge-bases/${kbId}/graph/neighborhood?nodeKey=${encodeURIComponent(nodeKey)}`)) ?? []
+  }
+
+  async function rebuildGraph(kbId: string): Promise<{ success: boolean; message?: string }> {
+    return (await apiJson<any>(`/api/knowledge-bases/${kbId}/graph/rebuild`, { method: 'POST' })) ?? { success: false }
+  }
+
   return {
     listLoading,
     detailLoading,
@@ -558,6 +574,10 @@ export function useKnowledgeBase() {
     listKbsForPersona,
     attachToPersona,
     detachFromPersona,
+    listGraphEntities,
+    listGraphRelations,
+    getGraphNeighborhood,
+    rebuildGraph,
   }
 }
 

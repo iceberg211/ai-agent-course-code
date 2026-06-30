@@ -154,6 +154,7 @@ export interface RetrievalStageTrace {
   channels: Partial<Record<KnowledgeRetrievalSource, ChannelTrace>>;
   rrfFusion: RrfTraceItem[];
   rerank: RerankTraceItem[];
+  rerankLatencyMs?: number;
   permissionFilter: {
     before: number;
     after: number;

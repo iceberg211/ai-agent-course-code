@@ -12,6 +12,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import type { MemoryCategory, MemoryVisibility } from '@/memory/memory.types';
@@ -33,7 +35,8 @@ class CreateMemoryDto {
 
 @ApiTags('memory')
 @Controller('memories')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermissions('memory:manage')
 export class MemoryController {
   constructor(
     private readonly longTermMemoryService: LongTermMemoryService,
@@ -86,4 +89,3 @@ export class MemoryController {
     };
   }
 }
-

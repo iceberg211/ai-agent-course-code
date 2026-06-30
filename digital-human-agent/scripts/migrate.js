@@ -34,6 +34,17 @@ const MIGRATIONS = [
   '019_user_system.sql',
   '020_user_roles_and_api_tokens.sql',
   '021_knowledge_eval_case_upgrade.sql',
+  '022_api_key_hash_storage.sql',
+  '023_document_governance_and_notifications.sql',
+  '024_document_access_scope.sql',
+  '025_document_task_and_asset.sql',
+  '026_document_ingest_metadata.sql',
+  '027_document_task_schema_patch.sql',
+  '028_multimodal_chunk_metadata.sql',
+  '029_knowledge_eval_metrics.sql',
+  '030_memory_records.sql',
+  '031_rbac_foundation.sql',
+  '032_match_knowledge_acl.sql',
 ];
 
 function hasFlag(name) {

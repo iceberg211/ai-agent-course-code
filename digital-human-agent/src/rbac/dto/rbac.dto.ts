@@ -7,6 +7,11 @@ import {
   IsUUID,
 } from 'class-validator';
 import type { PermissionType } from '@/rbac/entities/permission.entity';
+import type {
+  AclEffect,
+  AclResourceAction,
+  AclSubjectType,
+} from '@/rbac/entities';
 
 export class CreateRoleDto {
   @IsString()
@@ -74,4 +79,20 @@ export class CreatePermissionDto {
 export class DocumentAclQueryDto {
   @IsUUID()
   documentId: string;
+}
+
+export class CreateAclRuleDto {
+  @IsIn(['user', 'role', 'department'])
+  subjectType: AclSubjectType;
+
+  @IsString()
+  subjectId: string;
+
+  @IsArray()
+  @IsIn(['read', 'write', 'delete', 'manage'], { each: true })
+  actions: AclResourceAction[];
+
+  @IsOptional()
+  @IsIn(['allow', 'deny'])
+  effect?: AclEffect;
 }

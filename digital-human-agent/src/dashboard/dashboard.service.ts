@@ -169,6 +169,57 @@ export class DashboardService {
     const evalPassRate =
       evalTotal > 0 ? parseFloat((evalPassed / evalTotal).toFixed(4)) : 0;
 
+    // 4. RAG 性能指标: 平均问答延迟
+    const latencyRaw = await this.messageRepo
+      .createQueryBuilder('msg')
+      .select('AVG(msg.latencyMs)', 'avg')
+      .where("msg.role = 'assistant'")
+      .getRawOne();
+    const averageLatencyMs = Math.round(Number(latencyRaw?.avg ?? 0));
+
+    // 5. 文档指标: 多模态文档占比
+    const multimodalDocsCount = await this.documentRepo
+      .createQueryBuilder('doc')
+      .where("doc.mimetype LIKE 'image/%' OR doc.mimetype LIKE 'audio/%' OR doc.mimetype LIKE 'video/%'")
+      .getCount();
+    const multimodalRate = documentCount > 0 ? parseFloat((multimodalDocsCount / documentCount).toFixed(4)) : 0;
+
+    // 6. 文档指标: 平均处理耗时 (基于最近 50 条已完成文档)
+    const completedDocs = await this.documentRepo.find({
+      select: ['createdAt', 'updatedAt'],
+      where: { status: 'completed' },
+      take: 50,
+    });
+    const averageDocumentProcessTimeMs = completedDocs.length > 0
+      ? Math.round(
+          completedDocs.reduce((acc, doc) => acc + (doc.updatedAt.getTime() - doc.createdAt.getTime()), 0) /
+          completedDocs.length
+        )
+      : 0;
+
+    // 7. 权限指标: 被过滤的检索结果条数 & 越权访问拦截次数 (扫描最近 100 条回复的 Trace)
+    const recentMessagesForAcl = await this.messageRepo.find({
+      select: ['ragTrace', 'status', 'content'],
+      where: { role: 'assistant' },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    let totalPermissionFilteredCount = 0;
+    let blockedAccessCount = 0;
+    for (const msg of recentMessagesForAcl) {
+      if (msg.ragTrace) {
+        const traces = (msg.ragTrace.retrievalTrace as any[]) || [];
+        for (const tr of traces) {
+          if (tr?.permissionFilter?.filtered) {
+            totalPermissionFilteredCount += Number(tr.permissionFilter.filtered);
+          }
+        }
+      }
+      if (msg.status === 'failed' && (msg.content?.includes('无权') || msg.content?.includes('越权'))) {
+        blockedAccessCount++;
+      }
+    }
+
     return {
       knowledgeBaseCount,
       documentCount,
@@ -186,6 +237,11 @@ export class DashboardService {
       unchunkedDocumentCount,
       graphFailedDocumentCount,
       evalPassRate,
+      averageLatencyMs,
+      multimodalRate,
+      averageDocumentProcessTimeMs,
+      totalPermissionFilteredCount,
+      blockedAccessCount,
     };
   }
 

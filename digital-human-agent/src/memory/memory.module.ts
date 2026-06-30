@@ -12,9 +12,10 @@ import { LongTermMemoryService } from '@/memory/services/long-term-memory.servic
 import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MemoryRecordEntity])],
+  imports: [TypeOrmModule.forFeature([MemoryRecordEntity]), RbacModule],
   controllers: [MemoryController],
   providers: [
     ShortTermMemoryService,
@@ -55,4 +56,3 @@ import { ShortTermMemoryService } from '@/memory/services/short-term-memory.serv
   ],
 })
 export class MemoryModule {}
-

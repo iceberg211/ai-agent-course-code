@@ -137,12 +137,23 @@ describe('KnowledgeSearchService', () => {
         ],
       }),
     };
+    const dataScopeService = {
+      filterKnowledgeChunks: jest.fn(async (chunks: KnowledgeChunk[]) => ({
+        chunks,
+        trace: {
+          before: chunks.length,
+          after: chunks.length,
+          filtered: 0,
+        },
+      })),
+    };
 
     const service = new KnowledgeSearchService(
       runtime as never,
       hybridRetrieverService as never,
       rerankerService as never,
       queryRewriteService as never,
+      dataScopeService as never,
     );
 
     return {
@@ -151,6 +162,7 @@ describe('KnowledgeSearchService', () => {
       hybridRetrieverService,
       rerankerService,
       queryRewriteService,
+      dataScopeService,
     };
   }
 
@@ -208,6 +220,27 @@ describe('KnowledgeSearchService', () => {
     expect(result.query).toBe('原始问题');
     expect(result.retrievalQuery).toBe('改写后的检索问题');
     expect(result.rewrite.changed).toBe(true);
+  });
+
+  it('会在 RRF 后记录权限过滤统计', async () => {
+    const { service, dataScopeService } = createService();
+    dataScopeService.filterKnowledgeChunks.mockResolvedValue({
+      chunks: [hybridChunk],
+      trace: {
+        before: 2,
+        after: 1,
+        filtered: 1,
+      },
+    });
+
+    const result = await service.retrieveWithDebug('kb-1', '原始问题');
+
+    expect(result.hybridChunks).toEqual([hybridChunk]);
+    expect(result.stageTrace?.permissionFilter).toEqual({
+      before: 2,
+      after: 1,
+      filtered: 1,
+    });
   });
 
   it('图谱检索开启且 graph-only 时，会把图谱结果纳入混合检索结果', async () => {

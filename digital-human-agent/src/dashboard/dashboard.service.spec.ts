@@ -7,7 +7,18 @@ describe('DashboardService', () => {
 
   const mockDocumentRepo = {
     count: jest.fn().mockResolvedValue(100),
-    find: jest.fn().mockResolvedValue([{ id: 'doc-1', filename: '测试文档.md' }]),
+    find: jest.fn().mockImplementation((options) => {
+      if (options?.where?.status === 'completed') {
+        const now = Date.now();
+        return Promise.resolve([
+          {
+            createdAt: new Date(now - 10000),
+            updatedAt: new Date(now),
+          },
+        ]);
+      }
+      return Promise.resolve([{ id: 'doc-1', filename: '测试文档.md' }]);
+    }),
     createQueryBuilder: jest.fn(),
   };
 
@@ -22,6 +33,20 @@ describe('DashboardService', () => {
 
   const mockMessageRepo = {
     count: jest.fn().mockResolvedValue(300),
+    find: jest.fn().mockImplementation((options) => {
+      if (options?.where?.role === 'assistant') {
+        return Promise.resolve([
+          {
+            ragTrace: {
+              retrievalTrace: [{ permissionFilter: { filtered: 2 } }],
+            },
+            status: 'failed',
+            content: '权限不足，无权访问该知识库。',
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    }),
     createQueryBuilder: jest.fn(),
   };
 
@@ -43,25 +68,27 @@ describe('DashboardService', () => {
     );
   });
 
-  it('summary() 应该返回基础汇总信息以及增强的失败趋势、热门问题、点踩问题和无引用占比', async () => {
+  it('summary() 应该返回基础汇总信息以及增强的失败趋势、热门问题、点踩问题、无引用占比、耗时指标和权限过滤指标', async () => {
     // 1. Mock 失败文档的 queryBuilder
     const mockFailedDocs = [
       { createdAt: new Date() }, // 今天
       { createdAt: new Date(Date.now() - 24 * 3600 * 1000) }, // 昨天
     ];
-    const docQueryBuilder = {
+
+    mockDocumentRepo.createQueryBuilder.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue(mockFailedDocs),
-    };
-    mockDocumentRepo.createQueryBuilder.mockReturnValue(docQueryBuilder);
+      getCount: jest.fn().mockResolvedValue(20), // 20 个多模态文档
+    });
 
-    // 2. Mock 热门提问的 queryBuilder
+    // 2. Mock 热门提问 & 平均延迟的 queryBuilder
     const mockHotQuestionsRaw = [
       { question: '如何部署？', count: '5' },
       { question: '支持哪些格式？', count: '3' },
     ];
+
     const hotMsgQueryBuilder = {
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -70,6 +97,7 @@ describe('DashboardService', () => {
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue(mockHotQuestionsRaw),
+      getRawOne: jest.fn().mockResolvedValue({ avg: '1200' }), // 平均时延
     };
 
     // 3. Mock 无引用率 SQL 聚合
@@ -157,5 +185,12 @@ describe('DashboardService', () => {
     // 无引用率占比校验 (总数 3，无引用 2，占比 2/3 ≈ 0.6667)
     expect(result.noCitationRate).toBe(0.6667);
     expect(result.evalPassRate).toBe(0.75);
+
+    // 新增观测指标校验
+    expect(result.averageLatencyMs).toBe(1200);
+    expect(result.multimodalRate).toBe(0.2); // 20/100 = 0.2
+    expect(result.averageDocumentProcessTimeMs).toBe(10000); // 10000ms = 10s
+    expect(result.totalPermissionFilteredCount).toBe(2);
+    expect(result.blockedAccessCount).toBe(1);
   });
 });

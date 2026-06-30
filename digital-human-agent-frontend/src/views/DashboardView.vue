@@ -83,6 +83,37 @@
         </div>
       </section>
 
+      <!-- 阶段 7 / 8 核心交付：核心运行与安全指标大盘 -->
+      <section class="performance-metrics-grid" aria-label="核心运行指标">
+        <div class="metric-card">
+          <span class="metric-card__title">平均问答时延</span>
+          <strong class="metric-card__val">{{ summary.averageLatencyMs ? summary.averageLatencyMs + ' ms' : '暂无数据' }}</strong>
+          <small class="metric-card__desc">系统接收问题至回答生成耗时</small>
+        </div>
+        <div class="metric-card">
+          <span class="metric-card__title">平均文档处理耗时</span>
+          <strong class="metric-card__val">{{ formatProcessTime(summary.averageDocumentProcessTimeMs) }}</strong>
+          <small class="metric-card__desc">基于最近50篇成功分片解析的文档</small>
+        </div>
+        <div class="metric-card">
+          <span class="metric-card__title">多模态文档占比</span>
+          <strong class="metric-card__val">{{ percent(summary.multimodalRate) }}</strong>
+          <small class="metric-card__desc">图片/音频/视频格式在库数量占比</small>
+        </div>
+        <div class="metric-card" :class="{ 'alert-card': (summary.blockedAccessCount || 0) > 0 }">
+          <span class="metric-card__title">越权拦截次数</span>
+          <strong class="metric-card__val" :class="{ 'text-red': (summary.blockedAccessCount || 0) > 0 }">
+            {{ summary.blockedAccessCount ?? 0 }} 次
+          </strong>
+          <small class="metric-card__desc">越权异常请求阻断累计计数</small>
+        </div>
+        <div class="metric-card">
+          <span class="metric-card__title">安全隐式过滤片段</span>
+          <strong class="metric-card__val">{{ summary.totalPermissionFilteredCount ?? 0 }} 段</strong>
+          <small class="metric-card__desc">因ACL权限拦截而自动隐藏的召回条数</small>
+        </div>
+      </section>
+
       <section class="health-grid" aria-label="知识库健康">
         <button type="button" class="health-card" @click="goDocuments({ status: 'failed' })">
           <span>失败文档趋势</span>
@@ -279,9 +310,66 @@ function formatDate(value?: string) {
 
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
+
+function formatProcessTime(ms?: number): string {
+  if (!ms) return '暂无数据'
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)} 秒`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return `${minutes} 分 ${remainingSeconds} 秒`
+}
 </script>
 
 <style scoped>
+.performance-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.01);
+  transition: all 0.2s ease;
+  text-align: left;
+}
+.metric-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(99,102,241,0.04);
+  border-color: rgba(99,102,241,0.15);
+}
+.metric-card__title {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.metric-card__val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+.metric-card__desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.alert-card {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: #fffbfa;
+}
+.alert-card:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.text-red {
+  color: #ef4444 !important;
+}
+
 .dashboard {
   padding: 32px 24px;
   height: 100%;

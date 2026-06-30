@@ -50,6 +50,21 @@ export class KnowledgeChunk {
   @Column({ name: 'end_ms', type: 'int', nullable: true })
   endMs: number | null;
 
+  @Column({ name: 'allowed_user_ids', type: 'text', array: true, nullable: true })
+  allowedUserIds: string[] | null;
+
+  @Column({ name: 'allowed_role_ids', type: 'text', array: true, nullable: true })
+  allowedRoleIds: string[] | null;
+
+  @Column({ name: 'allowed_department_ids', type: 'text', array: true, nullable: true })
+  allowedDepartmentIds: string[] | null;
+
+  @Column({ name: 'security_level', type: 'int', default: 0 })
+  securityLevel: number;
+
+  @Column({ name: 'acl_version', type: 'int', default: 1 })
+  aclVersion: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

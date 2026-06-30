@@ -1,5 +1,114 @@
 <template>
   <section class="health">
+    <!-- 阶段 7 核心交付：后端 6 大核心依赖组件运行诊断 -->
+    <div class="backend-health-card">
+      <header class="card-title">
+        <h3>💻 后端核心系统组件运行诊断</h3>
+        <span class="diagnostic-time" v-if="healthData">诊断时间: {{ formatTime(healthData.timestamp) }}</span>
+      </header>
+
+      <div v-if="loadingHealth" class="health-loading">正在对后台系统执行微秒级穿透式体检…</div>
+      <div v-else-if="healthError" class="health-error-banner">
+        ⚠️ 后台健康状态获取失败: {{ healthError }}
+      </div>
+
+      <div v-else-if="healthData" class="system-status-grid">
+        <!-- 数据库 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.db?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>关系型数据库 (PG)</h4>
+          </div>
+          <div class="node-body">
+            <p>连接状态: <strong>{{ healthData.checks.db?.status === 'ok' ? '健康' : '失联' }}</strong></p>
+            <p v-if="healthData.checks.db?.latencyMs !== undefined">
+              数据库延迟: <strong>{{ healthData.checks.db.latencyMs }}ms</strong>
+            </p>
+          </div>
+        </article>
+
+        <!-- 搜索引擎 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.elasticsearch?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>搜索引擎 (ES)</h4>
+          </div>
+          <div class="node-body">
+            <p>检索状态: <strong>{{ healthData.checks.elasticsearch?.status === 'ok' ? '正常' : '不可用' }}</strong></p>
+            <p v-if="healthData.checks.elasticsearch?.latencyMs !== undefined">
+              ES 响应延迟: <strong>{{ healthData.checks.elasticsearch.latencyMs }}ms</strong>
+            </p>
+          </div>
+        </article>
+
+        <!-- 图数据库 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.neo4j?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>图数据库 (Neo4j)</h4>
+          </div>
+          <div class="node-body">
+            <p>图谱服务: <strong>{{ healthData.checks.neo4j?.status === 'ok' ? '正常' : '未同步/脱机' }}</strong></p>
+            <p v-if="healthData.checks.neo4j?.latencyMs !== undefined">
+              查询延迟: <strong>{{ healthData.checks.neo4j.latencyMs }}ms</strong>
+            </p>
+            <p v-if="healthData.checks.neo4j?.status !== 'ok'" class="error-msg">
+              {{ healthData.checks.neo4j?.message }}
+            </p>
+          </div>
+        </article>
+
+        <!-- 缓存与积压队列 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.redis?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>缓存与任务队列 (Redis)</h4>
+          </div>
+          <div class="node-body">
+            <p>服务状态: <strong>{{ healthData.checks.redis?.status === 'ok' ? '健康' : '断连' }}</strong></p>
+            <p v-if="healthData.checks.redis?.latencyMs !== undefined">
+              缓存时延: <strong>{{ healthData.checks.redis.latencyMs }}ms</strong>
+            </p>
+            <p>
+              排队未消费任务:
+              <strong :class="{ 'warning-text': (healthData.checks.redis?.queueDelayCount || 0) > 0 }">
+                {{ healthData.checks.redis?.queueDelayCount ?? 0 }} 个
+              </strong>
+            </p>
+          </div>
+        </article>
+
+        <!-- 对象存储 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.minio?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>对象存储 (MinIO)</h4>
+          </div>
+          <div class="node-body">
+            <p>桶读写权: <strong>{{ healthData.checks.minio?.status === 'ok' ? '正常' : '异常' }}</strong></p>
+            <p v-if="healthData.checks.minio?.latencyMs !== undefined">
+              S3 时延: <strong>{{ healthData.checks.minio.latencyMs }}ms</strong>
+            </p>
+          </div>
+        </article>
+
+        <!-- 任务处理执行器 -->
+        <article class="status-node" :class="'status--' + (healthData.checks.worker?.status || 'error')">
+          <div class="node-head">
+            <span class="indicator"></span>
+            <h4>任务执行器 (Worker)</h4>
+          </div>
+          <div class="node-body">
+            <p>消费心跳: <strong>{{ healthData.checks.worker?.status === 'ok' ? '活动中' : '无心跳' }}</strong></p>
+            <p v-if="healthData.checks.worker?.lastTaskProcessedAt">
+              最近任务时间: <span class="time-stamp">{{ formatTime(healthData.checks.worker.lastTaskProcessedAt) }}</span>
+            </p>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <!-- 基础风险统计 -->
     <div class="health-grid">
       <article class="metric">
         <span>失败文档</span>
@@ -19,6 +128,7 @@
       </article>
     </div>
 
+    <!-- 底部双面板 -->
     <div class="health-columns">
       <article class="panel">
         <header>
@@ -57,6 +167,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import { apiJson } from '@/api/client'
 import type { KnowledgeDocumentDetail, KnowledgeEvalCase } from '@/types'
 
 const props = defineProps<{ kbId: string }>()
@@ -66,6 +177,11 @@ const hook = useKnowledgeBase()
 const documents = ref<KnowledgeDocumentDetail[]>([])
 const evalCases = ref<KnowledgeEvalCase[]>([])
 const running = ref(false)
+
+// 健康检查数据
+const healthData = ref<any | null>(null)
+const loadingHealth = ref(false)
+const healthError = ref<string | null>(null)
 
 const failedDocuments = computed(() => documents.value.filter((doc) => doc.status === 'failed'))
 const emptyChunkDocuments = computed(() =>
@@ -93,7 +209,10 @@ const passRate = computed(() => {
   return `${Math.round((passed / total) * 100)}%`
 })
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadHealthDiagnostic()
+})
 
 async function load() {
   const [docResult, cases] = await Promise.all([
@@ -102,6 +221,26 @@ async function load() {
   ])
   documents.value = docResult.items
   evalCases.value = cases
+}
+
+// 请求阶段 7 后端编写的微秒级自愈健康检查
+async function loadHealthDiagnostic() {
+  loadingHealth.value = true
+  healthError.value = null
+  try {
+    const res = await apiJson<any>('/api/health')
+    healthData.value = res
+  } catch (err) {
+    // 捕获可能抛出的 503 等未完全健康异常，尝试从 response 中还原检查详情
+    const responseErr = err as { response?: { checks?: any } }
+    if (responseErr.response && responseErr.response.checks) {
+      healthData.value = responseErr.response
+    } else {
+      healthError.value = err instanceof Error ? err.message : String(err)
+    }
+  } finally {
+    loadingHealth.value = false
+  }
 }
 
 async function runBatch() {
@@ -127,6 +266,16 @@ function describeDocumentRisk(doc: KnowledgeDocumentDetail) {
   }
   return '需要检查'
 }
+
+function formatTime(isoStr?: string): string {
+  if (!isoStr) return '无'
+  try {
+    const d = new Date(isoStr)
+    return `${d.toLocaleDateString()} ${d.toTimeString().slice(0, 8)}`
+  } catch (err) {
+    return isoStr
+  }
+}
 </script>
 
 <style scoped>
@@ -134,6 +283,99 @@ function describeDocumentRisk(doc: KnowledgeDocumentDetail) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+.backend-health-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px;
+}
+.card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.card-title h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.diagnostic-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.health-loading,
+.health-error-banner {
+  font-size: 12px;
+  padding: 12px;
+  text-align: center;
+}
+.health-loading {
+  color: var(--text-muted);
+}
+.health-error-banner {
+  color: #ef4444;
+  background: #fef2f2;
+  border-radius: 6px;
+}
+.system-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.status-node {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+.node-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.node-head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+.indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status--ok .indicator {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+.status--error .indicator {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+.node-body {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.node-body p {
+  margin: 0 0 4px;
+}
+.warning-text {
+  color: #f59e0b;
+}
+.time-stamp {
+  font-family: monospace;
+}
+.error-msg {
+  color: #ef4444;
+  font-size: 10px;
 }
 .health-grid {
   display: grid;
@@ -190,6 +432,12 @@ function describeDocumentRisk(doc: KnowledgeDocumentDetail) {
   background: #fff;
   color: var(--primary);
   font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.panel button:hover {
+  background: var(--primary);
+  color: #fff;
 }
 .risk-list {
   display: flex;

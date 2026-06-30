@@ -338,6 +338,7 @@ export class KnowledgeSearchService {
       options.accessScope,
     );
     const hybridChunks = permissionFiltered.chunks;
+    const rerankStart = Date.now();
     const rerankResult = await this.selectRerankedChunks(
       searchInput.query,
       hybridChunks,
@@ -345,6 +346,7 @@ export class KnowledgeSearchService {
       searchInput.strategy,
       options.signal,
     );
+    const rerankLatencyMs = Date.now() - rerankStart;
 
     return {
       query: searchInput.query,
@@ -362,6 +364,7 @@ export class KnowledgeSearchService {
         rerankedChunks: rerankResult.chunks,
         rerankTrace: rerankResult.trace,
         permissionFilter: permissionFiltered.trace,
+        rerankLatencyMs,
       }),
     };
   }
@@ -419,6 +422,7 @@ export class KnowledgeSearchService {
     rerankedChunks: KnowledgeChunk[];
     rerankTrace: RerankTraceItem[];
     permissionFilter: RetrievalStageTrace['permissionFilter'];
+    rerankLatencyMs?: number;
   }): RetrievalStageTrace {
     const channels: RetrievalStageTrace['channels'] = {};
     for (const channelName of ['vector', 'keyword', 'graph', 'memory', 'multimodal'] as const) {
@@ -457,6 +461,7 @@ export class KnowledgeSearchService {
       channels,
       rrfFusion,
       rerank: input.rerankTrace,
+      rerankLatencyMs: input.rerankLatencyMs,
       permissionFilter: input.permissionFilter,
       finalChunks,
     };

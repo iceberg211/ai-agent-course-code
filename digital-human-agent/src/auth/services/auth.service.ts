@@ -162,8 +162,11 @@ export class AuthService {
   private comparePassword(password: string, stored: string): boolean {
     const [salt, hash] = stored.split(':');
     if (!salt || !hash) return false;
+    if (!/^[a-f0-9]+$/i.test(hash)) return false;
+    const expected = Buffer.from(hash, 'hex');
+    if (expected.length !== 64) return false;
     const verifyHash = scryptSync(password, salt, 64);
-    return timingSafeEqual(Buffer.from(hash, 'hex'), verifyHash);
+    return timingSafeEqual(expected, verifyHash);
   }
 
   private hashSecret(secret: string): string {

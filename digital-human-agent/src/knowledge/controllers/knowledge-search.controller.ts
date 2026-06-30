@@ -12,6 +12,8 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 import {
   createRetrievalStrategyPreset,
@@ -26,7 +28,8 @@ import {
  */
 @ApiTags('knowledge-search')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermissions('search:view')
 export class KnowledgeSearchController {
   constructor(
     private readonly searchService: KnowledgeSearchService,

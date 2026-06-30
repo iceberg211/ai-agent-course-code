@@ -72,6 +72,11 @@ export class AgentPipelineService {
         userMessage,
         turnId,
         signal: abortController.signal,
+        accessScope: session.accessScope ?? {
+          ownerId: session.ownerId,
+          department: session.department ?? null,
+          role: session.role ?? null,
+        },
         onToken: (token: string) => {
           fullReply += token;
 

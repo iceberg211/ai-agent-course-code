@@ -148,4 +148,18 @@ export class S3ObjectStorageProvider implements ObjectStorageProvider {
 
     return url;
   }
+
+  async healthCheck(): Promise<{ status: 'ok' | 'error'; message?: string }> {
+    try {
+      const bucket =
+        this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
+      await this.s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+      return { status: 'ok' };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 }

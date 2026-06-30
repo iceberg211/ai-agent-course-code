@@ -10,7 +10,7 @@ import { createEvaluateEvidenceNode, createRerankNode } from '@/agent/langgraph/
 import { createPlanNextStepNode, createPlanSubQuestionsNode, createRouteQuestionNode } from '@/agent/langgraph/nodes/planning.nodes';
 import { RAG_DEPENDENCY_RETRY_POLICY } from '@/agent/langgraph/rag.retry-policy';
 import { createGenerateAnswerNode, createLoadContextNode } from '@/agent/langgraph/nodes/generation.nodes';
-import { createRetrieveNode, createWebFallbackNode } from '@/agent/langgraph/nodes/query.nodes';
+import { createRetrieveNode, createWebFallbackNode, createGraphReasoningNode } from '@/agent/langgraph/nodes/query.nodes';
 import {
   createFilterMemoryByPolicyNode,
   createLoadShortTermMemoryNode,
@@ -25,6 +25,7 @@ import type { PersonaService } from '@/persona/persona.service';
 import type { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
+import type { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 
 export interface RagGraphDeps {
   personaHybridRetrieverService: HybridRetrieverService;
@@ -40,6 +41,7 @@ export interface RagGraphDeps {
   shortTermMemoryService: ShortTermMemoryService;
   memoryRetrieverService: MemoryRetrieverService;
   memoryPolicyService: MemoryPolicyService;
+  knowledgeGraphService: KnowledgeGraphService;
 }
 
 export function buildRagGraph(deps: RagGraphDeps) {
@@ -78,6 +80,10 @@ export function buildRagGraph(deps: RagGraphDeps) {
       {
         retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
       },
+    )
+    .addNode(
+      'graph_reasoning',
+      createGraphReasoningNode(deps.knowledgeGraphService),
     )
     .addNode('plan_next_step', createPlanNextStepNode(), {
       ends: ['retrieve', 'rerank'],
@@ -120,7 +126,8 @@ export function buildRagGraph(deps: RagGraphDeps) {
     .addEdge('retrieve_long_term_memory', 'filter_memory_by_policy')
     .addEdge('filter_memory_by_policy', 'route_question')
     .addEdge('plan_sub_questions', 'retrieve')
-    .addEdge('retrieve', 'plan_next_step')
+    .addEdge('retrieve', 'graph_reasoning')
+    .addEdge('graph_reasoning', 'plan_next_step')
     .addEdge('rerank', 'evaluate_evidence')
     .addEdge('load_context', 'merge_memory_context')
     .addEdge('merge_memory_context', 'generate_answer')

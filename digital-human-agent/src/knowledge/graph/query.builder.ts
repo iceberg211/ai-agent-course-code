@@ -37,6 +37,13 @@ export function toCypherRelationshipType(value: string): string {
 const NEIGHBOR_QUERY = `
         MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
         WHERE c.enabled = true
+          AND (
+            $isAdmin = true
+            OR coalesce(c.securityLevel, 0) = 0
+            OR ($ownerId <> '' AND $ownerId IN coalesce(c.allowedUserIds, []))
+            OR ($department <> '' AND $department IN coalesce(c.allowedDepartmentIds, []))
+            OR ($role <> '' AND $role IN coalesce(c.allowedRoleIds, []))
+          )
         OPTIONAL MATCH (source:GraphNode)-[rel]->(target:GraphNode)
         WHERE rel.chunkId = c.id
         WITH c, collect(
@@ -92,6 +99,13 @@ function buildPathQuery(maxHops: number): string {
   return `
         MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
         WHERE c.enabled = true
+          AND (
+            $isAdmin = true
+            OR coalesce(c.securityLevel, 0) = 0
+            OR ($ownerId <> '' AND $ownerId IN coalesce(c.allowedUserIds, []))
+            OR ($department <> '' AND $department IN coalesce(c.allowedDepartmentIds, []))
+            OR ($role <> '' AND $role IN coalesce(c.allowedRoleIds, []))
+          )
         OPTIONAL MATCH (source:GraphNode)-[rel]->(target:GraphNode)
         WHERE rel.chunkId = c.id
         WITH c, collect(

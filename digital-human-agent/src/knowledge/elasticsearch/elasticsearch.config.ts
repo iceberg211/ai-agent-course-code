@@ -66,5 +66,10 @@ export const KNOWLEDGE_INDEX_MAPPINGS = {
     source_asset_key: { type: 'keyword' as const, ignore_above: 512 },
     start_ms: { type: 'integer' as const },
     end_ms: { type: 'integer' as const },
+    allowed_user_ids: { type: 'keyword' as const },
+    allowed_role_ids: { type: 'keyword' as const },
+    allowed_department_ids: { type: 'keyword' as const },
+    security_level: { type: 'integer' as const },
+    acl_version: { type: 'integer' as const },
   },
 };

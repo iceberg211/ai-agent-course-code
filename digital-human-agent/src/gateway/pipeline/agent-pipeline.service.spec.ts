@@ -105,4 +105,74 @@ describe('AgentPipelineService', () => {
     );
     expect(ttsPipeline.markFinalize).toHaveBeenCalled();
   });
+
+  it('调用 Agent 时会传递会话里的 accessScope', async () => {
+    const agentService = {
+      run: jest.fn().mockResolvedValue({
+        citations: [],
+        state: {
+          strategy: 'rag',
+          routeReason: '',
+          retrievalStrategy: null,
+          retrievalStrategyReason: '',
+          subQuestions: [],
+          retrievalHistory: [],
+          retrievalTrace: [],
+          enough: true,
+          missingFacts: [],
+          evaluationReason: '',
+          webSearchUsed: false,
+          webSearchQueries: [],
+          stopReason: 'done',
+          orchestrator: 'langgraph',
+        },
+      }),
+    };
+    const conversationService = {
+      addMessage: jest.fn().mockResolvedValue(undefined),
+    };
+    const session = createSession();
+    session.accessScope = {
+      ownerId: 'owner-1',
+      department: '研发部',
+      role: 'user',
+    };
+    const sessionRegistry = {
+      update: jest.fn().mockImplementation((id, patch) => {
+        Object.assign(session, patch);
+      }),
+      appendToSentenceBuffer: jest.fn(),
+    };
+    const ttsPipeline = {
+      enqueue: jest.fn(),
+      markFinalize: jest.fn(),
+    };
+    const speakPipeline = {
+      enqueue: jest.fn(),
+      markFinalize: jest.fn(),
+    };
+    const service = new AgentPipelineService(
+      agentService as never,
+      conversationService as never,
+      sessionRegistry as never,
+      ttsPipeline as never,
+      speakPipeline as never,
+    );
+    const client = {
+      readyState: WebSocket.OPEN,
+      send: jest.fn(),
+    } as unknown as WebSocket;
+
+    await service.run(client, session, '你好', 'turn-1');
+
+    expect(agentService.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accessScope: {
+          ownerId: 'owner-1',
+          department: '研发部',
+          role: 'user',
+        },
+      }),
+    );
+  });
 });

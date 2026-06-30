@@ -3,16 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
   PermissionEntity,
+  DocumentAclEntity,
+  KnowledgeBaseAclEntity,
   RoleEntity,
   RolePermissionEntity,
   UserRoleEntity,
 } from '@/rbac/entities';
 import {
   AssignUserRolesDto,
+  CreateAclRuleDto,
   CreatePermissionDto,
   CreateRoleDto,
   UpdateRoleDto,
 } from '@/rbac/dto/rbac.dto';
+import { AclIndexQueueService } from '@/rbac/services/acl-index-queue.service';
 
 @Injectable()
 export class RbacService {
@@ -25,6 +29,11 @@ export class RbacService {
     private readonly rolePermissionRepo: Repository<RolePermissionEntity>,
     @InjectRepository(UserRoleEntity)
     private readonly userRoleRepo: Repository<UserRoleEntity>,
+    @InjectRepository(DocumentAclEntity)
+    private readonly documentAclRepo: Repository<DocumentAclEntity>,
+    @InjectRepository(KnowledgeBaseAclEntity)
+    private readonly knowledgeBaseAclRepo: Repository<KnowledgeBaseAclEntity>,
+    private readonly aclIndexQueueService: AclIndexQueueService,
   ) {}
 
   async listRoles() {
@@ -119,6 +128,65 @@ export class RbacService {
       );
     }
     return { userId, roleCodes: roles.map((role) => role.code) };
+  }
+
+  listDocumentAcl(documentId: string) {
+    return this.documentAclRepo.find({
+      where: { documentId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async createDocumentAcl(documentId: string, dto: CreateAclRuleDto) {
+    const saved = await this.documentAclRepo.save(
+      this.documentAclRepo.create({
+        documentId,
+        subjectType: dto.subjectType,
+        subjectId: dto.subjectId,
+        actions: Array.from(new Set(dto.actions)),
+        effect: dto.effect ?? 'allow',
+      }),
+    );
+    await this.aclIndexQueueService.enqueueDocumentRefresh(
+      documentId,
+      'document_acl_changed',
+    );
+    return saved;
+  }
+
+  async deleteDocumentAcl(id: string) {
+    const rule = await this.documentAclRepo.findOne({ where: { id } });
+    if (!rule) throw new NotFoundException('文档 ACL 规则不存在');
+    await this.documentAclRepo.delete(id);
+    await this.aclIndexQueueService.enqueueDocumentRefresh(
+      rule.documentId,
+      'document_acl_deleted',
+    );
+  }
+
+  listKnowledgeBaseAcl(knowledgeBaseId: string) {
+    return this.knowledgeBaseAclRepo.find({
+      where: { knowledgeBaseId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  createKnowledgeBaseAcl(knowledgeBaseId: string, dto: CreateAclRuleDto) {
+    return this.knowledgeBaseAclRepo.save(
+      this.knowledgeBaseAclRepo.create({
+        knowledgeBaseId,
+        subjectType: dto.subjectType,
+        subjectId: dto.subjectId,
+        actions: Array.from(new Set(dto.actions)),
+        effect: dto.effect ?? 'allow',
+      }),
+    );
+  }
+
+  async deleteKnowledgeBaseAcl(id: string) {
+    const rule = await this.knowledgeBaseAclRepo.findOne({ where: { id } });
+    if (!rule) throw new NotFoundException('知识库 ACL 规则不存在');
+    await this.knowledgeBaseAclRepo.delete(id);
   }
 
   private async getRoleOrThrow(id: string) {

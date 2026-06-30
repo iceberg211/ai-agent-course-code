@@ -358,6 +358,11 @@ export class ElasticsearchIndexService implements OnModuleInit {
       .addSelect('chunk.source', 'source')
       .addSelect('chunk.category', 'category')
       .addSelect('chunk.enabled', 'enabled')
+      .addSelect('chunk.allowed_user_ids', 'allowed_user_ids')
+      .addSelect('chunk.allowed_role_ids', 'allowed_role_ids')
+      .addSelect('chunk.allowed_department_ids', 'allowed_department_ids')
+      .addSelect('chunk.security_level', 'security_level')
+      .addSelect('chunk.acl_version', 'acl_version')
       .addSelect('chunk.created_at', 'created_at');
   }
 
@@ -373,6 +378,11 @@ export class ElasticsearchIndexService implements OnModuleInit {
       source: row.source,
       category: row.category,
       enabled: row.enabled === true || String(row.enabled) === 'true',
+      allowed_user_ids: row.allowed_user_ids ?? null,
+      allowed_role_ids: row.allowed_role_ids ?? null,
+      allowed_department_ids: row.allowed_department_ids ?? null,
+      security_level: Number(row.security_level ?? 0),
+      acl_version: Number(row.acl_version ?? 1),
     };
   }
 

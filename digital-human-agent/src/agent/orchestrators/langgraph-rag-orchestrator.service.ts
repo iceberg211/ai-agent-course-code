@@ -29,6 +29,7 @@ import { PersonaService } from '@/persona/persona.service';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
+import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 
 @Injectable()
 export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModuleInit {
@@ -52,6 +53,8 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModul
     private readonly memoryRetrieverService: MemoryRetrieverService,
     @Optional()
     private readonly memoryPolicyService: MemoryPolicyService,
+    @Optional()
+    private readonly knowledgeGraphService?: KnowledgeGraphService,
   ) {}
 
   onModuleInit(): void {
@@ -91,6 +94,11 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModul
         ({
           filterReadable: (items: any[]) => items,
         } as MemoryPolicyService),
+      knowledgeGraphService:
+        this.knowledgeGraphService ??
+        ({
+          isEnabled: () => false,
+        } as unknown as KnowledgeGraphService),
     });
   }
 

@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { throwIfAborted } from '@/common/utils';
 import { Neo4jGraphService } from '@/knowledge/graph/neo4j-graph.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
+import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import {
   type KnowledgeGraphChunkRef,
   type ExtractedKnowledgeGraphNode,
@@ -37,6 +41,10 @@ export class KnowledgeGraphService {
   constructor(
     private readonly neo4jGraphService: Neo4jGraphService,
     private readonly configService: ConfigService,
+    @InjectRepository(KnowledgeDocument)
+    private readonly documentRepo: Repository<KnowledgeDocument>,
+    @InjectRepository(KnowledgeChunkEntity)
+    private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
   ) {}
 
   isEnabled(): boolean {
@@ -64,6 +72,10 @@ export class KnowledgeGraphService {
         terms,
         matchCount: Math.max(1, Math.trunc(params.matchCount)),
         maxHops,
+        isAdmin: params.accessScope?.role === 'admin',
+        ownerId: params.accessScope?.ownerId ?? '',
+        department: params.accessScope?.department ?? '',
+        role: params.accessScope?.role ?? '',
       },
     );
     throwIfAborted(params.signal);
@@ -78,7 +90,13 @@ export class KnowledgeGraphService {
     documentId: string;
     chunks: KnowledgeGraphChunkRef[];
   }): Promise<ExtractedKnowledgeGraph> {
-    return extractGraphFromChunks(input.chunks);
+    const config = {
+      subtopicType: this.configService.get<string>('NEO4J_RELATION_SUBTOPIC_TYPE'),
+      subtopicLabel: this.configService.get<string>('NEO4J_RELATION_SUBTOPIC_LABEL'),
+      mentionsType: this.configService.get<string>('NEO4J_RELATION_MENTIONS_TYPE'),
+      mentionsLabel: this.configService.get<string>('NEO4J_RELATION_MENTIONS_LABEL'),
+    };
+    return extractGraphFromChunks(input.chunks, config);
   }
 
   // ==========================================
@@ -150,6 +168,42 @@ export class KnowledgeGraphService {
       `,
       { chunkId, enabled },
     );
+  }
+
+  async safeRefreshChunkAccessMetadata(
+    input: {
+      documentId: string;
+      allowedUserIds: string[] | null;
+      allowedRoleIds: string[] | null;
+      allowedDepartmentIds: string[] | null;
+      securityLevel: number;
+      aclVersion: number;
+    },
+    reason: string,
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+
+    try {
+      await this.neo4jGraphService.query(
+        `
+          MATCH (c:KnowledgeChunk {documentId: $documentId})
+          SET
+            c.allowedUserIds = $allowedUserIds,
+            c.allowedRoleIds = $allowedRoleIds,
+            c.allowedDepartmentIds = $allowedDepartmentIds,
+            c.securityLevel = $securityLevel,
+            c.aclVersion = $aclVersion,
+            c.updatedAt = datetime()
+        `,
+        input,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Neo4j 刷新 chunk 权限元数据失败（${reason}）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async cleanupFailedUpsert(documentId: string): Promise<void> {
@@ -376,5 +430,128 @@ export class KnowledgeGraphService {
         },
       );
     }
+  }
+
+  async listEntities(knowledgeId: string, query?: string, limit = 100): Promise<any[]> {
+    if (!this.isEnabled()) return [];
+
+    const filterSql = query ? 'AND (n.displayName CONTAINS $query OR n.normalizedName CONTAINS $query)' : '';
+    const cypher = `
+      MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
+      MATCH (source:GraphNode)-[rel]->(target:GraphNode)
+      WHERE rel.chunkId = c.id AND c.enabled = true
+      WITH collect(distinct source) + collect(distinct target) as nodes
+      UNWIND nodes as n
+      WITH distinct n
+      WHERE 1=1 ${filterSql}
+      RETURN n.nodeKey as key, n.nodeType as type, n.displayName as name, n.entityType as entityType, n.aliases as aliases
+      LIMIT $limit
+    `;
+
+    return this.neo4jGraphService.query(cypher, {
+      knowledgeId,
+      query: query ?? '',
+      limit: Math.max(1, Math.min(200, limit)),
+    });
+  }
+
+  async listRelations(knowledgeId: string, limit = 100): Promise<any[]> {
+    if (!this.isEnabled()) return [];
+
+    const cypher = `
+      MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
+      MATCH (source:GraphNode)-[rel]->(target:GraphNode)
+      WHERE rel.chunkId = c.id AND c.enabled = true
+      RETURN 
+        rel.edgeKey as key,
+        source.displayName as source,
+        target.displayName as target,
+        rel.relationType as relationType,
+        rel.relationLabel as relationLabel,
+        rel.confidence as confidence,
+        rel.evidenceText as evidenceText,
+        rel.chunkId as chunkId,
+        rel.documentId as documentId
+      LIMIT $limit
+    `;
+
+    return this.neo4jGraphService.query(cypher, {
+      knowledgeId,
+      limit: Math.max(1, Math.min(200, limit)),
+    });
+  }
+
+  async getNeighborhood(knowledgeId: string, nodeKey: string): Promise<any[]> {
+    if (!this.isEnabled()) return [];
+
+    const cypher = `
+      MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
+      MATCH (center:GraphNode {nodeKey: $nodeKey})-[rel]-(neighbor:GraphNode)
+      WHERE rel.chunkId = c.id AND c.enabled = true
+      MATCH (chunkNode:KnowledgeChunk {id: rel.chunkId})
+      RETURN distinct
+        chunkNode.id as id,
+        chunkNode.documentId as document_id,
+        chunkNode.knowledgeId as knowledge_base_id,
+        chunkNode.content as content,
+        chunkNode.source as source,
+        chunkNode.chunkIndex as chunk_index,
+        chunkNode.category as category,
+        rel.confidence as confidence,
+        rel.evidenceText as evidenceText
+    `;
+
+    return this.neo4jGraphService.query(cypher, {
+      knowledgeId,
+      nodeKey,
+    });
+  }
+
+  async rebuildGraph(knowledgeId: string): Promise<{ success: boolean; documentCount: number }> {
+    if (!this.isEnabled()) return { success: false, documentCount: 0 };
+
+    const documents = await this.documentRepo.find({
+      where: { knowledgeBaseId: knowledgeId, archivedAt: IsNull() },
+    });
+    if (documents.length === 0) {
+      return { success: true, documentCount: 0 };
+    }
+
+    for (const doc of documents) {
+      // 1. 删除旧图谱节点关系
+      await this.safeDeleteByDocumentId(doc.id, 'rebuild_graph');
+
+      // 2. 拉取此文档下所有启用的 chunks
+      const chunks = await this.chunkRepo.find({
+        where: { documentId: doc.id, enabled: true },
+        order: { chunkIndex: 'ASC' },
+      });
+      if (chunks.length === 0) continue;
+
+      // 3. 提取实体
+      const graphInput: KnowledgeGraphChunkRef[] = chunks.map((c) => ({
+        id: c.id,
+        source: c.source,
+        chunkIndex: c.chunkIndex,
+        content: c.content,
+        category: c.category ?? undefined,
+      }));
+
+      const extractedGraph = await this.extract({
+        documentId: doc.id,
+        chunks: graphInput,
+      });
+
+      // 4. 持久化到 Neo4j
+      await this.safeUpsertDocument({
+        documentId: doc.id,
+        knowledgeId,
+        source: doc.filename,
+        chunks: graphInput,
+        extractedGraph,
+      });
+    }
+
+    return { success: true, documentCount: documents.length };
   }
 }

@@ -16,9 +16,12 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '@/rbac/guards/permission.guard';
 import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 import { AuthorizationService } from '@/rbac/services/authorization.service';
+import { AclIndexQueueService } from '@/rbac/services/acl-index-queue.service';
+import { AclIndexRefreshService } from '@/rbac/services/acl-index-refresh.service';
 import { RbacService } from '@/rbac/services/rbac.service';
 import {
   AssignUserRolesDto,
+  CreateAclRuleDto,
   CreatePermissionDto,
   CreateRoleDto,
   UpdateRoleDto,
@@ -31,6 +34,8 @@ export class RbacController {
   constructor(
     private readonly rbacService: RbacService,
     private readonly authorizationService: AuthorizationService,
+    private readonly aclIndexQueueService: AclIndexQueueService,
+    private readonly aclIndexRefreshService: AclIndexRefreshService,
   ) {}
 
   @Get('roles')
@@ -98,5 +103,72 @@ export class RbacController {
   async getMyMenus(@Req() req: any) {
     const snapshot = await this.authorizationService.getAuthorizationSnapshot(req.user);
     return snapshot.menus;
+  }
+
+  @Get('documents/:documentId/acl')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '查询文档 ACL 规则' })
+  listDocumentAcl(@Param('documentId') documentId: string) {
+    return this.rbacService.listDocumentAcl(documentId);
+  }
+
+  @Post('documents/:documentId/acl')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '创建文档 ACL 规则' })
+  createDocumentAcl(
+    @Param('documentId') documentId: string,
+    @Body() dto: CreateAclRuleDto,
+  ) {
+    return this.rbacService.createDocumentAcl(documentId, dto);
+  }
+
+  @Delete('document-acl/:id')
+  @RequirePermissions('system:role-manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '删除文档 ACL 规则' })
+  async deleteDocumentAcl(@Param('id') id: string) {
+    await this.rbacService.deleteDocumentAcl(id);
+  }
+
+  @Get('knowledge-bases/:knowledgeBaseId/acl')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '查询知识库 ACL 规则' })
+  listKnowledgeBaseAcl(@Param('knowledgeBaseId') knowledgeBaseId: string) {
+    return this.rbacService.listKnowledgeBaseAcl(knowledgeBaseId);
+  }
+
+  @Post('knowledge-bases/:knowledgeBaseId/acl')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '创建知识库 ACL 规则' })
+  createKnowledgeBaseAcl(
+    @Param('knowledgeBaseId') knowledgeBaseId: string,
+    @Body() dto: CreateAclRuleDto,
+  ) {
+    return this.rbacService.createKnowledgeBaseAcl(knowledgeBaseId, dto);
+  }
+
+  @Delete('knowledge-base-acl/:id')
+  @RequirePermissions('system:role-manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '删除知识库 ACL 规则' })
+  async deleteKnowledgeBaseAcl(@Param('id') id: string) {
+    await this.rbacService.deleteKnowledgeBaseAcl(id);
+  }
+
+  @Post('documents/:documentId/acl/refresh')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '创建文档 ACL 索引刷新任务' })
+  refreshDocumentAclIndex(@Param('documentId') documentId: string) {
+    return this.aclIndexQueueService.enqueueDocumentRefresh(
+      documentId,
+      'manual',
+    );
+  }
+
+  @Post('documents/:documentId/acl/refresh-now')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '立即刷新文档 ACL 索引' })
+  refreshDocumentAclIndexNow(@Param('documentId') documentId: string) {
+    return this.aclIndexRefreshService.refreshDocumentAclIndex(documentId);
   }
 }

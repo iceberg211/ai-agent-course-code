@@ -7,10 +7,5 @@ export interface HealthProbeResult {
 export interface HealthResponse {
   status: 'ok' | 'error';
   timestamp: string;
-  checks: {
-    app: HealthProbeResult;
-    db: HealthProbeResult;
-    digitalHuman: HealthProbeResult;
-    llm: HealthProbeResult;
-  };
+  checks: Record<string, HealthProbeResult & Record<string, any>>;
 }

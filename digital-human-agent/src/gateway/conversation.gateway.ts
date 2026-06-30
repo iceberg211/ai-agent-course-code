@@ -17,6 +17,8 @@ import {
 import { AccessControlService } from '@/common/security/access-control.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import type { DigitalHumanProvider } from '@/digital-human/digital-human.types';
+import { UserService } from '@/user/services/user.service';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';
 import { TextHandler } from '@/gateway/handlers/text.handler';
@@ -80,6 +82,8 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
     private readonly interruptHandler: InterruptHandler,
     private readonly accessControl: AccessControlService,
     private readonly jwtService: JwtService,
+    private readonly userService: UserService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   onModuleInit(): void {
@@ -87,6 +91,11 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
       'connection',
       async (client: WebSocket, request: IncomingMessage) => {
         const clientId = randomUUID();
+        if (!this.accessControl.validateWsRequest(request)) {
+          client.close(1008, 'Unauthorized');
+          this.logger.warn(`Client rejected by service token: ${clientId}`);
+          return;
+        }
 
         // 提取 token 校验用户身份
         const url = new URL(request.url || '', 'http://localhost');
@@ -99,12 +108,30 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
         const finalToken = token || tokenFromHeader;
 
         let userId = '';
+        let user:
+          | {
+              id: string;
+              username: string;
+              role: string | null;
+              department: string | null;
+            }
+          | null = null;
         try {
           if (!finalToken) {
             throw new Error('未提供认证令牌');
           }
           const payload = await this.jwtService.verifyAsync(finalToken);
           userId = payload.sub;
+          const foundUser = await this.userService.findOne(userId);
+          if (!foundUser) {
+            throw new Error('用户不存在或已失效');
+          }
+          user = {
+            id: foundUser.id,
+            username: foundUser.username,
+            role: foundUser.role,
+            department: foundUser.department,
+          };
         } catch (err) {
           client.close(1008, 'Unauthorized');
           this.logger.warn(
@@ -118,10 +145,12 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
         const clientWithState = client as WebSocket & {
           __clientId: string;
           __userId: string;
+          __user: NonNullable<typeof user>;
           isAlive: boolean;
         };
         clientWithState.__clientId = clientId;
         clientWithState.__userId = userId;
+        clientWithState.__user = user;
         clientWithState.isAlive = true;
 
         this.clients.set(clientId, client);
@@ -259,6 +288,9 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
 
     const msg = validationResult.validatedMsg as WsInboundMessage;
 
+    const permissionAllowed = await this.assertMessagePermission(client, msg);
+    if (!permissionAllowed) return;
+
     // 滑窗限频校验，仅对高耗能的会话创建和问答消息进行计次
     if (msg.type === 'session:start' || msg.type === 'conversation:text') {
       if (this.isWsThrottled(clientId)) {
@@ -298,6 +330,51 @@ export class ConversationGateway implements OnModuleInit, OnModuleDestroy {
       default:
         this.logger.warn(`Unknown message type: ${(msg as any).type}`);
     }
+  }
+
+  private async assertMessagePermission(
+    client: WebSocket,
+    msg: WsInboundMessage,
+  ): Promise<boolean> {
+    const clientWithState = client as WebSocket & {
+      __user?: {
+        id: string;
+        username: string;
+        role: string | null;
+        department: string | null;
+      };
+    };
+    const user = clientWithState.__user;
+    if (!user) {
+      sendJson(client, {
+        type: 'error',
+        sessionId: '',
+        payload: { message: '无权访问该资源' },
+      });
+      return false;
+    }
+
+    const requiredPermission =
+      msg.type === 'session:start' ||
+      msg.type === 'conversation:text' ||
+      msg.type === 'conversation:interrupt'
+        ? 'chat:view'
+        : null;
+    if (!requiredPermission) return true;
+
+    const allowed = await this.authorizationService.hasPermission(
+      user,
+      requiredPermission,
+    );
+    if (!allowed) {
+      sendJson(client, {
+        type: 'error',
+        sessionId: msg.sessionId ?? '',
+        payload: { message: '无权访问该资源' },
+      });
+      return false;
+    }
+    return true;
   }
 
   private isWsThrottled(clientId: string): boolean {

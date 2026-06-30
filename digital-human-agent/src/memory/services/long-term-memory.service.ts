@@ -15,6 +15,7 @@ export class LongTermMemoryService {
   private readonly logger = new Logger(LongTermMemoryService.name);
   private failureCount = 0;
   private circuitOpenUntil = 0;
+  private probing = false;
 
   constructor(
     @Inject(LONG_TERM_MEMORY_PROVIDER)
@@ -60,16 +61,27 @@ export class LongTermMemoryService {
     operation: string,
   ): Promise<T> {
     if (Date.now() < this.circuitOpenUntil) {
-      return fallback;
+      // 熔断期内：只允许一次探测请求通过
+      if (this.probing) {
+        return fallback;
+      }
+      this.probing = true;
     }
     try {
       const result = await fn();
+      // 成功：重置所有熔断状态
       this.failureCount = 0;
+      this.circuitOpenUntil = 0;
+      this.probing = false;
       return result;
     } catch (error) {
       this.failureCount += 1;
+      this.probing = false;
       if (this.failureCount >= 3) {
         this.circuitOpenUntil = Date.now() + 30_000;
+        this.logger.warn(
+          `长期记忆连续失败 ${this.failureCount} 次，进入 30s 熔断期`,
+        );
       }
       this.logger.warn(
         `长期记忆 ${operation} 失败，已降级：${

@@ -352,6 +352,7 @@ export class FulltextRetrieverService {
           filter: [
             { term: { knowledge_base_id: params.knowledgeId } },
             { term: { enabled: true } },
+            ...this.buildElasticAccessFilter(params.accessScope),
           ],
           should,
           minimum_should_match: 1,
@@ -373,6 +374,36 @@ export class FulltextRetrieverService {
         chunks,
         params.accessScope,
       );
+  }
+
+  private buildElasticAccessFilter(
+    accessScope?: KnowledgeAccessScope,
+  ): estypes.QueryDslQueryContainer[] {
+    if (!accessScope || accessScope.role === 'admin') return [];
+
+    const should: estypes.QueryDslQueryContainer[] = [
+      { term: { security_level: 0 } },
+    ];
+    if (accessScope.ownerId) {
+      should.push({ term: { allowed_user_ids: accessScope.ownerId } });
+    }
+    if (accessScope.department) {
+      should.push({
+        term: { allowed_department_ids: accessScope.department },
+      });
+    }
+    if (accessScope.role) {
+      should.push({ term: { allowed_role_ids: accessScope.role } });
+    }
+
+    return [
+      {
+        bool: {
+          should,
+          minimum_should_match: 1,
+        },
+      },
+    ];
   }
 
   private async filterExistingChunks(

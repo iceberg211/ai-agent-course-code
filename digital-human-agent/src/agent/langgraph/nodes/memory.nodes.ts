@@ -66,6 +66,15 @@ export function createFilterMemoryByPolicyNode(
 
 export function createMergeMemoryContextNode() {
   return async (state: RagGraphState) => {
+    // ── 企业知识库证据 ──────────────────────────────────────────
+    const knowledgeParts = (state.topDocuments ?? [])
+      .slice(0, 10)
+      .map(
+        (chunk, index) =>
+          `[证据 ${index + 1}] 来源：${chunk.source ?? '未知'}\n${chunk.content}`,
+      );
+
+    // ── 短期记忆 ────────────────────────────────────────────────
     const shortWindow = state.shortTermMemory.window
       .slice(-8)
       .map((item) => `${item.role}: ${item.content}`)
@@ -79,6 +88,8 @@ export function createMergeMemoryContextNode() {
         : '',
       shortWindow ? `最近对话：\n${shortWindow}` : '',
     ].filter(Boolean);
+
+    // ── 长期记忆 ────────────────────────────────────────────────
     const longParts = state.longTermMemories
       .slice(0, 8)
       .map(
@@ -88,8 +99,13 @@ export function createMergeMemoryContextNode() {
           )}\n${item.content}`,
       );
 
+    // 上下文优先级：系统规则 > 企业知识库事实 > 当前会话上下文 > 用户长期偏好
     return {
       memoryContext: [
+        '<knowledge_base>',
+        knowledgeParts.join('\n\n') || '（当前检索未命中企业知识库证据）',
+        '</knowledge_base>',
+        '',
         '<conversation_context>',
         shortParts.join('\n\n') || '（当前会话暂无可用短期记忆）',
         '</conversation_context>',

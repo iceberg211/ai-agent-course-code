@@ -196,7 +196,7 @@ ${contextText}
         caseItem.lastRunRecallAt10 = this.calculateRecallAtK(caseItem, chunks, 10);
         caseItem.lastRunRetrievalLatencyMs = retrievalLatencyMs;
         caseItem.lastRunRerankLatencyMs =
-          debugResult?.stageTrace?.rerank?.length ? null : 0;
+          debugResult?.stageTrace?.rerank?.length ? (debugResult.stageTrace.rerankLatencyMs ?? null) : 0;
         caseItem.lastRunStatus = 'success';
         caseItem.lastRunError = null;
         caseItem.lastRunAt = new Date();

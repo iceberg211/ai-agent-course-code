@@ -24,10 +24,10 @@ export const CHAT_CONTROL_STATE_LABELS: Record<ConversationState, string> = {
 export const CHAT_CONTROL_HINT_LABELS: Partial<
   Record<ConversationState, string>
 > = {
-  idle: '点击开始收音',
-  recording: '再次点击，结束并发送',
-  thinking: '点击打断当前回答，并开始收音',
-  speaking: '点击打断当前播报，并开始收音',
+  idle: '点击“连线”开启音视频数字人对话，或点击话筒图标说话。',
+  recording: '正在聆听，请说话。说话完毕后松开或点击停止。',
+  thinking: '正在生成回答…',
+  speaking: '数字人正在播报中，随时可以插话打断。',
 };
 
 export const CHAT_CONTROL_ARIA_LABELS: Partial<
@@ -39,16 +39,16 @@ export const CHAT_CONTROL_ARIA_LABELS: Partial<
   speaking: '点击打断当前播报并开始录音',
 };
 
-export const MESSAGE_STATUS_LABELS: Partial<Record<MessageStatus, string>> = {
-  interrupted: '回复已中断',
-  failed: '回复失败',
+export const MESSAGE_STATUS_LABELS: Record<MessageStatus, string> = {
+  completed: '成功',
+  failed: '失败',
+  interrupted: '已打断',
 };
 
 export const VOICE_CLONE_STATUS_LABELS: Record<VoiceCloneStatus, string> = {
-  not_started: '未开始',
-  pending: '排队中',
-  training: '训练中',
-  ready: '已就绪',
+  idle: '未开始',
+  processing: '克隆中',
+  completed: '克隆成功',
   failed: '失败',
 };
 
@@ -63,12 +63,14 @@ export const DIGITAL_HUMAN_STATUS_LABELS: Record<
   error: '异常',
 };
 
-export const KNOWLEDGE_DOCUMENT_STATUS_LABELS: Record<string, string> = {
-  pending: '排队中',
-  processing: '处理中',
-  completed: '就绪',
+export const DOCUMENT_TASK_STATUS_LABELS: Record<string, string> = {
+  pending: '等待排队',
+  running: '解析中',
+  completed: '已完成',
   failed: '失败',
 };
+
+export const KNOWLEDGE_DOCUMENT_STATUS_LABELS = DOCUMENT_TASK_STATUS_LABELS;
 
 export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
   key: KnowledgeTabKey;
@@ -76,6 +78,7 @@ export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
 }> = [
   { key: 'documents', label: '文档' },
   { key: 'health', label: '健康' },
+  { key: 'graph', label: '知识图谱' },
   { key: 'settings', label: '配置' },
   { key: 'hit-test', label: '问答验证' },
 ];

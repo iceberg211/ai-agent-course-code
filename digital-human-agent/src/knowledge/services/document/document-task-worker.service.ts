@@ -29,6 +29,7 @@ export class DocumentTaskWorkerService
   private readonly logger = new Logger(DocumentTaskWorkerService.name);
   private worker: Worker;
   private redisClient: Redis;
+  private heartbeatTimer: any = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -52,6 +53,18 @@ export class DocumentTaskWorkerService
     this.redisClient = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
     });
+
+    this.heartbeatTimer = setInterval(async () => {
+      try {
+        await this.redisClient.set('worker:heartbeat', Date.now().toString());
+      } catch (err) {
+        this.logger.warn(
+          `写入 Worker 心跳失败: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }, 5000);
 
     this.logger.log(`初始化后台异步任务 Worker，监听队列: document-processing`);
 
@@ -115,6 +128,9 @@ export class DocumentTaskWorkerService
 
   async onModuleDestroy() {
     this.logger.log('关闭异步任务 Worker...');
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
     if (this.worker) {
       await this.worker.close();
     }

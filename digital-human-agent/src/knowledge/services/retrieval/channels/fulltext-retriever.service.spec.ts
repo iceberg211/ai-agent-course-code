@@ -137,4 +137,43 @@ describe('FulltextRetrieverService', () => {
     expect(result.backend).toBe('pg');
     expect(result.chunks[0].id).toBe('chunk-1');
   });
+
+  it('ES 检索会带上权限过滤条件', async () => {
+    const { service, elasticsearchClient } = createService({
+      backend: 'elastic',
+      elasticsearchEnabled: true,
+    });
+
+    await service.retrieve({
+      knowledgeId: 'kb-1',
+      terms: ['test'],
+      matchCount: 5,
+      accessScope: {
+        ownerId: 'u1',
+        department: '研发部',
+        role: 'user',
+      },
+    });
+
+    expect(elasticsearchClient.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          bool: expect.objectContaining({
+            filter: expect.arrayContaining([
+              expect.objectContaining({
+                bool: expect.objectContaining({
+                  should: expect.arrayContaining([
+                    { term: { security_level: 0 } },
+                    { term: { allowed_user_ids: 'u1' } },
+                    { term: { allowed_department_ids: '研发部' } },
+                    { term: { allowed_role_ids: 'user' } },
+                  ]),
+                }),
+              }),
+            ]),
+          }),
+        }),
+      }),
+    );
+  });
 });

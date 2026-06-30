@@ -28,6 +28,7 @@
     <section class="tab-body">
       <DocumentsTab v-if="active === 'documents'" :kb-id="kbId" />
       <HealthTab v-else-if="active === 'health'" :kb-id="kbId" />
+      <GraphTab v-else-if="active === 'graph'" :kb-id="kbId" />
       <HitTestTab v-else-if="active === 'hit-test'" :kb="kb" />
       <SettingsTab v-else-if="active === 'settings'" :kb="kb" @changed="onKbChanged" @deleted="onKbDeleted" />
     </section>
@@ -47,6 +48,7 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { KnowledgeBase } from '@/types'
 import DocumentsTab from '@/components/knowledge-base/tabs/DocumentsTab.vue'
 import HealthTab from '@/components/knowledge-base/tabs/HealthTab.vue'
+import GraphTab from '@/components/knowledge-base/tabs/GraphTab.vue'
 import HitTestTab from '@/components/knowledge-base/tabs/HitTestTab.vue'
 import SettingsTab from '@/components/knowledge-base/tabs/SettingsTab.vue'
 
@@ -55,7 +57,7 @@ const router = useRouter()
 const hook = useKnowledgeBase()
 const store = useKnowledgeBaseStore()
 
-type TabKey = 'documents' | 'health' | 'hit-test' | 'settings'
+type TabKey = 'documents' | 'health' | 'graph' | 'hit-test' | 'settings'
 const tabs: { key: TabKey; label: string }[] = KNOWLEDGE_BASE_DETAIL_TABS
 const active = ref<TabKey>('documents')
 

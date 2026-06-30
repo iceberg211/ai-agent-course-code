@@ -11,11 +11,24 @@ import {
   buildEvidenceExcerpt,
 } from './mapper';
 
+export interface GraphExtractorConfig {
+  subtopicType?: string;
+  subtopicLabel?: string;
+  mentionsType?: string;
+  mentionsLabel?: string;
+}
+
 export function extractGraphFromChunks(
   chunks: KnowledgeGraphChunkRef[],
+  config?: GraphExtractorConfig,
 ): ExtractedKnowledgeGraph {
   const nodes = new Map<string, ExtractedKnowledgeGraphNode>();
   const edges = new Map<string, ExtractedKnowledgeGraphEdge>();
+
+  const subtopicType = config?.subtopicType || 'HAS_SUBTOPIC';
+  const subtopicLabel = config?.subtopicLabel || '包含子主题';
+  const mentionsType = config?.mentionsType || 'MENTIONS';
+  const mentionsLabel = config?.mentionsLabel || '提及';
 
   for (const chunk of chunks) {
     const content = chunk.content ?? '';
@@ -40,8 +53,8 @@ export function extractGraphFromChunks(
         const edge = {
           source: { type: 'Topic' as const, name: parent.name },
           target: { type: 'Topic' as const, name: heading.name },
-          relationType: 'HAS_SUBTOPIC',
-          relationLabel: '包含子主题',
+          relationType: subtopicType,
+          relationLabel: subtopicLabel,
           chunkId: chunk.id,
           confidence: 0.85,
           evidenceText: `${parent.evidenceText}\n${heading.evidenceText}`,
@@ -52,7 +65,7 @@ export function extractGraphFromChunks(
           },
         };
         edges.set(
-          `Topic::${normalizeDisplayName(parent.name)}->HAS_SUBTOPIC->Topic::${normalizeDisplayName(heading.name)}->${chunk.id}`,
+          `Topic::${normalizeDisplayName(parent.name)}->${subtopicType}->Topic::${normalizeDisplayName(heading.name)}->${chunk.id}`,
           edge
         );
       }
@@ -78,8 +91,8 @@ export function extractGraphFromChunks(
       const edge = {
         source: partyNode,
         target: topicNode,
-        relationType: 'MENTIONS',
-        relationLabel: '提及',
+        relationType: mentionsType,
+        relationLabel: mentionsLabel,
         chunkId: chunk.id,
         confidence: 0.65,
         evidenceText: buildEvidenceExcerpt(content, partyName),
@@ -89,7 +102,7 @@ export function extractGraphFromChunks(
         },
       };
       edges.set(
-        `Entity:Party:${normalizeDisplayName(partyName)}->MENTIONS->Topic::${normalizeDisplayName(topic.name)}->${chunk.id}`,
+        `Entity:Party:${normalizeDisplayName(partyName)}->${mentionsType}->Topic::${normalizeDisplayName(topic.name)}->${chunk.id}`,
         edge
       );
     }

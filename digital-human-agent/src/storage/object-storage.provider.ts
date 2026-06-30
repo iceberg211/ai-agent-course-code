@@ -30,4 +30,5 @@ export interface ObjectStorageProvider {
   getObject(input: GetObjectInput): Promise<Readable>;
   deleteObject(input: DeleteObjectInput): Promise<void>;
   createPresignedGetUrl(input: PresignedGetUrlInput): Promise<string>;
+  healthCheck?(): Promise<{ status: 'ok' | 'error'; message?: string }>;
 }

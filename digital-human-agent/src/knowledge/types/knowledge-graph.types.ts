@@ -114,6 +114,7 @@ export interface Neo4jGraphRetrieveParams {
   matchCount: number;
   graphMode?: 'neighbors' | 'path';
   graphMaxHops?: number;
+  accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
 
@@ -136,3 +137,4 @@ export type Neo4jGraphSyncResult =
   | { status: 'indexed' }
   | { status: 'skipped' }
   | { status: 'failed'; errorMessage: string };
+import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';

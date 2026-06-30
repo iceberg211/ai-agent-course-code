@@ -21,6 +21,7 @@ import { NotificationModule } from '@/notification/notification.module';
 import { KnowledgeGraphModule } from './knowledge-graph.module';
 import { QueueModule } from '@/queue/queue.module';
 import { StorageModule } from '@/storage/storage.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 // 导入多模态解析器
 import { PlainTextParser } from '@/knowledge/services/document/parsers/plain-text.parser';
@@ -46,6 +47,7 @@ import { DocumentParserService } from '@/knowledge/services/document/parsers/doc
     NotificationModule,
     QueueModule,
     StorageModule,
+    RbacModule,
   ],
   providers: [
     KnowledgeDocumentService,

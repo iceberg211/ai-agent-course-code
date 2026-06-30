@@ -99,7 +99,7 @@ export class DocumentTaskRunnerService {
     const bucket = this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
     let documentId = task.documentId;
     let markdownStorageKey = (task.checkpointData as any)?.markdownStorageKey;
-    const ingestRunId = task.ingestRunId ?? input.currentIngestRunId ?? taskId;
+    const ingestRunId = task.ingestRunId ?? input.currentIngestRunId ?? crypto.randomUUID();
     const ingestOptions = this.toIngestOptions(input);
 
     // ==========================================

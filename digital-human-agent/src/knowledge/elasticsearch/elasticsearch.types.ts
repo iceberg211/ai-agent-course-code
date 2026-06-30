@@ -10,6 +10,11 @@ export interface KnowledgeChunkIndexDocument {
   source_asset_key?: string | null;
   start_ms?: number | null;
   end_ms?: number | null;
+  allowed_user_ids?: string[] | null;
+  allowed_role_ids?: string[] | null;
+  allowed_department_ids?: string[] | null;
+  security_level?: number;
+  acl_version?: number;
 }
 
 export interface KnowledgeChunkIndexCursor {

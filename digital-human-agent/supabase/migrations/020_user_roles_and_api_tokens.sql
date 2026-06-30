@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS api_key (
   updated_at  TIMESTAMPTZ DEFAULT now()
 );
 
+-- 若 api_key 表已存在，则升级字段以防遗漏
+ALTER TABLE api_key ADD COLUMN IF NOT EXISTS key_hash TEXT;
+ALTER TABLE api_key ADD COLUMN IF NOT EXISTS key_prefix VARCHAR(16);
+ALTER TABLE api_key ADD COLUMN IF NOT EXISTS key_last_four VARCHAR(4);
+
 -- 添加查询索引
 CREATE INDEX IF NOT EXISTS api_key_prefix_idx ON api_key (key_prefix);
 CREATE INDEX IF NOT EXISTS api_key_user_active_idx ON api_key (user_id, is_active);

@@ -32,6 +32,8 @@ import { KnowledgeDocumentService } from '@/knowledge/services/document/knowledg
 import { DocumentTaskService } from '@/knowledge/services/document/document-task.service';
 import { UpdateChunkDto } from '@/knowledge/dto/update-chunk.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
 function isSupportedKnowledgeUpload(file: {
@@ -100,7 +102,8 @@ const FILE_SIZE_LIMITS = {
 
 @ApiTags('documents')
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@RequirePermissions('documents:view')
 export class KnowledgeDocumentController {
   constructor(
     private readonly documentService: KnowledgeDocumentService,
@@ -141,6 +144,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('knowledge-bases/:kbId/documents')
+  @RequirePermissions('documents:upload')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
@@ -170,6 +174,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('knowledge-bases/:kbId/documents/upload')
+  @RequirePermissions('documents:upload')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
@@ -200,6 +205,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('knowledge-bases/:kbId/documents/:docId/versions')
+  @RequirePermissions('documents:upload')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MULTIPART_MAX_FILE_SIZE },
@@ -248,6 +254,7 @@ export class KnowledgeDocumentController {
   }
 
   @Patch('knowledge-bases/:kbId/documents/:docId/current-version')
+  @RequirePermissions('documents:version:set-current')
   @ApiOperation({ summary: '设为当前文档版本' })
   setCurrentDocumentVersion(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -262,6 +269,7 @@ export class KnowledgeDocumentController {
   }
 
   @Patch('knowledge-bases/:kbId/documents/:docId/archive')
+  @RequirePermissions('documents:archive')
   @ApiOperation({ summary: '归档文档版本' })
   archiveDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -276,6 +284,7 @@ export class KnowledgeDocumentController {
   }
 
   @Patch('knowledge-bases/:kbId/documents/:docId/governance')
+  @RequirePermissions('documents:upload')
   @ApiOperation({ summary: '更新文档标签、分类、权限与过期时间' })
   updateDocumentGovernance(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -292,6 +301,7 @@ export class KnowledgeDocumentController {
   }
 
   @Delete('knowledge-bases/:kbId/documents/:docId')
+  @RequirePermissions('documents:delete')
   deleteDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
     @Param('docId', ParseUUIDPipe) docId: string,
@@ -305,6 +315,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('knowledge-bases/:kbId/documents/:docId/retry')
+  @RequirePermissions('documents:retry')
   @ApiOperation({ summary: '重试文档索引与图谱同步' })
   retryDocument(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -319,6 +330,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('knowledge-bases/:kbId/documents/batch-retry')
+  @RequirePermissions('documents:retry')
   @ApiOperation({ summary: '批量重试解析失败的文档' })
   async batchRetry(
     @Param('kbId', ParseUUIDPipe) kbId: string,
@@ -397,6 +409,7 @@ export class KnowledgeDocumentController {
   }
 
   @Post('document-tasks/:taskId/retry')
+  @RequirePermissions('documents:retry')
   @ApiOperation({ summary: '重试文档处理任务' })
   retryDocumentTask(
     @Param('taskId', ParseUUIDPipe) taskId: string,
@@ -424,6 +437,7 @@ export class KnowledgeDocumentController {
   }
 
   @Patch('knowledge-bases/:kbId/chunks/:chunkId')
+  @RequirePermissions('documents:upload')
   @ApiOperation({ summary: '启用或禁用单个 chunk' })
   async updateChunk(
     @Param('kbId', ParseUUIDPipe) kbId: string,

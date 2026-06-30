@@ -24,37 +24,37 @@ describe('RolesGuard', () => {
     } as unknown as ExecutionContext;
   };
 
-  it('如果没有配置角色要求，应放行 (返回 true)', () => {
+  it('如果没有配置角色要求，应放行 (返回 true)', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(null);
     const context = createMockExecutionContext();
 
-    const result = guard.canActivate(context);
+    const result = await guard.canActivate(context);
 
     expect(result).toBe(true);
   });
 
-  it('如果配置了角色但未提供用户，应拒绝访问 (返回 false)', () => {
+  it('如果配置了角色但未提供用户，应拒绝访问 (返回 false)', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
     const context = createMockExecutionContext(null);
 
-    const result = guard.canActivate(context);
+    const result = await guard.canActivate(context);
 
     expect(result).toBe(false);
   });
 
-  it('如果有用户且角色匹配，应放行 (返回 true)', () => {
+  it('如果有用户且角色匹配，应放行 (返回 true)', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin', 'user']);
     const context = createMockExecutionContext({ role: 'admin' });
 
-    const result = guard.canActivate(context);
+    const result = await guard.canActivate(context);
 
     expect(result).toBe(true);
   });
 
-  it('如果有用户但角色不匹配，应抛出 ForbiddenException', () => {
+  it('如果有用户但角色不匹配，应抛出 ForbiddenException', async () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
     const context = createMockExecutionContext({ role: 'user' });
 
-    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
   });
 });

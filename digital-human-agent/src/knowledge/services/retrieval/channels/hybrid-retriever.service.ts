@@ -615,6 +615,10 @@ export class HybridRetrieverService {
               p_kb_id: params.knowledgeId,
               match_threshold: params.threshold,
               match_count: params.matchCount,
+              p_user_id: params.accessScope?.ownerId || null,
+              p_department: params.accessScope?.department || null,
+              p_role: params.accessScope?.role || null,
+              p_is_admin: params.accessScope?.role === 'admin',
             });
             const result = params.signal
               ? await query.abortSignal(params.signal)
@@ -672,6 +676,7 @@ export class HybridRetrieverService {
         matchCount,
         graphMaxHops: strategy.graphMaxHops,
         graphMode: strategy.graphMode,
+        accessScope,
         signal,
       });
       return this.filterCurrentChunks(knowledgeId, chunks, accessScope);

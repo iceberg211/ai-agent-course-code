@@ -1,4 +1,5 @@
 import { DigitalHumanSpeakMode } from '@/digital-human/digital-human.types';
+import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
 export type SessionMode = 'voice' | 'digital-human';
 
@@ -7,6 +8,9 @@ export interface RealtimeSession {
   conversationId: string;
   personaId: string;
   ownerId: string;
+  role?: string | null;
+  department?: string | null;
+  accessScope?: KnowledgeAccessScope;
   mode: SessionMode;
   voiceId: string | null; // Persona 的语音配置缓存，优化高频 TTS 查询性能
   digitalHumanSessionId: string | null;

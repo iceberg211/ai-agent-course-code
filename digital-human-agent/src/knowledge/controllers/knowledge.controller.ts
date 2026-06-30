@@ -7,12 +7,14 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
+import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 
 @ApiTags('knowledge-bases')
@@ -21,6 +23,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 export class KnowledgeController {
   constructor(
     private readonly knowledgeService: KnowledgeService,
+    private readonly graphService: KnowledgeGraphService,
   ) {}
 
   @Get()
@@ -92,5 +95,39 @@ export class KnowledgeController {
   @ApiOperation({ summary: '删除知识库（级联文档 + chunks）' })
   remove(@Param('knowledgeId', ParseUUIDPipe) knowledgeId: string) {
     return this.knowledgeService.remove(knowledgeId);
+  }
+
+  @Get(':knowledgeId/graph/entities')
+  @ApiOperation({ summary: '查询知识库提取的所有图谱实体' })
+  listEntities(
+    @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
+    @Query('q') query?: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.graphService.listEntities(knowledgeId, query, limit);
+  }
+
+  @Get(':knowledgeId/graph/relations')
+  @ApiOperation({ summary: '查询知识库提取的所有实体关系' })
+  listRelations(
+    @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.graphService.listRelations(knowledgeId, limit);
+  }
+
+  @Get(':knowledgeId/graph/neighborhood')
+  @ApiOperation({ summary: '查询知识库中某个节点的邻居子图关系' })
+  getNeighborhood(
+    @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
+    @Query('nodeKey') nodeKey: string,
+  ) {
+    return this.graphService.getNeighborhood(knowledgeId, nodeKey);
+  }
+
+  @Post(':knowledgeId/graph/rebuild')
+  @ApiOperation({ summary: '触发知识库图谱全量重建同步' })
+  rebuildGraph(@Param('knowledgeId', ParseUUIDPipe) knowledgeId: string) {
+    return this.graphService.rebuildGraph(knowledgeId);
   }
 }

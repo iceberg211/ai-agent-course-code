@@ -11,6 +11,7 @@ import { PersonaModule } from '@/persona/persona.module';
 import { AuthModule } from '@/auth/auth.module';
 import { NotificationModule } from '@/notification/notification.module';
 import { MemoryModule } from '@/memory/memory.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Global()
 @Module({
@@ -21,6 +22,7 @@ import { MemoryModule } from '@/memory/memory.module';
     AuthModule,
     NotificationModule,
     MemoryModule,
+    RbacModule,
   ],
   controllers: [ChatController, ConversationController],
   providers: [ConversationService, RealtimeSessionRegistry],

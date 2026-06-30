@@ -21,21 +21,7 @@ export class PdfParser implements DocumentParserProvider {
       const data = await pdf(input.buffer);
       parsedText = String(data?.text ?? '').trim();
     } catch (err) {
-      // 兼容某些环境下使用 PDFParse 类的写法
-      try {
-        const mod = require('pdf-parse');
-        if (mod.PDFParse) {
-          const parser = new mod.PDFParse({ data: input.buffer });
-          try {
-            const parsed = await parser.getText();
-            parsedText = String(parsed?.text ?? '').trim();
-          } finally {
-            await parser.destroy();
-          }
-        }
-      } catch (innerErr) {
-        throw new BadRequestException(`PDF 解析失败: ${err.message}`);
-      }
+      throw new BadRequestException(`PDF 解析失败: ${err.message}`);
     }
 
     if (!parsedText) {
