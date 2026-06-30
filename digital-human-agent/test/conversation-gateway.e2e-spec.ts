@@ -109,6 +109,12 @@ describe('Conversation Gateway (e2e)', () => {
             canAccessKnowledgeBase: jest.fn().mockResolvedValue(true),
             hasRole: jest.fn().mockResolvedValue(true),
             hasAllPermissions: jest.fn().mockResolvedValue(true),
+            hasPermission: jest.fn().mockResolvedValue(true),
+            toAccessScope: jest.fn().mockResolvedValue({
+              roles: ['user'],
+              department: 'IT',
+              userId: 'mock-user-id',
+            }),
           },
         },
       ],

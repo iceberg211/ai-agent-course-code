@@ -5,3 +5,5 @@ node_modules/
 *.lock
 !digital-human-agent/pnpm-lock.yaml
 *.env
+mini-manus/
+
