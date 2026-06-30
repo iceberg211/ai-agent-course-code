@@ -114,6 +114,22 @@ export function formatWebKnowledgeBlock(webContextBlock?: string): string {
   ].join('\n');
 }
 
+export function formatMemoryContextBlock(memoryContextBlock?: string): string {
+  const normalized = String(memoryContextBlock ?? '').trim();
+  if (!normalized) {
+    return [
+      '<conversation_context>',
+      '（当前会话暂无可用短期记忆）',
+      '</conversation_context>',
+      '',
+      '<user_preference>',
+      '（当前用户暂无可用长期记忆）',
+      '</user_preference>',
+    ].join('\n');
+  }
+  return normalized;
+}
+
 export function formatEvidenceAssessmentBlock(
   assessment?: RagEvidenceAssessmentContext,
 ): string {
@@ -160,6 +176,7 @@ export function buildAgentPromptInput(
   history: ConversationMessage[],
   options?: {
     webContextBlock?: string;
+    memoryContextBlock?: string;
     evidenceAssessment?: RagEvidenceAssessmentContext;
   },
 ) {
@@ -170,6 +187,7 @@ export function buildAgentPromptInput(
     expertise: (persona.expertise ?? []).join('、'),
     knowledgeBlock: formatKnowledgeBlock(chunks),
     webKnowledgeSection: formatWebKnowledgeBlock(options?.webContextBlock),
+    memoryContextSection: formatMemoryContextBlock(options?.memoryContextBlock),
     evidenceAssessmentSection: formatEvidenceAssessmentBlock(
       options?.evidenceAssessment,
     ),

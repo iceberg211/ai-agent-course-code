@@ -13,6 +13,21 @@ import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity'
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { LlmFactoryService } from '@/common/llm/llm-factory.service';
 import { NotificationService } from '@/notification/notification.service';
+import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+
+export interface KnowledgeEvalMetricsSummary {
+  total: number;
+  success: number;
+  failed: number;
+  reviewedPassed: number;
+  reviewedFailed: number;
+  hitAt1: number | null;
+  hitAt3: number | null;
+  recallAt5: number | null;
+  recallAt10: number | null;
+  avgRetrievalLatencyMs: number | null;
+  avgRerankLatencyMs: number | null;
+}
 
 @Injectable()
 export class KnowledgeEvalCaseService {
@@ -110,11 +125,23 @@ export class KnowledgeEvalCaseService {
       await this.evalCaseRepo.save(caseItem);
 
       try {
-        const chunks = await this.searchService.retrieveForPersona(
-          personaId,
-          caseItem.question,
-          {},
-        );
+        const retrievalStartedAt = Date.now();
+        const debugResult =
+          typeof this.searchService.retrieveForPersonaWithDebug === 'function'
+            ? await this.searchService.retrieveForPersonaWithDebug(
+                personaId,
+                caseItem.question,
+                {},
+              )
+            : null;
+        const chunks =
+          debugResult?.rerankedChunks ??
+          (await this.searchService.retrieveForPersona(
+            personaId,
+            caseItem.question,
+            {},
+          ));
+        const retrievalLatencyMs = Date.now() - retrievalStartedAt;
 
         const contextText = chunks.map((c) => c.content).join('\n---\n');
 
@@ -163,6 +190,13 @@ ${contextText}
         caseItem.lastRunActualAnswer = actualAnswer;
         caseItem.lastRunHitRate = hitRate;
         caseItem.lastRunRecall = recall;
+        caseItem.lastRunHitAt1 = this.calculateHitAtK(caseItem, chunks, 1);
+        caseItem.lastRunHitAt3 = this.calculateHitAtK(caseItem, chunks, 3);
+        caseItem.lastRunRecallAt5 = this.calculateRecallAtK(caseItem, chunks, 5);
+        caseItem.lastRunRecallAt10 = this.calculateRecallAtK(caseItem, chunks, 10);
+        caseItem.lastRunRetrievalLatencyMs = retrievalLatencyMs;
+        caseItem.lastRunRerankLatencyMs =
+          debugResult?.stageTrace?.rerank?.length ? null : 0;
         caseItem.lastRunStatus = 'success';
         caseItem.lastRunError = null;
         caseItem.lastRunAt = new Date();
@@ -188,6 +222,30 @@ ${contextText}
     return result;
   }
 
+  async getMetricsSummary(
+    knowledgeId: string,
+  ): Promise<KnowledgeEvalMetricsSummary> {
+    const cases = await this.listByKnowledge(knowledgeId);
+    const successCases = cases.filter((item) => item.lastRunStatus === 'success');
+    return {
+      total: cases.length,
+      success: successCases.length,
+      failed: cases.filter((item) => item.lastRunStatus === 'failed').length,
+      reviewedPassed: cases.filter((item) => item.userReviewStatus === 'passed').length,
+      reviewedFailed: cases.filter((item) => item.userReviewStatus === 'failed').length,
+      hitAt1: this.average(successCases.map((item) => item.lastRunHitAt1)),
+      hitAt3: this.average(successCases.map((item) => item.lastRunHitAt3)),
+      recallAt5: this.average(successCases.map((item) => item.lastRunRecallAt5)),
+      recallAt10: this.average(successCases.map((item) => item.lastRunRecallAt10)),
+      avgRetrievalLatencyMs: this.average(
+        successCases.map((item) => item.lastRunRetrievalLatencyMs),
+      ),
+      avgRerankLatencyMs: this.average(
+        successCases.map((item) => item.lastRunRerankLatencyMs),
+      ),
+    };
+  }
+
   async updateReviewStatus(
     knowledgeId: string,
     caseId: string,
@@ -196,5 +254,53 @@ ${contextText}
     const caseItem = await this.findInKnowledgeOrThrow(knowledgeId, caseId);
     caseItem.userReviewStatus = status;
     return this.evalCaseRepo.save(caseItem);
+  }
+
+  private calculateHitAtK(
+    caseItem: KnowledgeEvalCase,
+    chunks: KnowledgeChunk[],
+    topK: number,
+  ): number {
+    if (chunks.length === 0) return 0;
+    if (!caseItem.expectedAnswer) {
+      return chunks.slice(0, topK).length > 0 ? 1 : 0;
+    }
+    const recall = this.calculateRecallAtK(caseItem, chunks, topK);
+    return (recall ?? 0) >= 0.35 ? 1 : 0;
+  }
+
+  private calculateRecallAtK(
+    caseItem: KnowledgeEvalCase,
+    chunks: KnowledgeChunk[],
+    topK: number,
+  ): number | null {
+    if (!caseItem.expectedAnswer) return null;
+    const expectedTokens = this.extractComparableTokens(caseItem.expectedAnswer);
+    if (expectedTokens.length === 0) return null;
+    const contextTokens = new Set(
+      this.extractComparableTokens(
+        chunks
+          .slice(0, topK)
+          .map((chunk) => chunk.content)
+          .join('\n'),
+      ),
+    );
+    const matched = expectedTokens.filter((token) => contextTokens.has(token));
+    return matched.length / expectedTokens.length;
+  }
+
+  private extractComparableTokens(text: string): string[] {
+    const normalized = text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '');
+    return Array.from(new Set(Array.from(normalized)));
+  }
+
+  private average(values: Array<number | null | undefined>): number | null {
+    const valid = values.filter(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value),
+    );
+    if (valid.length === 0) return null;
+    return valid.reduce((sum, value) => sum + value, 0) / valid.length;
   }
 }

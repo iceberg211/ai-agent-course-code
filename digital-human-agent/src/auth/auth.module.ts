@@ -11,11 +11,13 @@ import { JwtStrategy } from '@/auth/strategies/jwt.strategy';
 import { ApiKeyStrategy } from '@/auth/strategies/api-key.strategy';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { NotificationModule } from '@/notification/notification.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
   imports: [
     UserModule,
     NotificationModule,
+    RbacModule,
     TypeOrmModule.forFeature([ApiKey]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -31,6 +33,6 @@ import { NotificationModule } from '@/notification/notification.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, ApiKeyStrategy, RolesGuard],
-  exports: [AuthService, JwtModule, PassportModule],
+  exports: [AuthService, JwtModule, PassportModule, RbacModule],
 })
 export class AuthModule {}

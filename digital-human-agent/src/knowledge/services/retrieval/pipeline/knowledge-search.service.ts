@@ -16,9 +16,12 @@ import type {
   RetrieveKnowledgeOptions,
   RetrievalQueryItem,
   KnowledgeHybridRetrievalResult,
+  RetrievalStageTrace,
+  RerankTraceItem,
 } from '@/knowledge/types/knowledge-content.types';
 import { QueryRewriteService } from '@/knowledge/services/retrieval/processing/query-rewrite.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
+import { DataScopeService } from '@/rbac/services/data-scope.service';
 
 // ==========================================
 // 辅助函数（原 knowledge-search.utils.ts 内容）
@@ -107,6 +110,11 @@ interface HybridLoadResult {
   emptyReason?: string;
 }
 
+interface RerankSelectionResult {
+  chunks: KnowledgeChunk[];
+  trace: RerankTraceItem[];
+}
+
 // ==========================================
 // KnowledgeSearchService
 // ==========================================
@@ -120,6 +128,7 @@ export class KnowledgeSearchService {
     private readonly hybridRetrieverService: HybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
+    private readonly dataScopeService: DataScopeService,
   ) {}
 
   async retrieve(
@@ -324,8 +333,12 @@ export class KnowledgeSearchService {
       );
     }
 
-    const hybridChunks = loadResult.hybridResult.chunks;
-    const rerankedChunks = await this.selectRerankedChunks(
+    const permissionFiltered = await this.dataScopeService.filterKnowledgeChunks(
+      loadResult.hybridResult.chunks,
+      options.accessScope,
+    );
+    const hybridChunks = permissionFiltered.chunks;
+    const rerankResult = await this.selectRerankedChunks(
       searchInput.query,
       hybridChunks,
       searchInput.options,
@@ -341,7 +354,15 @@ export class KnowledgeSearchService {
       options: searchInput.options,
       retrievalTrace: loadResult.hybridResult.trace,
       hybridChunks,
-      rerankedChunks,
+      rerankedChunks: rerankResult.chunks,
+      stageTrace: this.buildStageTrace({
+        rewrite,
+        retrievalTrace: loadResult.hybridResult.trace,
+        hybridChunks,
+        rerankedChunks: rerankResult.chunks,
+        rerankTrace: rerankResult.trace,
+        permissionFilter: permissionFiltered.trace,
+      }),
     };
   }
 
@@ -351,22 +372,29 @@ export class KnowledgeSearchService {
     options: NormalizedRetrieveKnowledgeOptions,
     strategy: RetrievalStrategy,
     signal?: AbortSignal,
-  ): Promise<KnowledgeChunk[]> {
+  ): Promise<RerankSelectionResult> {
     const rerankLimit = strategy.rerankTopK ?? options.rerankLimit ?? 5;
     const minRerankScore = strategy.minRerankScore;
     const fallbackRerankedChunks = hybridChunks.slice(0, rerankLimit);
     if (!options.rerank || hybridChunks.length <= 1) {
-      return fallbackRerankedChunks;
+      return {
+        chunks: fallbackRerankedChunks,
+        trace: this.buildRerankTrace(hybridChunks, fallbackRerankedChunks),
+      };
     }
 
     try {
-      return await this.rerankerService.rerank(
+      const chunks = await this.rerankerService.rerank(
         query,
         hybridChunks,
         rerankLimit,
         signal,
         minRerankScore,
       );
+      return {
+        chunks,
+        trace: this.buildRerankTrace(hybridChunks, chunks),
+      };
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -377,8 +405,97 @@ export class KnowledgeSearchService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return fallbackRerankedChunks;
+      return {
+        chunks: fallbackRerankedChunks,
+        trace: this.buildRerankTrace(hybridChunks, fallbackRerankedChunks),
+      };
     }
+  }
+
+  private buildStageTrace(input: {
+    rewrite: KnowledgeQueryRewriteResult;
+    retrievalTrace: KnowledgeHybridRetrievalResult['trace'];
+    hybridChunks: KnowledgeChunk[];
+    rerankedChunks: KnowledgeChunk[];
+    rerankTrace: RerankTraceItem[];
+    permissionFilter: RetrievalStageTrace['permissionFilter'];
+  }): RetrievalStageTrace {
+    const channels: RetrievalStageTrace['channels'] = {};
+    for (const channelName of ['vector', 'keyword', 'graph', 'memory', 'multimodal'] as const) {
+      const resultCount = input.retrievalTrace.reduce((count, item) => {
+        switch (channelName) {
+          case 'vector':
+            return count + item.vectorResultCount;
+          case 'keyword':
+            return count + item.keywordResultCount;
+          case 'graph':
+            return count + (item.graphResultCount ?? 0);
+          case 'memory':
+            return count + (item.memoryResultCount ?? 0);
+          case 'multimodal':
+            return count + (item.multimodalResultCount ?? 0);
+        }
+      }, 0);
+      const backend = this.resolveTraceBackend(input.retrievalTrace, channelName);
+      channels[channelName] = {
+        enabled: backend !== 'disabled',
+        backend,
+        resultCount,
+        skipped: input.retrievalTrace.every((item) =>
+          (item.skippedChannels ?? []).includes(channelName),
+        ),
+      };
+    }
+
+    const rrfFusion = input.retrievalTrace.flatMap((item) => item.rrfFusion ?? []);
+    const finalChunks = input.rerankedChunks.map((chunk) => chunk.id);
+    return {
+      queryRewrite: [
+        input.rewrite.originalQuery,
+        ...input.rewrite.expandedQueries.map((item) => item.query),
+      ].filter((value, index, array) => value && array.indexOf(value) === index),
+      channels,
+      rrfFusion,
+      rerank: input.rerankTrace,
+      permissionFilter: input.permissionFilter,
+      finalChunks,
+    };
+  }
+
+  private resolveTraceBackend(
+    trace: KnowledgeHybridRetrievalResult['trace'],
+    channelName: 'vector' | 'keyword' | 'graph' | 'memory' | 'multimodal',
+  ): string | 'disabled' {
+    for (const item of trace) {
+      const backend =
+        channelName === 'vector'
+          ? item.vectorBackend
+          : channelName === 'keyword'
+            ? item.keywordBackend
+            : channelName === 'graph'
+              ? item.graphBackend
+              : channelName === 'memory'
+                ? item.memoryBackend
+                : item.multimodalBackend;
+      if (backend && backend !== 'disabled') {
+        return backend;
+      }
+    }
+    return 'disabled';
+  }
+
+  private buildRerankTrace(
+    beforeChunks: KnowledgeChunk[],
+    afterChunks: KnowledgeChunk[],
+  ): RerankTraceItem[] {
+    const beforeRank = new Map<string, number>();
+    beforeChunks.forEach((chunk, index) => beforeRank.set(chunk.id, index + 1));
+    return afterChunks.map((chunk, index) => ({
+      chunkId: chunk.id,
+      beforeRank: beforeRank.get(chunk.id) ?? -1,
+      afterRank: index + 1,
+      rerankScore: chunk.rerank_score ?? null,
+    }));
   }
 
   private async resolveRetrievalQuery(

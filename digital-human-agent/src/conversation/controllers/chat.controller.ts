@@ -20,6 +20,8 @@ import type { Conversation } from '@/conversation/entities/conversation.entity';
 import { PersonaService } from '@/persona/persona.service';
 import { ChatRequestDto } from '@/conversation/controllers/dto/chat-request.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
+import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 
 interface MessagePartLike {
   type?: unknown;
@@ -41,6 +43,8 @@ export class ChatController {
     private readonly agentService: AgentService,
     private readonly conversationService: ConversationService,
     private readonly personaService: PersonaService,
+    private readonly shortTermMemoryService: ShortTermMemoryService,
+    private readonly longTermMemoryService: LongTermMemoryService,
   ) {}
 
   @Post()
@@ -91,6 +95,11 @@ export class ChatController {
       role: 'user',
       content: userMessage,
       status: 'completed',
+    });
+    void this.shortTermMemoryService.appendMessage(conversation.id, {
+      role: 'user',
+      content: userMessage,
+      turnId,
     });
 
     const stream = createUIMessageStream({
@@ -166,6 +175,22 @@ export class ChatController {
             ragTrace,
             latencyMs: Date.now() - startedAt,
           });
+          if (assistantReply) {
+            void this.shortTermMemoryService.appendMessage(conversation.id, {
+              role: 'assistant',
+              content: assistantReply,
+              turnId,
+            });
+            if (ownerId) {
+              void this.longTermMemoryService.captureFromConversation({
+                ownerId,
+                department: (req as any).user?.department ?? null,
+                conversationId: conversation.id,
+                userMessage,
+                assistantMessage: assistantReply,
+              });
+            }
+          }
 
           writer.write({ type: 'text-end', id: textPartId });
           writer.write({ type: 'finish-step' });
@@ -295,6 +320,18 @@ export class ChatController {
       subQuestions: state.subQuestions,
       retrievalHistory: state.retrievalHistory,
       retrievalTrace: state.retrievalTrace,
+      memory: {
+        shortTermWindowCount: state.shortTermMemory.window.length,
+        hasShortTermSummary: Boolean(state.shortTermMemory.summary),
+        longTermMemoryCount: state.longTermMemories.length,
+        longTermMemories: state.longTermMemories.map((item) => ({
+          id: item.id,
+          category: item.category,
+          visibility: item.visibility,
+          confidence: item.confidence,
+          sourceConversationId: item.sourceConversationId,
+        })),
+      },
       enough: state.enough,
       missingFacts: state.missingFacts,
       evaluationReason: state.evaluationReason,

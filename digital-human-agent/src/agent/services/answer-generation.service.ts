@@ -32,6 +32,7 @@ export interface GenerateAnswerParams {
   persona: Persona;
   history: ConversationMessage[];
   localChunks: RetrievedKnowledgeChunk[];
+  memoryContext?: string;
   retrievalStrategy?: RetrievalStrategy;
   webCitations?: RagWebCitation[];
   evidenceAssessment?: RagEvidenceAssessmentContext;
@@ -166,6 +167,7 @@ export class AnswerGenerationService {
           webContextBlock: this.formatWebContextBlock(
             params.webCitations ?? [],
           ),
+          memoryContextBlock: params.memoryContext,
           evidenceAssessment: params.evidenceAssessment,
         },
       ),

@@ -85,6 +85,7 @@ export function createGenerateAnswerNode(
       persona: state.persona,
       history: state.history,
       localChunks: state.topDocuments,
+      memoryContext: state.memoryContext,
       retrievalStrategy: state.retrievalStrategy,
       webCitations: state.webCitations,
       evidenceAssessment:

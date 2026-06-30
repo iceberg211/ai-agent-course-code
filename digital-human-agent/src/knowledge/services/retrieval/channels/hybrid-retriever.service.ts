@@ -24,6 +24,7 @@ import {
   fuseHybridAndGraphChannels,
   mergeHybridResults,
   fuseVectorAndKeywordResults,
+  fuseMultiChannelResultsWithTrace,
 } from '@/knowledge/services/retrieval/channels/knowledge-retrieval-fusion';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
@@ -39,6 +40,7 @@ import type {
   KnowledgeAccessScope,
   PersonaHybridRetrievalInput,
   PersonaHybridRetrievalResult,
+  RrfTraceItem,
 } from '@/knowledge/types/knowledge-content.types';
 
 interface HybridRetrieveResult {
@@ -48,6 +50,7 @@ interface HybridRetrieveResult {
   keywordResultCount: number;
   fallbackToPg: boolean;
   skippedChannels: Array<'vector' | 'keyword' | 'graph'>;
+  rrfFusionTrace: RrfTraceItem[];
 }
 
 interface KeywordRetrieveResult {
@@ -167,6 +170,8 @@ export class HybridRetrieverService {
             mergedResultCount: chunks.length,
             fallbackToPg: hybridResult.fallbackToPg,
             skippedChannels: hybridResult.skippedChannels as any[],
+            rrfFusion: hybridResult.rrfFusionTrace,
+            finalChunks: chunks.map((chunk) => chunk.id),
             avgVectorScore: chunks.length > 0
               ? chunks.reduce((acc, c) => acc + (c.similarity ?? 0), 0) / chunks.length
               : 0,
@@ -211,6 +216,8 @@ export class HybridRetrieverService {
               mergedResultCount: 0,
               fallbackToPg: false,
               skippedChannels: ['vector', 'keyword', 'graph'],
+              rrfFusion: [],
+              finalChunks: [],
             } as RetrieveKnowledgeTraceItem,
           };
         }
@@ -404,15 +411,25 @@ export class HybridRetrieverService {
     if (graphBackend === 'disabled') {
       skippedChannels.add('graph');
     }
+    const channels = new Map<string, KnowledgeChunk[]>();
+    for (const channelName of ['vector', 'keyword', 'graph', 'memory', 'multimodal']) {
+      const chunks = hybridResult.chunks.filter((chunk) =>
+        chunk.retrieval_sources?.includes(channelName as any) ||
+        chunk.channel_rank?.[channelName as any] !== undefined ||
+        chunk.raw_score?.[channelName as any] !== undefined,
+      );
+      if (chunks.length > 0) channels.set(channelName, chunks);
+    }
+    if (graphChunks.length > 0) channels.set('graph', graphChunks);
+    const fused = fuseMultiChannelResultsWithTrace(channels, {
+      globalRetrievalLimit: params.matchCount,
+      rrfK: params.strategy.rrfK,
+    });
 
     return {
       ...hybridResult,
-      chunks: fuseHybridAndGraphChannels(
-        hybridResult.chunks,
-        graphChunks,
-        params.matchCount,
-        params.strategy.rrfK,
-      ),
+      chunks: fused.chunks,
+      rrfFusionTrace: fused.trace,
       graphBackend,
       graphResultCount: graphChunks.length,
       skippedChannels: Array.from(skippedChannels),
@@ -542,18 +559,23 @@ export class HybridRetrieverService {
 
         const keywordChunks = keywordResult?.chunks ?? [];
 
+        const channels = new Map<string, KnowledgeChunk[]>();
+        channels.set('vector', vectorResults);
+        channels.set('keyword', keywordChunks);
+        const fused = fuseMultiChannelResultsWithTrace(channels, {
+          globalRetrievalLimit: params.matchCount,
+          rrfK: params.strategy.rrfK,
+        });
+
         return {
-          chunks: fuseVectorAndKeywordResults(
-            vectorResults,
-            keywordChunks,
-            params.strategy.rrfK,
-          ).slice(0, params.matchCount),
+          chunks: fused.chunks,
           keywordBackend:
             useKeyword && keywordResult ? keywordResult.backend : 'disabled',
           vectorResultCount: vectorResults.length,
           keywordResultCount: keywordChunks.length,
           fallbackToPg: keywordResult?.fallbackToPg ?? false,
           skippedChannels: Array.from(new Set(skippedChannels)),
+          rrfFusionTrace: fused.trace,
         };
       },
     );
@@ -818,6 +840,7 @@ export class HybridRetrieverService {
       keywordResultCount: 0,
       fallbackToPg: false,
       skippedChannels: Array.from(skippedChannels),
+      rrfFusionTrace: [],
     };
   }
 }

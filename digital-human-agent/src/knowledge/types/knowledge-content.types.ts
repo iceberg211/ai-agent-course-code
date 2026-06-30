@@ -1,7 +1,12 @@
 import type { RetrievalStrategy } from '@/common/rag';
 import type { KnowledgeRetrievalConfig } from '@/knowledge/entities/knowledge.entity';
 
-export type KnowledgeRetrievalSource = 'vector' | 'keyword' | 'graph';
+export type KnowledgeRetrievalSource =
+  | 'vector'
+  | 'keyword'
+  | 'graph'
+  | 'memory'
+  | 'multimodal';
 export type KeywordBackend = 'pg' | 'elastic';
 export type VectorBackend = 'pgvector';
 export type GraphBackend = 'neo4j';
@@ -25,6 +30,11 @@ export interface KnowledgeChunk {
   keyword_score?: number;
   hybrid_score?: number;
   graph_score?: number;
+  memory_score?: number;
+  multimodal_score?: number;
+  rrf_score?: number;
+  channel_rank?: Partial<Record<KnowledgeRetrievalSource, number>>;
+  raw_score?: Partial<Record<KnowledgeRetrievalSource, number>>;
   graph_evidence?: Array<{
     source: string;
     target: string;
@@ -45,7 +55,7 @@ export interface RetrieveKnowledgeOptions {
   rerank?: boolean;
   retrievalLimit?: number;
   rerankLimit?: number;
-  strategy?: RetrievalStrategy;
+  strategy?: Partial<RetrievalStrategy>;
   skipQueryRewrite?: boolean;
   signal?: AbortSignal;
   accessScope?: KnowledgeAccessScope;
@@ -110,6 +120,46 @@ export interface RetrieveKnowledgeTraceItem {
   avgVectorScore?: number;
   avgKeywordScore?: number;
   avgGraphScore?: number;
+  avgMemoryScore?: number;
+  avgMultimodalScore?: number;
+  rrfFusion?: RrfTraceItem[];
+  finalChunks?: string[];
+}
+
+export interface ChannelTrace {
+  enabled: boolean;
+  backend: string | 'disabled';
+  resultCount: number;
+  skipped: boolean;
+  error?: string;
+}
+
+export interface RrfTraceItem {
+  chunkId: string;
+  retrievalSources: KnowledgeRetrievalSource[];
+  channelRanks: Partial<Record<KnowledgeRetrievalSource, number>>;
+  rawScores: Partial<Record<KnowledgeRetrievalSource, number>>;
+  rrfScore: number;
+}
+
+export interface RerankTraceItem {
+  chunkId: string;
+  beforeRank: number;
+  afterRank: number;
+  rerankScore: number | null;
+}
+
+export interface RetrievalStageTrace {
+  queryRewrite: string[];
+  channels: Partial<Record<KnowledgeRetrievalSource, ChannelTrace>>;
+  rrfFusion: RrfTraceItem[];
+  rerank: RerankTraceItem[];
+  permissionFilter: {
+    before: number;
+    after: number;
+    filtered: number;
+  };
+  finalChunks: string[];
 }
 
 export interface RetrieveKnowledgeDebugResult {
@@ -119,6 +169,7 @@ export interface RetrieveKnowledgeDebugResult {
   rewrite: KnowledgeQueryRewriteResult;
   options: NormalizedRetrieveKnowledgeOptions;
   retrievalTrace: RetrieveKnowledgeTraceItem[];
+  stageTrace?: RetrievalStageTrace;
   hybridChunks: KnowledgeChunk[];
   rerankedChunks: KnowledgeChunk[];
 }

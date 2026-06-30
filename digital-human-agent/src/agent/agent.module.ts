@@ -11,12 +11,14 @@ import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import { CommonModule } from '@/common/common.module';
 import { KnowledgeModule } from '@/knowledge/knowledge.module';
 import { PersonaModule } from '@/persona/persona.module';
+import { MemoryModule } from '@/memory/memory.module';
 
 @Module({
   imports: [
     CommonModule,
     KnowledgeModule,
     PersonaModule,
+    MemoryModule,
   ],
   providers: [
     AnswerGenerationService,

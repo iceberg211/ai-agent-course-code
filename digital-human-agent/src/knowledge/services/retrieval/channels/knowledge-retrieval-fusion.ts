@@ -1,5 +1,17 @@
 import { HYBRID_FUSION_RRF_K } from '@/common/constants';
-import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import type {
+  KnowledgeChunk,
+  KnowledgeRetrievalSource,
+  RrfTraceItem,
+} from '@/knowledge/types/knowledge-content.types';
+
+const RRF_CHANNELS: KnowledgeRetrievalSource[] = [
+  'vector',
+  'keyword',
+  'graph',
+  'memory',
+  'multimodal',
+];
 
 export function mergeHybridResults(
   hybridResults: KnowledgeChunk[][],
@@ -29,20 +41,16 @@ export function fuseHybridAndGraphChannels(
   rrfK?: number,
 ): KnowledgeChunk[] {
   const channels = new Map<string, KnowledgeChunk[]>();
-  channels.set('hybrid', hybridChunks);
+  for (const channelName of RRF_CHANNELS) {
+    const chunks = hybridChunks.filter((chunk) =>
+      hasChannelEvidence(chunk, channelName),
+    );
+    if (chunks.length > 0) {
+      channels.set(channelName, chunks);
+    }
+  }
   channels.set('graph', graphChunks);
   return fuseMultiChannelResults(channels, { globalRetrievalLimit, rrfK });
-}
-
-function resolveHybridFusionScore(
-  chunk: KnowledgeChunk,
-  hybridRank?: number,
-  graphRank?: number,
-): number {
-  const existingHybridScore = chunk.hybrid_score ?? 0;
-  const hybridRankScore = rrf(hybridRank);
-  const graphRankScore = rrf(graphRank);
-  return Math.max(existingHybridScore, hybridRankScore) + graphRankScore;
 }
 
 function mergeRetrievedChunk(
@@ -64,6 +72,23 @@ function mergeRetrievedChunk(
       incoming.keyword_score ?? 0,
     ),
     graph_score: Math.max(current.graph_score ?? 0, incoming.graph_score ?? 0),
+    memory_score: Math.max(
+      current.memory_score ?? 0,
+      incoming.memory_score ?? 0,
+    ),
+    multimodal_score: Math.max(
+      current.multimodal_score ?? 0,
+      incoming.multimodal_score ?? 0,
+    ),
+    rrf_score: Math.max(current.rrf_score ?? 0, incoming.rrf_score ?? 0),
+    channel_rank: {
+      ...(current.channel_rank ?? {}),
+      ...(incoming.channel_rank ?? {}),
+    },
+    raw_score: {
+      ...(current.raw_score ?? {}),
+      ...(incoming.raw_score ?? {}),
+    },
     retrieval_sources: Array.from(
       new Set([
         ...(current.retrieval_sources ?? []),
@@ -88,6 +113,7 @@ function compareRetrievalChunks(
 ): number {
   return (
     (left.hybrid_score ?? 0) - (right.hybrid_score ?? 0) ||
+    (left.rrf_score ?? 0) - (right.rrf_score ?? 0) ||
     (left.keyword_score ?? 0) - (right.keyword_score ?? 0) ||
     (left.graph_score ?? 0) - (right.graph_score ?? 0) ||
     (left.similarity ?? 0) - (right.similarity ?? 0)
@@ -123,42 +149,46 @@ export interface FuseMultiChannelOptions {
   globalRetrievalLimit?: number;
 }
 
+export interface FuseMultiChannelResult {
+  chunks: KnowledgeChunk[];
+  trace: RrfTraceItem[];
+}
+
 export function fuseMultiChannelResults(
   channels: Map<string, KnowledgeChunk[]>,
   options: FuseMultiChannelOptions = {},
 ): KnowledgeChunk[] {
+  return fuseMultiChannelResultsWithTrace(channels, options).chunks;
+}
+
+export function fuseMultiChannelResultsWithTrace(
+  channels: Map<string, KnowledgeChunk[]>,
+  options: FuseMultiChannelOptions = {},
+): FuseMultiChannelResult {
   const rrfK = options.rrfK ?? HYBRID_FUSION_RRF_K;
   const limit = options.globalRetrievalLimit ?? 20;
 
   const merged = new Map<string, KnowledgeChunk>();
-  const chunkRanks = new Map<string, Map<string, number>>();
-  const chunkRawScores = new Map<string, Map<string, number>>();
+  const chunkRanks = new Map<string, Map<KnowledgeRetrievalSource, number>>();
+  const chunkRawScores = new Map<string, Map<KnowledgeRetrievalSource, number>>();
 
   for (const [channelName, chunks] of channels.entries()) {
+    if (!isRetrievalChannel(channelName)) continue;
     chunks.forEach((chunk, index) => {
       let ranks = chunkRanks.get(chunk.id);
       if (!ranks) {
-        ranks = new Map<string, number>();
+        ranks = new Map<KnowledgeRetrievalSource, number>();
         chunkRanks.set(chunk.id, ranks);
       }
-      ranks.set(channelName, index + 1);
+      const rank = chunk.channel_rank?.[channelName] ?? index + 1;
+      ranks.set(channelName, rank);
 
       let rawScores = chunkRawScores.get(chunk.id);
       if (!rawScores) {
-        rawScores = new Map<string, number>();
+        rawScores = new Map<KnowledgeRetrievalSource, number>();
         chunkRawScores.set(chunk.id, rawScores);
       }
-      let score = 0;
-      if (channelName === 'vector') {
-        score = chunk.similarity ?? 0;
-      } else if (channelName === 'keyword') {
-        score = chunk.keyword_score ?? 0;
-      } else if (channelName === 'graph') {
-        score = chunk.graph_score ?? 0;
-      } else {
-        score = chunk.hybrid_score ?? 0;
-      }
-      rawScores.set(channelName, score);
+      rawScores.set(channelName, resolveRawScore(chunk, channelName));
 
       const existing = merged.get(chunk.id);
       if (existing) {
@@ -169,17 +199,17 @@ export function fuseMultiChannelResults(
     });
   }
 
-  return Array.from(merged.values())
+  const fused = Array.from(merged.values())
     .map((chunk) => {
       let totalRrfScore = 0;
       const ranks = chunkRanks.get(chunk.id);
-      const sources: string[] = [];
-      const channelRank: Record<string, number> = {};
-      const rawScore: Record<string, number> = {};
+      const sources: KnowledgeRetrievalSource[] = [];
+      const channelRank: Partial<Record<KnowledgeRetrievalSource, number>> = {};
+      const rawScore: Partial<Record<KnowledgeRetrievalSource, number>> = {};
 
       if (ranks) {
         for (const [channelName, rank] of ranks.entries()) {
-          totalRrfScore += 1 / (rrfK + rank);
+          totalRrfScore += rrf(rank, rrfK);
           sources.push(channelName);
           channelRank[channelName] = rank;
           
@@ -191,15 +221,27 @@ export function fuseMultiChannelResults(
       return {
         ...chunk,
         hybrid_score: totalRrfScore,
+        rrf_score: totalRrfScore,
         retrieval_sources: Array.from(
           new Set([...(chunk.retrieval_sources ?? []), ...sources]),
         ),
         channel_rank: channelRank,
         raw_score: rawScore,
-      } as any;
+      };
     })
     .sort((left, right) => (right.hybrid_score ?? 0) - (left.hybrid_score ?? 0))
     .slice(0, limit);
+
+  return {
+    chunks: fused,
+    trace: fused.map((chunk) => ({
+      chunkId: chunk.id,
+      retrievalSources: chunk.retrieval_sources ?? [],
+      channelRanks: chunk.channel_rank ?? {},
+      rawScores: chunk.raw_score ?? {},
+      rrfScore: chunk.rrf_score ?? chunk.hybrid_score ?? 0,
+    })),
+  };
 }
 
 export function fuseVectorAndKeywordResults(
@@ -213,7 +255,42 @@ export function fuseVectorAndKeywordResults(
   return fuseMultiChannelResults(channels, { globalRetrievalLimit: 1000, rrfK });
 }
 
-function rrf(rank?: number): number {
+function rrf(rank?: number, rrfK = HYBRID_FUSION_RRF_K): number {
   if (!rank) return 0;
-  return 1 / (HYBRID_FUSION_RRF_K + rank);
+  return 1 / (rrfK + rank);
+}
+
+function isRetrievalChannel(value: string): value is KnowledgeRetrievalSource {
+  return RRF_CHANNELS.includes(value as KnowledgeRetrievalSource);
+}
+
+function hasChannelEvidence(
+  chunk: KnowledgeChunk,
+  channelName: KnowledgeRetrievalSource,
+): boolean {
+  return Boolean(
+    chunk.retrieval_sources?.includes(channelName) ||
+      chunk.channel_rank?.[channelName] !== undefined ||
+      chunk.raw_score?.[channelName] !== undefined,
+  );
+}
+
+function resolveRawScore(
+  chunk: KnowledgeChunk,
+  channelName: KnowledgeRetrievalSource,
+): number {
+  const existing = chunk.raw_score?.[channelName];
+  if (existing !== undefined) return existing;
+  switch (channelName) {
+    case 'vector':
+      return chunk.similarity ?? 0;
+    case 'keyword':
+      return chunk.keyword_score ?? 0;
+    case 'graph':
+      return chunk.graph_score ?? 0;
+    case 'memory':
+      return chunk.memory_score ?? 0;
+    case 'multimodal':
+      return chunk.multimodal_score ?? 0;
+  }
 }

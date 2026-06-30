@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -12,6 +13,10 @@ import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/
 import { KnowledgeSearchDto } from '@/knowledge/dto/knowledge-search.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
+import {
+  createRetrievalStrategyPreset,
+  type RetrievalPreset,
+} from '@/common/rag';
 
 /**
  * 知识检索控制器。
@@ -30,6 +35,25 @@ export class KnowledgeSearchController {
   // ==========================================
   // 单知识库命中测试
   // ==========================================
+
+  @Get('retrieval-strategies/presets')
+  @ApiOperation({ summary: '查询可用检索策略预设' })
+  listRetrievalStrategyPresets() {
+    const presets: RetrievalPreset[] = [
+      'precise',
+      'balanced',
+      'broad',
+      'graph_first',
+      'memory_aware',
+      'multimodal',
+    ];
+    return {
+      presets: presets.map((name) => ({
+        name,
+        strategy: createRetrievalStrategyPreset(name),
+      })),
+    };
+  }
 
   @Post('knowledge-bases/:knowledgeId/search')
   @ApiOperation({ summary: '命中测试（混合检索召回 + 重排，单 KB）' })

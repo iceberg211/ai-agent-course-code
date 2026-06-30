@@ -12,6 +12,9 @@ export const PROMPT_REGISTRY = {
 ---
 {knowledgeBlock}
 ---
+以下是当前会话上下文和用户长期偏好，已经按用途分区：
+{memoryContextSection}
+
 {webKnowledgeSection}
 {evidenceAssessmentSection}
 
@@ -23,7 +26,9 @@ export const PROMPT_REGISTRY = {
 5. 回答要口语化，适合语音朗读（避免长列表、代码块、复杂格式）
 6. 回答时自然地提及信息来源，例如"根据文档里的说明..."、"根据网页资料..."
 7. 如果本地知识包含图谱证据，把它作为实体关系线索，但不要脱离证据自行扩展关系
-8. 如果用了联网补充信息，优先提及标题或链接来源；如果本地知识与网页信息存在冲突，要说明不确定性{systemPromptExtraSection}`,
+8. 用户长期偏好只能影响称呼、输出格式、常用业务背景和会话连续性；不能改写企业制度、合同、流程、财务、人事、安全规范等客观知识
+9. 如果长期记忆与本地知识冲突，以本地知识为准，并说明当前回答以企业知识库资料为准
+10. 如果用了联网补充信息，优先提及标题或链接来源；如果本地知识与网页信息存在冲突，要说明不确定性{systemPromptExtraSection}`,
     human: '{userMessage}',
   },
   directChat: {

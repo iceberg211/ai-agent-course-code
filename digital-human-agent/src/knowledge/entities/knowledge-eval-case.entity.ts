@@ -39,6 +39,24 @@ export class KnowledgeEvalCase {
   @Column({ name: 'last_run_recall', type: 'double precision', nullable: true })
   lastRunRecall: number | null;
 
+  @Column({ name: 'last_run_hit_at_1', type: 'double precision', nullable: true })
+  lastRunHitAt1: number | null;
+
+  @Column({ name: 'last_run_hit_at_3', type: 'double precision', nullable: true })
+  lastRunHitAt3: number | null;
+
+  @Column({ name: 'last_run_recall_at_5', type: 'double precision', nullable: true })
+  lastRunRecallAt5: number | null;
+
+  @Column({ name: 'last_run_recall_at_10', type: 'double precision', nullable: true })
+  lastRunRecallAt10: number | null;
+
+  @Column({ name: 'last_run_retrieval_latency_ms', type: 'int', nullable: true })
+  lastRunRetrievalLatencyMs: number | null;
+
+  @Column({ name: 'last_run_rerank_latency_ms', type: 'int', nullable: true })
+  lastRunRerankLatencyMs: number | null;
+
   @Column({ name: 'last_run_error', type: 'text', nullable: true })
   lastRunError: string | null;
 

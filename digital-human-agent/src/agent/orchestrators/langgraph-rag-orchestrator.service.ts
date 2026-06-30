@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Optional } from '@nestjs/common';
 import { throwIfAborted } from '@/common/utils';
 import { type RagGraph, buildRagGraph } from '@/agent/langgraph/rag.graph';
 import {
@@ -26,6 +26,9 @@ import { ConversationService } from '@/conversation/services/conversation.servic
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import { PersonaService } from '@/persona/persona.service';
+import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
+import { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
+import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 
 @Injectable()
 export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModuleInit {
@@ -43,6 +46,12 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModul
     private readonly rerankerService: RerankerService,
     private readonly evidenceEvaluatorService: EvidenceEvaluatorService,
     private readonly webFallbackService: WebFallbackService,
+    @Optional()
+    private readonly shortTermMemoryService: ShortTermMemoryService,
+    @Optional()
+    private readonly memoryRetrieverService: MemoryRetrieverService,
+    @Optional()
+    private readonly memoryPolicyService: MemoryPolicyService,
   ) {}
 
   onModuleInit(): void {
@@ -67,6 +76,21 @@ export class LangGraphRagOrchestratorService implements RagOrchestrator, OnModul
       rerankerService: this.rerankerService,
       evidenceEvaluatorService: this.evidenceEvaluatorService,
       webFallbackService: this.webFallbackService,
+      shortTermMemoryService:
+        this.shortTermMemoryService ??
+        ({
+          getContext: async () => ({ window: [], summary: '', activeContext: '' }),
+        } as unknown as ShortTermMemoryService),
+      memoryRetrieverService:
+        this.memoryRetrieverService ??
+        ({
+          retrieve: async () => [],
+        } as unknown as MemoryRetrieverService),
+      memoryPolicyService:
+        this.memoryPolicyService ??
+        ({
+          filterReadable: (items: any[]) => items,
+        } as MemoryPolicyService),
     });
   }
 

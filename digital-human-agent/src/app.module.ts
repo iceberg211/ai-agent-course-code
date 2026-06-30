@@ -18,6 +18,8 @@ import { AuthModule } from '@/auth/auth.module';
 import { NotificationModule } from '@/notification/notification.module';
 import { StorageModule } from '@/storage/storage.module';
 import { QueueModule } from '@/queue/queue.module';
+import { MemoryModule } from '@/memory/memory.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { QueueModule } from '@/queue/queue.module';
     DatabaseModule,
     UserModule,
     AuthModule,
+    RbacModule,
     NotificationModule,
     PersonaModule,
     ConversationModule,
@@ -44,6 +47,7 @@ import { QueueModule } from '@/queue/queue.module';
     HealthModule,
     StorageModule,
     QueueModule,
+    MemoryModule,
   ],
 })
 export class AppModule {}

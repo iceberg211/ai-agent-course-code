@@ -60,6 +60,12 @@ export const RagGraphStateAnnotation = Annotation.Root({
   retrievalHistory: Annotation<RetrievalHistoryItem[]>(),
   /** 记录检索的中间调试参数与链路 Trace */
   retrievalTrace: Annotation<RagWorkflowState['retrievalTrace']>(),
+  /** Redis 短期记忆：最近窗口、摘要和当前任务背景 */
+  shortTermMemory: Annotation<RagWorkflowState['shortTermMemory']>(),
+  /** 长期记忆召回结果 */
+  longTermMemories: Annotation<RagWorkflowState['longTermMemories']>(),
+  /** 已按规则分区后的记忆上下文 */
+  memoryContext: Annotation<string>(),
   /** 规划好的下一步执行节点名称 */
   plannedNext: Annotation<RagWorkflowState['plannedNext']>(),
   /** 动态判断后选择的检索召回策略配置 */
@@ -139,6 +145,13 @@ export function buildInitialRagGraphState(
     webCitations: [],
     retrievalHistory: [],
     retrievalTrace: [],
+    shortTermMemory: {
+      window: [],
+      summary: '',
+      activeContext: '',
+    },
+    longTermMemories: [],
+    memoryContext: '',
     plannedNext: '',
     retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY,
     retrievalStrategyReason: DEFAULT_RETRIEVAL_STRATEGY.reason,

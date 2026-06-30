@@ -13,6 +13,7 @@ import { NoopRerankerProvider } from '@/knowledge/services/retrieval/processing/
 import { KnowledgeDocumentModule } from './knowledge-document.module';
 import { KnowledgeGraphModule } from './knowledge-graph.module';
 import { KnowledgeBaseModule } from './knowledge-base.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { KnowledgeBaseModule } from './knowledge-base.module';
     KnowledgeDocumentModule,
     KnowledgeGraphModule,
     KnowledgeBaseModule,
+    RbacModule,
   ],
   providers: [
     KnowledgeSearchService,

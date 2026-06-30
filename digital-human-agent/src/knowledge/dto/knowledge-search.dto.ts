@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -13,6 +14,7 @@ import {
 } from 'class-validator';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 import type { RetrieveKnowledgeOptions } from '@/knowledge/types/knowledge-content.types';
+import type { RetrievalStrategy } from '@/common/rag';
 
 export class KnowledgeSearchDto {
   @ApiProperty({
@@ -90,6 +92,14 @@ export class KnowledgeSearchDto {
   @Max(1)
   threshold?: number;
 
+  @ApiPropertyOptional({
+    description: '检索策略覆盖项，可传入 precise、balanced、broad、graph_first、memory_aware、multimodal 等预设名称及局部字段',
+    type: Object,
+  })
+  @IsOptional()
+  @IsObject()
+  strategy?: Partial<RetrievalStrategy>;
+
   /**
    * 将 DTO 转换为检索选项，统一处理旧字段兼容。
    *
@@ -102,6 +112,7 @@ export class KnowledgeSearchDto {
       threshold: this.threshold,
       retrievalLimit: this.retrievalLimit ?? this.stage1TopK,
       rerankLimit: this.rerankLimit ?? this.finalTopK,
+      strategy: this.strategy,
     };
   }
 }

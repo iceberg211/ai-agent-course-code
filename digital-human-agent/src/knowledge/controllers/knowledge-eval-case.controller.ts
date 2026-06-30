@@ -34,6 +34,12 @@ export class KnowledgeEvalCaseController {
     return this.evalCaseService.listByKnowledge(knowledgeId);
   }
 
+  @Get('metrics')
+  @ApiOperation({ summary: '查询问答验证指标汇总' })
+  metrics(@Param('knowledgeId', ParseUUIDPipe) knowledgeId: string) {
+    return this.evalCaseService.getMetricsSummary(knowledgeId);
+  }
+
   @Post()
   @ApiOperation({ summary: '保存问答验证用例' })
   create(

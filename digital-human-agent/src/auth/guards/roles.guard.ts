@@ -1,12 +1,17 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @Optional()
+    private readonly authorizationService?: AuthorizationService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -18,7 +23,10 @@ export class RolesGuard implements CanActivate {
     if (!user || !user.role) {
       return false;
     }
-    const hasRole = requiredRoles.includes(user.role);
+    const roleCodes = this.authorizationService
+      ? await this.authorizationService.getUserRoleCodes(user)
+      : [user.role];
+    const hasRole = roleCodes.some((role) => requiredRoles.includes(role));
     if (!hasRole) {
       throw new ForbiddenException('权限不足，无法访问该资源');
     }

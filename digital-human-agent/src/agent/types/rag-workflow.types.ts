@@ -10,6 +10,10 @@ import type {
   RetrieveKnowledgeTraceItem,
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
+import type {
+  MemoryRecord,
+  ShortTermMemoryContext,
+} from '@/memory/memory.types';
 
 export type RagStrategy = 'simple' | 'complex' | 'none';
 export type RagOrchestratorName = 'langgraph';
@@ -76,6 +80,9 @@ export interface RagWorkflowState {
   citations: RagCitation[];
   retrievalHistory: RetrievalHistoryItem[];
   retrievalTrace: RetrieveKnowledgeTraceItem[];
+  shortTermMemory: ShortTermMemoryContext;
+  longTermMemories: MemoryRecord[];
+  memoryContext: string;
   plannedNext: '' | 'retrieve' | 'rerank';
   retrievalStrategy: RetrievalStrategy;
   retrievalStrategyReason: string;
