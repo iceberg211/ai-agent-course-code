@@ -220,12 +220,28 @@ export function createGraphReasoningNode(
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
 
-    // 如果没有启用图谱或者检索策略里没有开启 useGraph，直接跳过
-    if (!graphService.isEnabled() || !state.retrievalStrategy.useGraph) {
+    // 如果检索策略里没有开启 useGraph，直接跳过
+    if (!state.retrievalStrategy.useGraph) {
       return {};
     }
 
     try {
+      if (!graphService.isEnabled()) {
+        return {
+          graphReasoningTrace: [
+            ...(state.graphReasoningTrace ?? []),
+            {
+              knowledgeId: '*',
+              matchedEntities: [],
+              expandedChunkIds: [],
+              expandedChunkCount: 0,
+              skipped: true,
+              reason: '图谱服务未启用',
+            },
+          ],
+        } satisfies Partial<RagGraphState>;
+      }
+
       // 1. 获取现有召回的 Top 3 chunks 作为提取实体的分析材料
       const topChunks = state.documents.slice(0, 3);
       if (topChunks.length === 0) return {};
@@ -243,19 +259,31 @@ export function createGraphReasoningNode(
       if (kbIds.length === 0) return {};
 
       const expandedChunks: KnowledgeChunk[] = [];
+      const graphReasoningTrace: RagGraphState['graphReasoningTrace'] = [];
 
       for (const kbId of kbIds) {
         // 获取该知识库的前 50 个图谱实体
-        const entities = await graphService.listEntities(kbId, '', 50);
+        const entities = await graphService.listEntities(
+          kbId,
+          '',
+          50,
+          input.accessScope,
+        );
         // 匹配出现过的实体名称
         const matchedEntities = entities.filter((ent) =>
           ent.name && docContents.toLowerCase().includes(ent.name.toLowerCase()),
         );
+        const expandedChunkIds = new Set<string>();
 
         // 最多对 3 个实体进行一跳邻近节点推理，避免关系爆炸
         for (const ent of matchedEntities.slice(0, 3)) {
-          const neighborChunks = await graphService.getNeighborhood(kbId, ent.key);
+          const neighborChunks = await graphService.getNeighborhood(
+            kbId,
+            ent.key,
+            input.accessScope,
+          );
           for (const row of neighborChunks) {
+            expandedChunkIds.add(row.id);
             expandedChunks.push({
               id: row.id,
               document_id: row.document_id,
@@ -267,13 +295,44 @@ export function createGraphReasoningNode(
               similarity: 0,
               graph_score: Number(row.confidence) || 0.5,
               retrieval_sources: ['graph'],
+              graph_evidence: row.evidenceText
+                ? [
+                    {
+                      source: row.sourceName ?? ent.name,
+                      target: row.targetName ?? row.source,
+                      relationType: row.relationType ?? 'RELATED_TO',
+                      relationLabel: row.relationLabel ?? null,
+                      evidenceText: row.evidenceText,
+                      confidence: Number(row.confidence) || 0.5,
+                    },
+                  ]
+                : [],
               matched_queries: [],
             });
           }
         }
+
+        graphReasoningTrace.push({
+          knowledgeId: kbId,
+          matchedEntities: matchedEntities.slice(0, 3).map((ent) => ({
+            key: String(ent.key),
+            name: String(ent.name),
+          })),
+          expandedChunkIds: Array.from(expandedChunkIds),
+          expandedChunkCount: expandedChunkIds.size,
+          skipped: expandedChunkIds.size === 0,
+          reason: expandedChunkIds.size === 0 ? '未找到可见的邻居证据' : undefined,
+        });
       }
 
-      if (expandedChunks.length === 0) return {};
+      if (expandedChunks.length === 0) {
+        return {
+          graphReasoningTrace: [
+            ...(state.graphReasoningTrace ?? []),
+            ...graphReasoningTrace,
+          ],
+        } satisfies Partial<RagGraphState>;
+      }
 
       // 3. 把通过图关系发掘扩展出的 chunks 合并到已召回的 documents 中（去重）
       const documents = mergeEvidenceChunks(state.documents, expandedChunks);
@@ -291,13 +350,29 @@ export function createGraphReasoningNode(
       return {
         documents,
         evidenceChunks: documents,
+        graphReasoningTrace: [
+          ...(state.graphReasoningTrace ?? []),
+          ...graphReasoningTrace,
+        ],
       } satisfies Partial<RagGraphState>;
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
       }
       // 容错返回空，图谱失败不能拖挂基础 RAG
-      return {};
+      return {
+        graphReasoningTrace: [
+          ...(state.graphReasoningTrace ?? []),
+          {
+            knowledgeId: '*',
+            matchedEntities: [],
+            expandedChunkIds: [],
+            expandedChunkCount: 0,
+            skipped: true,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        ],
+      } satisfies Partial<RagGraphState>;
     }
   };
 }

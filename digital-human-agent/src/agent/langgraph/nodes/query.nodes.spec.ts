@@ -28,6 +28,7 @@ describe('createRetrieveNode', () => {
     webCitations: [],
     retrievalHistory: [],
     retrievalTrace: [],
+    graphReasoningTrace: [],
     plannedNext: '',
     retrievalStrategy: {
       needRetrieval: false,
@@ -400,6 +401,7 @@ describe('createGraphReasoningNode', () => {
       },
     ],
     evidenceChunks: [],
+    graphReasoningTrace: [],
     retrievalStrategy: {
       useGraph: true,
     },
@@ -445,11 +447,17 @@ describe('createGraphReasoningNode', () => {
           chunk_index: 1,
           category: 'text',
           confidence: 0.9,
+          evidenceText: '乔峰与慕容复齐名。',
         },
       ]),
     } as any;
 
     const node = createGraphReasoningNode(graphService);
+    const accessScope = {
+      ownerId: 'user-1',
+      department: '研发部',
+      role: 'user',
+    };
     const result = await node(
       baseState,
       {
@@ -457,18 +465,28 @@ describe('createGraphReasoningNode', () => {
           workflowInput: {
             signal: new AbortController().signal,
             onCitations: jest.fn(),
+            accessScope,
           },
         },
       } as any,
     );
 
-    expect(graphService.listEntities).toHaveBeenCalledWith('kb-1', '', 50);
-    expect(graphService.getNeighborhood).toHaveBeenCalledWith('kb-1', 'Topic::乔峰');
+    expect(graphService.listEntities).toHaveBeenCalledWith('kb-1', '', 50, accessScope);
+    expect(graphService.getNeighborhood).toHaveBeenCalledWith('kb-1', 'Topic::乔峰', accessScope);
     expect(result.documents).toHaveLength(2);
+    expect(result.graphReasoningTrace).toEqual([
+      {
+        knowledgeId: 'kb-1',
+        matchedEntities: [{ key: 'Topic::乔峰', name: '乔峰' }],
+        expandedChunkIds: ['chunk-2'],
+        expandedChunkCount: 1,
+        skipped: false,
+        reason: undefined,
+      },
+    ]);
     
     const contents = result.documents.map((d: any) => d.content);
     expect(contents).toContain('乔峰与慕容复齐名。');
     expect(contents).toContain('乔峰是契丹人。');
   });
 });
-

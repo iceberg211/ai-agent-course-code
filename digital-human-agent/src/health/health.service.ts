@@ -8,7 +8,8 @@ import { HealthProbeResult, HealthResponse } from '@/health/health.types';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { Neo4jGraphService } from '@/knowledge/graph/neo4j-graph.service';
 import { QueueService } from '@/queue/queue.service';
-import { ObjectStorageProviderToken, ObjectStorageProvider } from '@/storage/object-storage.provider';
+import { ObjectStorageProviderToken } from '@/storage/object-storage.provider';
+import type { ObjectStorageProvider } from '@/storage/object-storage.provider';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 
 @Injectable()

@@ -81,6 +81,14 @@ describe('KnowledgeDocumentService', () => {
           status: 'completed',
         }),
       ),
+      findOne: jest.fn(() =>
+        Promise.resolve({
+          ...document,
+          status: 'completed',
+          isCurrentVersion: true,
+          archivedAt: null,
+        }),
+      ),
       delete: jest.fn(),
       find: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
@@ -89,6 +97,22 @@ describe('KnowledgeDocumentService', () => {
       delete: jest.fn(),
       createQueryBuilder: jest.fn(),
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'chunk-1',
+          chunkIndex: 0,
+          source: 'demo.md',
+          category: null,
+          content: '# 服务协议\n\n总览说明。',
+        },
+        {
+          id: 'chunk-2',
+          chunkIndex: 1,
+          source: 'demo.md',
+          category: null,
+          content: '# 服务协议\n## 试用数据\n\n试用期结束后，乙方应在七日内删除甲方试用数据。',
+        },
+      ]),
     };
     const assetRepo = {
       find: jest.fn().mockResolvedValue([]),

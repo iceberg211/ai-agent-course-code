@@ -8,9 +8,8 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
@@ -18,6 +17,14 @@ import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
 import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '@/rbac/guards/permission.guard';
+import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
+import {
+  KnowledgeGraphListEntitiesQueryDto,
+  KnowledgeGraphListRelationsQueryDto,
+  KnowledgeGraphNeighborhoodQueryDto,
+} from '@/knowledge/dto/knowledge-graph-query.dto';
+import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
 @ApiTags('knowledge-bases')
 @Controller('knowledge-bases')
@@ -25,7 +32,6 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 export class KnowledgeController {
   constructor(
     private readonly knowledgeService: KnowledgeService,
-    @Inject(forwardRef(() => KnowledgeGraphService))
     private readonly graphService: KnowledgeGraphService,
   ) {}
 
@@ -101,36 +107,67 @@ export class KnowledgeController {
   }
 
   @Get(':knowledgeId/graph/entities')
+  @UseGuards(PermissionGuard)
+  @RequirePermissions('documents:view')
   @ApiOperation({ summary: '查询知识库提取的所有图谱实体' })
   listEntities(
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
-    @Query('q') query?: string,
-    @Query('limit') limit?: number,
+    @Query() query: KnowledgeGraphListEntitiesQueryDto,
+    @Req() req: any,
   ) {
-    return this.graphService.listEntities(knowledgeId, query, limit);
+    return this.graphService.listEntities(
+      knowledgeId,
+      query.q,
+      query.limit,
+      this.accessScope(req),
+    );
   }
 
   @Get(':knowledgeId/graph/relations')
+  @UseGuards(PermissionGuard)
+  @RequirePermissions('documents:view')
   @ApiOperation({ summary: '查询知识库提取的所有实体关系' })
   listRelations(
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
-    @Query('limit') limit?: number,
+    @Query() query: KnowledgeGraphListRelationsQueryDto,
+    @Req() req: any,
   ) {
-    return this.graphService.listRelations(knowledgeId, limit);
+    return this.graphService.listRelations(
+      knowledgeId,
+      query.limit,
+      this.accessScope(req),
+    );
   }
 
   @Get(':knowledgeId/graph/neighborhood')
+  @UseGuards(PermissionGuard)
+  @RequirePermissions('documents:view')
   @ApiOperation({ summary: '查询知识库中某个节点的邻居子图关系' })
   getNeighborhood(
     @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
-    @Query('nodeKey') nodeKey: string,
+    @Query() query: KnowledgeGraphNeighborhoodQueryDto,
+    @Req() req: any,
   ) {
-    return this.graphService.getNeighborhood(knowledgeId, nodeKey);
+    return this.graphService.getNeighborhood(
+      knowledgeId,
+      query.nodeKey,
+      this.accessScope(req),
+    );
   }
 
   @Post(':knowledgeId/graph/rebuild')
+  @UseGuards(PermissionGuard)
+  @RequirePermissions('documents:retry')
   @ApiOperation({ summary: '触发知识库图谱全量重建同步' })
   rebuildGraph(@Param('knowledgeId', ParseUUIDPipe) knowledgeId: string) {
     return this.graphService.rebuildGraph(knowledgeId);
+  }
+
+  private accessScope(req: any): KnowledgeAccessScope {
+    return {
+      ownerId: req.user?.id ?? null,
+      department: req.user?.department ?? null,
+      role: req.user?.role ?? null,
+    };
   }
 }

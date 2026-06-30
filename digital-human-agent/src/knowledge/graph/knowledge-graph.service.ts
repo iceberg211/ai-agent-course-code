@@ -4,7 +4,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { throwIfAborted } from '@/common/utils';
 import { Neo4jGraphService } from '@/knowledge/graph/neo4j-graph.service';
-import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import type {
+  KnowledgeAccessScope,
+  KnowledgeChunk,
+} from '@/knowledge/types/knowledge-content.types';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import {
@@ -29,6 +32,7 @@ import { extractGraphFromChunks } from './extractor';
 import {
   toNeo4jKnowledgeChunk,
 } from './mapper';
+import { applyDocumentAccessScope } from '@/knowledge/utils/document-access.util';
 
 // ==========================================
 // 核心 Service 实现
@@ -313,6 +317,8 @@ export class KnowledgeGraphService {
         SET
           d.knowledgeId = $knowledgeId,
           d.source = $source,
+          d.isCurrentVersion = $isCurrentVersion,
+          d.isArchived = $isArchived,
           d.updatedAt = datetime()
         WITH d
         UNWIND $chunks AS row
@@ -325,6 +331,13 @@ export class KnowledgeGraphService {
           c.category = row.category,
           c.content = row.content,
           c.enabled = true,
+          c.allowedUserIds = row.allowedUserIds,
+          c.allowedRoleIds = row.allowedRoleIds,
+          c.allowedDepartmentIds = row.allowedDepartmentIds,
+          c.securityLevel = coalesce(row.securityLevel, 0),
+          c.aclVersion = coalesce(row.aclVersion, 1),
+          c.isCurrentVersion = $isCurrentVersion,
+          c.isArchived = $isArchived,
           c.updatedAt = datetime()
         MERGE (d)-[:HAS_CHUNK]->(c)
       `,
@@ -332,12 +345,19 @@ export class KnowledgeGraphService {
         documentId: input.documentId,
         knowledgeId: input.knowledgeId,
         source: input.source,
+        isCurrentVersion: input.isCurrentVersion ?? true,
+        isArchived: input.isArchived ?? false,
         chunks: input.chunks.map((chunk) => ({
           id: chunk.id,
           chunkIndex: chunk.chunkIndex,
           source: chunk.source,
           category: chunk.category ?? null,
           content: chunk.content ?? '',
+          allowedUserIds: chunk.allowedUserIds ?? null,
+          allowedRoleIds: chunk.allowedRoleIds ?? null,
+          allowedDepartmentIds: chunk.allowedDepartmentIds ?? null,
+          securityLevel: chunk.securityLevel ?? 0,
+          aclVersion: chunk.aclVersion ?? 1,
         })),
       },
     );
@@ -432,14 +452,21 @@ export class KnowledgeGraphService {
     }
   }
 
-  async listEntities(knowledgeId: string, query?: string, limit = 100): Promise<any[]> {
+  async listEntities(
+    knowledgeId: string,
+    query?: string,
+    limit = 100,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<any[]> {
     if (!this.isEnabled()) return [];
+    const chunkIds = await this.findVisibleCurrentChunkIds(knowledgeId, accessScope);
+    if (chunkIds.length === 0) return [];
 
     const filterSql = query ? 'AND (n.displayName CONTAINS $query OR n.normalizedName CONTAINS $query)' : '';
     const cypher = `
       MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
       MATCH (source:GraphNode)-[rel]->(target:GraphNode)
-      WHERE rel.chunkId = c.id AND c.enabled = true
+      WHERE rel.chunkId = c.id AND c.enabled = true AND c.id IN $chunkIds
       WITH collect(distinct source) + collect(distinct target) as nodes
       UNWIND nodes as n
       WITH distinct n
@@ -450,18 +477,25 @@ export class KnowledgeGraphService {
 
     return this.neo4jGraphService.query(cypher, {
       knowledgeId,
+      chunkIds,
       query: query ?? '',
       limit: Math.max(1, Math.min(200, limit)),
     });
   }
 
-  async listRelations(knowledgeId: string, limit = 100): Promise<any[]> {
+  async listRelations(
+    knowledgeId: string,
+    limit = 100,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<any[]> {
     if (!this.isEnabled()) return [];
+    const chunkIds = await this.findVisibleCurrentChunkIds(knowledgeId, accessScope);
+    if (chunkIds.length === 0) return [];
 
     const cypher = `
       MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
       MATCH (source:GraphNode)-[rel]->(target:GraphNode)
-      WHERE rel.chunkId = c.id AND c.enabled = true
+      WHERE rel.chunkId = c.id AND c.enabled = true AND c.id IN $chunkIds
       RETURN 
         rel.edgeKey as key,
         source.displayName as source,
@@ -477,17 +511,24 @@ export class KnowledgeGraphService {
 
     return this.neo4jGraphService.query(cypher, {
       knowledgeId,
+      chunkIds,
       limit: Math.max(1, Math.min(200, limit)),
     });
   }
 
-  async getNeighborhood(knowledgeId: string, nodeKey: string): Promise<any[]> {
+  async getNeighborhood(
+    knowledgeId: string,
+    nodeKey: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<any[]> {
     if (!this.isEnabled()) return [];
+    const chunkIds = await this.findVisibleCurrentChunkIds(knowledgeId, accessScope);
+    if (chunkIds.length === 0) return [];
 
     const cypher = `
       MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
       MATCH (center:GraphNode {nodeKey: $nodeKey})-[rel]-(neighbor:GraphNode)
-      WHERE rel.chunkId = c.id AND c.enabled = true
+      WHERE rel.chunkId = c.id AND c.enabled = true AND c.id IN $chunkIds
       MATCH (chunkNode:KnowledgeChunk {id: rel.chunkId})
       RETURN distinct
         chunkNode.id as id,
@@ -497,6 +538,10 @@ export class KnowledgeGraphService {
         chunkNode.source as source,
         chunkNode.chunkIndex as chunk_index,
         chunkNode.category as category,
+        center.displayName as sourceName,
+        neighbor.displayName as targetName,
+        rel.relationType as relationType,
+        rel.relationLabel as relationLabel,
         rel.confidence as confidence,
         rel.evidenceText as evidenceText
     `;
@@ -504,54 +549,168 @@ export class KnowledgeGraphService {
     return this.neo4jGraphService.query(cypher, {
       knowledgeId,
       nodeKey,
+      chunkIds,
     });
   }
 
-  async rebuildGraph(knowledgeId: string): Promise<{ success: boolean; documentCount: number }> {
-    if (!this.isEnabled()) return { success: false, documentCount: 0 };
+  async rebuildGraph(knowledgeId: string): Promise<{
+    success: boolean;
+    documentCount: number;
+    indexedCount: number;
+    skippedCount: number;
+    failedCount: number;
+    errors: Array<{ documentId: string; message: string }>;
+  }> {
+    if (!this.isEnabled()) {
+      return {
+        success: false,
+        documentCount: 0,
+        indexedCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        errors: [],
+      };
+    }
 
     const documents = await this.documentRepo.find({
-      where: { knowledgeBaseId: knowledgeId, archivedAt: IsNull() },
+      where: {
+        knowledgeBaseId: knowledgeId,
+        archivedAt: IsNull(),
+        isCurrentVersion: true,
+      },
     });
     if (documents.length === 0) {
-      return { success: true, documentCount: 0 };
+      return {
+        success: true,
+        documentCount: 0,
+        indexedCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        errors: [],
+      };
     }
+
+    let indexedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    const errors: Array<{ documentId: string; message: string }> = [];
 
     for (const doc of documents) {
-      // 1. 删除旧图谱节点关系
-      await this.safeDeleteByDocumentId(doc.id, 'rebuild_graph');
+      try {
+        // 1. 删除旧图谱节点关系
+        await this.safeDeleteByDocumentId(doc.id, 'rebuild_graph');
 
-      // 2. 拉取此文档下所有启用的 chunks
-      const chunks = await this.chunkRepo.find({
-        where: { documentId: doc.id, enabled: true },
-        order: { chunkIndex: 'ASC' },
-      });
-      if (chunks.length === 0) continue;
+        // 2. 拉取此文档下所有启用的 chunks
+        const chunks = await this.chunkRepo.find({
+          where: { documentId: doc.id, enabled: true },
+          order: { chunkIndex: 'ASC' },
+        });
+        if (chunks.length === 0) {
+          skippedCount += 1;
+          await this.documentRepo.update(doc.id, {
+            graphSyncStatus: 'skipped',
+            graphSyncError: null,
+            graphSyncedAt: null,
+          });
+          continue;
+        }
 
-      // 3. 提取实体
-      const graphInput: KnowledgeGraphChunkRef[] = chunks.map((c) => ({
-        id: c.id,
-        source: c.source,
-        chunkIndex: c.chunkIndex,
-        content: c.content,
-        category: c.category ?? undefined,
-      }));
+        // 3. 提取实体并载入安全元数据
+        const graphInput: KnowledgeGraphChunkRef[] = chunks.map((c) => ({
+          id: c.id,
+          source: c.source,
+          chunkIndex: c.chunkIndex,
+          content: c.content,
+          category: c.category ?? undefined,
+          allowedUserIds: c.allowedUserIds,
+          allowedRoleIds: c.allowedRoleIds,
+          allowedDepartmentIds: c.allowedDepartmentIds,
+          securityLevel: c.securityLevel,
+          aclVersion: c.aclVersion,
+        }));
 
-      const extractedGraph = await this.extract({
-        documentId: doc.id,
-        chunks: graphInput,
-      });
+        const extractedGraph = await this.extract({
+          documentId: doc.id,
+          chunks: graphInput,
+        });
 
-      // 4. 持久化到 Neo4j
-      await this.safeUpsertDocument({
-        documentId: doc.id,
-        knowledgeId,
-        source: doc.filename,
-        chunks: graphInput,
-        extractedGraph,
-      });
+        // 4. 持久化到 Neo4j（传入当前版本和归档状态标志）
+        const syncResult = await this.safeUpsertDocument({
+          documentId: doc.id,
+          knowledgeId,
+          source: doc.filename,
+          chunks: graphInput,
+          extractedGraph,
+          isCurrentVersion: doc.isCurrentVersion,
+          isArchived: doc.archivedAt !== null,
+        });
+        if (syncResult.status === 'indexed') {
+          indexedCount += 1;
+          await this.documentRepo.update(doc.id, {
+            graphSyncStatus: 'indexed',
+            graphSyncError: null,
+            graphSyncedAt: new Date(),
+          });
+        } else if (syncResult.status === 'skipped') {
+          skippedCount += 1;
+          await this.documentRepo.update(doc.id, {
+            graphSyncStatus: 'skipped',
+            graphSyncError: null,
+            graphSyncedAt: null,
+          });
+        } else {
+          failedCount += 1;
+          errors.push({
+            documentId: doc.id,
+            message: syncResult.errorMessage,
+          });
+          await this.documentRepo.update(doc.id, {
+            graphSyncStatus: 'failed',
+            graphSyncError: syncResult.errorMessage,
+            graphSyncedAt: null,
+          });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failedCount += 1;
+        errors.push({
+          documentId: doc.id,
+          message,
+        });
+        await this.documentRepo.update(doc.id, {
+          graphSyncStatus: 'failed',
+          graphSyncError: message,
+          graphSyncedAt: null,
+        });
+      }
     }
 
-    return { success: true, documentCount: documents.length };
+    return {
+      success: failedCount === 0,
+      documentCount: documents.length,
+      indexedCount,
+      skippedCount,
+      failedCount,
+      errors,
+    };
+  }
+
+  private async findVisibleCurrentChunkIds(
+    knowledgeId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<string[]> {
+    const qb = this.chunkRepo
+      .createQueryBuilder('chunk')
+      .select('chunk.id', 'id')
+      .innerJoin('chunk.document', 'document')
+      .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .andWhere('document.archived_at IS NULL')
+      .andWhere('document.is_current_version = true')
+      .andWhere('chunk.enabled = true');
+
+    applyDocumentAccessScope(qb, 'document', accessScope);
+
+    const rows = await qb.getRawMany<{ id: string }>();
+    return rows.map((row) => row.id).filter(Boolean);
   }
 }

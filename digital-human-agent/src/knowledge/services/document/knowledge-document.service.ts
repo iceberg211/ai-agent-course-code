@@ -743,17 +743,32 @@ export class KnowledgeDocumentService {
     rows: KnowledgeDocumentChunkRow[];
   }): Promise<void> {
     try {
+      const document = await this.documentRepo.findOne({
+        where: { id: input.documentId },
+      });
+      const fullChunks = await this.chunkRepo.find({
+        where: { documentId: input.documentId },
+        order: { chunkIndex: 'ASC' },
+      });
+
       const graphSyncResult = await this.syncDocumentGraph({
         documentId: input.documentId,
         knowledgeId: input.knowledgeId,
         source: input.source,
-        chunks: input.rows.map((row) => ({
-          id: row.id,
-          chunkIndex: row.chunk_index,
-          source: row.source,
-          category: row.category,
-          content: row.content,
+        chunks: fullChunks.map((chunk) => ({
+          id: chunk.id,
+          chunkIndex: chunk.chunkIndex,
+          source: chunk.source,
+          category: chunk.category,
+          content: chunk.content,
+          allowedUserIds: chunk.allowedUserIds,
+          allowedRoleIds: chunk.allowedRoleIds,
+          allowedDepartmentIds: chunk.allowedDepartmentIds,
+          securityLevel: chunk.securityLevel,
+          aclVersion: chunk.aclVersion,
         })),
+        isCurrentVersion: document?.isCurrentVersion,
+        isArchived: document?.archivedAt !== null,
       });
 
       await this.documentRepo.update(input.documentId, {
@@ -799,7 +814,14 @@ export class KnowledgeDocumentService {
       source: string;
       category: string | null;
       content: string;
+      allowedUserIds?: string[] | null;
+      allowedRoleIds?: string[] | null;
+      allowedDepartmentIds?: string[] | null;
+      securityLevel?: number | null;
+      aclVersion?: number | null;
     }>;
+    isCurrentVersion?: boolean;
+    isArchived?: boolean;
   }) {
     if (!this.graphService.isEnabled()) {
       return { status: 'skipped' as const };
@@ -1432,17 +1454,29 @@ export class KnowledgeDocumentService {
       graphSyncError: null,
     });
 
+    const fullChunks = await this.chunkRepo.find({
+      where: { documentId: document.id },
+      order: { chunkIndex: 'ASC' },
+    });
+
     const graphSyncResult = await this.syncDocumentGraph({
       documentId: document.id,
       knowledgeId,
       source: filename,
-      chunks: chunkRows.map((row) => ({
-        id: row.id,
-        chunkIndex: row.chunk_index,
-        source: row.source,
-        category: row.category,
-        content: row.content,
+      chunks: fullChunks.map((chunk) => ({
+        id: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        source: chunk.source,
+        category: chunk.category,
+        content: chunk.content,
+        allowedUserIds: chunk.allowedUserIds,
+        allowedRoleIds: chunk.allowedRoleIds,
+        allowedDepartmentIds: chunk.allowedDepartmentIds,
+        securityLevel: chunk.securityLevel,
+        aclVersion: chunk.aclVersion,
       })),
+      isCurrentVersion: document.isCurrentVersion,
+      isArchived: document.archivedAt !== null,
     });
 
     await this.documentRepo.update(document.id, {

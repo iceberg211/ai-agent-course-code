@@ -33,6 +33,19 @@ export interface RetrievalHistoryItem {
   strategy?: RetrievalStrategy;
 }
 
+export interface GraphReasoningTraceItem {
+  knowledgeId: string;
+  matchedEntities: Array<{
+    key: string;
+    name: string;
+  }>;
+  expandedChunkIds: string[];
+  expandedChunkCount: number;
+  skipped?: boolean;
+  reason?: string;
+  error?: string;
+}
+
 export interface RagKnowledgeCitation extends RetrievedKnowledgeChunk {
   kind: 'knowledge';
 }
@@ -80,6 +93,7 @@ export interface RagWorkflowState {
   citations: RagCitation[];
   retrievalHistory: RetrievalHistoryItem[];
   retrievalTrace: RetrieveKnowledgeTraceItem[];
+  graphReasoningTrace: GraphReasoningTraceItem[];
   shortTermMemory: ShortTermMemoryContext;
   longTermMemories: MemoryRecord[];
   memoryContext: string;

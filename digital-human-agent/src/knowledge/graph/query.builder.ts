@@ -37,6 +37,8 @@ export function toCypherRelationshipType(value: string): string {
 const NEIGHBOR_QUERY = `
         MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
         WHERE c.enabled = true
+          AND coalesce(c.isCurrentVersion, true) = true
+          AND coalesce(c.isArchived, false) = false
           AND (
             $isAdmin = true
             OR coalesce(c.securityLevel, 0) = 0
@@ -99,6 +101,8 @@ function buildPathQuery(maxHops: number): string {
   return `
         MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
         WHERE c.enabled = true
+          AND coalesce(c.isCurrentVersion, true) = true
+          AND coalesce(c.isArchived, false) = false
           AND (
             $isAdmin = true
             OR coalesce(c.securityLevel, 0) = 0

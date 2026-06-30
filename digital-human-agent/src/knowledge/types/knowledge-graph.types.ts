@@ -14,6 +14,11 @@ export interface KnowledgeGraphChunkRef {
   source: string;
   content?: string;
   category?: string | null;
+  allowedUserIds?: string[] | null;
+  allowedRoleIds?: string[] | null;
+  allowedDepartmentIds?: string[] | null;
+  securityLevel?: number | null;
+  aclVersion?: number | null;
 }
 
 export interface KnowledgeGraphNodeRef {
@@ -124,6 +129,8 @@ export interface Neo4jGraphSyncInput {
   source: string;
   chunks: KnowledgeGraphChunkRef[];
   extractedGraph?: ExtractedKnowledgeGraph;
+  isCurrentVersion?: boolean;
+  isArchived?: boolean;
 }
 
 export interface Neo4jGraphSyncSummary {
