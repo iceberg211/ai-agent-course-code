@@ -80,9 +80,16 @@ export class LlmRerankerProvider implements RerankerProvider {
       throwIfAborted(signal);
 
       const parsed = result?.scores ?? [];
+      const hasParsedScores = parsed.length > 0;
       const reranked = this.applyScores(rerankCandidates, parsed, safeTopK, minScore);
       if (reranked.length > 0) {
         return reranked;
+      }
+
+      // 仅在 LLM 确实给出了打分但打分全部低于阈值时，保留模型主观决策，直接返回空数组（而非异常回退）
+      if (hasParsedScores) {
+        this.logger.log('LLM Rerank 打分全部低于阈值，无相关匹配文档');
+        return [];
       }
 
       this.logger.warn('LLM Rerank 未返回有效分数，回退混合召回当前排序');

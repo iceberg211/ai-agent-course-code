@@ -10,6 +10,8 @@ import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKnowledgeController } from '@/knowledge/controllers/persona-knowledge.controller';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { DocumentTaskService } from '@/knowledge/services/document/document-task.service';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
+import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 
 describe('Knowledge API (e2e)', () => {
   let app: INestApplication;
@@ -84,6 +86,25 @@ describe('Knowledge API (e2e)', () => {
         {
           provide: KnowledgeService,
           useValue: knowledgeCatalogService,
+        },
+        {
+          provide: AuthorizationService,
+          useValue: {
+            canAccessDocument: jest.fn().mockResolvedValue(true),
+            canAccessKnowledgeBase: jest.fn().mockResolvedValue(true),
+            hasRole: jest.fn().mockResolvedValue(true),
+            hasAllPermissions: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: KnowledgeGraphService,
+          useValue: {
+            listEntities: jest.fn().mockResolvedValue([]),
+            listRelations: jest.fn().mockResolvedValue([]),
+            getNeighborhood: jest.fn().mockResolvedValue([]),
+            rebuildGraph: jest.fn().mockResolvedValue({ success: true }),
+            isEnabled: jest.fn().mockReturnValue(true),
+          },
         },
       ],
     })
@@ -203,7 +224,7 @@ describe('Knowledge API (e2e)', () => {
     expect(
       knowledgeDocumentService.parseAndIngestDocument,
     ).not.toHaveBeenCalled();
-    expect(String(res.body.message)).toContain('仅支持 txt、md、pdf 文档上传');
+    expect(String(res.body.message)).toContain('不支持的文件格式。仅支持 txt、md、pdf、docx、xlsx、pptx、html 网页以及图片、音频、视频文件上传');
   });
 
   it('GET /knowledge-bases/:kbId/documents 非 UUID 返回 400', async () => {

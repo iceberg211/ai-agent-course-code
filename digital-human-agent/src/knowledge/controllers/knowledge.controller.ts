@@ -9,6 +9,8 @@ import {
   Post,
   Query,
   UseGuards,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
@@ -23,6 +25,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 export class KnowledgeController {
   constructor(
     private readonly knowledgeService: KnowledgeService,
+    @Inject(forwardRef(() => KnowledgeGraphService))
     private readonly graphService: KnowledgeGraphService,
   ) {}
 

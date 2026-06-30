@@ -8,6 +8,7 @@ function createRepoMock() {
     create: jest.fn((value) => value),
     save: jest.fn(async (value) => value),
     update: jest.fn(async () => ({ affected: 1 })),
+    delete: jest.fn(async () => ({ affected: 1 })),
   };
 }
 

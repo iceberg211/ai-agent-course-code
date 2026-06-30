@@ -324,16 +324,16 @@ export class ChatController {
       retrievalHistory: state.retrievalHistory,
       retrievalTrace: state.retrievalTrace,
       memory: {
-        shortTermWindowCount: state.shortTermMemory.window.length,
-        hasShortTermSummary: Boolean(state.shortTermMemory.summary),
-        longTermMemoryCount: state.longTermMemories.length,
-        longTermMemories: state.longTermMemories.map((item) => ({
+        shortTermWindowCount: state.shortTermMemory?.window?.length ?? 0,
+        hasShortTermSummary: Boolean(state.shortTermMemory?.summary),
+        longTermMemoryCount: state.longTermMemories?.length ?? 0,
+        longTermMemories: state.longTermMemories?.map((item) => ({
           id: item.id,
           category: item.category,
           visibility: item.visibility,
           confidence: item.confidence,
           sourceConversationId: item.sourceConversationId,
-        })),
+        })) ?? [],
       },
       enough: state.enough,
       missingFacts: state.missingFacts,

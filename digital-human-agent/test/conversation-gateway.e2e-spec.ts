@@ -16,8 +16,9 @@ import { PersonaService } from '@/persona/persona.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { ConfigService } from '@nestjs/config';
 import { AccessControlService } from '@/common/security/access-control.service';
-
 import { JwtService } from '@nestjs/jwt';
+import { UserService } from '@/user/services/user.service';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
 
 type JsonMessage = Record<string, unknown>;
 
@@ -93,6 +94,21 @@ describe('Conversation Gateway (e2e)', () => {
           provide: JwtService,
           useValue: {
             verifyAsync: jest.fn().mockResolvedValue({ sub: 'mock-user-id', username: 'mock-user' }),
+          },
+        },
+        {
+          provide: UserService,
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({ id: 'mock-user-id', username: 'mock-user', department: 'IT' }),
+          },
+        },
+        {
+          provide: AuthorizationService,
+          useValue: {
+            canAccessDocument: jest.fn().mockResolvedValue(true),
+            canAccessKnowledgeBase: jest.fn().mockResolvedValue(true),
+            hasRole: jest.fn().mockResolvedValue(true),
+            hasAllPermissions: jest.fn().mockResolvedValue(true),
           },
         },
       ],

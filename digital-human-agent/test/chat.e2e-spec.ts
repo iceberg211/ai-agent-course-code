@@ -13,6 +13,9 @@ import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { PersonaService } from '@/persona/persona.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
+import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
+import { AuthorizationService } from '@/rbac/services/authorization.service';
 
 jest.mock('uuid', () => {
   let mockUuidCounter = 0;
@@ -49,6 +52,27 @@ describe('Chat API (e2e)', () => {
         { provide: AgentService, useValue: agentService },
         { provide: ConversationService, useValue: conversationService },
         { provide: PersonaService, useValue: personaService },
+        {
+          provide: ShortTermMemoryService,
+          useValue: {
+            appendMessage: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: LongTermMemoryService,
+          useValue: {
+            captureFromConversation: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: AuthorizationService,
+          useValue: {
+            canAccessDocument: jest.fn().mockResolvedValue(true),
+            canAccessKnowledgeBase: jest.fn().mockResolvedValue(true),
+            hasRole: jest.fn().mockResolvedValue(true),
+            hasAllPermissions: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)

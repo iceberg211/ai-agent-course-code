@@ -164,6 +164,9 @@ export class DocumentTaskRunnerService {
 
         // 保存多模态解析资产（图片、音频段、视频段）到数据库
         if (parseResult.assets && parseResult.assets.length > 0) {
+          // 幂等防护：先清理掉之前因为本阶段解析中途失败产生的冗余多模态资产记录
+          await this.assetRepo.delete({ documentId: docId });
+
           const assetEntities = parseResult.assets.map((asset) =>
             this.assetRepo.create({
               documentId: docId,

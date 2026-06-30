@@ -50,10 +50,18 @@ function isNeo4jGraphEvidence(value: unknown): value is Neo4jGraphEvidence {
 }
 
 export function extractMarkdownHeadings(content: string) {
+  let inCodeBlock = false;
   return content
     .split(/\r?\n/)
     .map((line) => line.trim())
     .map((line) => {
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        return null;
+      }
+      if (inCodeBlock) {
+        return null;
+      }
       const match = /^(#{1,6})\s+(.+?)\s*#*$/.exec(line);
       if (!match) return null;
       const name = normalizeDisplayName(match[2]);

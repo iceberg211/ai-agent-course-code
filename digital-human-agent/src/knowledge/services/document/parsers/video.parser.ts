@@ -214,6 +214,8 @@ export class VideoParser implements DocumentParserProvider {
         'ffmpeg',
         [
           '-y',
+          '-loglevel',
+          'error',
           '-i',
           inputPath,
           '-vf',
@@ -222,7 +224,7 @@ export class VideoParser implements DocumentParserProvider {
           '3',
           outputPattern,
         ],
-        { timeout: 60_000 },
+        { timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
       );
 
       const filenames = (await readdir(tempDir))

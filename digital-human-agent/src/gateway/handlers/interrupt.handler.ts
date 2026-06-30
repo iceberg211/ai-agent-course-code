@@ -38,17 +38,39 @@ export class InterruptHandler {
 
     const turnId = msg?.turnId ?? session.ttsTurnId ?? undefined;
 
-    // 中止 Agent
+    // 1. 中止 Agent 计算
     session.abortController?.abort();
     this.sessionRegistry.clearTtsQueue(session.sessionId);
     this.sessionRegistry.clearSpeakQueue(session.sessionId);
+
+    // 2. 如果已经开始播报/推流，主动推送结束消息以同步前端 UI 状态，不要等待未定的异步 finally
+    if (session.ttsStarted && turnId) {
+      const endType =
+        session.mode === 'digital-human' &&
+        session.digitalHumanSpeakMode === 'text-direct'
+          ? 'digital-human:end'
+          : 'tts:end';
+      sendJson(client, {
+        type: endType,
+        sessionId,
+        turnId,
+      });
+    }
+
+    // 3. 强制同步复位状态，消除由于异步 finally 中 completeTurnIfNeeded 拦截及后续 turnId 覆盖引起的状态遗留风险
     this.sessionRegistry.update(session.sessionId, {
       sentenceBuffer: '',
       activeTurnId: null,
-      ttsFinalizeRequested: true,
+      ttsTurnId: null,
+      ttsStarted: false,
+      ttsFinalizeRequested: false,
+      ttsSeq: 0,
+      ttsProcessing: false,
+      speakProcessing: false,
+      abortController: null,
     });
 
-    // 通知数字人打断
+    // 4. 通知数字人打断
     if (session.mode === 'digital-human' && session.digitalHumanSessionId) {
       try {
         await this.digitalHumanProvider.interrupt(
@@ -59,18 +81,6 @@ export class InterruptHandler {
         this.logger.warn(
           `数字人打断失败：${error instanceof Error ? error.message : String(error)}`,
         );
-      }
-    }
-
-    // 触发 Pipeline 完成当前 turn
-    if (turnId) {
-      if (
-        session.mode === 'digital-human' &&
-        session.digitalHumanSpeakMode === 'text-direct'
-      ) {
-        this.speakPipeline.completeTurnIfNeeded(client, session, turnId);
-      } else {
-        this.ttsPipeline.completeTurnIfNeeded(client, session, turnId);
       }
     }
 
