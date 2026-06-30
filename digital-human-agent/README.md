@@ -45,37 +45,53 @@
 
 ---
 
-## 🛠️ 本地开发指南
+## 🛠️ 本地开发与部署指南
 
-### 1. 安装依赖与启动服务
+### 1. 准备基础设施环境
+项目依赖 Redis, ElasticSearch, Neo4j, MinIO，可以通过内置的 Docker Compose 快捷拉起：
+```bash
+# 启动所有本地基础设施环境 (ES、Kibana、Neo4j、Redis、MinIO)
+pnpm rag:infra:up
+
+# 关闭基础设施环境
+pnpm rag:infra:down
+```
+
+### 2. 初始化数据库与配置迁移
+数据库底层采用 PostgreSQL (Supabase)，在连接串配置正确后运行结构迁移：
+```bash
+# 运行数据库表结构迁移（SQL）
+pnpm db:migrate
+```
+
+### 3. 安装依赖并启动 NestJS 服务
+本系统采用分布式架构，主服务进程负责 HTTP 与 WebSocket，工作进程（Worker）负责 BullMQ 异步文件解析：
 ```bash
 # 安装依赖
 pnpm install
 
-# 启动本地 NestJS 观察者模式
+# 1. 启动 HTTP/WS 主服务（本地热更新监视模式）
 pnpm start:dev
+
+# 2. 启动异步文件解析 Worker（本地热更新监视模式）
+pnpm start:worker:dev
 ```
 
-### 2. 数据库与 ElasticSearch
-- 本地 Supabase 数据库配置文件位于 `./supabase`。
-- **ElasticSearch** 相关脚本：
-  ```bash
-  # 启动本地 ElasticSearch 与 Kibana
-  pnpm es:up
-  
-  # 回填已有文档 chunk 至 ES 索引中
-  pnpm es:backfill
-  
-  # 关闭 ES 并清理本地数据卷
-  pnpm es:down
-  ```
-
-### 3. 测试与打包构建
+### 4. 冒烟测试与系统验证
 ```bash
-# 串行执行全量单元测试（包含 mock S3/ES/LLM）
+# 运行 RAG 运行前状态预检
+pnpm rag:preflight
+
+# 运行 Agent 路径冒烟测试
+pnpm rag:smoke:agent-path
+
+# 运行 Agent 决策冒烟测试
+pnpm rag:smoke:agentic
+
+# 执行全量单元测试（包含 mock S3/ES/LLM）
 pnpm test --runInBand
 
-# 生产环境打包构建
+# 编译打包构建
 pnpm build
 ```
 
