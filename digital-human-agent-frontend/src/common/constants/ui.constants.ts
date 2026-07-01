@@ -12,6 +12,7 @@ export type DigitalHumanUiStatus =
   | 'error';
 
 export type KnowledgeTabKey = 'documents' | 'health' | 'hit-test' | 'settings';
+export type KnowledgeTabKeyWithGraph = KnowledgeTabKey | 'graph';
 
 export const CHAT_CONTROL_STATE_LABELS: Record<ConversationState, string> = {
   idle: '待命',
@@ -46,9 +47,10 @@ export const MESSAGE_STATUS_LABELS: Record<MessageStatus, string> = {
 };
 
 export const VOICE_CLONE_STATUS_LABELS: Record<VoiceCloneStatus, string> = {
-  idle: '未开始',
-  processing: '克隆中',
-  completed: '克隆成功',
+  not_started: '未开始',
+  pending: '排队中',
+  training: '训练中',
+  ready: '可使用',
   failed: '失败',
 };
 
@@ -73,7 +75,7 @@ export const DOCUMENT_TASK_STATUS_LABELS: Record<string, string> = {
 export const KNOWLEDGE_DOCUMENT_STATUS_LABELS = DOCUMENT_TASK_STATUS_LABELS;
 
 export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
-  key: KnowledgeTabKey;
+  key: KnowledgeTabKeyWithGraph;
   label: string;
 }> = [
   { key: 'documents', label: '文档' },
@@ -89,5 +91,7 @@ export const APP_NAV_ITEMS = [
   { to: '/search', label: '智能搜索', icon: 'search' },
   { to: '/chat', label: 'AI 问答', icon: 'chat' },
   { to: '/kb', label: '知识库', icon: 'knowledge' },
+  { to: '/evaluation', label: '评估验证', icon: 'evaluation' },
+  { to: '/rbac', label: '系统管理', icon: 'rbac' },
   { to: '/profile', label: '个人中心', icon: 'profile' },
 ] as const;

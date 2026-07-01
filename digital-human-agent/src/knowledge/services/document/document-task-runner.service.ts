@@ -3,10 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
-import {
-  DocumentTask,
-  type DocumentTaskStatus,
-} from '@/knowledge/entities/document-task.entity';
+import { DocumentTask } from '@/knowledge/entities/document-task.entity';
 import {
   DocumentTaskStep,
   type DocumentTaskStepName,
@@ -45,10 +42,16 @@ type StepPatch = Partial<
   >
 >;
 
-async function streamToString(stream: Readable): Promise<string> {
+async function streamToString(stream: Readable, maxBytes: number): Promise<string> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new Error(`Markdown 内容超过读取上限 ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString('utf-8');
 }
@@ -262,7 +265,7 @@ export class DocumentTaskRunnerService {
           bucket,
           key: markdownStorageKey,
         });
-        const contentStr = await streamToString(stream);
+        const contentStr = await streamToString(stream, this.markdownReadMaxBytes);
 
         // 获取对应的 document
         const document = await this.documentService.findOneDocument(docId);
@@ -387,6 +390,13 @@ export class DocumentTaskRunnerService {
       }
     }
 
+    if (input.versionGroupId && docId) {
+      await this.documentService.setCurrentDocumentVersion(
+        knowledgeBaseId,
+        docId,
+      );
+    }
+
     // 最终更新任务为完成
     await this.updateTask(taskId, {
       status: 'completed',
@@ -421,10 +431,21 @@ export class DocumentTaskRunnerService {
       visibility: input.visibility,
       expiresAt:
         expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+      versionGroupId: input.versionGroupId ?? null,
+      versionNo: input.versionNo,
+      isCurrentVersion: input.isCurrentVersion,
       currentIngestRunId: input.currentIngestRunId ?? null,
       parseStrategy: 'multimodal_parser',
       parserVersion: 'multimodal-v1',
     };
+  }
+
+  private get markdownReadMaxBytes(): number {
+    const raw = Number(
+      this.configService.get<string>('DOCUMENT_MARKDOWN_READ_MAX_BYTES'),
+    );
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return 20 * 1024 * 1024;
   }
 
   private parseTags(value?: string | string[]): string[] {

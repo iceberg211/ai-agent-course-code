@@ -10,14 +10,21 @@ import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { Readable } from 'node:stream';
 import { DocumentTaskRunnerService } from './document-task-runner.service';
+import { DocumentTaskService } from './document-task.service';
 import { ObjectStorageProviderToken } from '@/storage/object-storage.provider';
 import type { ObjectStorageProvider } from '@/storage/object-storage.provider';
 import type { DocumentJobData } from './document-task.types';
 
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
+async function streamToBuffer(stream: Readable, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new Error(`原始文件超过 Worker 读取上限 ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks);
 }
@@ -34,6 +41,7 @@ export class DocumentTaskWorkerService
   constructor(
     private readonly configService: ConfigService,
     private readonly runner: DocumentTaskRunnerService,
+    private readonly taskService: DocumentTaskService,
     @Inject(ObjectStorageProviderToken)
     private readonly storageProvider: ObjectStorageProvider,
   ) {}
@@ -81,34 +89,47 @@ export class DocumentTaskWorkerService
           input,
         } = job.data;
 
-        this.logger.log(`[Worker] 开始处理任务 taskId=${taskId}`);
+        try {
+          this.logger.log(`[Worker] 开始处理任务 taskId=${taskId}`);
 
-        const bucket =
-          this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
+          const bucket =
+            this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
+          const maxBufferBytes = this.maxBufferBytes;
+          if (size > maxBufferBytes) {
+            throw new Error(`原始文件大小 ${size} 超过 Worker 读取上限 ${maxBufferBytes}`);
+          }
 
-        // 1. 从 MinIO 获取原始文件 Buffer
-        const stream = await this.storageProvider.getObject({
-          bucket,
-          key: originalStorageKey,
-        });
-        const buffer = await streamToBuffer(stream);
+          // 1. 从 MinIO 获取原始文件 Buffer
+          const stream = await this.storageProvider.getObject({
+            bucket,
+            key: originalStorageKey,
+          });
+          const buffer = await streamToBuffer(stream, maxBufferBytes);
 
-        const file = {
-          originalname: filename,
-          mimetype,
-          buffer,
-          size,
-        };
+          const file = {
+            originalname: filename,
+            mimetype,
+            buffer,
+            size,
+          };
 
-        // 2. 调用 Runner 模块顺序执行解析与入库
-        await this.runner.runUploadIngestTask({
-          taskId,
-          knowledgeBaseId,
-          file,
-          input,
-        });
+          // 2. 调用 Runner 模块顺序执行解析与入库
+          await this.runner.runUploadIngestTask({
+            taskId,
+            knowledgeBaseId,
+            file,
+            input,
+          });
 
-        this.logger.log(`[Worker] 任务完成 taskId=${taskId}`);
+          this.logger.log(`[Worker] 任务完成 taskId=${taskId}`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          await this.taskService.markTaskFailed(
+            taskId,
+            `Worker 执行失败: ${errorMessage}`,
+          );
+          throw error;
+        }
       },
       {
         connection: this.redisClient as any,
@@ -137,5 +158,13 @@ export class DocumentTaskWorkerService
     if (this.redisClient) {
       this.redisClient.disconnect();
     }
+  }
+
+  private get maxBufferBytes(): number {
+    const raw = Number(
+      this.configService.get<string>('DOCUMENT_WORKER_MAX_BUFFER_BYTES'),
+    );
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return 120 * 1024 * 1024;
   }
 }

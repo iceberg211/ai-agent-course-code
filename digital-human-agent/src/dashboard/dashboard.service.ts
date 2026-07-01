@@ -180,7 +180,9 @@ export class DashboardService {
     // 5. 文档指标: 多模态文档占比
     const multimodalDocsCount = await this.documentRepo
       .createQueryBuilder('doc')
-      .where("doc.mimetype LIKE 'image/%' OR doc.mimetype LIKE 'audio/%' OR doc.mimetype LIKE 'video/%'")
+      .where(
+        "doc.mimeType LIKE 'image/%' OR doc.mimeType LIKE 'audio/%' OR doc.mimeType LIKE 'video/%'",
+      )
       .getCount();
     const multimodalRate = documentCount > 0 ? parseFloat((multimodalDocsCount / documentCount).toFixed(4)) : 0;
 

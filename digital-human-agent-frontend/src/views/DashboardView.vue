@@ -117,7 +117,7 @@
       <section class="health-grid" aria-label="知识库健康">
         <button type="button" class="health-card" @click="goDocuments({ status: 'failed' })">
           <span>失败文档趋势</span>
-          <strong>{{ summary.failedDocumentTrend?.at(-1)?.count ?? summary.failedDocumentCount }}</strong>
+          <strong>{{ latestFailedTrendCount() }}</strong>
           <small>最近失败：{{ summary.recentFailedDocuments?.length ?? 0 }} 个</small>
         </button>
         <button type="button" class="health-card" @click="goDocuments({ processingStage: 'completed' })">
@@ -318,6 +318,11 @@ function formatProcessTime(ms?: number): string {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
   return `${minutes} 分 ${remainingSeconds} 秒`
+}
+
+function latestFailedTrendCount(): number {
+  const trend = summary.value?.failedDocumentTrend ?? []
+  return trend.length ? trend[trend.length - 1].count : (summary.value?.failedDocumentCount ?? 0)
 }
 </script>
 

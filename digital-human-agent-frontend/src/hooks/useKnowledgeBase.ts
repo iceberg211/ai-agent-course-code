@@ -3,6 +3,7 @@ import { apiFetch, apiJson } from '@/api/client'
 import type {
   KnowledgeBase,
   ChunkContext,
+  DocumentTaskItem,
   KnowledgeChunk,
   KnowledgeDocumentDetail,
   KnowledgeEvalCase,
@@ -49,6 +50,7 @@ export interface UploadDocumentMetadata {
   businessCategory?: string
   visibility?: 'private' | 'department' | 'company'
   expiresAt?: string
+  securityLevel?: number
 }
 
 function toQuery(params: object): string {
@@ -220,6 +222,58 @@ export function useKnowledgeBase() {
     }
   }
 
+  async function uploadDocumentTask(
+    kbId: string,
+    file: File,
+    metadata: UploadDocumentMetadata | string = {},
+    onProgress?: (percent: number) => void,
+  ): Promise<DocumentTaskItem | null> {
+    uploading.value = true
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      appendUploadMetadata(form, metadata)
+      return await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `/api/knowledge-bases/${kbId}/documents/upload`)
+        const token = localStorage.getItem('jwt_token')
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return
+          onProgress?.(Math.round((event.loaded / event.total) * 100))
+        }
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            let errorMsg = '上传失败'
+            try {
+              const res = JSON.parse(xhr.responseText)
+              errorMsg = res.message || errorMsg
+            } catch {}
+            reject(new Error(errorMsg))
+            return
+          }
+          try {
+            resolve(JSON.parse(xhr.responseText) as DocumentTaskItem)
+          } catch {
+            reject(new Error('解析上传响应出错'))
+          }
+        }
+        xhr.onerror = () => reject(new Error('网络错误，无法连接服务器'))
+        xhr.send(form)
+      })
+    } finally {
+      uploading.value = false
+    }
+  }
+
+  async function getDocumentTask(taskId: string): Promise<DocumentTaskItem | null> {
+    return apiJson<DocumentTaskItem>(`/api/document-tasks/${taskId}`)
+  }
+
+  async function listDocumentTasks(docId: string): Promise<DocumentTaskItem[]> {
+    return (await apiJson<DocumentTaskItem[]>(`/api/documents/${docId}/tasks`)) ?? []
+  }
+
   async function deleteDocument(kbId: string, docId: string): Promise<boolean> {
     const res = await apiFetch(
       `/api/knowledge-bases/${kbId}/documents/${docId}`,
@@ -331,6 +385,20 @@ export function useKnowledgeBase() {
     }
   }
 
+  async function listDocumentAssets(
+    kbId: string,
+    docId: string,
+  ): Promise<any[]> {
+    return (await apiJson<any[]>(`/api/knowledge-bases/${kbId}/documents/${docId}/assets`)) ?? []
+  }
+
+  async function getDocumentMarkdown(
+    kbId: string,
+    docId: string,
+  ): Promise<{ markdown: string } | null> {
+    return await apiJson<{ markdown: string }>(`/api/knowledge-bases/${kbId}/documents/${docId}/markdown`)
+  }
+
   async function setChunkEnabled(
     kbId: string,
     chunkId: string,
@@ -367,6 +435,7 @@ export function useKnowledgeBase() {
       threshold: number
       stage1TopK: number
       finalTopK: number
+      useGraph: boolean
     }> = {},
   ): Promise<KnowledgeSearchResult | null> {
     const q = query.trim()
@@ -394,6 +463,7 @@ export function useKnowledgeBase() {
       threshold: number
       stage1TopK: number
       finalTopK: number
+      useGraph: boolean
     }> = {},
   ): Promise<KnowledgeSearchResult | null> {
     const q = query.trim()
@@ -408,6 +478,40 @@ export function useKnowledgeBase() {
           body: JSON.stringify({ query: q, ...options }),
         },
       )
+    } finally {
+      searching.value = false
+    }
+  }
+
+  async function searchAcrossKnowledgeBases(
+    query: string,
+    options: Partial<{
+      knowledgeBaseIds: string[]
+      rerank: boolean
+      threshold: number
+      stage1TopK: number
+      finalTopK: number
+      useGraph: boolean
+      fileType: string
+      tags: string | string[]
+      department: string
+      businessCategory: string
+      visibility: string
+    }> = {},
+  ): Promise<KnowledgeSearchResult | null> {
+    const q = query.trim()
+    if (!q) return null
+    searching.value = true
+    try {
+      const payload = {
+        ...options,
+        tags: normalizeTagsOption(options.tags),
+      }
+      return await apiJson<KnowledgeSearchResult>('/api/search', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: q, ...payload }),
+      })
     } finally {
       searching.value = false
     }
@@ -467,6 +571,16 @@ export function useKnowledgeBase() {
         `/api/knowledge-bases/${kbId}/eval-cases/run-batch`,
         { method: 'POST' },
       )) ?? []
+    )
+  }
+
+  async function runEvalCase(
+    kbId: string,
+    evalCaseId: string,
+  ): Promise<KnowledgeEvalCase | null> {
+    return apiJson<KnowledgeEvalCase>(
+      `/api/knowledge-bases/${kbId}/eval-cases/${evalCaseId}/run`,
+      { method: 'POST' },
     )
   }
 
@@ -552,6 +666,9 @@ export function useKnowledgeBase() {
     listAllDocuments,
     uploadDocument,
     uploadDocumentWithProgress,
+    uploadDocumentTask,
+    getDocumentTask,
+    listDocumentTasks,
     deleteDocument,
     retryDocument,
     batchRetryDocuments,
@@ -561,15 +678,19 @@ export function useKnowledgeBase() {
     archiveDocument,
     updateDocumentGovernance,
     listChunks,
+    listDocumentAssets,
+    getDocumentMarkdown,
     setChunkEnabled,
     getChunkContext,
     searchInKb,
     searchForPersonaWithStages,
+    searchAcrossKnowledgeBases,
     listEvalCases,
     createEvalCase,
     updateEvalCase,
     deleteEvalCase,
     runEvalBatch,
+    runEvalCase,
     updateEvalReview,
     listKbsForPersona,
     attachToPersona,
@@ -579,6 +700,18 @@ export function useKnowledgeBase() {
     getGraphNeighborhood,
     rebuildGraph,
   }
+}
+
+function normalizeTagsOption(tags?: string | string[]): string[] | undefined {
+  if (Array.isArray(tags)) {
+    const list = tags.map((tag) => tag.trim()).filter(Boolean)
+    return list.length > 0 ? list : undefined
+  }
+  if (typeof tags === 'string') {
+    const list = tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+    return list.length > 0 ? list : undefined
+  }
+  return undefined
 }
 
 function appendUploadMetadata(
@@ -597,4 +730,7 @@ function appendUploadMetadata(
   }
   if (metadata.visibility) form.append('visibility', metadata.visibility)
   if (metadata.expiresAt) form.append('expiresAt', metadata.expiresAt)
+  if (metadata.securityLevel != null) {
+    form.append('securityLevel', String(metadata.securityLevel))
+  }
 }

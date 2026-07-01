@@ -9,6 +9,7 @@ import { KnowledgeService } from '@/knowledge/services/knowledge.service';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
 import { KnowledgeDocumentModule } from './knowledge-document.module';
 import { KnowledgeGraphModule } from './knowledge-graph.module';
+import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { KnowledgeGraphModule } from './knowledge-graph.module';
     TypeOrmModule.forFeature([Knowledge, PersonaKnowledge]),
     KnowledgeDocumentModule,
     KnowledgeGraphModule,
+    RbacModule,
   ],
   providers: [
     KnowledgeService,

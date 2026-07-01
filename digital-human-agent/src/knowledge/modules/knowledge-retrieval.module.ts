@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '@/common/common.module';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
+import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { KnowledgeSearchController } from '@/knowledge/controllers/knowledge-search.controller';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
@@ -18,7 +19,7 @@ import { RbacModule } from '@/rbac/rbac.module';
 @Module({
   imports: [
     CommonModule,
-    TypeOrmModule.forFeature([KnowledgeChunk]),
+    TypeOrmModule.forFeature([Knowledge, KnowledgeChunk]),
     KnowledgeDocumentModule,
     KnowledgeGraphModule,
     KnowledgeBaseModule,

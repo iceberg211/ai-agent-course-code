@@ -323,6 +323,7 @@ export class ChatController {
       subQuestions: state.subQuestions,
       retrievalHistory: state.retrievalHistory,
       retrievalTrace: state.retrievalTrace,
+      graphReasoningTrace: state.graphReasoningTrace,
       memory: {
         shortTermWindowCount: state.shortTermMemory?.window?.length ?? 0,
         hasShortTermSummary: Boolean(state.shortTermMemory?.summary),

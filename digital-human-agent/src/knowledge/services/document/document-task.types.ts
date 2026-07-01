@@ -9,9 +9,20 @@ export type UploadTaskFileInput = {
   size: number;
 };
 
-export type UploadTaskInput = UploadDocumentDto & {
+export type UploadTaskInput = Omit<
+  UploadDocumentDto,
+  'tags' | 'department' | 'businessCategory' | 'expiresAt'
+> & {
   ownerId?: string | null;
+  tags?: string | string[];
+  department?: string | null;
+  businessCategory?: string | null;
+  expiresAt?: string | null;
   currentIngestRunId?: string | null;
+  baseDocumentId?: string | null;
+  versionGroupId?: string | null;
+  versionNo?: number;
+  isCurrentVersion?: boolean;
 };
 
 export type UploadTaskExecutionInput = {

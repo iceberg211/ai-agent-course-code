@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import {
   BarChart3Icon,
   BellIcon,
@@ -95,6 +95,8 @@ import {
   UserCircleIcon,
   LogOutIcon,
   XIcon,
+  CheckSquareIcon,
+  SettingsIcon,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { APP_NAV_ITEMS } from '@/common/constants'
@@ -102,6 +104,7 @@ import { useSessionStore } from '@/stores/session'
 import { useAuthStore } from '@/stores/auth'
 import { useNotifications } from '@/hooks/useNotifications'
 import type { NotificationItem } from '@/types'
+import { apiJson } from '@/api/client'
 
 const iconMap = {
   dashboard: BarChart3Icon,
@@ -109,6 +112,8 @@ const iconMap = {
   search: SearchIcon,
   chat: MessageSquareIcon,
   knowledge: LibraryIcon,
+  evaluation: CheckSquareIcon,
+  rbac: SettingsIcon,
   profile: UserCircleIcon,
 } as const
 
@@ -118,15 +123,36 @@ const authStore = useAuthStore()
 const notificationApi = useNotifications()
 const notifications = ref<NotificationItem[]>([])
 const showNotifications = ref(false)
+const allowedMenuPaths = ref<Set<string> | null>(null)
 
-const items = APP_NAV_ITEMS.map((item) => ({
-  ...item,
-  icon: iconMap[item.icon],
-}))
+const items = computed(() => {
+  return APP_NAV_ITEMS
+    .filter((item) => {
+      if (allowedMenuPaths.value?.size) {
+        return allowedMenuPaths.value.has(item.to)
+      }
+      if (item.to === '/rbac') {
+        return authStore.user?.role === 'admin'
+      }
+      return true
+    })
+    .map((item) => ({
+      ...item,
+      icon: iconMap[item.icon as keyof typeof iconMap] || UserCircleIcon,
+    }))
+})
 
 onMounted(() => {
+  void loadMenus()
   void loadNotifications()
 })
+
+async function loadMenus() {
+  const menus = await apiJson<Array<{ path: string }>>('/api/rbac/me/menus')
+  if (menus?.length) {
+    allowedMenuPaths.value = new Set(menus.map((item) => item.path))
+  }
+}
 
 async function loadNotifications() {
   const result = await notificationApi.list({ page: 1, pageSize: 8 })
@@ -139,8 +165,10 @@ async function toggleNotifications() {
 }
 
 async function readNotification(id: string) {
+  const item = notifications.value.find((n) => n.id === id)
   await notificationApi.markRead(id)
   await loadNotifications()
+  if (item) navigateByNotification(item)
 }
 
 async function markAllRead() {
@@ -171,6 +199,38 @@ function notificationTypeLabel(type: string) {
     api_key_revoked: 'API Key 已废弃',
   }
   return labels[type] ?? '系统通知'
+}
+
+function navigateByNotification(item: NotificationItem) {
+  const payload = item.payload ?? {}
+  const targetType = String(payload.targetType ?? '')
+  const targetId = String(payload.targetId ?? '')
+  const knowledgeId = String(payload.knowledgeId ?? payload.knowledgeBaseId ?? '')
+  const documentId = String(payload.documentId ?? '')
+  const evalCaseId = String(payload.evalCaseId ?? '')
+
+  if (targetType === 'document' || documentId || item.type === 'document_failed') {
+    router.push({
+      path: '/documents',
+      query: documentId ? { q: documentId } : { status: 'failed' },
+    })
+    showNotifications.value = false
+    return
+  }
+  if (targetType === 'task' || targetId) {
+    router.push({ path: '/documents', query: { taskId: targetId } })
+    showNotifications.value = false
+    return
+  }
+  if (targetType === 'evalCase' || evalCaseId || item.type === 'eval_batch_completed') {
+    router.push({ path: '/evaluation', query: knowledgeId ? { knowledgeBaseId: knowledgeId } : {} })
+    showNotifications.value = false
+    return
+  }
+  if (item.type === 'answer_low_rated') {
+    router.push('/chat')
+    showNotifications.value = false
+  }
 }
 
 function formatDate(value?: string) {

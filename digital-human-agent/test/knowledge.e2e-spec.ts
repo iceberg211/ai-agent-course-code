@@ -31,6 +31,10 @@ describe('Knowledge API (e2e)', () => {
     getChunkContextForKnowledge: jest.fn(),
     listChunksByDocumentId: jest.fn(),
     listChunksByKnowledgeDocument: jest.fn(),
+    listAssetsByKnowledgeDocument: jest.fn(),
+    listAssetsByDocumentId: jest.fn(),
+    getMarkdownForKnowledgeDocument: jest.fn(),
+    getMarkdownByDocumentId: jest.fn(),
     updateChunkEnabled: jest.fn(),
     updateChunkEnabledForKnowledge: jest.fn(),
   };
@@ -56,6 +60,7 @@ describe('Knowledge API (e2e)', () => {
 
   const documentTaskService = {
     createUploadIngestTask: jest.fn(),
+    createUploadVersionTask: jest.fn(),
     getTaskDetail: jest.fn(),
     listTasksByDocument: jest.fn(),
     listTasks: jest.fn(),
@@ -164,12 +169,13 @@ describe('Knowledge API (e2e)', () => {
     ]);
   });
 
-  it('POST /knowledge-bases/:kbId/documents 上传文档成功', async () => {
-    knowledgeDocumentService.parseAndIngestDocument.mockResolvedValue({
-      id: docId,
+  it('POST /knowledge-bases/:kbId/documents 兼容旧入口并创建异步任务', async () => {
+    documentTaskService.createUploadIngestTask.mockResolvedValue({
+      id: 'task-1',
       knowledgeBaseId: kbId,
-      filename: 'readme.txt',
-      status: 'completed',
+      status: 'pending',
+      stage: 'uploaded',
+      steps: [],
     });
 
     const res = await request(app.getHttpServer())
@@ -182,7 +188,7 @@ describe('Knowledge API (e2e)', () => {
       .expect(201);
 
     expect(
-      knowledgeDocumentService.parseAndIngestDocument,
+      documentTaskService.createUploadIngestTask,
     ).toHaveBeenCalledWith(
       kbId,
       expect.objectContaining({
@@ -193,11 +199,83 @@ describe('Knowledge API (e2e)', () => {
       expect.objectContaining({ category: 'faq' }),
     );
     expect(res.body).toEqual({
-      id: docId,
+      id: 'task-1',
       knowledgeBaseId: kbId,
-      filename: 'readme.txt',
-      status: 'completed',
+      status: 'pending',
+      stage: 'uploaded',
+      steps: [],
     });
+  });
+
+  it('POST /knowledge-bases/:kbId/documents 普通用户默认创建私有文档任务', async () => {
+    documentTaskService.createUploadIngestTask.mockResolvedValue({
+      id: 'task-private',
+      knowledgeBaseId: kbId,
+      status: 'pending',
+      stage: 'uploaded',
+      steps: [],
+    });
+
+    await request(app.getHttpServer())
+      .post(`/knowledge-bases/${kbId}/documents`)
+      .attach('file', Buffer.from('这是测试文档内容'), {
+        filename: 'readme.txt',
+        contentType: 'text/plain',
+      })
+      .expect(201);
+
+    expect(documentTaskService.createUploadIngestTask).toHaveBeenCalledWith(
+      kbId,
+      expect.anything(),
+      expect.objectContaining({
+        ownerId: 'mock-user-id',
+        visibility: 'private',
+      }),
+    );
+  });
+
+  it('POST /knowledge-bases/:kbId/documents 普通用户不能设置公司可见', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/knowledge-bases/${kbId}/documents`)
+      .field('visibility', 'company')
+      .attach('file', Buffer.from('这是测试文档内容'), {
+        filename: 'readme.txt',
+        contentType: 'text/plain',
+      })
+      .expect(403);
+
+    expect(documentTaskService.createUploadIngestTask).not.toHaveBeenCalled();
+    expect(String(res.body.message)).toContain('无权将文档设置为公司可见');
+  });
+
+  it('POST /knowledge-bases/:kbId/documents/:docId/versions 会创建异步新版本任务', async () => {
+    documentTaskService.createUploadVersionTask.mockResolvedValue({
+      id: 'task-version',
+      knowledgeBaseId: kbId,
+      status: 'pending',
+      stage: 'uploaded',
+      steps: [],
+    });
+
+    await request(app.getHttpServer())
+      .post(`/knowledge-bases/${kbId}/documents/${docId}/versions`)
+      .attach('file', Buffer.from('这是新版本内容'), {
+        filename: 'v2.docx',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      .expect(201);
+
+    expect(documentTaskService.createUploadVersionTask).toHaveBeenCalledWith(
+      kbId,
+      docId,
+      expect.objectContaining({
+        originalname: 'v2.docx',
+        buffer: expect.any(Buffer),
+      }),
+      expect.objectContaining({ ownerId: 'mock-user-id' }),
+      expect.anything(),
+    );
+    expect(knowledgeDocumentService.parseAndIngestDocument).not.toHaveBeenCalled();
   });
 
   it('POST /knowledge-bases/:kbId/documents 缺少文件返回 400', async () => {
@@ -206,9 +284,7 @@ describe('Knowledge API (e2e)', () => {
       .field('category', 'faq')
       .expect(400);
 
-    expect(
-      knowledgeDocumentService.parseAndIngestDocument,
-    ).not.toHaveBeenCalled();
+    expect(documentTaskService.createUploadIngestTask).not.toHaveBeenCalled();
     expect(res.body.message).toContain('缺少上传文件');
   });
 
@@ -221,9 +297,7 @@ describe('Knowledge API (e2e)', () => {
       })
       .expect(400);
 
-    expect(
-      knowledgeDocumentService.parseAndIngestDocument,
-    ).not.toHaveBeenCalled();
+    expect(documentTaskService.createUploadIngestTask).not.toHaveBeenCalled();
     expect(String(res.body.message)).toContain('不支持的文件格式。仅支持 txt、md、pdf、docx、xlsx、pptx、html 网页以及图片、音频、视频文件上传');
   });
 
@@ -304,6 +378,89 @@ describe('Knowledge API (e2e)', () => {
         enabled: true,
       },
     ]);
+  });
+
+  it('GET /knowledge-bases/:kbId/documents/:docId/assets 返回文档资源', async () => {
+    knowledgeDocumentService.listAssetsByKnowledgeDocument.mockResolvedValue([
+      {
+        id: 'asset-1',
+        documentId: docId,
+        knowledgeBaseId: kbId,
+        assetType: 'image',
+        storageKey: 'knowledge-bases/kb-1/assets/demo.png',
+        url: 'http://localhost:9000/demo.png',
+      },
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .get(`/knowledge-bases/${kbId}/documents/${docId}/assets`)
+      .expect(200);
+
+    expect(
+      knowledgeDocumentService.listAssetsByKnowledgeDocument,
+    ).toHaveBeenCalledWith(kbId, docId, expect.anything());
+    expect(res.body[0]).toMatchObject({
+      id: 'asset-1',
+      assetType: 'image',
+      url: 'http://localhost:9000/demo.png',
+    });
+  });
+
+  it('GET /documents/:docId/assets 支持全局文档资源查询', async () => {
+    knowledgeDocumentService.listAssetsByDocumentId.mockResolvedValue([
+      {
+        id: 'asset-1',
+        documentId: docId,
+        assetType: 'audio',
+        storageKey: 'knowledge-bases/kb-1/assets/demo.mp3',
+        url: 'http://localhost:9000/demo.mp3',
+      },
+    ]);
+
+    await request(app.getHttpServer())
+      .get(`/documents/${docId}/assets`)
+      .expect(200);
+
+    expect(knowledgeDocumentService.listAssetsByDocumentId).toHaveBeenCalledWith(
+      docId,
+      expect.anything(),
+    );
+  });
+
+  it('GET /knowledge-bases/:kbId/documents/:docId/markdown 返回解析 Markdown', async () => {
+    knowledgeDocumentService.getMarkdownForKnowledgeDocument.mockResolvedValue({
+      documentId: docId,
+      filename: 'demo.md',
+      markdown: '# Demo',
+      markdownStorageKey: 'knowledge-bases/kb-1/markdown/run.md',
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/knowledge-bases/${kbId}/documents/${docId}/markdown`)
+      .expect(200);
+
+    expect(
+      knowledgeDocumentService.getMarkdownForKnowledgeDocument,
+    ).toHaveBeenCalledWith(kbId, docId, expect.anything());
+    expect(res.body.markdown).toBe('# Demo');
+  });
+
+  it('GET /documents/:docId/markdown 支持全局文档 Markdown 查询', async () => {
+    knowledgeDocumentService.getMarkdownByDocumentId.mockResolvedValue({
+      documentId: docId,
+      filename: 'demo.md',
+      markdown: '# Demo',
+      markdownStorageKey: 'knowledge-bases/kb-1/markdown/run.md',
+    });
+
+    await request(app.getHttpServer())
+      .get(`/documents/${docId}/markdown`)
+      .expect(200);
+
+    expect(knowledgeDocumentService.getMarkdownByDocumentId).toHaveBeenCalledWith(
+      docId,
+      expect.anything(),
+    );
   });
 
   it('PATCH /knowledge-bases/:kbId/chunks/:chunkId 切换 chunk 状态', async () => {

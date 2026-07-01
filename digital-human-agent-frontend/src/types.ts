@@ -40,6 +40,11 @@ export interface ChatMessage {
   turnId?: string
   feedback?: 'up' | 'down' | null
   latencyMs?: number | null
+  latency_ms?: number | null
+  ragTrace?: any
+  rag_trace?: any
+  graphReasoningTrace?: any
+  graph_reasoning_trace?: any
 }
 
 export interface Persona {
@@ -90,9 +95,14 @@ export interface KnowledgeDocument {
   graphSyncError?: string | null
   graph_sync_error?: string | null
   tags?: string[]
+  category?: string | null
   department?: string | null
   businessCategory?: string | null
   business_category?: string | null
+  securityLevel?: number | null
+  security_level?: number | null
+  assetCount?: number
+  asset_count?: number
   visibility?: 'private' | 'department' | 'company'
   expiresAt?: string | null
   expires_at?: string | null
@@ -100,6 +110,7 @@ export interface KnowledgeDocument {
   version_group_id?: string | null
   versionNo?: number
   version_no?: number
+  version?: number
   isCurrentVersion?: boolean
   is_current_version?: boolean
   archivedAt?: string | null
@@ -146,6 +157,8 @@ export interface KnowledgeSearchResult {
   }
   stage1?: KnowledgeSearchChunk[]
   stage2?: KnowledgeSearchChunk[]
+  permissionFilteredCount?: number
+  channelStats?: Record<string, unknown>
 }
 
 /**
@@ -205,6 +218,37 @@ export interface KnowledgeDocumentDetail extends KnowledgeDocument {
   sourceType: 'upload'
 }
 
+export interface DocumentTaskItem {
+  id: string
+  documentId?: string | null
+  document_id?: string | null
+  knowledgeBaseId?: string
+  knowledge_base_id?: string
+  taskType?: string
+  task_type?: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | string
+  stage?: string
+  progress?: number
+  error?: string | null
+  startedAt?: string | null
+  started_at?: string | null
+  finishedAt?: string | null
+  finished_at?: string | null
+  steps?: Array<{
+    step: string
+    status: string
+    error?: string | null
+    startedAt?: string | null
+    started_at?: string | null
+    finishedAt?: string | null
+    finished_at?: string | null
+  }>
+  createdAt?: string
+  created_at?: string
+  updatedAt?: string
+  updated_at?: string
+}
+
 export interface ApiKeyItem {
   id: string
   name: string
@@ -254,6 +298,11 @@ export interface DashboardSummary {
   unchunkedDocumentCount?: number
   graphFailedDocumentCount?: number
   evalPassRate?: number
+  averageLatencyMs?: number | null
+  averageDocumentProcessTimeMs?: number | null
+  multimodalRate?: number | null
+  blockedAccessCount?: number | null
+  totalPermissionFilteredCount?: number | null
 }
 
 export interface ChunkContext {
@@ -307,4 +356,42 @@ export interface NotificationItem {
 
 export interface NotificationListResult extends PaginatedResult<NotificationItem> {
   unreadCount: number
+}
+
+export interface RbacRoleItem {
+  id: string
+  code: string
+  name: string
+  description?: string | null
+  builtin?: boolean
+  permissionCodes: string[]
+}
+
+export interface RbacPermissionItem {
+  id: string
+  code: string
+  name: string
+  type: string
+  resource: string
+  action: string
+  description?: string | null
+}
+
+export interface RbacUserItem {
+  id: string
+  username: string
+  role: string
+  department?: string | null
+  roleCodes: string[]
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface RbacDepartmentItem {
+  id: string
+  code: string
+  name: string
+  parentId?: string | null
+  createdAt?: string
+  updatedAt?: string
 }

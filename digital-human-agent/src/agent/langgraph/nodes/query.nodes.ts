@@ -262,16 +262,36 @@ export function createGraphReasoningNode(
       const graphReasoningTrace: RagGraphState['graphReasoningTrace'] = [];
 
       for (const kbId of kbIds) {
-        // 获取该知识库的前 50 个图谱实体
-        const entities = await graphService.listEntities(
-          kbId,
-          '',
-          50,
-          input.accessScope,
+        const entitySearchTerms = extractGraphEntitySearchTerms(
+          [state.question, currentQueryText(state), docContents].join(' '),
         );
-        // 匹配出现过的实体名称
+        const entityRows = await Promise.all(
+          entitySearchTerms.map((term) =>
+            graphService.listEntities(kbId, term, 20, input.accessScope),
+          ),
+        );
+        const entityByKey = new Map<string, any>();
+        for (const row of entityRows.flat()) {
+          if (row?.key) entityByKey.set(String(row.key), row);
+        }
+        if (entityByKey.size === 0) {
+          const fallbackEntities = await graphService.listEntities(
+            kbId,
+            '',
+            50,
+            input.accessScope,
+          );
+          for (const row of fallbackEntities) {
+            if (row?.key) entityByKey.set(String(row.key), row);
+          }
+        }
+        const entities = Array.from(entityByKey.values());
+        const entityMatchText = [docContents, state.question, currentQueryText(state)]
+          .join(' ')
+          .toLowerCase();
+        // 匹配问题或已召回证据里出现过的实体名称
         const matchedEntities = entities.filter((ent) =>
-          ent.name && docContents.toLowerCase().includes(ent.name.toLowerCase()),
+          ent.name && entityMatchText.includes(ent.name.toLowerCase()),
         );
         const expandedChunkIds = new Set<string>();
 
@@ -375,4 +395,22 @@ export function createGraphReasoningNode(
       } satisfies Partial<RagGraphState>;
     }
   };
+}
+
+function currentQueryText(state: RagGraphState): string {
+  return state.currentQuery || state.question || '';
+}
+
+function extractGraphEntitySearchTerms(text: string): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const terms = new Set<string>();
+  const matches = normalized.match(/[\u4e00-\u9fa5A-Za-z0-9_]{2,32}/g) ?? [];
+  for (const item of matches) {
+    const term = item.trim();
+    if (term.length < 2) continue;
+    terms.add(term);
+    if (terms.size >= 6) break;
+  }
+  return Array.from(terms);
 }

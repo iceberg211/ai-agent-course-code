@@ -47,6 +47,16 @@ const routes: RouteRecordRaw[] = [
     name: 'profile',
     component: () => import('@/views/ProfileView.vue'),
   },
+  {
+    path: '/evaluation',
+    name: 'evaluation',
+    component: () => import('@/views/EvaluationView.vue'),
+  },
+  {
+    path: '/rbac',
+    name: 'rbac',
+    component: () => import('@/views/RbacView.vue'),
+  },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 

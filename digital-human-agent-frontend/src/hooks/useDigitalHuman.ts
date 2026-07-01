@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { LogLevel, SimliClient } from 'simli-client'
+import type { SimliClient as SimliClientInstance } from 'simli-client'
 import { DIGITAL_HUMAN_DEFAULT_WS_URL } from '@/common/constants'
 
 interface RTCSessionDescriptionInit {
@@ -36,7 +36,7 @@ export function useDigitalHuman(_send: (msg: Record<string, unknown>) => void) {
   const lastError = ref('')
   const enabled = ref(false)
 
-  let simliClient: SimliClient | null = null
+  let simliClient: SimliClientInstance | null = null
   let activeSessionId = ''
   let sessionToken = ''
   let simliWsBaseUrl = DIGITAL_HUMAN_DEFAULT_WS_URL
@@ -133,6 +133,7 @@ export function useDigitalHuman(_send: (msg: Record<string, unknown>) => void) {
       const currentAudio = audioEl.value
       currentAudio.autoplay = true
 
+      const { LogLevel, SimliClient } = await import('simli-client')
       const client = new SimliClient(
         sessionToken,
         currentVideo,

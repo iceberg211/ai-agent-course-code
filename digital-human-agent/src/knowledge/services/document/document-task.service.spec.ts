@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DocumentTaskService } from './document-task.service';
 
 function createRepoMock() {
@@ -135,6 +139,119 @@ describe('DocumentTaskService', () => {
         filename: 'demo.md',
         mimetype: 'text/markdown',
         size: 6,
+      }),
+    );
+  });
+
+  it('队列发布失败时会把任务标记为 failed', async () => {
+    taskRepo.create.mockImplementation((value) => ({
+      id: 'task-1',
+      ...value,
+    }));
+    taskRepo.save.mockImplementation(async (value) => ({
+      id: 'task-1',
+      ...value,
+    }));
+    queueMock.add.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      service.createUploadIngestTask(
+        'kb-1',
+        {
+          originalname: 'demo.md',
+          mimetype: 'text/markdown',
+          buffer: Buffer.from('# demo'),
+          size: 6,
+        },
+        { ownerId: 'user-1', visibility: 'private' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        status: 'failed',
+        stage: 'failed',
+        error: expect.stringContaining('redis down'),
+      }),
+    );
+  });
+
+  it('创建文档新版本任务时会继承版本组并递增版本号', async () => {
+    documentRepo.findOne
+      .mockResolvedValueOnce({
+        id: 'doc-1',
+        knowledgeBaseId: 'kb-1',
+        ownerId: 'user-1',
+        visibility: 'private',
+        department: null,
+        tags: ['制度'],
+        businessCategory: 'finance',
+        expiresAt: null,
+        versionGroupId: 'group-1',
+        versionNo: 2,
+      })
+      .mockResolvedValueOnce({ versionNo: 2 });
+    taskRepo.create.mockImplementation((value) => ({
+      id: 'task-1',
+      ...value,
+    }));
+    taskRepo.save.mockImplementation(async (value) => ({
+      id: 'task-1',
+      ...value,
+    }));
+    taskRepo.findOne.mockResolvedValue({
+      id: 'task-1',
+      documentId: null,
+      metadata: { upload: { ownerId: 'user-1' } },
+    });
+    stepRepo.find.mockResolvedValue([]);
+
+    await service.createUploadVersionTask(
+      'kb-1',
+      'doc-1',
+      {
+        originalname: 'demo.docx',
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: Buffer.from('demo'),
+        size: 4,
+      },
+      { ownerId: 'user-1' },
+      { ownerId: 'user-1', department: null, role: 'user' },
+    );
+
+    expect(queueMock.add).toHaveBeenCalledWith(
+      'parse_and_index',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          baseDocumentId: 'doc-1',
+          versionGroupId: 'group-1',
+          versionNo: 3,
+          isCurrentVersion: true,
+          visibility: 'private',
+          tags: ['制度'],
+          businessCategory: 'finance',
+        }),
+      }),
+    );
+  });
+
+  it('markTaskFailed 会同步更新任务和运行中的步骤', async () => {
+    await service.markTaskFailed('task-1', 'boom');
+
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        status: 'failed',
+        stage: 'failed',
+        error: 'boom',
+      }),
+    );
+    expect(stepRepo.update).toHaveBeenCalledWith(
+      { taskId: 'task-1', status: 'running' },
+      expect.objectContaining({
+        status: 'failed',
+        error: 'boom',
       }),
     );
   });

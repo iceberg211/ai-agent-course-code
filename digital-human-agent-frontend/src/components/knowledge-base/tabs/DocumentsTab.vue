@@ -1,6 +1,6 @@
 <template>
   <div class="documents-tab">
-    <section class="upload">
+    <section v-if="canUploadDocuments" class="upload">
       <label class="upload__dropzone">
         <UploadCloudIcon :size="20" />
         <span v-if="hook.uploading.value">上传中…</span>
@@ -34,7 +34,7 @@
             <ChevronDownIcon :size="14" class="doc__chevron" :class="{ 'doc__chevron--open': expanded === doc.id }" />
           </button>
 
-          <button class="doc__delete" :aria-label="'删除 ' + doc.filename" @click.stop="deleteDoc(doc)">
+          <button v-if="canDeleteDocuments" class="doc__delete" :aria-label="'删除 ' + doc.filename" @click.stop="deleteDoc(doc)">
             <Trash2Icon :size="14" />
           </button>
 
@@ -45,7 +45,7 @@
                 <header class="chunk__head">
                   <span class="chunk__idx">§ {{ c.chunkIndex }}</span>
                   <span class="chunk__count">{{ c.charCount }} 字</span>
-                  <label class="toggle">
+                  <label v-if="canUploadDocuments" class="toggle">
                     <input type="checkbox" :checked="c.enabled" @change="toggleChunk(c)" />
                     <span>{{ c.enabled ? '启用' : '禁用' }}</span>
                   </label>
@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   ChevronDownIcon,
   FileTextIcon,
@@ -73,6 +73,7 @@ import {
   KNOWLEDGE_DOCUMENT_STATUS_LABELS,
 } from '@/common/constants'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import { usePermissions } from '@/hooks/usePermissions'
 import type {
   KnowledgeChunk,
   KnowledgeDocumentDetail,
@@ -80,6 +81,9 @@ import type {
 
 const props = defineProps<{ kbId: string }>()
 const hook = useKnowledgeBase()
+const permissionApi = usePermissions()
+const canUploadDocuments = computed(() => permissionApi.can('documents:upload'))
+const canDeleteDocuments = computed(() => permissionApi.can('documents:delete'))
 
 const documents = ref<KnowledgeDocumentDetail[]>([])
 const expanded = ref<string | null>(null)
@@ -90,7 +94,10 @@ async function refresh() {
   documents.value = await hook.listDocuments(props.kbId)
 }
 
-onMounted(refresh)
+onMounted(() => {
+  void permissionApi.loadPermissions()
+  void refresh()
+})
 
 async function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement

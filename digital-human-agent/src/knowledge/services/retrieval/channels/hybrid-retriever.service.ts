@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import {
   isAbortError,
   isTransientInfrastructureError,
@@ -38,10 +38,12 @@ import type {
   KnowledgeHybridRetrievalParams,
   KnowledgeHybridRetrievalResult,
   KnowledgeAccessScope,
+  DocumentSearchFilters,
   PersonaHybridRetrievalInput,
   PersonaHybridRetrievalResult,
   RrfTraceItem,
 } from '@/knowledge/types/knowledge-content.types';
+import { applyJsonbAnyTagFilter } from '@/knowledge/utils/document-filter.util';
 
 interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
@@ -135,6 +137,7 @@ export class HybridRetrieverService {
             threshold: params.threshold,
             matchCount: perQueryTopK,
             strategy: params.strategy,
+            documentFilters: params.documentFilters,
             accessScope: params.accessScope,
             signal: params.signal,
           });
@@ -273,6 +276,7 @@ export class HybridRetrieverService {
             retrievalQueries: input.retrievalQueries,
             strategy,
             threshold: this.resolveThreshold(input.threshold, config),
+            documentFilters: input.documentFilters,
             accessScope: input.accessScope,
             globalRetrievalLimit: this.resolveRetrievalLimit(
               input.retrievalLimit,
@@ -368,6 +372,7 @@ export class HybridRetrieverService {
     strategy: RetrievalStrategy;
     signal?: AbortSignal;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
   }): Promise<
     HybridRetrieveResult & {
       graphBackend: GraphBackend | 'disabled';
@@ -385,6 +390,7 @@ export class HybridRetrieverService {
             matchCount: params.matchCount,
             strategy: params.strategy,
             signal: params.signal,
+            documentFilters: params.documentFilters,
             accessScope: params.accessScope,
           })
         : Promise.resolve(this.buildSkippedHybridResult(params.strategy));
@@ -397,6 +403,7 @@ export class HybridRetrieverService {
       params.strategy,
       params.signal,
       params.accessScope,
+      params.documentFilters,
     );
 
     const [hybridResult, graphChunks] = await Promise.all([
@@ -449,6 +456,7 @@ export class HybridRetrieverService {
     strategy: RetrievalStrategy;
     signal?: AbortSignal;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
   }): Promise<HybridRetrieveResult> {
     const useVector = params.strategy.useVector !== false;
     const useKeyword = params.strategy.useKeyword !== false;
@@ -496,6 +504,7 @@ export class HybridRetrieverService {
                 matchCount: vectorTopK,
                 signal: params.signal,
                 accessScope: params.accessScope,
+                documentFilters: params.documentFilters,
               })
             : Promise.resolve([] as KnowledgeChunk[]);
         if (!useVector || !params.queryEmbedding) {
@@ -510,6 +519,7 @@ export class HybridRetrieverService {
               useExactPhrase: useExactPhrase,
               signal: params.signal,
               accessScope: params.accessScope,
+              documentFilters: params.documentFilters,
             })
           : Promise.resolve({
               chunks: [] as KnowledgeChunk[],
@@ -588,6 +598,7 @@ export class HybridRetrieverService {
     matchCount: number;
     signal?: AbortSignal;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
   }): Promise<KnowledgeChunk[]> {
     return runInTracedScope(
       {
@@ -640,6 +651,7 @@ export class HybridRetrieverService {
           params.knowledgeId,
           chunks,
           params.accessScope,
+          params.documentFilters,
         );
       },
     );
@@ -652,6 +664,7 @@ export class HybridRetrieverService {
     useExactPhrase?: boolean;
     signal?: AbortSignal;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
   }): Promise<KeywordRetrieveResult> {
     return this.fulltextRetriever.retrieve(params);
   }
@@ -664,6 +677,7 @@ export class HybridRetrieverService {
     strategy: RetrievalStrategy,
     signal?: AbortSignal,
     accessScope?: KnowledgeAccessScope,
+    documentFilters?: DocumentSearchFilters,
   ): Promise<KnowledgeChunk[]> {
     const graphRetriever = this.graphRetriever;
     if (!this.isGraphRetrieverEnabled(strategy) || !graphRetriever) return [];
@@ -679,7 +693,12 @@ export class HybridRetrieverService {
         accessScope,
         signal,
       });
-      return this.filterCurrentChunks(knowledgeId, chunks, accessScope);
+      return this.filterCurrentChunks(
+        knowledgeId,
+        chunks,
+        accessScope,
+        documentFilters,
+      );
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -795,20 +814,22 @@ export class HybridRetrieverService {
     knowledgeId: string,
     chunks: KnowledgeChunk[],
     accessScope?: KnowledgeAccessScope,
+    documentFilters?: DocumentSearchFilters,
   ): Promise<KnowledgeChunk[]> {
     if (!this.chunkRepo || chunks.length === 0) return chunks;
-    const rows = await this.chunkRepo.find({
-      where: {
-        id: In(chunks.map((chunk) => chunk.id)),
-        enabled: true,
-        document: {
-          knowledgeBaseId: knowledgeId,
-          isCurrentVersion: true,
-          archivedAt: IsNull(),
-        },
-      },
-      relations: { document: true },
-    });
+    const qb = this.chunkRepo
+      .createQueryBuilder('chunk')
+      .innerJoinAndSelect('chunk.document', 'document')
+      .where('chunk.id IN (:...ids)', {
+        ids: chunks.map((chunk) => chunk.id),
+      })
+      .andWhere('chunk.enabled = true')
+      .andWhere('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .andWhere('document.is_current_version = true')
+      .andWhere('document.archived_at IS NULL');
+
+    this.applyDocumentFilters(qb, documentFilters);
+    const rows = await qb.getMany();
     if (accessScope?.role !== 'admin') {
       const ownerId = accessScope?.ownerId ?? '';
       const department = accessScope?.department ?? '';
@@ -827,6 +848,87 @@ export class HybridRetrieverService {
     }
     const allowed = new Set(rows.map((row) => row.id));
     return chunks.filter((chunk) => allowed.has(chunk.id));
+  }
+
+  private applyDocumentFilters(
+    qb: ReturnType<Repository<KnowledgeChunkEntity>['createQueryBuilder']>,
+    filters?: DocumentSearchFilters,
+  ) {
+    if (!filters) return;
+    const fileTypes = this.resolveFileTypeFilters(filters.fileType);
+    if (fileTypes.length > 0) {
+      qb.andWhere(
+        new Brackets((where) => {
+          fileTypes.forEach((item, index) => {
+            const extKey = `fileExt${index}`;
+            const mimeKey = `fileMime${index}`;
+            const clause =
+              `(LOWER(document.filename) LIKE :${extKey} OR LOWER(COALESCE(document.mime_type, '')) LIKE :${mimeKey})`;
+            if (index === 0) {
+              where.where(clause, {
+                [extKey]: `%.${item.ext}`,
+                [mimeKey]: `${item.mime}%`,
+              });
+              return;
+            }
+            where.orWhere(clause, {
+              [extKey]: `%.${item.ext}`,
+              [mimeKey]: `${item.mime}%`,
+            });
+          });
+        }),
+      );
+    }
+
+    const tags = (filters.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+    if (tags.length > 0) {
+      applyJsonbAnyTagFilter(qb, 'document', tags);
+    }
+    const department = filters.department?.trim();
+    if (department) qb.andWhere('document.department = :department', { department });
+    const businessCategory = filters.businessCategory?.trim();
+    if (businessCategory) {
+      qb.andWhere('document.business_category = :businessCategory', {
+        businessCategory,
+      });
+    }
+    if (filters.visibility) {
+      qb.andWhere('document.visibility = :visibility', {
+        visibility: filters.visibility,
+      });
+    }
+  }
+
+  private resolveFileTypeFilters(
+    raw?: string,
+  ): Array<{ ext: string; mime: string }> {
+    const value = raw?.trim().toLowerCase();
+    if (!value) return [];
+    const groups: Record<string, Array<{ ext: string; mime: string }>> = {
+      image: [
+        { ext: 'jpg', mime: 'image/' },
+        { ext: 'jpeg', mime: 'image/' },
+        { ext: 'png', mime: 'image/' },
+        { ext: 'webp', mime: 'image/' },
+        { ext: 'gif', mime: 'image/' },
+      ],
+      audio: [
+        { ext: 'mp3', mime: 'audio/' },
+        { ext: 'wav', mime: 'audio/' },
+        { ext: 'm4a', mime: 'audio/' },
+        { ext: 'aac', mime: 'audio/' },
+        { ext: 'ogg', mime: 'audio/' },
+      ],
+      video: [
+        { ext: 'mp4', mime: 'video/' },
+        { ext: 'mov', mime: 'video/' },
+        { ext: 'mkv', mime: 'video/' },
+        { ext: 'webm', mime: 'video/' },
+      ],
+    };
+    if (groups[value]) return groups[value];
+    const ext = value.replace(/^\./, '');
+    return [{ ext, mime: `${ext}/` }];
   }
 
   private buildSkippedHybridResult(

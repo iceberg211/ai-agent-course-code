@@ -2,9 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 
 export type DocumentTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type DocumentTaskType = 'upload_ingest';
@@ -16,6 +19,10 @@ export class DocumentTask {
 
   @Column({ name: 'document_id', type: 'uuid', nullable: true })
   documentId: string | null;
+
+  @ManyToOne(() => KnowledgeDocument, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'document_id' })
+  document: KnowledgeDocument | null;
 
   @Column({ name: 'knowledge_base_id', type: 'uuid' })
   knowledgeBaseId: string;

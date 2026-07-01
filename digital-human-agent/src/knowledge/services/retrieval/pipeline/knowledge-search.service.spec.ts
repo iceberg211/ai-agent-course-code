@@ -147,6 +147,12 @@ describe('KnowledgeSearchService', () => {
         },
       })),
     };
+    const knowledgeRepo = {
+      find: jest.fn(async () => []),
+    };
+    const chunkRepo = {
+      createQueryBuilder: jest.fn(),
+    };
 
     const service = new KnowledgeSearchService(
       runtime as never,
@@ -154,6 +160,8 @@ describe('KnowledgeSearchService', () => {
       rerankerService as never,
       queryRewriteService as never,
       dataScopeService as never,
+      knowledgeRepo as never,
+      chunkRepo as never,
     );
 
     return {
@@ -163,6 +171,8 @@ describe('KnowledgeSearchService', () => {
       rerankerService,
       queryRewriteService,
       dataScopeService,
+      knowledgeRepo,
+      chunkRepo,
     };
   }
 

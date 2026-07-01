@@ -44,7 +44,7 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
         messages,
       }) => ({
         api,
-        headers,
+        headers: withAuthHeaders(headers),
         credentials,
         body: {
           personaId: body.personaId,
@@ -80,6 +80,15 @@ export function useTextChat(conversation: ReturnType<typeof useConversation>) {
   let _onError: (msg: string) => void = () => {}
   function setErrorHandler(handler: (msg: string) => void) {
     _onError = handler
+  }
+
+  function withAuthHeaders(headers?: HeadersInit): HeadersInit {
+    const next = new Headers(headers)
+    const token = localStorage.getItem('jwt_token')
+    if (token && !next.has('Authorization')) {
+      next.set('Authorization', `Bearer ${token}`)
+    }
+    return next
   }
 
   // 监听 Chat 状态 → 同步 conversation.state

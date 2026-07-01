@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Optional,
   Inject,
@@ -10,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
+import type { Readable } from 'node:stream';
 import {
   KNOWLEDGE_UPLOAD_PDF_MIME_TYPE,
   KNOWLEDGE_UPLOAD_TEXT_EXTENSION_SET,
@@ -41,6 +43,10 @@ import {
   applyDocumentAccessScope,
   isDocumentVisibleToScope,
 } from '@/knowledge/utils/document-access.util';
+import {
+  applyJsonbAnyTagFilter,
+  normalizeStringList,
+} from '@/knowledge/utils/document-filter.util';
 
 import type {
   KnowledgeDocumentChunk,
@@ -67,6 +73,26 @@ type UploadMetadataInput =
     })
   | UploadDocumentDto
   | undefined;
+
+function resolveMarkdownReadMaxBytes(): number {
+  const raw = Number(process.env.DOCUMENT_MARKDOWN_READ_MAX_BYTES);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 20 * 1024 * 1024;
+}
+
+async function streamToString(stream: Readable, maxBytes: number): Promise<string> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new BadRequestException(`Markdown 内容超过读取上限 ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
 
 // ==========================================
 // 核心 Service 实现
@@ -238,7 +264,7 @@ export class KnowledgeDocumentService {
     const qb = this.documentRepo
       .createQueryBuilder('document')
       .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
-      .orderBy('document.created_at', 'DESC');
+      .orderBy('document.createdAt', 'DESC');
     applyDocumentAccessScope(qb, 'document', accessScope);
     return qb.getMany();
   }
@@ -270,7 +296,7 @@ export class KnowledgeDocumentService {
     const qb = this.documentRepo
       .createQueryBuilder('document')
       .where('document.knowledge_base_id = :knowledgeId', { knowledgeId })
-      .orderBy('document.created_at', 'DESC')
+      .orderBy('document.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
     applyDocumentAccessScope(qb, 'document', filters.accessScope);
@@ -342,7 +368,7 @@ export class KnowledgeDocumentService {
     const qb = this.documentRepo
       .createQueryBuilder('document')
       .leftJoinAndSelect('document.knowledge', 'knowledge')
-      .orderBy('document.created_at', 'DESC')
+      .orderBy('document.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
     applyDocumentAccessScope(qb, 'document', filters.accessScope);
@@ -401,6 +427,51 @@ export class KnowledgeDocumentService {
     accessScope?: KnowledgeAccessScope,
   ): Promise<Array<DocumentAsset & { url: string | null }>> {
     await this.findDocumentInKnowledgeOrThrow(knowledgeId, documentId, accessScope);
+    return this.listAssetsForDocument(documentId);
+  }
+
+  async listAssetsByDocumentId(
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<Array<DocumentAsset & { url: string | null }>> {
+    await this.findDocumentOrThrow(documentId, accessScope);
+    return this.listAssetsForDocument(documentId);
+  }
+
+  async getMarkdownForKnowledgeDocument(
+    knowledgeId: string,
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<{
+    documentId: string;
+    filename: string;
+    markdown: string;
+    markdownStorageKey: string | null;
+  }> {
+    const document = await this.findDocumentInKnowledgeOrThrow(
+      knowledgeId,
+      documentId,
+      accessScope,
+    );
+    return this.readDocumentMarkdown(document);
+  }
+
+  async getMarkdownByDocumentId(
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<{
+    documentId: string;
+    filename: string;
+    markdown: string;
+    markdownStorageKey: string | null;
+  }> {
+    const document = await this.findDocumentOrThrow(documentId, accessScope);
+    return this.readDocumentMarkdown(document);
+  }
+
+  private async listAssetsForDocument(
+    documentId: string,
+  ): Promise<Array<DocumentAsset & { url: string | null }>> {
     const assets = await this.assetRepo.find({
       where: { documentId },
       order: { createdAt: 'ASC' },
@@ -428,6 +499,32 @@ export class KnowledgeDocumentService {
         return Object.assign(asset, { url });
       }),
     );
+  }
+
+  private async readDocumentMarkdown(document: KnowledgeDocument): Promise<{
+    documentId: string;
+    filename: string;
+    markdown: string;
+    markdownStorageKey: string | null;
+  }> {
+    if (!document.markdownStorageKey) {
+      throw new NotFoundException('该文档尚未生成 Markdown 解析结果');
+    }
+    if (!this.storageProvider) {
+      throw new NotFoundException('对象存储服务未配置，无法读取 Markdown');
+    }
+
+    const bucket = process.env.S3_BUCKET || 'enterprise-kb';
+    const stream = await this.storageProvider.getObject({
+      bucket,
+      key: document.markdownStorageKey,
+    });
+    return {
+      documentId: document.id,
+      filename: document.filename,
+      markdown: await streamToString(stream, resolveMarkdownReadMaxBytes()),
+      markdownStorageKey: document.markdownStorageKey,
+    };
   }
 
   async getChunkContextForKnowledge(
@@ -575,6 +672,22 @@ export class KnowledgeDocumentService {
     }
     if (!isDocumentVisibleToScope(document, accessScope)) {
       throw new NotFoundException('文档不属于当前知识库或不存在');
+    }
+    return document;
+  }
+
+  private async findDocumentOrThrow(
+    documentId: string,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.documentRepo.findOne({
+      where: { id: documentId },
+    });
+    if (!document) {
+      throw new NotFoundException('文档不存在');
+    }
+    if (!isDocumentVisibleToScope(document, accessScope)) {
+      throw new NotFoundException('文档不存在');
     }
     return document;
   }
@@ -1025,6 +1138,7 @@ export class KnowledgeDocumentService {
       baseDocumentId,
       accessScope,
     );
+    this.assertDocumentWritable(base, accessScope);
     const versionGroupId = base.versionGroupId ?? base.id;
     if (!base.versionGroupId) {
       await this.documentRepo.update(base.id, { versionGroupId });
@@ -1145,6 +1259,7 @@ export class KnowledgeDocumentService {
       documentId,
       accessScope,
     );
+    this.assertDocumentWritable(document, accessScope);
     const metadata = this.normalizeUploadMetadata(input, document);
     await this.documentRepo.update(document.id, {
       tags: metadata.tags,
@@ -1225,7 +1340,7 @@ export class KnowledgeDocumentService {
     }
     const tags = this.parseTags(filters.tags);
     if (tags.length > 0) {
-      qb.andWhere('document.tags ?| ARRAY[:...tags]', { tags });
+      applyJsonbAnyTagFilter(qb, 'document', tags);
     }
     if (filters.department) {
       qb.andWhere('document.department = :department', {
@@ -1319,12 +1434,17 @@ export class KnowledgeDocumentService {
     };
   }
 
+  private assertDocumentWritable(
+    document: Pick<KnowledgeDocument, 'ownerId'>,
+    accessScope?: KnowledgeAccessScope,
+  ): void {
+    if (!accessScope || accessScope.role === 'admin') return;
+    if (accessScope.ownerId && document.ownerId === accessScope.ownerId) return;
+    throw new ForbiddenException('无权修改该文档');
+  }
+
   private parseTags(value?: string | string[]): string[] {
-    if (!value) return [];
-    const items = Array.isArray(value) ? value : value.split(',');
-    return Array.from(
-      new Set(items.map((item) => item.trim()).filter(Boolean)),
-    );
+    return normalizeStringList(value);
   }
 
   private async cleanupNonCurrentVersionIndexes(

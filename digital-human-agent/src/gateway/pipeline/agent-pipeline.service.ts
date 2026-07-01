@@ -168,6 +168,7 @@ export class AgentPipelineService {
       subQuestions: state.subQuestions,
       retrievalHistory: state.retrievalHistory,
       retrievalTrace: state.retrievalTrace,
+      graphReasoningTrace: state.graphReasoningTrace,
       enough: state.enough,
       missingFacts: state.missingFacts,
       evaluationReason: state.evaluationReason,

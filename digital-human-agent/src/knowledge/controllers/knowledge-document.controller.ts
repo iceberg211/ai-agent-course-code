@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -167,8 +168,10 @@ export class KnowledgeDocumentController {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
     this.validateUploadFileSize(file);
-    return this.documentService.parseAndIngestDocument(kbId, file, {
-      ...dto,
+    return this.documentTaskService.createUploadIngestTask(kbId, file, {
+      ...this.normalizeDocumentMetadataInput(dto, req, {
+        defaultVisibility: 'private',
+      }),
       ownerId: req.user?.id,
     });
   }
@@ -199,7 +202,9 @@ export class KnowledgeDocumentController {
     }
     this.validateUploadFileSize(file);
     return this.documentTaskService.createUploadIngestTask(kbId, file, {
-      ...dto,
+      ...this.normalizeDocumentMetadataInput(dto, req, {
+        defaultVisibility: 'private',
+      }),
       ownerId: req.user?.id,
     });
   }
@@ -230,11 +235,14 @@ export class KnowledgeDocumentController {
       throw new BadRequestException('缺少上传文件，请使用 file 字段上传');
     }
     this.validateUploadFileSize(file);
-    return this.documentService.uploadDocumentVersion(
+    return this.documentTaskService.createUploadVersionTask(
       kbId,
       docId,
       file,
-      dto,
+      {
+        ...this.normalizeDocumentMetadataInput(dto, req),
+        ownerId: req.user?.id,
+      },
       this.accessScope(req),
     );
   }
@@ -295,7 +303,7 @@ export class KnowledgeDocumentController {
     return this.documentService.updateDocumentGovernance(
       kbId,
       docId,
-      dto,
+      this.normalizeDocumentMetadataInput(dto, req),
       this.accessScope(req),
     );
   }
@@ -370,6 +378,44 @@ export class KnowledgeDocumentController {
   ) {
     return this.documentService.listAssetsByKnowledgeDocument(
       kbId,
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Get('documents/:docId/assets')
+  @ApiOperation({ summary: '按文档 ID 查询多模态资源列表' })
+  listDocumentAssetsById(
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.listAssetsByDocumentId(
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Get('knowledge-bases/:kbId/documents/:docId/markdown')
+  @ApiOperation({ summary: '读取文档解析后的 Markdown' })
+  getDocumentMarkdown(
+    @Param('kbId', ParseUUIDPipe) kbId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.getMarkdownForKnowledgeDocument(
+      kbId,
+      docId,
+      this.accessScope(req),
+    );
+  }
+
+  @Get('documents/:docId/markdown')
+  @ApiOperation({ summary: '按文档 ID 读取解析后的 Markdown' })
+  getDocumentMarkdownById(
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Req() req: any,
+  ) {
+    return this.documentService.getMarkdownByDocumentId(
       docId,
       this.accessScope(req),
     );
@@ -460,6 +506,41 @@ export class KnowledgeDocumentController {
       department: req.user?.department ?? null,
       role: req.user?.role ?? null,
     };
+  }
+
+  private normalizeDocumentMetadataInput(
+    dto: UploadDocumentDto,
+    req: any,
+    options: { defaultVisibility?: 'private' | 'department' | 'company' } = {},
+  ): UploadDocumentDto {
+    const user = req.user ?? {};
+    if (user.role === 'admin') {
+      return { ...dto };
+    }
+
+    const userDepartment = this.trimToUndefined(user.department);
+    const requestedDepartment = this.trimToUndefined(dto.department);
+    if (requestedDepartment && requestedDepartment !== userDepartment) {
+      throw new ForbiddenException('无权写入其他部门的文档');
+    }
+    if (dto.visibility === 'company') {
+      throw new ForbiddenException('无权将文档设置为公司可见');
+    }
+    if (dto.visibility === 'department' && !userDepartment) {
+      throw new BadRequestException('当前用户没有部门信息，不能设置部门可见');
+    }
+
+    const visibility = dto.visibility ?? options.defaultVisibility;
+    return {
+      ...dto,
+      department: requestedDepartment ?? userDepartment,
+      visibility,
+    };
+  }
+
+  private trimToUndefined(value: unknown): string | undefined {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text ? text : undefined;
   }
 
   private validateUploadFileSize(file: Express.Multer.File): void {

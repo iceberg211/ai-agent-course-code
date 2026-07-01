@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { ILike, In, Repository } from 'typeorm';
 import {
+  DepartmentEntity,
   PermissionEntity,
   DocumentAclEntity,
   KnowledgeBaseAclEntity,
@@ -11,12 +12,17 @@ import {
 } from '@/rbac/entities';
 import {
   AssignUserRolesDto,
+  CreateDepartmentDto,
   CreateAclRuleDto,
   CreatePermissionDto,
   CreateRoleDto,
+  ListRbacUsersDto,
   UpdateRoleDto,
+  UpdateDepartmentDto,
+  UpdateUserDepartmentDto,
 } from '@/rbac/dto/rbac.dto';
 import { AclIndexQueueService } from '@/rbac/services/acl-index-queue.service';
+import { User } from '@/user/entities/user.entity';
 
 @Injectable()
 export class RbacService {
@@ -29,6 +35,10 @@ export class RbacService {
     private readonly rolePermissionRepo: Repository<RolePermissionEntity>,
     @InjectRepository(UserRoleEntity)
     private readonly userRoleRepo: Repository<UserRoleEntity>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    @InjectRepository(DepartmentEntity)
+    private readonly departmentRepo: Repository<DepartmentEntity>,
     @InjectRepository(DocumentAclEntity)
     private readonly documentAclRepo: Repository<DocumentAclEntity>,
     @InjectRepository(KnowledgeBaseAclEntity)
@@ -128,6 +138,105 @@ export class RbacService {
       );
     }
     return { userId, roleCodes: roles.map((role) => role.code) };
+  }
+
+  async listUsers(query: ListRbacUsersDto) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+    const where: any = {};
+    if (query.q?.trim()) {
+      where.username = ILike(`%${query.q.trim()}%`);
+    }
+    if (query.department?.trim()) {
+      where.department = query.department.trim();
+    }
+    if (query.role?.trim()) {
+      where.role = query.role.trim();
+    }
+
+    const [users, total] = await this.userRepo.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    const userIds = users.map((user) => user.id);
+    const userRoles = userIds.length
+      ? await this.userRoleRepo.find({
+          where: { userId: In(userIds) },
+          relations: { role: true },
+        })
+      : [];
+    const roleCodesByUser = new Map<string, string[]>();
+    for (const row of userRoles) {
+      const list = roleCodesByUser.get(row.userId) ?? [];
+      if (row.role?.code) list.push(row.role.code);
+      roleCodesByUser.set(row.userId, list);
+    }
+
+    return {
+      items: users.map((user) => ({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        department: user.department,
+        roleCodes: (roleCodesByUser.get(user.id) ?? []).sort(),
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async updateUserDepartment(
+    userId: string,
+    dto: UpdateUserDepartmentDto,
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('用户不存在');
+    user.department = dto.department?.trim() || null;
+    const saved = await this.userRepo.save(user);
+    return {
+      id: saved.id,
+      username: saved.username,
+      role: saved.role,
+      department: saved.department,
+      createdAt: saved.createdAt,
+      updatedAt: saved.updatedAt,
+    };
+  }
+
+  listDepartments() {
+    return this.departmentRepo.find({ order: { code: 'ASC' } });
+  }
+
+  async createDepartment(dto: CreateDepartmentDto) {
+    const existing = await this.departmentRepo.findOne({ where: { code: dto.code } });
+    if (existing) throw new BadRequestException('部门编码已存在');
+    return this.departmentRepo.save(
+      this.departmentRepo.create({
+        code: dto.code.trim(),
+        name: dto.name.trim(),
+        parentId: dto.parentId ?? null,
+      }),
+    );
+  }
+
+  async updateDepartment(id: string, dto: UpdateDepartmentDto) {
+    const department = await this.departmentRepo.findOne({ where: { id } });
+    if (!department) throw new NotFoundException('部门不存在');
+    if (dto.code !== undefined) department.code = dto.code.trim();
+    if (dto.name !== undefined) department.name = dto.name.trim();
+    if (dto.parentId !== undefined) department.parentId = dto.parentId || null;
+    return this.departmentRepo.save(department);
+  }
+
+  async deleteDepartment(id: string) {
+    const department = await this.departmentRepo.findOne({ where: { id } });
+    if (!department) throw new NotFoundException('部门不存在');
+    await this.departmentRepo.delete(id);
   }
 
   listDocumentAcl(documentId: string) {

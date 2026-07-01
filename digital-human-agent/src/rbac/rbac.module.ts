@@ -21,6 +21,7 @@ import { PermissionGuard } from '@/rbac/guards/permission.guard';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { QueueModule } from '@/queue/queue.module';
+import { User } from '@/user/entities/user.entity';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { QueueModule } from '@/queue/queue.module';
       RoleEntity,
       RolePermissionEntity,
       UserRoleEntity,
+      User,
       KnowledgeDocument,
       KnowledgeChunk,
     ]),

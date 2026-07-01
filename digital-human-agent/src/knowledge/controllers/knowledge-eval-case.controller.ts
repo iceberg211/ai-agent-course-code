@@ -75,6 +75,15 @@ export class KnowledgeEvalCaseController {
     return this.evalCaseService.runBatchEvaluation(knowledgeId);
   }
 
+  @Post(':evalCaseId/run')
+  @ApiOperation({ summary: '运行单条问答验证用例' })
+  runOne(
+    @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
+    @Param('evalCaseId', ParseUUIDPipe) evalCaseId: string,
+  ) {
+    return this.evalCaseService.runSingleEvaluation(knowledgeId, evalCaseId);
+  }
+
   @Patch(':evalCaseId/review')
   @ApiOperation({ summary: '人工审核评估用例结果' })
   updateReview(

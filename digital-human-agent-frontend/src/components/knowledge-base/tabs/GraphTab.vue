@@ -12,6 +12,7 @@
         <span class="search-icon">🔍</span>
       </div>
       <button
+        v-if="canRebuildGraph"
         class="btn-rebuild"
         type="button"
         @click="handleRebuild"
@@ -125,11 +126,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import { usePermissions } from '@/hooks/usePermissions'
 
 const props = defineProps<{ kbId: string }>()
 const hook = useKnowledgeBase()
+const permissionApi = usePermissions()
+const canRebuildGraph = computed(() => permissionApi.can('documents:retry'))
 
 const searchQuery = ref('')
 const rebuilding = ref(false)
@@ -209,7 +213,10 @@ function previewChunk(chunk: any) {
   previewingChunk.value = chunk
 }
 
-onMounted(loadEntities)
+onMounted(() => {
+  void permissionApi.loadPermissions()
+  void loadEntities()
+})
 watch(() => props.kbId, () => {
   selectedEntity.value = null
   relations.value = []

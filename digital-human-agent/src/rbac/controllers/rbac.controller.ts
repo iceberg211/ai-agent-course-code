@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,10 +22,14 @@ import { AclIndexRefreshService } from '@/rbac/services/acl-index-refresh.servic
 import { RbacService } from '@/rbac/services/rbac.service';
 import {
   AssignUserRolesDto,
+  CreateDepartmentDto,
   CreateAclRuleDto,
   CreatePermissionDto,
   CreateRoleDto,
+  ListRbacUsersDto,
   UpdateRoleDto,
+  UpdateDepartmentDto,
+  UpdateUserDepartmentDto,
 } from '@/rbac/dto/rbac.dto';
 
 @ApiTags('RBAC 权限')
@@ -90,6 +95,55 @@ export class RbacController {
     @Req() req: any,
   ) {
     return this.rbacService.assignUserRoles(userId, dto, req.user?.id);
+  }
+
+  @Get('users')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '用户列表及角色信息' })
+  listUsers(@Query() query: ListRbacUsersDto) {
+    return this.rbacService.listUsers(query);
+  }
+
+  @Patch('users/:userId/department')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '更新用户部门' })
+  updateUserDepartment(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDepartmentDto,
+  ) {
+    return this.rbacService.updateUserDepartment(userId, dto);
+  }
+
+  @Get('departments')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '部门列表' })
+  listDepartments() {
+    return this.rbacService.listDepartments();
+  }
+
+  @Post('departments')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '创建部门' })
+  createDepartment(@Body() dto: CreateDepartmentDto) {
+    return this.rbacService.createDepartment(dto);
+  }
+
+  @Patch('departments/:id')
+  @RequirePermissions('system:role-manage')
+  @ApiOperation({ summary: '更新部门' })
+  updateDepartment(
+    @Param('id') id: string,
+    @Body() dto: UpdateDepartmentDto,
+  ) {
+    return this.rbacService.updateDepartment(id, dto);
+  }
+
+  @Delete('departments/:id')
+  @RequirePermissions('system:role-manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '删除部门' })
+  async deleteDepartment(@Param('id') id: string) {
+    await this.rbacService.deleteDepartment(id);
   }
 
   @Get('me/permissions')

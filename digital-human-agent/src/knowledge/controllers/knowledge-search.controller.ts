@@ -75,6 +75,22 @@ export class KnowledgeSearchController {
     );
   }
 
+  @Post('search')
+  @ApiOperation({ summary: '跨知识库资料检索（混合召回 + RRF + Rerank + 权限过滤）' })
+  searchAcrossKnowledgeBases(
+    @Body() body: KnowledgeSearchDto,
+    @Req() req: any,
+  ) {
+    return this.searchService.retrieveAcrossKnowledgeBasesWithDebug(
+      String(body.query ?? '').trim(),
+      body.knowledgeBaseIds ?? [],
+      {
+        ...body.toRetrieveOptions(),
+        accessScope: this.accessScope(req),
+      },
+    );
+  }
+
   // ==========================================
   // Persona 聚合检索
   // ==========================================

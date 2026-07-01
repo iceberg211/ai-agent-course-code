@@ -16,7 +16,6 @@ import {
   type DocumentTaskStepName,
 } from '@/knowledge/entities/document-task-step.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
-import type { UploadDocumentDto } from '@/knowledge/dto/upload-document.dto';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 import { isDocumentVisibleToScope } from '@/knowledge/utils/document-access.util';
 import { QueueService } from '@/queue/queue.service';
@@ -92,25 +91,72 @@ export class DocumentTaskService {
       currentIngestRunId: ingestRunId,
     };
 
-    // 4. 将处理任务发布到 BullMQ 队列
-    const queue = this.queueService.getQueue('document-processing');
-    const job = await queue.add('parse_and_index', {
-      taskId: task.id,
-      knowledgeBaseId,
-      originalStorageKey: storageKey,
-      filename: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-      input: taskInput,
-    });
-
-    await this.taskRepo.update(task.id, { jobId: job.id });
+    try {
+      await this.enqueueParseAndIndexJob(task.id, {
+        knowledgeBaseId,
+        originalStorageKey: storageKey,
+        filename: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        input: taskInput,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.markTaskFailed(
+        task.id,
+        `任务发布失败: ${errorMessage}`,
+      );
+      throw new BadRequestException('文档处理任务发布失败，请稍后重试');
+    }
 
     return this.getTaskDetail(task.id, {
       ownerId: input.ownerId ?? null,
       department: input.department ?? null,
       role: null,
     });
+  }
+
+  async createUploadVersionTask(
+    knowledgeBaseId: string,
+    baseDocumentId: string,
+    file: UploadTaskFileInput,
+    input: UploadTaskInput,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<DocumentTaskDetail> {
+    const base = await this.documentRepo.findOne({
+      where: { id: baseDocumentId, knowledgeBaseId },
+    });
+    if (!base) {
+      throw new NotFoundException('基础文档不存在');
+    }
+    if (!isDocumentVisibleToScope(base, accessScope)) {
+      throw new ForbiddenException('无权访问该文档');
+    }
+    this.assertDocumentWritable(base, accessScope);
+
+    const versionGroupId = base.versionGroupId ?? base.id;
+    if (!base.versionGroupId) {
+      await this.documentRepo.update(base.id, { versionGroupId });
+    }
+    const latest = await this.documentRepo.findOne({
+      where: { knowledgeBaseId, versionGroupId },
+      order: { versionNo: 'DESC' },
+    });
+
+    const versionInput: UploadTaskInput = {
+      ...input,
+      tags: input.tags ?? base.tags,
+      department: input.department ?? base.department,
+      businessCategory: input.businessCategory ?? base.businessCategory,
+      visibility: input.visibility ?? base.visibility,
+      expiresAt: input.expiresAt ?? base.expiresAt?.toISOString(),
+      baseDocumentId,
+      versionGroupId,
+      versionNo: (latest?.versionNo ?? base.versionNo ?? 1) + 1,
+      isCurrentVersion: true,
+    };
+
+    return this.createUploadIngestTask(knowledgeBaseId, file, versionInput);
   }
 
   async getTaskDetail(
@@ -172,7 +218,7 @@ export class DocumentTaskService {
     const qb = this.taskRepo
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.document', 'document')
-      .orderBy('task.created_at', 'DESC')
+      .orderBy('task.createdAt', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
@@ -261,24 +307,69 @@ export class DocumentTaskService {
       finishedAt: null,
     });
 
-    // 重新推送至 BullMQ 队列
-    const queue = this.queueService.getQueue('document-processing');
-    const job = await queue.add('parse_and_index', {
-      taskId: task.id,
-      knowledgeBaseId: task.knowledgeBaseId,
-      originalStorageKey,
-      filename: task.metadata?.filename || 'document',
-      mimetype: task.metadata?.mimeType || 'application/octet-stream',
-      size: task.metadata?.fileSize || 0,
-      input: {
-        ...task.metadata?.upload,
-        currentIngestRunId: task.ingestRunId,
-      },
-    });
-
-    await this.taskRepo.update(taskId, { jobId: job.id });
+    try {
+      await this.enqueueParseAndIndexJob(task.id, {
+        knowledgeBaseId: task.knowledgeBaseId,
+        originalStorageKey,
+        filename: task.metadata?.filename || 'document',
+        mimetype: task.metadata?.mimeType || 'application/octet-stream',
+        size: task.metadata?.fileSize || 0,
+        input: {
+          ...task.metadata?.upload,
+          currentIngestRunId: task.ingestRunId,
+        },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.markTaskFailed(
+        taskId,
+        `任务发布失败: ${errorMessage}`,
+      );
+      throw new BadRequestException('文档处理任务发布失败，请稍后重试');
+    }
 
     return this.getTaskDetail(taskId, accessScope);
+  }
+
+  async markTaskFailed(
+    taskId: string,
+    error: string,
+    stage = 'failed',
+  ): Promise<void> {
+    await this.taskRepo.update(taskId, {
+      status: 'failed',
+      stage,
+      progress: 0,
+      error,
+      finishedAt: new Date(),
+    });
+    await this.stepRepo.update(
+      { taskId, status: 'running' },
+      {
+        status: 'failed',
+        error,
+        finishedAt: new Date(),
+      },
+    );
+  }
+
+  private async enqueueParseAndIndexJob(
+    taskId: string,
+    data: {
+      knowledgeBaseId: string;
+      originalStorageKey: string;
+      filename: string;
+      mimetype: string;
+      size: number;
+      input: UploadTaskInput;
+    },
+  ): Promise<void> {
+    const queue = this.queueService.getQueue('document-processing');
+    const job = await queue.add('parse_and_index', {
+      taskId,
+      ...data,
+    });
+    await this.taskRepo.update(taskId, { jobId: job.id });
   }
 
   private async createInitialSteps(task: DocumentTask): Promise<void> {
@@ -331,6 +422,15 @@ export class DocumentTaskService {
     }
   }
 
+  private assertDocumentWritable(
+    document: Pick<KnowledgeDocument, 'ownerId'>,
+    scope?: KnowledgeAccessScope,
+  ): void {
+    if (!scope || scope.role === 'admin') return;
+    if (scope.ownerId && document.ownerId === scope.ownerId) return;
+    throw new ForbiddenException('无权修改该文档');
+  }
+
   private readTaskOwnerId(task: DocumentTask): string | null {
     const metadata = task.metadata;
     if (!metadata || typeof metadata !== 'object') return null;
@@ -380,9 +480,7 @@ export class DocumentTaskService {
     );
   }
 
-  private safeUploadMetadata(
-    input: UploadDocumentDto & { ownerId?: string | null },
-  ): Record<string, unknown> {
+  private safeUploadMetadata(input: UploadTaskInput): Record<string, unknown> {
     return {
       ownerId: input.ownerId ?? null,
       category: input.category ?? null,

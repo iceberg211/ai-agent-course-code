@@ -59,6 +59,7 @@ describe('DocumentTaskRunnerService', () => {
       listChunksByDocumentId: jest.fn().mockResolvedValue([]),
       findOneDocument: jest.fn().mockResolvedValue({ id: 'doc-123', graphSyncStatus: 'indexed' }),
       updateDocument: jest.fn().mockResolvedValue({ affected: 1 }),
+      setCurrentDocumentVersion: jest.fn().mockResolvedValue({ id: 'doc-123' }),
     };
 
     parserServiceMock = {
@@ -141,6 +142,53 @@ describe('DocumentTaskRunnerService', () => {
     );
     expect(documentServiceMock.indexDocumentChunks).toHaveBeenCalled();
     expect(documentServiceMock.syncGraphOnly).toHaveBeenCalled();
+  });
+
+  it('新版本任务完成后会把新文档设为当前版本', async () => {
+    const mockTask = {
+      id: 'task-1',
+      documentId: null,
+      ingestRunId: 'run-2',
+      checkpointData: null,
+    };
+    taskRepo.findOne.mockResolvedValue(mockTask);
+    stepRepo.find.mockResolvedValue([
+      { step: 'parse', status: 'pending' },
+      { step: 'index', status: 'pending' },
+      { step: 'graph_sync', status: 'pending' },
+    ]);
+
+    await runner.runUploadIngestTask({
+      taskId: 'task-1',
+      knowledgeBaseId: 'kb-1',
+      file: {
+        originalname: 'demo-v2.docx',
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: Buffer.from('# content'),
+        size: 9,
+      },
+      input: {
+        versionGroupId: 'group-1',
+        versionNo: 2,
+        isCurrentVersion: true,
+      },
+    });
+
+    expect(documentServiceMock.createDocument).toHaveBeenCalledWith(
+      'kb-1',
+      'demo-v2.docx',
+      9,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      expect.objectContaining({
+        versionGroupId: 'group-1',
+        versionNo: 2,
+        isCurrentVersion: true,
+      }),
+    );
+    expect(documentServiceMock.setCurrentDocumentVersion).toHaveBeenCalledWith(
+      'kb-1',
+      'doc-123',
+    );
   });
 
   it('当 parse 已完成时，重试应跳过 parse 步骤，直接进行 index 和 graph_sync', async () => {

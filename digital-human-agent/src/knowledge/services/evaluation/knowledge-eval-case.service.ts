@@ -222,6 +222,111 @@ ${contextText}
     return result;
   }
 
+  async runSingleEvaluation(
+    knowledgeId: string,
+    evalCaseId: string,
+  ): Promise<KnowledgeEvalCase> {
+    const caseItem = await this.findInKnowledgeOrThrow(knowledgeId, evalCaseId);
+    const association = await this.personaKbRepo.findOne({
+      where: { knowledgeBaseId: knowledgeId },
+    });
+    const personaId = association?.personaId;
+    if (!personaId) {
+      throw new BadRequestException('请先为该知识库绑定一个数字人角色以执行问答评测');
+    }
+
+    const chatModel = this.llmFactory.createChatModel({ temperature: 0 });
+    caseItem.lastRunStatus = 'running';
+    await this.evalCaseRepo.save(caseItem);
+
+    try {
+      const retrievalStartedAt = Date.now();
+      const debugResult = await this.searchService.retrieveForPersonaWithDebug(
+        personaId,
+        caseItem.question,
+        {},
+      );
+      const chunks = debugResult.rerankedChunks;
+      const retrievalLatencyMs = Date.now() - retrievalStartedAt;
+      const contextText = chunks.map((c) => c.content).join('\n---\n');
+
+      const systemPrompt = `你是一个知识库问答机器人。只能根据以下提供的背景知识回答用户的问题。如果背景知识不足以回答，必须明确说明无法从当前知识库证据确认，不要编造或推测。
+
+背景知识：
+${contextText || '无背景知识'}
+
+用户问题：${caseItem.question}`;
+
+      const qaResponse = await chatModel.invoke([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: caseItem.question },
+      ]);
+      const actualAnswer = String(qaResponse.content).trim();
+
+      let hitRate = 0;
+      if (chunks.length > 0) {
+        const hitPrompt = `请评估以下背景知识是否包含解答用户问题所需的信息。
+背景知识：
+${contextText}
+
+用户问题：${caseItem.question}
+
+若背景知识包含相关答案的线索或信息，请仅回复数字 1，否则回复数字 0。请不要输出任何其他字符。`;
+        const hitResponse = await chatModel.invoke([
+          { role: 'user', content: hitPrompt },
+        ]);
+        hitRate = String(hitResponse.content).trim() === '1' ? 1 : 0;
+      }
+
+      let recall: number | null = null;
+      if (caseItem.expectedAnswer) {
+        const recallPrompt = `请比对以下“实际回答”与“期望回答”，并评估实际回答对期望回答关键信息点的覆盖比例。
+实际回答：${actualAnswer}
+期望回答：${caseItem.expectedAnswer}
+
+请仅输出一个 0.0 到 1.0 之间的浮点数字，代表实际回答覆盖期望回答的比例（例如：如果完全覆盖请输出 1.0，如果毫无关系输出 0.0，若部分覆盖输出 0.5）。请不要包含任何解释或额外文字。`;
+        const recallResponse = await chatModel.invoke([
+          { role: 'user', content: recallPrompt },
+        ]);
+        const parsedRecall = parseFloat(String(recallResponse.content).trim());
+        recall = isNaN(parsedRecall) ? 0 : Math.min(Math.max(parsedRecall, 0), 1);
+      }
+
+      caseItem.lastRunActualAnswer = actualAnswer;
+      caseItem.lastRunHitRate = hitRate;
+      caseItem.lastRunRecall = recall;
+      caseItem.lastRunHitAt1 = this.calculateHitAtK(caseItem, chunks, 1);
+      caseItem.lastRunHitAt3 = this.calculateHitAtK(caseItem, chunks, 3);
+      caseItem.lastRunRecallAt5 = this.calculateRecallAtK(caseItem, chunks, 5);
+      caseItem.lastRunRecallAt10 = this.calculateRecallAtK(caseItem, chunks, 10);
+      caseItem.lastRunRetrievalLatencyMs = retrievalLatencyMs;
+      caseItem.lastRunRerankLatencyMs =
+        debugResult.stageTrace?.rerank?.length ? (debugResult.stageTrace.rerankLatencyMs ?? null) : 0;
+      caseItem.lastRunStatus = 'success';
+      caseItem.lastRunError = null;
+      caseItem.lastRunAt = new Date();
+    } catch (err: any) {
+      caseItem.lastRunStatus = 'failed';
+      caseItem.lastRunError = err.message || String(err);
+      caseItem.lastRunAt = new Date();
+    }
+
+    const saved = await this.evalCaseRepo.save(caseItem);
+    void this.notificationService?.create({
+      type: 'eval_batch_completed',
+      title: '问答验证用例运行完成',
+      message: saved.lastRunStatus === 'success' ? saved.question : saved.lastRunError,
+      payload: {
+        targetType: 'evalCase',
+        targetId: evalCaseId,
+        knowledgeId,
+        evalCaseId,
+        status: saved.lastRunStatus,
+      },
+    });
+    return saved;
+  }
+
   async getMetricsSummary(
     knowledgeId: string,
   ): Promise<KnowledgeEvalMetricsSummary> {

@@ -471,7 +471,12 @@ describe('createGraphReasoningNode', () => {
       } as any,
     );
 
-    expect(graphService.listEntities).toHaveBeenCalledWith('kb-1', '', 50, accessScope);
+    expect(graphService.listEntities).toHaveBeenCalledWith(
+      'kb-1',
+      expect.stringContaining('乔峰'),
+      20,
+      accessScope,
+    );
     expect(graphService.getNeighborhood).toHaveBeenCalledWith('kb-1', 'Topic::乔峰', accessScope);
     expect(result.documents).toHaveLength(2);
     expect(result.graphReasoningTrace).toEqual([

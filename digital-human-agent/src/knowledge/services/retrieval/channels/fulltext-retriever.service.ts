@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import type { estypes } from '@elastic/elasticsearch';
 import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
@@ -17,10 +17,12 @@ import {
 } from '@/knowledge/utils/keyword.utils';
 import type {
   KeywordBackend,
+  DocumentSearchFilters,
   KnowledgeAccessScope,
   KnowledgeChunk,
 } from '@/knowledge/types/knowledge-content.types';
 import { applyDocumentAccessScope } from '@/knowledge/utils/document-access.util';
+import { applyJsonbAnyTagFilter } from '@/knowledge/utils/document-filter.util';
 
 // Re-export for backward compatibility with existing consumers
 export { normalizeKeywordTerms, escapeLike, extractFallbackKeywordTerms } from '@/knowledge/utils/keyword.utils';
@@ -181,6 +183,7 @@ export class FulltextRetrieverService {
       matchCount: number;
       useExactPhrase?: boolean;
       accessScope?: KnowledgeAccessScope;
+      documentFilters?: DocumentSearchFilters;
       signal?: AbortSignal;
     },
     backend: KeywordBackend,
@@ -220,6 +223,7 @@ export class FulltextRetrieverService {
     terms: string[];
     matchCount: number;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
     signal?: AbortSignal;
   }): Promise<KnowledgeChunk[]> {
     throwIfAborted(params.signal);
@@ -282,6 +286,7 @@ export class FulltextRetrieverService {
       .andWhere('document.is_current_version = true')
       .andWhere('document.archived_at IS NULL')
       .andWhere(`(${matchClauses.join(' OR ')})`);
+    this.applyDocumentFilters(qb, params.documentFilters);
     applyDocumentAccessScope(qb, 'document', params.accessScope);
     const rows = await qb
       .orderBy('keyword_score', 'DESC')
@@ -319,6 +324,7 @@ export class FulltextRetrieverService {
     matchCount: number;
     useExactPhrase?: boolean;
     accessScope?: KnowledgeAccessScope;
+    documentFilters?: DocumentSearchFilters;
     signal?: AbortSignal;
   }): Promise<KnowledgeChunk[]> {
     throwIfAborted(params.signal);
@@ -373,6 +379,7 @@ export class FulltextRetrieverService {
         params.knowledgeId,
         chunks,
         params.accessScope,
+        params.documentFilters,
       );
   }
 
@@ -410,6 +417,7 @@ export class FulltextRetrieverService {
     knowledgeId: string,
     chunks: KnowledgeChunk[],
     accessScope?: KnowledgeAccessScope,
+    documentFilters?: DocumentSearchFilters,
   ): Promise<KnowledgeChunk[]> {
     if (chunks.length === 0) {
       return [];
@@ -418,18 +426,18 @@ export class FulltextRetrieverService {
     const scoreById = new Map(
       chunks.map((chunk) => [chunk.id, chunk.keyword_score ?? 0]),
     );
-    const rows = await this.chunkRepo.find({
-      where: {
-        id: In(chunks.map((chunk) => chunk.id)),
-        enabled: true,
-        document: {
-          knowledgeBaseId: knowledgeId,
-          isCurrentVersion: true,
-          archivedAt: IsNull(),
-        },
-      },
-      relations: { document: true },
-    });
+    const qb = this.chunkRepo
+      .createQueryBuilder('chunk')
+      .innerJoinAndSelect('chunk.document', 'document')
+      .where('chunk.id IN (:...ids)', {
+        ids: chunks.map((chunk) => chunk.id),
+      })
+      .andWhere('chunk.enabled = true')
+      .andWhere('document.knowledge_base_id = :knowledgeId', { knowledgeId })
+      .andWhere('document.is_current_version = true')
+      .andWhere('document.archived_at IS NULL');
+    this.applyDocumentFilters(qb, documentFilters);
+    const rows = await qb.getMany();
     const visibleRows =
       accessScope?.role === 'admin'
         ? rows
@@ -462,6 +470,87 @@ export class FulltextRetrieverService {
         } satisfies KnowledgeChunk;
       })
       .filter((chunk): chunk is KnowledgeChunk => chunk !== null);
+  }
+
+  private applyDocumentFilters(
+    qb: ReturnType<Repository<KnowledgeChunkEntity>['createQueryBuilder']>,
+    filters?: DocumentSearchFilters,
+  ) {
+    if (!filters) return;
+    const fileTypes = this.resolveFileTypeFilters(filters.fileType);
+    if (fileTypes.length > 0) {
+      qb.andWhere(
+        new Brackets((where) => {
+          fileTypes.forEach((item, index) => {
+            const extKey = `fileExt${index}`;
+            const mimeKey = `fileMime${index}`;
+            const clause =
+              `(LOWER(document.filename) LIKE :${extKey} OR LOWER(COALESCE(document.mime_type, '')) LIKE :${mimeKey})`;
+            if (index === 0) {
+              where.where(clause, {
+                [extKey]: `%.${item.ext}`,
+                [mimeKey]: `${item.mime}%`,
+              });
+              return;
+            }
+            where.orWhere(clause, {
+              [extKey]: `%.${item.ext}`,
+              [mimeKey]: `${item.mime}%`,
+            });
+          });
+        }),
+      );
+    }
+
+    const tags = (filters.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+    if (tags.length > 0) {
+      applyJsonbAnyTagFilter(qb, 'document', tags);
+    }
+    const department = filters.department?.trim();
+    if (department) qb.andWhere('document.department = :department', { department });
+    const businessCategory = filters.businessCategory?.trim();
+    if (businessCategory) {
+      qb.andWhere('document.business_category = :businessCategory', {
+        businessCategory,
+      });
+    }
+    if (filters.visibility) {
+      qb.andWhere('document.visibility = :visibility', {
+        visibility: filters.visibility,
+      });
+    }
+  }
+
+  private resolveFileTypeFilters(
+    raw?: string,
+  ): Array<{ ext: string; mime: string }> {
+    const value = raw?.trim().toLowerCase();
+    if (!value) return [];
+    const groups: Record<string, Array<{ ext: string; mime: string }>> = {
+      image: [
+        { ext: 'jpg', mime: 'image/' },
+        { ext: 'jpeg', mime: 'image/' },
+        { ext: 'png', mime: 'image/' },
+        { ext: 'webp', mime: 'image/' },
+        { ext: 'gif', mime: 'image/' },
+      ],
+      audio: [
+        { ext: 'mp3', mime: 'audio/' },
+        { ext: 'wav', mime: 'audio/' },
+        { ext: 'm4a', mime: 'audio/' },
+        { ext: 'aac', mime: 'audio/' },
+        { ext: 'ogg', mime: 'audio/' },
+      ],
+      video: [
+        { ext: 'mp4', mime: 'video/' },
+        { ext: 'mov', mime: 'video/' },
+        { ext: 'mkv', mime: 'video/' },
+        { ext: 'webm', mime: 'video/' },
+      ],
+    };
+    if (groups[value]) return groups[value];
+    const ext = value.replace(/^\./, '');
+    return [{ ext, mime: `${ext}/` }];
   }
 
   private mapResponseToChunks(

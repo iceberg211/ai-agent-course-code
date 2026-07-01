@@ -4,6 +4,37 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-vue',
+              test: /[\\/]node_modules[\\/](vue|@vue|vue-router|pinia)[\\/]/,
+            },
+            {
+              name: 'vendor-ai',
+              test: /[\\/]node_modules[\\/](@ai-sdk|ai)[\\/]/,
+            },
+            {
+              name: 'vendor-digital-human',
+              test: /[\\/]node_modules[\\/](simli-client)[\\/]/,
+            },
+            {
+              name: 'vendor-markdown',
+              test: /[\\/]node_modules[\\/](marked)[\\/]/,
+            },
+            {
+              name: 'vendor-icons',
+              test: /[\\/]node_modules[\\/](lucide-vue-next)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

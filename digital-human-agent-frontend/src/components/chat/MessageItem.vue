@@ -79,14 +79,67 @@
 
         <!-- 引用来源 -->
         <CitationChips :citations="message.citations" @show-citation-detail="$emit('show-citation-detail', $event)" />
+
+        <!-- 🛡️ 可信可解释区 (Assistant Only) -->
+        <div v-if="message.role === 'assistant' && !message.streaming" class="explain-area">
+          <button type="button" class="explain-toggle-btn" @click="showExplain = !showExplain">
+            <ShieldCheckIcon :size="12" class="icon" />
+            <span>RAG 检索与图谱推理链可信追溯</span>
+            <component :is="showExplain ? ChevronUpIcon : ChevronDownIcon" :size="12" class="arrow" />
+          </button>
+          
+          <div v-if="showExplain" class="explain-content">
+            <div class="metrics-row">
+              <span class="m-item" v-if="message.latencyMs">总耗时: <strong>{{ message.latencyMs }} ms</strong></span>
+              <span class="m-item" v-if="message.ragTrace?.rerankLatencyMs || message.rag_trace?.rerankLatencyMs">重排耗时: <strong>{{ message.ragTrace?.rerankLatencyMs || message.rag_trace?.rerankLatencyMs }} ms</strong></span>
+              <span class="m-item" v-if="message.citations?.length">引用凭证数: <strong>{{ message.citations.length }} 个</strong></span>
+            </div>
+
+            <!-- 图谱推理链 -->
+            <div v-if="message.graphReasoningTrace || message.ragTrace?.graphResultCount || message.rag_trace?.graphResultCount" class="trace-block">
+              <h5>🧠 知识图谱 (Neo4j) 推理证据</h5>
+              <div class="trace-box text-flow">
+                <span class="badge badge--graph">Neo4j</span> 
+                <span>一跳推理路径关联召回数: <strong>{{ message.ragTrace?.graphResultCount || message.rag_trace?.graphResultCount || 0 }} 个实体关系。</strong></span>
+                <div v-if="message.graphReasoningTrace" class="graph-reasoning-path font-mono">
+                  <p v-for="(path, idx) in message.graphReasoningTrace" :key="idx" class="path-line">
+                    <code>({{ path.sourceNode }})</code> — [{{ path.relation }}] → <code>({{ path.targetNode }})</code>
+                    <span class="conf">置信度: {{ path.confidence }}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 检索渠道覆盖 -->
+            <div class="trace-block" v-if="message.ragTrace || message.rag_trace">
+              <h5>🔀 召回通道合流统计 (RRF Rerank)</h5>
+              <div class="trace-box text-flow font-mono">
+                <ul>
+                  <li>向量召回 (Vector): {{ message.ragTrace?.vectorResultCount || message.rag_trace?.vectorResultCount || 0 }} chunks</li>
+                  <li>全文召回 (Keyword): {{ message.ragTrace?.keywordResultCount || message.rag_trace?.keywordResultCount || 0 }} chunks</li>
+                  <li>图谱召回 (Graph): {{ message.ragTrace?.graphResultCount || message.rag_trace?.graphResultCount || 0 }} chunks</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { marked } from 'marked'
-import { ClipboardIcon, ThumbsDownIcon, ThumbsUpIcon, RefreshCwIcon } from 'lucide-vue-next'
+import {
+  ClipboardIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
+  RefreshCwIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ShieldCheckIcon,
+} from 'lucide-vue-next'
 import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
 import CitationChips from '@/components/chat/CitationChips.vue'
@@ -94,6 +147,8 @@ import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import type { ChatMessage } from '@/types'
+
+const showExplain = ref(false)
 
 // marked 配置：开启 gfm（GitHub Flavored Markdown）
 marked.setOptions({ gfm: true })
@@ -124,7 +179,14 @@ function statusLabel(status: string) {
 // 将 markdown 文本转为 HTML
 function renderMarkdown(text: string): string {
   if (!text) return ''
-  return marked.parse(text) as string
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return String(marked.parse(escaped)).replace(
+    /\s(href|src)=["']\s*javascript:[^"']*["']/gi,
+    '',
+  )
 }
 
 async function copyMessage() {
@@ -393,6 +455,110 @@ async function setFeedback(next: 'up' | 'down') {
 }
 .content.md :deep(h1) { font-size: 15px; border-bottom: 1px solid rgba(226, 232, 240, 0.5); padding-bottom: 4px; }
 .content.md :deep(h2) { font-size: 13.5px; }
+
+/* 🛡️ 可解释区样式 */
+.explain-area {
+  margin-top: 14px;
+  border-top: 1px solid rgba(226, 232, 240, 0.6);
+  padding-top: 12px;
+  width: 100%;
+}
+
+.explain-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+}
+
+.explain-toggle-btn .arrow {
+  margin-left: auto;
+}
+
+.explain-content {
+  margin-top: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metrics-row {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.trace-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trace-block h5 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text);
+}
+
+.trace-box {
+  background: #fff;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.badge--graph {
+  background: #fae8ff;
+  color: #a21caf;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.graph-reasoning-path {
+  margin-top: 8px;
+  border-left: 2px solid #e9d5ff;
+  padding-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.path-line {
+  margin: 0;
+  font-size: 11px;
+}
+
+.path-line code {
+  background: #f5f3ff;
+  color: #6b21a8;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.conf {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
 .content.md :deep(h3) { font-size: 12.5px; }
 .content.md :deep(hr) {
   border: none;

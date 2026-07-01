@@ -59,6 +59,7 @@ export interface RetrieveKnowledgeOptions {
   skipQueryRewrite?: boolean;
   signal?: AbortSignal;
   accessScope?: KnowledgeAccessScope;
+  documentFilters?: DocumentSearchFilters;
   /** @deprecated 旧字段兼容 */
   stage1TopK?: number;
   /** @deprecated 旧字段兼容 */
@@ -72,6 +73,7 @@ export type NormalizedRetrieveKnowledgeOptions = Required<
     | 'strategy'
     | 'skipQueryRewrite'
     | 'accessScope'
+    | 'documentFilters'
     | 'stage1TopK'
     | 'finalTopK'
   >
@@ -208,11 +210,20 @@ export interface KnowledgeAccessScope {
   role?: string | null;
 }
 
+export interface DocumentSearchFilters {
+  fileType?: string;
+  tags?: string[];
+  department?: string;
+  businessCategory?: string;
+  visibility?: 'private' | 'department' | 'company';
+}
+
 export interface KeywordRetrieveParams {
   knowledgeId: string;
   terms: string[];
   matchCount: number;
   useExactPhrase?: boolean;
+  documentFilters?: DocumentSearchFilters;
   accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
@@ -229,6 +240,7 @@ export interface KnowledgeHybridRetrievalParams {
   strategy: RetrievalStrategy;
   threshold: number;
   globalRetrievalLimit: number;
+  documentFilters?: DocumentSearchFilters;
   accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }
@@ -252,6 +264,7 @@ export interface PersonaHybridRetrievalInput {
   channels?: PersonaHybridRetrievalChannels;
   threshold?: number;
   retrievalLimit?: number;
+  documentFilters?: DocumentSearchFilters;
   accessScope?: KnowledgeAccessScope;
   signal?: AbortSignal;
 }

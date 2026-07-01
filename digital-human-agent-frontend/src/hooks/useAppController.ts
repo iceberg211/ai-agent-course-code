@@ -128,8 +128,15 @@ export function useAppController() {
       }
     },
     onStopText: async () => {
+      if (sessionStore.sessionId) {
+        send({ type: 'conversation:interrupt', sessionId: sessionStore.sessionId })
+      }
+      audio.stopPlayback()
+      if (conversation.state.value !== 'recording') {
+        conversation.state.value = 'idle'
+      }
       await textChat.stopText()
-      showToast('已停止生成')
+      showToast('已打断播报并停止生成')
     },
     onUploadVoiceSample: async (file: File) => {
       if (!personaStore.selectedId) { showToast('请先选择角色'); return }
