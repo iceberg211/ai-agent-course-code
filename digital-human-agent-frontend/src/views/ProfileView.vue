@@ -7,190 +7,205 @@
       </div>
     </header>
 
-    <div class="profile-layout">
-      <!-- 个人名片 -->
-      <section class="profile-card" aria-label="个人信息">
-        <div class="profile-card__avatar">
-          <span>{{ initial }}</span>
-        </div>
-        <div class="profile-card__info">
-          <h3>{{ username }}</h3>
-          <p class="role-badge">企业知识管理员</p>
-          <span class="meta-desc">所属系统角色：RAG & 数字人代理管理员</span>
-        </div>
-      </section>
+    <div class="profile-layout grid-row">
+      <!-- 左栏：个人名片与安全清理 (占 col-4) -->
+      <div class="col-4 flex-column-gap">
+        <!-- 个人名片 -->
+        <section class="profile-card" aria-label="个人信息">
+          <div class="profile-card__avatar">
+            <span>{{ initial }}</span>
+          </div>
+          <div class="profile-card__info">
+            <h3>{{ username }}</h3>
+            <p class="role-badge">企业知识管理员</p>
+            <span class="meta-desc">系统角色：RAG & 数字人代理管理员</span>
+          </div>
+        </section>
 
-      <!-- 系统设置组：凭证显示 -->
-      <section class="settings-block">
-        <div class="block-title">
-          <h4>数据访问凭证</h4>
-          <p>这些凭证用于在后端物理隔离您的私有知识库与聊天记录。</p>
-        </div>
+        <!-- 危险与管理区域 -->
+        <section class="settings-block danger-zone">
+          <div class="block-title">
+            <h4>敏感数据与账户安全</h4>
+            <p>清空本地配置或安全退出当前系统。</p>
+          </div>
 
-        <div class="field-row">
-          <div class="field-item">
-            <span class="label">当前访问用户标识 (Owner ID)</span>
-            <div class="input-display">
-              <code>{{ ownerId }}</code>
-              <button class="btn-copy" type="button" @click="copyId">复制</button>
+          <div class="action-grid">
+            <div class="action-item">
+              <button class="btn-danger" type="button" @click="resetLocalCache">
+                <Trash2Icon :size="14" />
+                清除浏览器本地缓存
+              </button>
+              <p class="action-desc">重置浏览器中临时保存的 RAG 检索草稿和数字人本地配置参数。</p>
+            </div>
+
+            <div class="action-item border-top">
+              <button class="btn-warning" type="button" @click="handleLogout">
+                <LogOutIcon :size="14" />
+                安全退出登录
+              </button>
+              <p class="action-desc">退出并清空当前用户的访问状态，返回至系统登录页。</p>
             </div>
           </div>
-        </div>
+        </section>
+      </div>
 
-        <div class="field-row">
-          <div class="field-item">
-            <span class="label">数据隔离级别</span>
-            <div class="input-display readonly-select">
-              <strong>租户独立隔离 (Client Isolation)</strong>
+      <!-- 右栏：凭证、部门、API Key 和 密码修改 (占 col-8) -->
+      <div class="col-8 flex-column-gap">
+        <!-- 子格：凭证与部门并排 (各自占 col-6) -->
+        <div class="grid-row">
+          <!-- 数据访问凭证 -->
+          <section class="settings-block col-6">
+            <div class="block-title">
+              <h4>数据访问凭证</h4>
+              <p>这些凭证用于在后端物理隔离您的知识与记录。</p>
             </div>
+
+            <div class="field-row">
+              <div class="field-item">
+                <span class="label">当前用户标识 (Owner ID)</span>
+                <div class="input-display">
+                  <code>{{ ownerId }}</code>
+                  <button class="btn-copy" type="button" @click="copyId">复制</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field-item">
+                <span class="label">数据隔离级别</span>
+                <div class="input-display readonly-select">
+                  <strong>租户独立隔离 (Client Isolation)</strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 部门信息 -->
+          <section class="settings-block col-6">
+            <div class="block-title">
+              <h4>部门信息</h4>
+              <p>部门会用于判断“部门可见”文档的检索范围。</p>
+            </div>
+            <form class="api-key-form-vertical" @submit.prevent="saveDepartment">
+              <div class="form-field">
+                <label for="dept-input">当前所属部门</label>
+                <input
+                  id="dept-input"
+                  v-model="departmentInput"
+                  type="text"
+                  placeholder="例如 财务部、产品研发部"
+                  :disabled="profileLoading"
+                />
+              </div>
+              <button class="btn-primary" type="submit" :disabled="profileLoading" style="margin-top: 10px;">
+                保存
+              </button>
+            </form>
+          </section>
+        </div>
+
+        <!-- API Key 管理 -->
+        <section class="settings-block">
+          <div class="block-title">
+            <h4>API Key 管理</h4>
+            <p>用于脚本、服务端任务或内部系统调用知识库与问答接口。</p>
           </div>
-        </div>
-      </section>
 
-      <section class="settings-block">
-        <div class="block-title">
-          <h4>部门信息</h4>
-          <p>部门会用于判断“部门可见”文档的检索范围。</p>
-        </div>
-        <form class="api-key-form" @submit.prevent="saveDepartment">
-          <input
-            v-model="departmentInput"
-            type="text"
-            placeholder="例如 财务部、产品研发部"
-            :disabled="profileLoading"
-          />
-          <button class="btn-primary" type="submit" :disabled="profileLoading">
-            保存
-          </button>
-        </form>
-      </section>
+          <form class="api-key-form" @submit.prevent="createApiKey">
+            <input
+              v-model="apiKeyName"
+              type="text"
+              placeholder="输入用途名称，例如 数据同步任务"
+              :disabled="apiKeyLoading"
+            />
+            <button class="btn-primary" type="submit" :disabled="apiKeyLoading || !apiKeyName.trim()">
+              <KeyRoundIcon :size="14" />
+              创建 Key
+            </button>
+          </form>
 
-      <section class="settings-block">
-        <div class="block-title">
-          <h4>API Key 管理</h4>
-          <p>用于脚本、服务端任务或内部系统调用知识库与问答接口。</p>
-        </div>
-
-        <form class="api-key-form" @submit.prevent="createApiKey">
-          <input
-            v-model="apiKeyName"
-            type="text"
-            placeholder="输入用途名称，例如 数据同步任务"
-            :disabled="apiKeyLoading"
-          />
-          <button class="btn-primary" type="submit" :disabled="apiKeyLoading || !apiKeyName.trim()">
-            <KeyRoundIcon :size="14" />
-            创建
-          </button>
-        </form>
-
-        <div v-if="createdPlainKey" class="secret-once">
-          <div>
-            <span class="label">新 API Key 仅展示一次</span>
-            <code>{{ createdPlainKey }}</code>
-          </div>
-          <button class="btn-copy" type="button" @click="copyApiKey(createdPlainKey)">复制</button>
-        </div>
-
-        <div class="api-key-list">
-          <article v-for="item in apiKeys" :key="item.id" class="api-key-item">
+          <div v-if="createdPlainKey" class="secret-once">
             <div>
-              <strong>{{ item.name }}</strong>
-              <span>{{ item.keyPrefix }}••••{{ item.keyLastFour }} · {{ formatDate(item.createdAt) }}</span>
+              <span class="label">新 API Key 仅展示一次</span>
+              <code>{{ createdPlainKey }}</code>
             </div>
-            <button
-              class="btn-revoke"
-              type="button"
-              :disabled="apiKeyLoading || !item.isActive"
-              @click="revokeApiKey(item.id)"
-            >
-              {{ item.isActive ? '废弃' : '已废弃' }}
-            </button>
-          </article>
-          <p v-if="!apiKeys.length" class="action-desc">暂无 API Key。</p>
-        </div>
-      </section>
-
-      <!-- 修改密码模块 -->
-      <section class="settings-block">
-        <div class="block-title">
-          <h4>修改账户密码</h4>
-          <p>定期修改密码有利于保障您的账户及知识数据安全。</p>
-        </div>
-
-        <form class="password-form" @submit.prevent="handleChangePassword">
-          <div class="form-field">
-            <label for="oldPassword">当前旧密码</label>
-            <input
-              id="oldPassword"
-              v-model="passwordForm.oldPassword"
-              type="password"
-              placeholder="请输入旧密码"
-              required
-            />
+            <button class="btn-copy" type="button" @click="copyApiKey(createdPlainKey)">复制</button>
           </div>
 
-          <div class="form-field">
-            <label for="newPassword">新密码</label>
-            <input
-              id="newPassword"
-              v-model="passwordForm.newPassword"
-              type="password"
-              placeholder="请输入新密码（至少 6 位）"
-              required
-            />
+          <div class="api-key-list">
+            <article v-for="item in apiKeys" :key="item.id" class="api-key-item">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.keyPrefix }}••••{{ item.keyLastFour }} · {{ formatDate(item.createdAt) }}</span>
+              </div>
+              <button
+                class="btn-revoke"
+                type="button"
+                :disabled="apiKeyLoading || !item.isActive"
+                @click="revokeApiKey(item.id)"
+              >
+                {{ item.isActive ? '废弃' : '已废弃' }}
+              </button>
+            </article>
+            <p v-if="!apiKeys.length" class="action-desc">暂无 API Key。</p>
+          </div>
+        </section>
+
+        <!-- 修改密码模块 -->
+        <section class="settings-block">
+          <div class="block-title">
+            <h4>修改账户密码</h4>
+            <p>定期修改密码有利于保障您的账户及知识数据安全。</p>
           </div>
 
-          <div class="form-field">
-            <label for="confirmPassword">确认新密码</label>
-            <input
-              id="confirmPassword"
-              v-model="passwordForm.confirmPassword"
-              type="password"
-              placeholder="请再次输入新密码"
-              required
-            />
-          </div>
-
-          <!-- 报错提示区 -->
-          <Transition name="fade-alert">
-            <div v-if="errorMsg" class="error-text-alert">
-              {{ errorMsg }}
+          <form class="password-form" @submit.prevent="handleChangePassword">
+            <div class="form-field">
+              <label for="oldPassword">当前旧密码</label>
+              <input
+                id="oldPassword"
+                v-model="passwordForm.oldPassword"
+                type="password"
+                placeholder="请输入旧密码"
+                required
+              />
             </div>
-          </Transition>
 
-          <button class="btn-primary" type="submit" :disabled="loading">
-            <KeyRoundIcon :size="14" />
-            {{ loading ? '正在提交...' : '确认修改密码' }}
-          </button>
-        </form>
-      </section>
+            <div class="form-field">
+              <label for="newPassword">新密码</label>
+              <input
+                id="newPassword"
+                v-model="passwordForm.newPassword"
+                type="password"
+                placeholder="请输入新密码（至少 6 位）"
+                required
+              />
+            </div>
 
-      <!-- 危险与管理区域：包含清除缓存与退出登录 -->
-      <section class="settings-block danger-zone">
-        <div class="block-title">
-          <h4>敏感数据与账户安全</h4>
-          <p>清空本地配置或安全退出当前系统。</p>
-        </div>
+            <div class="form-field">
+              <label for="confirmPassword">确认新密码</label>
+              <input
+                id="confirmPassword"
+                v-model="passwordForm.confirmPassword"
+                type="password"
+                placeholder="请再次输入新密码"
+                required
+              />
+            </div>
 
-        <div class="action-grid">
-          <div class="action-item">
-            <button class="btn-danger" type="button" @click="resetLocalCache">
-              <Trash2Icon :size="14" />
-              清除浏览器本地缓存
+            <!-- 报错提示区 -->
+            <Transition name="fade-alert">
+              <div v-if="errorMsg" class="error-text-alert">
+                {{ errorMsg }}
+              </div>
+            </Transition>
+
+            <button class="btn-primary" type="submit" :disabled="loading" style="align-self: flex-start; min-width: 140px;">
+              <KeyRoundIcon :size="14" />
+              {{ loading ? '正在提交...' : '确认修改密码' }}
             </button>
-            <p class="action-desc">重置浏览器中临时保存的 RAG 检索草稿和数字人本地配置参数。</p>
-          </div>
-
-          <div class="action-item border-top">
-            <button class="btn-warning" type="button" @click="handleLogout">
-              <LogOutIcon :size="14" />
-              安全退出登录
-            </button>
-            <p class="action-desc">退出并清空当前用户的访问状态，返回至系统登录页。</p>
-          </div>
-        </div>
-      </section>
+          </form>
+        </section>
+      </div>
     </div>
 
     <!-- 弹窗 Toast -->
@@ -410,35 +425,56 @@ function formatDate(value?: string) {
 </script>
 
 <style scoped>
+/* ── 统一 12 栏标准网格系统 ── */
+.grid-row {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.col-12 { grid-column: span 12; }
+.col-8  { grid-column: span 8; }
+.col-6  { grid-column: span 6; }
+.col-4  { grid-column: span 4; }
+
+.flex-column-gap {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 .profile {
-  padding: 32px 24px;
+  padding: 24px;
   height: 100%;
   overflow-y: auto;
   background: transparent;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .page-head h2 {
   margin: 0 0 4px;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--text);
   letter-spacing: -0.02em;
+  text-align: left;
 }
 
 .subtitle {
   margin: 0;
   color: var(--text-muted);
   font-size: 13px;
+  text-align: left;
 }
 
 .profile-layout {
-  max-width: 680px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  width: 100%;
 }
 
 .profile-card {
@@ -457,28 +493,30 @@ function formatDate(value?: string) {
 }
 
 .profile-card__avatar {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: var(--tech-gradient, linear-gradient(135deg, #60a5fa, #2563eb));
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   box-shadow: 0 8px 24px rgba(37, 99, 235, 0.15);
+  flex-shrink: 0;
 }
 
 .profile-card__info {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  text-align: left;
 }
 
 .profile-card__info h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--text);
 }
@@ -489,14 +527,14 @@ function formatDate(value?: string) {
   padding: 2px 8px;
   background: var(--primary-bg, #eff6ff);
   color: var(--primary, #2563eb);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 750;
   border-radius: 6px;
   margin: 2px 0;
 }
 
 .meta-desc {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
@@ -513,18 +551,19 @@ function formatDate(value?: string) {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  text-align: left;
 }
 
 .block-title h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 750;
   color: var(--text);
 }
 
 .block-title p {
   margin: 4px 0 0;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
 }
@@ -542,8 +581,8 @@ function formatDate(value?: string) {
 }
 
 .field-item .label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
   color: var(--text-secondary);
 }
 
@@ -551,7 +590,7 @@ function formatDate(value?: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 42px;
+  height: 40px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -560,7 +599,7 @@ function formatDate(value?: string) {
 
 .input-display code {
   font-family: monospace;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text);
 }
 
@@ -569,7 +608,7 @@ function formatDate(value?: string) {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
   cursor: pointer;
@@ -583,7 +622,7 @@ function formatDate(value?: string) {
 
 .readonly-select {
   background: #f8fafc;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-secondary);
 }
 
@@ -591,7 +630,7 @@ function formatDate(value?: string) {
   font-weight: 600;
 }
 
-/* 修改密码表单 */
+/* 密码与表单 */
 .password-form {
   display: flex;
   flex-direction: column;
@@ -606,12 +645,24 @@ function formatDate(value?: string) {
 
 .api-key-form input {
   min-width: 0;
-  height: 42px;
+  height: 40px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
   color: var(--text);
+  outline: none;
+  font-size: 13px;
+}
+
+.api-key-form input:focus {
+  border-color: var(--primary);
+}
+
+.api-key-form-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .secret-once {
@@ -630,6 +681,7 @@ function formatDate(value?: string) {
   min-width: 0;
   flex-direction: column;
   gap: 5px;
+  text-align: left;
 }
 
 .secret-once code {
@@ -661,21 +713,22 @@ function formatDate(value?: string) {
   min-width: 0;
   flex-direction: column;
   gap: 4px;
+  text-align: left;
 }
 
 .api-key-item span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .btn-revoke {
-  height: 32px;
+  height: 30px;
   padding: 0 12px;
   border: 1px solid rgba(239, 68, 68, 0.18);
   border-radius: 7px;
   background: rgba(239, 68, 68, 0.06);
   color: var(--error);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -691,16 +744,17 @@ function formatDate(value?: string) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  text-align: left;
 }
 
 .form-field label {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .form-field input {
-  height: 42px;
+  height: 40px;
   padding: 0 12px;
   background: #ffffff;
   border: 1px solid var(--border);
@@ -722,7 +776,8 @@ function formatDate(value?: string) {
   color: var(--error);
   padding: 8px 12px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
+  text-align: left;
 }
 
 .btn-primary {
@@ -730,16 +785,17 @@ function formatDate(value?: string) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 42px;
+  height: 40px;
   background: var(--tech-gradient);
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
   transition: all 0.2s ease;
+  padding: 0 16px;
 }
 
 .btn-primary:hover {
@@ -757,7 +813,7 @@ function formatDate(value?: string) {
 /* 危险区与登出 */
 .danger-zone {
   border-color: #fecaca;
-  background: rgba(254, 242, 242, 0.5); /* 极淡红底 */
+  background: rgba(254, 242, 242, 0.35);
 }
 
 .danger-zone h4 {
@@ -775,6 +831,7 @@ function formatDate(value?: string) {
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+  text-align: left;
 }
 
 .border-top {
@@ -791,7 +848,7 @@ function formatDate(value?: string) {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
@@ -811,7 +868,7 @@ function formatDate(value?: string) {
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 4px rgba(217, 119, 6, 0.1);
@@ -837,13 +894,20 @@ function formatDate(value?: string) {
   transform: translateX(-50%);
   padding: 10px 20px;
   border-radius: var(--radius-md);
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   background: rgba(15, 23, 42, 0.85);
   color: #ffffff;
   backdrop-filter: blur(8px);
   z-index: 999;
+}
+
+/* 响应式栅格 */
+@media (max-width: 1024px) {
+  .col-4, .col-6, .col-8 {
+    grid-column: span 12;
+  }
 }
 
 /* 动画过渡类 */

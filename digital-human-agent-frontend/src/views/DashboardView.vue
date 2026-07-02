@@ -1,159 +1,163 @@
 <template>
   <main class="dashboard">
+    <!-- 头部：清爽的 Title 和快捷操作 -->
     <header class="dashboard__head">
-      <div>
-        <h2>首页大盘</h2>
-        <p class="subtitle">监控企业知识底座与智能问答的运行状况</p>
+      <div class="dashboard__head-title">
+        <h2>控制台大盘</h2>
+        <p class="subtitle">实时监控您的企业知识底座、问答效能与多模态安全审计指标</p>
       </div>
       <button class="btn-primary" type="button" @click="router.push('/chat')">
-        <MessageSquareIcon :size="15" />
-        发起问答
+        <MessageSquareIcon :size="14" />
+        <span>发起数字人通话</span>
       </button>
     </header>
 
-    <div v-if="loading && !summary" class="loading-state">
-      <div class="spinner"></div>
-      <p>正在加载系统指标…</p>
+    <!-- 新手指引：快捷操作路径 (3列，每列 col-4) -->
+    <section class="grid-row" aria-label="快捷向导">
+      <div class="quick-card col-4" @click="router.push('/documents')">
+        <div class="quick-card__icon bg-step1">
+          <PlusIcon :size="15" />
+        </div>
+        <div class="quick-card__info">
+          <h4>① 录入企业知识</h4>
+          <p>支持 PDF 及音视频，后台自动进行分片和解析入库任务。</p>
+        </div>
+        <span class="quick-card__link">立即导入 →</span>
+      </div>
+
+      <div class="quick-card col-4" @click="router.push('/search')">
+        <div class="quick-card__icon bg-step2">
+          <SearchIcon :size="15" />
+        </div>
+        <div class="quick-card__info">
+          <h4>② 检索关联资产</h4>
+          <p>实时调参，洞察多路 RRF 融合与重排 Trace 轨迹。</p>
+        </div>
+        <span class="quick-card__link">检索测试 →</span>
+      </div>
+
+      <div class="quick-card col-4" @click="router.push('/chat')">
+        <div class="quick-card__icon bg-step3">
+          <MessageSquareIcon :size="15" />
+        </div>
+        <div class="quick-card__info">
+          <h4>③ 数字人对话</h4>
+          <p>与您的专属 3D/2D 虚拟分身建立高拟真音视频通话。</p>
+        </div>
+        <span class="quick-card__link">建立连线 →</span>
+      </div>
+    </section>
+
+    <!-- 2. 数据加载时的 Skeleton 骨架屏占位 -->
+    <div v-if="loading && !summary" class="skeleton-wrapper" aria-label="正在加载系统指标">
+      <div class="grid-row">
+        <div v-for="i in 3" :key="i" class="col-4 skeleton-pulse" style="height: 110px; border-radius: 12px" />
+      </div>
+      <div class="grid-row">
+        <div v-for="i in 4" :key="i" class="col-3 skeleton-pulse" style="height: 120px; border-radius: 12px" />
+      </div>
+      <div class="grid-row">
+        <div class="col-6 skeleton-pulse" style="height: 280px; border-radius: 12px" />
+        <div class="col-6 skeleton-pulse" style="height: 280px; border-radius: 12px" />
+      </div>
     </div>
 
-    <div v-else-if="!summary" class="error-state">
+    <!-- 3. 数据拉取失败提示 -->
+    <div v-else-if="!summary" class="error-state" role="alert">
       <AlertCircleIcon :size="32" class="error-icon" />
-      <p>大盘数据获取失败，请稍后重试。</p>
+      <p>首页大盘数据加载失败，可能由于本地后端连接中断，请检查服务状态。</p>
       <button class="btn-ghost" type="button" @click="loadData">重新加载</button>
     </div>
 
+    <!-- 4. 实体仪表盘内容 -->
     <div v-else class="dashboard__body">
-      <!-- 统计指标格 -->
-      <section class="stat-grid" aria-label="数据概览">
-        <div class="stat-card">
-          <div class="stat-card__icon bg-blue">
-            <LibraryIcon :size="18" />
+      <!-- 4 个精心设计的大版块核心指标卡片 (4列，每列 col-3) -->
+      <section class="grid-row" aria-label="核心指标看板">
+        <!-- 卡片 1：知识库资产 -->
+        <div class="stat-card-opt col-3">
+          <div class="stat-card-opt__header">
+            <span class="title">知识库资产</span>
+            <LibraryIcon :size="15" class="icon-blue" />
           </div>
-          <div class="stat-card__data">
-            <span class="label">知识库</span>
-            <strong class="number">{{ summary.knowledgeBaseCount }}</strong>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card__icon bg-purple">
-            <FileTextIcon :size="18" />
-          </div>
-          <div class="stat-card__data">
-            <span class="label">文档总数</span>
-            <strong class="number">{{ summary.documentCount }}</strong>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card__icon bg-indigo">
-            <SparklesIcon :size="18" />
-          </div>
-          <div class="stat-card__data">
-            <span class="label">片段总数 (Chunks)</span>
-            <strong class="number">{{ summary.chunkCount }}</strong>
+          <div class="stat-card-opt__body">
+            <div class="metric">
+              <strong class="number">{{ summary?.knowledgeBaseCount ?? 0 }}</strong>
+              <span class="unit">个知识库</span>
+            </div>
+            <div class="sub-metrics">
+              <span>文档：<strong>{{ summary?.documentCount ?? 0 }}</strong> 篇</span>
+              <span class="separator">|</span>
+              <span>分片：<strong>{{ summary?.chunkCount ?? 0 }}</strong> 段</span>
+            </div>
           </div>
         </div>
-        <div class="stat-card" :class="{ 'warning-border': summary.failedDocumentCount > 0 }">
-          <div class="stat-card__icon" :class="summary.failedDocumentCount > 0 ? 'bg-red' : 'bg-green'">
-            <AlertCircleIcon :size="18" />
+
+        <!-- 卡片 2：会话与交互 -->
+        <div class="stat-card-opt col-3">
+          <div class="stat-card-opt__header">
+            <span class="title">会话与交互</span>
+            <MessageSquareIcon :size="15" class="icon-teal" />
           </div>
-          <div class="stat-card__data">
-            <span class="label">失败文档</span>
-            <strong class="number" :class="{ 'text-red': summary.failedDocumentCount > 0 }">
-              {{ summary.failedDocumentCount }}
-            </strong>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card__icon bg-teal">
-            <MessageSquareIcon :size="18" />
-          </div>
-          <div class="stat-card__data">
-            <span class="label">总会话数</span>
-            <strong class="number">{{ summary.conversationCount }}</strong>
+          <div class="stat-card-opt__body">
+            <div class="metric">
+              <strong class="number">{{ summary?.conversationCount ?? 0 }}</strong>
+              <span class="unit">次会话</span>
+            </div>
+            <div class="sub-metrics">
+              <span>消息总数：<strong>{{ summary?.messageCount ?? 0 }}</strong> 条</span>
+            </div>
           </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-card__icon bg-orange">
-            <BarChart3Icon :size="18" />
+
+        <!-- 卡片 3：检索与系统时延 -->
+        <div class="stat-card-opt col-3">
+          <div class="stat-card-opt__header">
+            <span class="title">平均问答时延</span>
+            <SparklesIcon :size="15" class="icon-indigo" />
           </div>
-          <div class="stat-card__data">
-            <span class="label">总消息数</span>
-            <strong class="number">{{ summary.messageCount }}</strong>
+          <div class="stat-card-opt__body">
+            <div class="metric">
+              <strong class="number">{{ formatLatency(summary?.averageLatencyMs) }}</strong>
+              <span class="unit">秒</span>
+            </div>
+            <div class="sub-metrics">
+              <span>文档处理耗时：<strong>{{ formatProcessTime(summary?.averageDocumentProcessTimeMs) }}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 4：安全隔离与健康 -->
+        <div class="stat-card-opt col-3" :class="{ 'has-alert': (summary?.failedDocumentCount ?? 0) > 0 }">
+          <div class="stat-card-opt__header">
+            <span class="title">安全与故障审计</span>
+            <AlertCircleIcon :size="15" :class="(summary?.failedDocumentCount ?? 0) > 0 ? 'icon-red' : 'icon-green'" />
+          </div>
+          <div class="stat-card-opt__body">
+            <div class="metric">
+              <strong class="number">{{ summary?.failedDocumentCount ?? 0 }}</strong>
+              <span class="unit" :class="{ 'text-red': (summary?.failedDocumentCount ?? 0) > 0 }">篇解析失败</span>
+            </div>
+            <div class="sub-metrics">
+              <span>拦截：<strong>{{ summary?.blockedAccessCount ?? 0 }}</strong> 次</span>
+              <span class="separator">|</span>
+              <span>过滤：<strong>{{ summary?.totalPermissionFilteredCount ?? 0 }}</strong> 段</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 阶段 7 / 8 核心交付：核心运行与安全指标大盘 -->
-      <section class="performance-metrics-grid" aria-label="核心运行指标">
-        <div class="metric-card">
-          <span class="metric-card__title">平均问答时延</span>
-          <strong class="metric-card__val">{{ summary.averageLatencyMs ? summary.averageLatencyMs + ' ms' : '暂无数据' }}</strong>
-          <small class="metric-card__desc">系统接收问题至回答生成耗时</small>
-        </div>
-        <div class="metric-card">
-          <span class="metric-card__title">平均文档处理耗时</span>
-          <strong class="metric-card__val">{{ formatProcessTime(summary.averageDocumentProcessTimeMs) }}</strong>
-          <small class="metric-card__desc">基于最近50篇成功分片解析的文档</small>
-        </div>
-        <div class="metric-card">
-          <span class="metric-card__title">多模态文档占比</span>
-          <strong class="metric-card__val">{{ percent(summary.multimodalRate) }}</strong>
-          <small class="metric-card__desc">图片/音频/视频格式在库数量占比</small>
-        </div>
-        <div class="metric-card" :class="{ 'alert-card': (summary.blockedAccessCount || 0) > 0 }">
-          <span class="metric-card__title">越权拦截次数</span>
-          <strong class="metric-card__val" :class="{ 'text-red': (summary.blockedAccessCount || 0) > 0 }">
-            {{ summary.blockedAccessCount ?? 0 }} 次
-          </strong>
-          <small class="metric-card__desc">越权异常请求阻断累计计数</small>
-        </div>
-        <div class="metric-card">
-          <span class="metric-card__title">安全隐式过滤片段</span>
-          <strong class="metric-card__val">{{ summary.totalPermissionFilteredCount ?? 0 }} 段</strong>
-          <small class="metric-card__desc">因ACL权限拦截而自动隐藏的召回条数</small>
-        </div>
-      </section>
-
-      <section class="health-grid" aria-label="知识库健康">
-        <button type="button" class="health-card" @click="goDocuments({ status: 'failed' })">
-          <span>失败文档趋势</span>
-          <strong>{{ latestFailedTrendCount() }}</strong>
-          <small>最近失败：{{ summary.recentFailedDocuments?.length ?? 0 }} 个</small>
-        </button>
-        <button type="button" class="health-card" @click="goDocuments({ processingStage: 'completed' })">
-          <span>无片段文档</span>
-          <strong>{{ summary.unchunkedDocumentCount ?? 0 }}</strong>
-          <small>需要重新解析或检查文件内容</small>
-        </button>
-        <button type="button" class="health-card" @click="goDocuments({ graphStatus: 'failed' })">
-          <span>图谱同步失败</span>
-          <strong>{{ summary.graphFailedDocumentCount ?? 0 }}</strong>
-          <small>影响关系检索与图谱探索</small>
-        </button>
-        <button type="button" class="health-card" @click="router.push('/kb')">
-          <span>验证通过率</span>
-          <strong>{{ percent(summary.evalPassRate) }}</strong>
-          <small>来自问答验证用例</small>
-        </button>
-        <button type="button" class="health-card" @click="router.push('/chat')">
-          <span>无引用回答率</span>
-          <strong>{{ percent(summary.noCitationRate) }}</strong>
-          <small>需要关注可信回答质量</small>
-        </button>
-      </section>
-
-      <!-- 双栏近态追踪 -->
-      <div class="dynamic-layout">
-        <!-- 最近文档 -->
-        <article class="feed-card">
+      <!-- 双栏近态跟踪列表 (2列，每列 col-6) -->
+      <section class="grid-row">
+        <!-- 1. 最近上传文档 -->
+        <article class="feed-card col-6">
           <header class="feed-card__head">
-            <h3>最近上传文档</h3>
+            <h3>最近录入文档</h3>
             <button class="text-link" type="button" @click="router.push('/documents')">查看全部</button>
           </header>
-          <ul v-if="summary.recentDocuments.length" class="doc-feed">
+          <ul v-if="summary?.recentDocuments?.length" class="doc-feed">
             <li v-for="doc in summary.recentDocuments" :key="doc.id" class="doc-feed-item">
               <div class="doc-feed-item__info">
-                <FileTextIcon :size="15" class="doc-icon" />
+                <FileTextIcon :size="13" class="doc-icon" />
                 <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
               </div>
               <div class="doc-feed-item__status">
@@ -164,16 +168,16 @@
               </div>
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无最近上传文档</p>
+          <p v-else class="empty-feed">暂无最近录入的文档数据</p>
         </article>
 
-        <!-- 最近问答 -->
-        <article class="feed-card">
+        <!-- 2. 最近对话历史 -->
+        <article class="feed-card col-6">
           <header class="feed-card__head">
             <h3>最近对话历史</h3>
             <button class="text-link" type="button" @click="router.push('/chat')">查看全部</button>
           </header>
-          <ul v-if="summary.recentConversations.length" class="chat-feed">
+          <ul v-if="summary?.recentConversations?.length" class="chat-feed">
             <li v-for="conv in summary.recentConversations" :key="conv.id" class="chat-feed-item" @click="goChat(conv.id)">
               <div class="chat-feed-item__meta">
                 <span class="icon-avatar">💬</span>
@@ -184,47 +188,52 @@
                   <span class="chat-time">{{ formatDate(conv.updatedAt) }}</span>
                 </div>
               </div>
-              <ChevronRightIcon :size="14" class="arrow-icon" />
+              <ChevronRightIcon :size="13" class="arrow-icon" />
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无最近会话历史</p>
+          <p v-else class="empty-feed">暂无近期对话历史</p>
         </article>
-      </div>
+      </section>
 
-      <div class="dynamic-layout">
-        <article class="feed-card">
+      <!-- 下方辅助分析栏 (2列，每列 col-6) -->
+      <section class="grid-row">
+        <!-- 3. 最近失败详情 -->
+        <article class="feed-card col-6">
           <header class="feed-card__head">
-            <h3>最近失败文档</h3>
-            <button class="text-link" type="button" @click="goDocuments({ status: 'failed' })">查看失败</button>
+            <h3>故障日志记录</h3>
+            <button class="text-link" type="button" @click="goDocuments({ status: 'failed' })">查看详情</button>
           </header>
-          <ul v-if="summary.recentFailedDocuments?.length" class="doc-feed">
+          <ul v-if="summary?.recentFailedDocuments?.length" class="doc-feed">
             <li v-for="doc in summary.recentFailedDocuments" :key="doc.id" class="doc-feed-item">
               <div class="doc-feed-item__info">
-                <AlertCircleIcon :size="15" class="doc-icon" />
+                <AlertCircleIcon :size="13" class="doc-icon text-red" />
                 <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
               </div>
-              <span class="time">{{ doc.processingError ?? doc.processing_error ?? '处理失败' }}</span>
+              <span class="time error-log-text" :title="doc.processingError ?? doc.processing_error ?? '解析异常'">
+                {{ doc.processingError ?? doc.processing_error ?? '处理失败' }}
+              </span>
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无失败文档</p>
+          <p v-else class="empty-feed">近态无资产处理故障</p>
         </article>
 
-        <article class="feed-card">
+        <!-- 4. 热门问题统计 -->
+        <article class="feed-card col-6">
           <header class="feed-card__head">
-            <h3>热门问题与低评分回答</h3>
-            <button class="text-link" type="button" @click="router.push('/chat')">进入问答</button>
+            <h3>热门业务问题追踪</h3>
+            <button class="text-link" type="button" @click="router.push('/chat')">发起提问</button>
           </header>
-          <ul v-if="summary.hotQuestions?.length" class="chat-feed">
-            <li v-for="item in summary.hotQuestions" :key="item.question" class="chat-feed-item">
+          <ul v-if="summary?.hotQuestions?.length" class="chat-feed">
+            <li v-for="item in summary.hotQuestions" :key="item.question" class="chat-feed-item chat-feed-item--no-hover">
               <div class="chat-details">
                 <strong class="chat-question">{{ item.question }}</strong>
-                <span class="chat-time">出现 {{ item.count }} 次</span>
+                <span class="chat-time">业务提问频次：出现 {{ item.count }} 次</span>
               </div>
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无热门问题统计</p>
+          <p v-else class="empty-feed">暂无高频提问统计</p>
         </article>
-      </div>
+      </section>
     </div>
   </main>
 </template>
@@ -234,12 +243,13 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertCircleIcon,
-  BarChart3Icon,
   ChevronRightIcon,
   FileTextIcon,
   LibraryIcon,
   MessageSquareIcon,
   SparklesIcon,
+  SearchIcon,
+  PlusIcon,
 } from 'lucide-vue-next'
 import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
@@ -285,6 +295,13 @@ function goChat(conversationId: string) {
   })
 }
 
+// 格式化问答耗时（毫秒转秒）
+function formatLatency(ms?: number): string {
+  if (!ms) return '0.0'
+  const seconds = ms / 1000
+  return seconds.toFixed(2)
+}
+
 function goDocuments(query: Record<string, string>) {
   router.push({ path: '/documents', query })
 }
@@ -311,9 +328,13 @@ function formatDate(value?: string) {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
+// 文档处理耗时格式化
 function formatProcessTime(ms?: number): string {
   if (!ms) return '暂无数据'
-  const seconds = ms / 1000
+  let seconds = ms / 1000
+  if (seconds > 3600) {
+    seconds = seconds / 1000
+  }
   if (seconds < 60) return `${seconds.toFixed(1)} 秒`
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
@@ -327,302 +348,263 @@ function latestFailedTrendCount(): number {
 </script>
 
 <style scoped>
-.performance-metrics-grid {
+/* ── 统一 12 栏标准网格系统 ── */
+.grid-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 8px;
-}
-.metric-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.01);
-  transition: all 0.2s ease;
-  text-align: left;
-}
-.metric-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(99,102,241,0.04);
-  border-color: rgba(99,102,241,0.15);
-}
-.metric-card__title {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-.metric-card__val {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--text);
-}
-.metric-card__desc {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.alert-card {
-  border-color: rgba(239, 68, 68, 0.2);
-  background: #fffbfa;
-}
-.alert-card:hover {
-  border-color: rgba(239, 68, 68, 0.4);
-}
-.text-red {
-  color: #ef4444 !important;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.dashboard {
-  padding: 32px 24px;
-  height: 100%;
-  overflow-y: auto;
-  background: transparent;
+.col-12 { grid-column: span 12; }
+.col-6  { grid-column: span 6; }
+.col-4  { grid-column: span 4; }
+.col-3  { grid-column: span 3; }
+
+/* ── 骨架屏 ── */
+.skeleton-wrapper {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-.dashboard__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+.skeleton-pulse {
+  background: linear-gradient(90deg, rgba(241, 245, 249, 0.4) 25%, rgba(226, 232, 240, 0.6) 50%, rgba(241, 245, 249, 0.4) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.6s infinite ease-in-out;
 }
 
-.dashboard__head h2 {
-  margin: 0 0 4px;
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--text);
-  letter-spacing: -0.02em;
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-.subtitle {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: var(--primary-gradient, linear-gradient(135deg, #3b82f6, #2563eb));
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-md, 8px);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--shadow-btn);
-  transition: all 0.2s ease;
-}
-
-.btn-primary:hover {
-  filter: brightness(1.04);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-btn-hover);
-}
-
-.loading-state,
-.error-state {
-  flex: 1;
+/* 首页主容器 */
+.dashboard {
+  padding: 24px;
+  background: transparent;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 64px 32px;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: var(--radius-lg, 12px);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  min-height: 320px;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid rgba(59, 130, 246, 0.15);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-bottom: 12px;
-}
-
-.error-icon {
-  color: var(--error, #dc2626);
-  margin-bottom: 12px;
-}
-
-.error-state p,
-.loading-state p {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin: 0 0 16px;
-}
-
-.btn-ghost {
-  padding: 6px 14px;
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-ghost:hover {
-  background: rgba(59, 130, 246, 0.05);
-  color: var(--primary);
+  gap: 24px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .dashboard__body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  width: 100%;
 }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.health-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-}
-
-.health-card {
-  display: flex;
-  min-height: 112px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.health-card:hover {
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-}
-
-.health-card span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.health-card strong {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.health-card small {
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
-.stat-card {
+/* 头部 Header */
+.dashboard__head {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 20px;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 4px;
+}
+
+.dashboard__head h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  text-align: left;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+}
+
+/* 按钮设计 */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--primary-gradient);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: var(--shadow-btn);
+  transition: all 0.25s var(--ease-out);
+  flex-shrink: 0;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1.5px);
+  box-shadow: var(--shadow-btn-hover);
+  filter: brightness(1.03);
+}
+
+/* 快捷向导卡片 */
+.quick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  cursor: pointer;
+  transition: all 0.25s var(--ease-out);
+  text-align: left;
+}
+
+.quick-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(59, 130, 246, 0.25);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.quick-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  margin-bottom: 12px;
+}
+
+.bg-step1 { background: rgba(59, 130, 246, 0.08); color: var(--primary); }
+.bg-step2 { background: rgba(168, 85, 247, 0.08); color: #9333ea; }
+.bg-step3 { background: rgba(20, 184, 166, 0.08); color: #0d9488; }
+
+.quick-card__info h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--text);
+}
+
+.quick-card__info p {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  min-height: 38px;
+}
+
+.quick-card__link {
+  font-size: 11.5px;
+  font-weight: 750;
+  color: var(--primary);
+  margin-top: auto;
+  transition: transform 0.2s ease;
+}
+
+.quick-card:hover .quick-card__link {
+  transform: translateX(2px);
+}
+
+/* 4格整合核心统计指标架 */
+.stat-card-opt {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
   background: rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: 
-    0 4px 20px rgba(15, 23, 42, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out), border-color 0.25s ease;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.015);
+  transition: all 0.25s var(--ease-out);
+  text-align: left;
 }
 
-.stat-card:hover {
+.stat-card-opt:hover {
   transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: 
-    0 12px 24px rgba(15, 23, 42, 0.04),
-    0 4px 8px rgba(15, 23, 42, 0.02);
+  border-color: rgba(59, 130, 246, 0.25);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.04);
 }
 
-.stat-card__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+.stat-card-opt.has-alert {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(254, 242, 242, 0.35);
+}
+
+.stat-card-opt.has-alert:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.stat-card-opt__header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
+  margin-bottom: 12px;
 }
 
-.bg-blue { background: rgba(59, 130, 246, 0.08); color: #2563eb; }
-.bg-purple { background: rgba(168, 85, 247, 0.08); color: #9333ea; }
-.bg-indigo { background: rgba(99, 102, 241, 0.08); color: #4f46e5; }
-.bg-red { background: rgba(239, 68, 68, 0.08); color: #dc2626; }
-.bg-green { background: rgba(16, 185, 129, 0.08); color: #059669; }
-.bg-teal { background: rgba(20, 184, 166, 0.08); color: #0d9488; }
-.bg-orange { background: rgba(249, 115, 22, 0.08); color: #ea580c; }
-
-.warning-border {
-  border-color: rgba(239, 68, 68, 0.4);
-}
-
-.text-red {
-  color: #dc2626;
-}
-
-.stat-card__data {
-  display: flex;
-  flex-direction: column;
-}
-
-.stat-card__data .label {
+.stat-card-opt__header .title {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 750;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
-.stat-card__data .number {
-  font-size: 22px;
-  font-weight: 800;
+.stat-card-opt__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-card-opt__body .metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.stat-card-opt__body .number {
+  font-size: 28px;
+  font-weight: 850;
   color: var(--text);
-  margin-top: 2px;
   line-height: 1;
 }
 
-.dynamic-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+.stat-card-opt__body .unit {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 
+.stat-card-opt__body .sub-metrics {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.stat-card-opt__body .separator {
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.icon-blue { color: #2563eb; }
+.icon-teal { color: #0d9488; }
+.icon-indigo { color: #4f46e5; }
+.icon-green { color: #059669; }
+.icon-red { color: #dc2626; }
+
+/* 双栏动态内容追踪 */
 .feed-card {
   background: rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 
-    0 4px 20px rgba(15, 23, 42, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.01);
   display: flex;
   flex-direction: column;
   min-height: 280px;
@@ -635,13 +617,13 @@ function latestFailedTrendCount(): number {
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-muted, #f1f5f9);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
 }
 
 .feed-card__head h3 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 750;
   color: var(--text);
 }
 
@@ -673,10 +655,10 @@ function latestFailedTrendCount(): number {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--page-bg-accent, #f8fafc);
+  padding: 10px 14px;
+  background: rgba(248, 250, 252, 0.5);
   border-radius: 8px;
-  border: 1px solid rgba(226, 232, 240, 0.4);
+  border: 1px solid rgba(226, 232, 240, 0.3);
 }
 
 .doc-feed-item__info {
@@ -694,11 +676,24 @@ function latestFailedTrendCount(): number {
 
 .doc-name {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 150px;
+  text-align: left;
+}
+
+.error-log-text {
+  display: inline-block;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
 }
 
 .doc-feed-item__status {
@@ -722,7 +717,7 @@ function latestFailedTrendCount(): number {
 
 .time,
 .chat-time {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-muted);
 }
 
@@ -730,18 +725,22 @@ function latestFailedTrendCount(): number {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 10px 14px;
   background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.6);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.chat-feed-item:hover {
-  background: var(--page-bg-accent, #f8fafc);
+.chat-feed-item:hover:not(.chat-feed-item--no-hover) {
+  background: rgba(248, 250, 252, 0.6);
   border-color: rgba(59, 130, 246, 0.25);
   transform: translateX(1px);
+}
+
+.chat-feed-item--no-hover {
+  cursor: default;
 }
 
 .chat-feed-item__meta {
@@ -760,11 +759,12 @@ function latestFailedTrendCount(): number {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  text-align: left;
 }
 
 .chat-question {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -787,19 +787,70 @@ function latestFailedTrendCount(): number {
   justify-content: center;
   color: var(--text-muted);
   font-size: 12.5px;
-  border: 1px dashed rgba(226, 232, 240, 0.8);
+  border: 1px dashed rgba(226, 232, 240, 0.6);
   border-radius: 8px;
   margin: 0;
   min-height: 120px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 32px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  min-height: 320px;
 }
 
-@media (max-width: 880px) {
-  .dynamic-layout {
-    grid-template-columns: 1fr;
+.error-icon {
+  color: var(--error);
+  margin-bottom: 12px;
+}
+
+.error-state p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+
+.btn-ghost {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(59, 130, 246, 0.05);
+  color: var(--primary);
+}
+
+/* ── 响应式 12 栏网格规则 ── */
+@media (max-width: 1024px) {
+  .col-3 {
+    grid-column: span 6; /* 4 列在大屏变为 2 列 */
+  }
+  .col-4 {
+    grid-column: span 12; /* 3 列向导在平板直接垂直单列，规避最后一张卡片孤立掉行的问题 */
+  }
+  .col-6 {
+    grid-column: span 12; /* 双栏变为单栏 */
+  }
+}
+
+@media (max-width: 640px) {
+  .col-3, .col-4, .col-6 {
+    grid-column: span 12; /* 手机端全部平铺 */
   }
 }
 </style>

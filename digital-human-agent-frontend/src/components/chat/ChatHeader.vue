@@ -239,6 +239,7 @@ const summaryClass = computed(() => ({
   flex-shrink: 0;
   min-height: 52px;
   position: relative;
+  z-index: 30;
 }
 
 /* ── 左侧区域 ────────────────────────────────────────────────────────────── */
