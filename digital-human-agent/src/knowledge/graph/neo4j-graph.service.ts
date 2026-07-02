@@ -5,7 +5,7 @@ import type { Neo4jGraph } from '@langchain/community/graphs/neo4j_graph';
 @Injectable()
 export class Neo4jGraphService implements OnModuleDestroy {
   private readonly logger = new Logger(Neo4jGraphService.name);
-  private graph: Neo4jGraph | null = null;
+  private graph: any = null;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -18,7 +18,7 @@ export class Neo4jGraphService implements OnModuleDestroy {
     params: Record<string, unknown> = {},
   ): Promise<T[]> {
     const graph = await this.getGraph();
-    return graph.query<T>(cypher, params);
+    return (graph as any).query(cypher, params) as Promise<T[]>;
   }
 
   async verifyConnectivity(): Promise<void> {
@@ -38,7 +38,7 @@ export class Neo4jGraphService implements OnModuleDestroy {
     this.graph = null;
   }
 
-  private async getGraph(): Promise<Neo4jGraph> {
+  private async getGraph(): Promise<any> {
     if (!this.isEnabled()) {
       throw new Error('NEO4J_GRAPH_ENABLED=false，当前未启用 Neo4j 图谱检索');
     }

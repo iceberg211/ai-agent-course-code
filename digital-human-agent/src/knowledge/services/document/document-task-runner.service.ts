@@ -220,6 +220,7 @@ export class DocumentTaskRunnerService {
         });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
+        await this.markDocumentFailed(documentId, errMsg);
         await this.updateStep(taskId, 'parse', {
           status: 'failed',
           error: errMsg,
@@ -313,6 +314,7 @@ export class DocumentTaskRunnerService {
         });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
+        await this.markDocumentFailed(docId, errMsg);
         await this.updateStep(taskId, 'index', {
           status: 'failed',
           error: errMsg,
@@ -382,6 +384,7 @@ export class DocumentTaskRunnerService {
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.logger.warn(`图谱同步失败（不影响基础检索）：${errMsg}`);
+        await this.markDocumentGraphFailed(docId, errMsg);
         await this.updateStep(taskId, 'graph_sync', {
           status: 'failed',
           error: errMsg,
@@ -416,6 +419,31 @@ export class DocumentTaskRunnerService {
     patch: StepPatch & { status?: DocumentTaskStepStatus },
   ): Promise<void> {
     await this.stepRepo.update({ taskId, step }, patch as never);
+  }
+
+  private async markDocumentFailed(
+    documentId: string | null | undefined,
+    error: string,
+  ): Promise<void> {
+    if (!documentId) return;
+
+    await this.documentService.updateDocument(documentId, {
+      status: 'failed',
+      processingStage: 'failed',
+      processingError: error,
+    });
+  }
+
+  private async markDocumentGraphFailed(
+    documentId: string,
+    error: string,
+  ): Promise<void> {
+    await this.documentService.updateDocument(documentId, {
+      graphSyncStatus: 'failed',
+      graphSyncError: error,
+      graphSyncedAt: null,
+      processingStage: 'completed',
+    });
   }
 
   private toIngestOptions(

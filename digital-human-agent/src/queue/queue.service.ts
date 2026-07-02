@@ -16,6 +16,9 @@ export class QueueService implements OnModuleDestroy {
     this.redisClient = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
     });
+    this.redisClient.on('error', (error) => {
+      this.logger.warn(`Redis 连接异常: ${error.message}`);
+    });
   }
 
   getQueue(queueName: string): Queue {

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -53,12 +54,18 @@ export class DocumentTaskService {
       this.configService.get<string>('S3_BUCKET') || 'enterprise-kb';
 
     // 1. 上传原始文件到 S3 对象存储
-    await this.storageProvider.putObject({
-      bucket,
-      key: storageKey,
-      body: file.buffer,
-      contentType: file.mimetype,
-    });
+    try {
+      await this.storageProvider.putObject({
+        bucket,
+        key: storageKey,
+        body: file.buffer,
+        contentType: file.mimetype,
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `对象存储不可用，文档上传暂时无法处理: ${this.formatErrorMessage(error)}`,
+      );
+    }
 
     // 2. 保存任务主体状态
     const task = await this.taskRepo.save(
@@ -106,7 +113,9 @@ export class DocumentTaskService {
         task.id,
         `任务发布失败: ${errorMessage}`,
       );
-      throw new BadRequestException('文档处理任务发布失败，请稍后重试');
+      throw new ServiceUnavailableException(
+        `文档处理队列不可用，请稍后重试: ${errorMessage}`,
+      );
     }
 
     return this.getTaskDetail(task.id, {
@@ -325,7 +334,9 @@ export class DocumentTaskService {
         taskId,
         `任务发布失败: ${errorMessage}`,
       );
-      throw new BadRequestException('文档处理任务发布失败，请稍后重试');
+      throw new ServiceUnavailableException(
+        `文档处理队列不可用，请稍后重试: ${errorMessage}`,
+      );
     }
 
     return this.getTaskDetail(taskId, accessScope);
@@ -384,6 +395,10 @@ export class DocumentTaskService {
         }),
       ),
     );
+  }
+
+  private formatErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async assertTaskVisible(

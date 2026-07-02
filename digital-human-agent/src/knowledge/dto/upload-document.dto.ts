@@ -24,4 +24,7 @@ export class UploadDocumentDto {
   @IsOptional()
   @IsString()
   expiresAt?: string;
+
+  @IsOptional()
+  securityLevel?: any;
 }

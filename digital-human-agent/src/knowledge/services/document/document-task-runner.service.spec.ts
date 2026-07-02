@@ -240,4 +240,100 @@ describe('DocumentTaskRunnerService', () => {
     expect(documentServiceMock.indexDocumentChunks).toHaveBeenCalled();
     expect(documentServiceMock.syncGraphOnly).toHaveBeenCalled();
   });
+
+  it('index 失败时应同步把文档标记为 failed', async () => {
+    const mockTask = {
+      id: 'task-1',
+      documentId: null,
+      ingestRunId: 'run-1',
+      checkpointData: null,
+    };
+    taskRepo.findOne.mockResolvedValue(mockTask);
+    stepRepo.find.mockResolvedValue([
+      { step: 'parse', status: 'pending' },
+      { step: 'index', status: 'pending' },
+      { step: 'graph_sync', status: 'pending' },
+    ]);
+    documentServiceMock.indexDocumentChunks.mockRejectedValueOnce(
+      new Error('embedding quota exhausted'),
+    );
+
+    await runner.runUploadIngestTask({
+      taskId: 'task-1',
+      knowledgeBaseId: 'kb-1',
+      file: {
+        originalname: 'demo.md',
+        mimetype: 'text/markdown',
+        buffer: Buffer.from('# content'),
+        size: 9,
+      },
+      input: {},
+    });
+
+    expect(documentServiceMock.updateDocument).toHaveBeenCalledWith(
+      'doc-123',
+      expect.objectContaining({
+        status: 'failed',
+        processingStage: 'failed',
+        processingError: 'embedding quota exhausted',
+      }),
+    );
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        status: 'failed',
+        stage: 'failed',
+        error: '步骤 index 失败: embedding quota exhausted',
+      }),
+    );
+    expect(documentServiceMock.syncGraphOnly).not.toHaveBeenCalled();
+  });
+
+  it('graph_sync 失败时应记录图谱失败，但不阻断任务完成', async () => {
+    const mockTask = {
+      id: 'task-1',
+      documentId: null,
+      ingestRunId: 'run-1',
+      checkpointData: null,
+    };
+    taskRepo.findOne.mockResolvedValue(mockTask);
+    stepRepo.find.mockResolvedValue([
+      { step: 'parse', status: 'pending' },
+      { step: 'index', status: 'pending' },
+      { step: 'graph_sync', status: 'pending' },
+    ]);
+    documentServiceMock.syncGraphOnly.mockRejectedValueOnce(
+      new Error('neo4j unavailable'),
+    );
+
+    await runner.runUploadIngestTask({
+      taskId: 'task-1',
+      knowledgeBaseId: 'kb-1',
+      file: {
+        originalname: 'demo.md',
+        mimetype: 'text/markdown',
+        buffer: Buffer.from('# content'),
+        size: 9,
+      },
+      input: {},
+    });
+
+    expect(documentServiceMock.updateDocument).toHaveBeenCalledWith(
+      'doc-123',
+      expect.objectContaining({
+        graphSyncStatus: 'failed',
+        graphSyncError: 'neo4j unavailable',
+        graphSyncedAt: null,
+        processingStage: 'completed',
+      }),
+    );
+    expect(taskRepo.update).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        status: 'completed',
+        stage: 'completed',
+        progress: 100,
+      }),
+    );
+  });
 });

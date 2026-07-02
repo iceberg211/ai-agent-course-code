@@ -34,7 +34,9 @@ window.fetch = async (input, init) => {
   if (response.status === 401 && !isAuthRoute) {
     localStorage.removeItem('jwt_token')
     localStorage.removeItem('user_info')
-    window.location.href = '/login'
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
   }
 
   return response

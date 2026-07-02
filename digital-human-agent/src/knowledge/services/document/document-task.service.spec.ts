@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { DocumentTaskService } from './document-task.service';
 
@@ -165,7 +166,7 @@ describe('DocumentTaskService', () => {
         },
         { ownerId: 'user-1', visibility: 'private' },
       ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
     expect(taskRepo.update).toHaveBeenCalledWith(
       'task-1',
@@ -175,6 +176,26 @@ describe('DocumentTaskService', () => {
         error: expect.stringContaining('redis down'),
       }),
     );
+  });
+
+  it('对象存储不可用时会返回服务不可用错误', async () => {
+    storageProvider.putObject.mockRejectedValueOnce(new Error('minio down'));
+
+    await expect(
+      service.createUploadIngestTask(
+        'kb-1',
+        {
+          originalname: 'demo.md',
+          mimetype: 'text/markdown',
+          buffer: Buffer.from('# demo'),
+          size: 6,
+        },
+        { ownerId: 'user-1', visibility: 'private' },
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    expect(taskRepo.save).not.toHaveBeenCalled();
+    expect(queueService.getQueue).not.toHaveBeenCalled();
   });
 
   it('创建文档新版本任务时会继承版本组并递增版本号', async () => {
