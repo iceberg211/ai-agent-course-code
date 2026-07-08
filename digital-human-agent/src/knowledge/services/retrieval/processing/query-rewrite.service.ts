@@ -1,7 +1,8 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { isAbortError, throwIfAborted } from '@/common/utils';
+import { isAbortError, throwIfAborted, withTimeout } from '@/common/utils';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
 import {
   createDefaultLlmFactoryService,
@@ -45,9 +46,7 @@ const KnowledgeQueryRewriteSchema = z.object({
       z.object({
         query: z.string().min(1).max(500),
         keywords: KeywordListSchema,
-        angle: z
-          .enum(['original', 'entity', 'semantic', 'symptom', 'detail'])
-          .default('semantic'),
+        angle: z.string().min(1).max(30).default('semantic'),
       }),
     )
     .min(1)
@@ -55,6 +54,14 @@ const KnowledgeQueryRewriteSchema = z.object({
     .optional(),
   reason: z.string().min(1).max(200),
 });
+
+const QUERY_ANGLES = new Set<RetrievalQueryAngle>([
+  'original',
+  'entity',
+  'semantic',
+  'symptom',
+  'detail',
+]);
 
 function padExpandedQueries(
   items: Array<{
@@ -127,13 +134,13 @@ function normalizeExpandedQueries(
   expandedQueries: Array<{
     query: string;
     keywords?: unknown;
-    angle?: RetrievalQueryAngle;
+    angle?: unknown;
   }> = [],
   rewrittenQuery: string,
   keywords: string[],
 ): RetrievalQueryItem[] {
   const seen = new Set<string>();
-  const items: Array<{ query: string; keywords?: any; angle?: RetrievalQueryAngle }> = [];
+  const items: Array<{ query: string; keywords?: any; angle?: unknown }> = [];
 
   if (rewrittenQuery.trim()) {
     items.push({
@@ -149,7 +156,7 @@ function normalizeExpandedQueries(
     .map((item) => ({
       query: item.query.trim(),
       keywords: normalizeKeywords(item.keywords ?? [], item.query),
-      angle: (item.angle ?? 'semantic') as RetrievalQueryAngle,
+      angle: normalizeAngle(item.angle),
     }))
     .filter((item) => {
       if (!item.query) return false;
@@ -165,6 +172,13 @@ function normalizeExpandedQueries(
       index,
       ...item,
     }));
+}
+
+function normalizeAngle(angle: unknown): RetrievalQueryAngle {
+  if (typeof angle === 'string' && QUERY_ANGLES.has(angle as RetrievalQueryAngle)) {
+    return angle as RetrievalQueryAngle;
+  }
+  return 'semantic';
 }
 
 function resolveRetrievalQueriesInternal(
@@ -280,7 +294,10 @@ export class QueryRewriteService {
 
   private readonly llm: ChatOpenAI;
 
-  constructor(@Optional() llmFactory?: LlmFactoryService) {
+  constructor(
+    @Optional() llmFactory?: LlmFactoryService | null,
+    @Optional() private readonly configService?: ConfigService | null,
+  ) {
     this.llm = (llmFactory ?? createDefaultLlmFactoryService()).createChatModel(
       {
         modelEnvKeys: ['QUERY_REWRITE_MODEL_NAME'],
@@ -324,19 +341,26 @@ export class QueryRewriteService {
 
         try {
           const rewriter = this.llm.withStructuredOutput(KnowledgeQueryRewriteSchema);
-          const result = await rewriter.invoke(
-            await KNOWLEDGE_QUERY_REWRITE_PROMPT.formatMessages(
-              buildKnowledgeQueryRewritePromptInput(normalizedQuery),
-            ),
-            {
-              ...buildLangSmithRunnableConfig({
-                runName: 'knowledge_query_rewrite_llm',
-                tags: ['knowledge', 'rag', 'rewrite', 'llm'],
-                metadata: {
-                  originalQuery: normalizedQuery,
-                },
+          const messages = await KNOWLEDGE_QUERY_REWRITE_PROMPT.formatMessages(
+            buildKnowledgeQueryRewritePromptInput(normalizedQuery),
+          );
+          const result = await withTimeout(
+            'knowledge_query_rewrite_llm',
+            (childSignal) =>
+              rewriter.invoke(messages, {
+                ...buildLangSmithRunnableConfig({
+                  runName: 'knowledge_query_rewrite_llm',
+                  tags: ['knowledge', 'rag', 'rewrite', 'llm'],
+                  metadata: {
+                    originalQuery: normalizedQuery,
+                  },
+                }),
+                signal: childSignal,
               }),
+            {
               signal,
+              timeoutMs: this.queryRewriteTimeoutMs,
+              timeoutMessage: 'Query Rewrite 超时',
             },
           );
 
@@ -358,19 +382,28 @@ export class QueryRewriteService {
             reason: result.reason.trim() || '改写完成',
           };
         } catch (error) {
-          if (isAbortError(error)) {
+          if (isAbortError(error) && signal?.aborted) {
             throw error;
           }
 
+          const reason = isAbortError(error)
+            ? '改写超时，已回退原问题'
+            : '改写失败，已回退原问题';
           this.logger.warn(
-            `Query Rewrite 失败，回退原问题：${
+            `Query Rewrite ${isAbortError(error) ? '超时' : '失败'}，回退原问题：${
               error instanceof Error ? error.message : String(error)
             }`,
           );
-          return this.buildFallbackRewrite(normalizedQuery, '改写失败，已回退原问题');
+          return this.buildFallbackRewrite(normalizedQuery, reason);
         }
       },
     );
+  }
+
+  private get queryRewriteTimeoutMs(): number {
+    const raw = Number(this.configService?.get<string>('QUERY_REWRITE_TIMEOUT_MS'));
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return 5000;
   }
 
   buildFallbackRewrite(

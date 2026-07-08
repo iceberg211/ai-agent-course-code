@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import type {
   ChatMessage,
+  DashboardRagHealth,
   ConversationSummary,
   DashboardSummary,
   PaginatedResult,
@@ -24,6 +25,15 @@ export function useProductizedKnowledge() {
     loading.value = true
     try {
       return await apiJson<DashboardSummary>('/api/dashboard/summary')
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function getDashboardRagHealth(): Promise<DashboardRagHealth | null> {
+    loading.value = true
+    try {
+      return await apiJson<DashboardRagHealth>('/api/dashboard/rag-health')
     } finally {
       loading.value = false
     }
@@ -84,6 +94,7 @@ export function useProductizedKnowledge() {
   return {
     loading,
     getDashboardSummary,
+    getDashboardRagHealth,
     listConversations,
     listConversationMessages,
     setMessageFeedback,

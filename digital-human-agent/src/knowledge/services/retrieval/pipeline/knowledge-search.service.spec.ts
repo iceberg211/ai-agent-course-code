@@ -253,6 +253,41 @@ describe('KnowledgeSearchService', () => {
     });
   });
 
+  it('Elasticsearch 回退 PG 全文时会返回 keyword 降级信息', async () => {
+    const { service, hybridRetrieverService } = createService();
+    hybridRetrieverService.retrieveForKnowledge.mockResolvedValue({
+      chunks: [hybridChunk, hybridChunk2],
+      trace: [
+        {
+          knowledgeId: 'kb-1',
+          queryIndex: 0,
+          query: '改写后的检索问题',
+          keywords: ['原始问题'],
+          angle: 'original',
+          vectorBackend: 'pgvector',
+          keywordBackend: 'pg',
+          graphBackend: 'disabled',
+          vectorResultCount: 2,
+          keywordResultCount: 1,
+          mergedResultCount: 2,
+          fallbackToPg: true,
+          skippedChannels: [],
+        },
+      ],
+    });
+
+    const result = await service.retrieveWithDebug('kb-1', '原始问题');
+
+    expect(result.degradedChannels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channel: 'keyword',
+          backend: 'pg',
+        }),
+      ]),
+    );
+  });
+
   it('图谱检索开启且 graph-only 时，会把图谱结果纳入混合检索结果', async () => {
     const graphChunk: KnowledgeChunk = {
       id: 'chunk-graph',
@@ -644,6 +679,14 @@ describe('KnowledgeSearchService', () => {
     );
 
     expect(result.rerankedChunks).toEqual([hybridChunk, hybridChunk2]);
+    expect(result.degradedChannels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channel: 'rerank',
+          reason: expect.stringContaining('rerank failed'),
+        }),
+      ]),
+    );
   });
 
   it('persona 混合检索遇到临时错误时向上抛出，交给图层 retryPolicy', async () => {

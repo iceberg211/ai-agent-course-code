@@ -94,7 +94,7 @@
                   <p class="text-[11px] text-text-muted leading-relaxed m-0 line-clamp-2">
                     {{ item.message || notificationTypeLabel(item.type) }}
                   </p>
-                  <time class="text-[9.5px] text-text-muted align-self-end mt-1">
+                  <time class="text-[9.5px] text-text-muted self-end mt-1">
                     {{ formatDate(resolveCreatedAt(item)) }}
                   </time>
                 </li>

@@ -4,6 +4,8 @@ import { ConversationMessage } from '@/conversation/entities/conversation-messag
 import { Conversation } from '@/conversation/entities/conversation.entity';
 import { DashboardController } from '@/dashboard/dashboard.controller';
 import { DashboardService } from '@/dashboard/dashboard.service';
+import { Notification } from '@/notification/entities/notification.entity';
+import { DocumentTask } from '@/knowledge/entities/document-task.entity';
 import { KnowledgeChunk } from '@/knowledge/entities/knowledge-chunk.entity';
 import { KnowledgeDocument } from '@/knowledge/entities/knowledge-document.entity';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
@@ -18,6 +20,8 @@ import { KnowledgeEvalCase } from '@/knowledge/entities/knowledge-eval-case.enti
       Conversation,
       ConversationMessage,
       KnowledgeEvalCase,
+      DocumentTask,
+      Notification,
     ]),
   ],
   controllers: [DashboardController],

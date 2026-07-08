@@ -50,7 +50,7 @@
               id="username"
               v-model="form.username"
               type="text"
-              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-slate-400 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请输入您的用户名"
               autocomplete="username"
               required
@@ -69,7 +69,7 @@
               id="password"
               v-model="form.password"
               type="password"
-              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-slate-400 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请输入您的密码"
               autocomplete="current-password"
               required
@@ -88,7 +88,7 @@
               id="confirmPassword"
               v-model="form.confirmPassword"
               type="password"
-              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-slate-400 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请再次确认您的密码"
               autocomplete="new-password"
               required

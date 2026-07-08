@@ -1,139 +1,345 @@
-const http = require('http');
+const http = require('node:http');
+const { randomUUID } = require('node:crypto');
 
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhODE4YjYyNS1iZGViLTRiODMtODBmZC0xNmFjNGE4YWJjMzkiLCJ1c2VybmFtZSI6InRlc3RfZGV2ZWxvcGVyIiwiaWF0IjoxNzgyODkyMTc1LCJleHAiOjE3ODM0OTY5NzV9.4nprQ5KZYBD9Xyb1ZqKp80UDMI3fJ_7iFupfPK09FO0';
-const BASE_URL = 'http://127.0.0.1:3001';
+const BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3001';
+const USERNAME = process.env.SMOKE_USERNAME || `smoke_${Date.now()}`;
+const PASSWORD = process.env.SMOKE_PASSWORD || 'SmokeTest_123456';
+const PROVIDED_TOKEN = process.env.SMOKE_TOKEN || '';
 
-function request(path, method = 'GET', body = null) {
+const results = [];
+
+function request(path, options = {}) {
+  const {
+    method = 'GET',
+    body,
+    token,
+    timeoutMs = 30000,
+  } = options;
+
   return new Promise((resolve, reject) => {
     const url = new URL(path, BASE_URL);
-    const options = {
-      hostname: url.hostname,
-      port: url.port,
-      path: url.pathname + url.search,
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${TOKEN}`,
-        'Content-Type': 'application/json',
-      },
+    const headers = {
+      Accept: 'application/json',
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
 
-    const req = http.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = data ? JSON.parse(data) : null;
-          resolve({ status: res.statusCode, body: json });
-        } catch (e) {
-          resolve({ status: res.statusCode, body: data });
-        }
-      });
-    });
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers,
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          const contentType = String(res.headers['content-type'] || '');
+          let parsed = data;
+          if (contentType.includes('application/json')) {
+            try {
+              parsed = data ? JSON.parse(data) : null;
+            } catch {
+              parsed = data;
+            }
+          }
+          resolve({
+            status: res.statusCode || 0,
+            body: parsed,
+            raw: data,
+          });
+        });
+      },
+    );
 
+    req.on('timeout', () => {
+      req.destroy(new Error(`${method} ${path} timeout after ${timeoutMs}ms`));
+    });
     req.on('error', reject);
-    if (body) {
+    if (body !== undefined) {
       req.write(JSON.stringify(body));
     }
     req.end();
   });
 }
 
-async function run() {
-  console.log("=== 🚀 开始全量 API 接口联调大阅兵 ===");
-
-  const testCases = [
-    { name: "1. 监控大盘数据 (GET /dashboard/summary)", path: "/dashboard/summary", method: "GET" },
-    { name: "2. 系统健康检测 (GET /health)", path: "/health", method: "GET" },
-    { name: "3. 当前用户资料 (GET /auth/me)", path: "/auth/me", method: "GET" },
-    { name: "4. 用户 API Key (GET /auth/api-keys)", path: "/auth/api-keys", method: "GET" },
-    { name: "5. RBAC 角色列表 (GET /rbac/roles)", path: "/rbac/roles", method: "GET" },
-    { name: "6. RBAC 权限定义 (GET /rbac/permissions)", path: "/rbac/permissions", method: "GET" },
-    { name: "7. RBAC 用户列表 (GET /rbac/users)", path: "/rbac/users", method: "GET" },
-    { name: "8. 部门架构列表 (GET /rbac/departments)", path: "/rbac/departments", method: "GET" },
-    { name: "9. 当前权限快照 (GET /rbac/me/permissions)", path: "/rbac/me/permissions", method: "GET" },
-    { name: "10. 当前动态菜单 (GET /rbac/me/menus)", path: "/rbac/me/menus", method: "GET" },
-    { name: "11. 知识库主目录 (GET /knowledge-bases)", path: "/knowledge-bases", method: "GET" },
-    { name: "12. 角色助手列表 (GET /personas)", path: "/personas", method: "GET" },
-    { name: "13. 长期记忆列表 (GET /memories)", path: "/memories", method: "GET" },
-  ];
-
-  for (const tc of testCases) {
-    try {
-      const res = await request(tc.path, tc.method);
-      console.log(`\n[PASS] ${tc.name}`);
-      console.log(`Status: ${res.status}`);
-      console.log(`Response:`, JSON.stringify(res.body).substring(0, 160) + (JSON.stringify(res.body).length > 160 ? "..." : ""));
-    } catch (e) {
-      console.log(`\n[FAIL] ${tc.name} -> Error: ${e.stack || e.message}`);
-    }
-  }
-
-  // 14. 动态写入测试：创建测试部门
-  console.log("\n--- 🛠️ 开始动态写入与变更联动测试 ---");
-  let deptId = null;
+async function step(name, fn, options = {}) {
+  const startedAt = Date.now();
   try {
-    const res = await request("/rbac/departments", "POST", { code: "TECH_DEV", name: "技术研发部" });
-    console.log(`[PASS] 14. 创建部门 (POST /rbac/departments)`);
-    console.log(`Status: ${res.status}, Created Dept:`, JSON.stringify(res.body));
-    if (res.body && res.body.id) deptId = res.body.id;
-  } catch (e) {
-    console.log(`[FAIL] 14. 创建部门 -> Error: ${e.message}`);
-  }
-
-  // 15. 读取新建的部门，验证一致性
-  if (deptId) {
-    try {
-      const res = await request("/rbac/departments", "GET");
-      console.log(`[PASS] 15. 验证新部门存在 (GET /rbac/departments)`);
-      console.log(`Status: ${res.status}, Items Count:`, res.body ? res.body.length : 0);
-    } catch (e) {
-      console.log(`[FAIL] 15. 验证新部门存在 -> Error: ${e.message}`);
+    const value = await fn();
+    results.push({
+      name,
+      ok: true,
+      costMs: Date.now() - startedAt,
+    });
+    console.log(`[PASS] ${name} (${Date.now() - startedAt}ms)`);
+    return value;
+  } catch (error) {
+    results.push({
+      name,
+      ok: false,
+      costMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    console.log(`[FAIL] ${name} (${Date.now() - startedAt}ms)`);
+    console.log(`       ${error instanceof Error ? error.message : String(error)}`);
+    if (options.required) {
+      throw error;
     }
+    return null;
   }
-
-  // 16. 创建临时知识库
-  let kbId = null;
-  try {
-    const res = await request("/knowledge-bases", "POST", { name: "联调测试知识库", description: "用于接口自动联调验证" });
-    console.log(`[PASS] 16. 创建临时知识库 (POST /knowledge-bases)`);
-    console.log(`Status: ${res.status}, Created KB ID:`, res.body ? res.body.id : null);
-    if (res.body && res.body.id) kbId = res.body.id;
-  } catch (e) {
-    console.log(`[FAIL] 16. 创建临时知识库 -> Error: ${e.message}`);
-  }
-
-  // 17. 获取该知识库详情
-  if (kbId) {
-    try {
-      const res = await request(`/knowledge-bases/${kbId}`, "GET");
-      console.log(`[PASS] 17. 查询知识库详情 (GET /knowledge-bases/:id)`);
-      console.log(`Status: ${res.status}, Info:`, JSON.stringify(res.body));
-    } catch (e) {
-      console.log(`[FAIL] 17. 查询知识库详情 -> Error: ${e.message}`);
-    }
-
-    // 18. 清理临时知识库
-    try {
-      const res = await request(`/knowledge-bases/${kbId}`, "DELETE");
-      console.log(`[PASS] 18. 清除临时知识库 (DELETE /knowledge-bases/:id)`);
-      console.log(`Status: ${res.status}`);
-    } catch (e) {
-      console.log(`[FAIL] 18. 清除临时知识库 -> Error: ${e.message}`);
-    }
-  }
-
-  // 19. 清理测试部门
-  if (deptId) {
-    try {
-      const res = await request(`/rbac/departments/${deptId}`, "DELETE");
-      console.log(`[PASS] 19. 清除测试部门 (DELETE /rbac/departments/:id)`);
-      console.log(`Status: ${res.status}`);
-    } catch (e) {
-      console.log(`[FAIL] 19. 清除测试部门 -> Error: ${e.message}`);
-    }
-  }
-
-  console.log("\n=== 🏁 API 接口全量调试大阅兵结束 ===");
 }
 
-run();
+function expectStatus(res, name, expected = [200, 201]) {
+  if (!expected.includes(res.status)) {
+    throw new Error(`${name} returned ${res.status}: ${formatBody(res.body)}`);
+  }
+  return res.body;
+}
+
+function expectId(body, name) {
+  if (!body || typeof body.id !== 'string') {
+    throw new Error(`${name} did not return id: ${formatBody(body)}`);
+  }
+  return body.id;
+}
+
+function formatBody(body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
+  return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+}
+
+async function getToken() {
+  if (PROVIDED_TOKEN) {
+    console.log('[INFO] 使用 SMOKE_TOKEN 跳过注册登录');
+    return PROVIDED_TOKEN;
+  }
+
+  await step('注册联调用户', async () => {
+    const res = await request('/auth/register', {
+      method: 'POST',
+      body: {
+        username: USERNAME,
+        password: PASSWORD,
+        department: '研发部',
+      },
+    });
+    if (![200, 201, 409, 400].includes(res.status)) {
+      throw new Error(`register returned ${res.status}: ${formatBody(res.body)}`);
+    }
+    return res.body;
+  });
+
+  return step(
+    '登录并获取 JWT',
+    async () => {
+      const res = await request('/auth/login', {
+        method: 'POST',
+        body: { username: USERNAME, password: PASSWORD },
+      });
+      const body = expectStatus(res, 'login', [200]);
+      if (!body?.accessToken) {
+        throw new Error(`login missing accessToken: ${formatBody(body)}`);
+      }
+      return body.accessToken;
+    },
+    { required: true },
+  );
+}
+
+async function main() {
+  console.log(`开始核心接口联调：${BASE_URL}`);
+  const token = await getToken();
+  const suffix = randomUUID().slice(0, 8);
+  let kbId = null;
+  let personaId = null;
+
+  await step('读取当前用户', async () => {
+    return expectStatus(await request('/auth/me', { token }), 'auth/me');
+  });
+
+  kbId = await step('创建测试知识库', async () => {
+    const body = expectStatus(
+      await request('/knowledge-bases', {
+        method: 'POST',
+        token,
+        body: {
+          name: `联调知识库-${suffix}`,
+          description: '核心接口自动联调创建',
+        },
+      }),
+      'create knowledge base',
+    );
+    return expectId(body, 'create knowledge base');
+  });
+
+  personaId = await step('创建测试 Persona', async () => {
+    const body = expectStatus(
+      await request('/personas', {
+        method: 'POST',
+        token,
+        body: {
+          name: `联调助手-${suffix}`,
+          description: '核心接口自动联调创建',
+          speakingStyle: '简洁准确',
+          expertise: ['企业知识库', 'RAG'],
+        },
+      }),
+      'create persona',
+    );
+    return expectId(body, 'create persona');
+  });
+
+  if (kbId && personaId) {
+    await step('挂载知识库到 Persona', async () => {
+      return expectStatus(
+        await request(`/personas/${personaId}/knowledge-bases`, {
+          method: 'POST',
+          token,
+          body: { knowledgeBaseId: kbId },
+        }),
+        'attach knowledge base',
+      );
+    });
+  }
+
+  if (kbId) {
+    await step('跨知识库搜索并校验 Trace 字段', async () => {
+      const body = expectStatus(
+        await request('/search', {
+          method: 'POST',
+          token,
+          timeoutMs: 45000,
+          body: {
+            query: '联调知识库是否可检索？',
+            knowledgeBaseIds: [kbId],
+            rerank: false,
+            threshold: 0.1,
+            useGraph: false,
+            fileType: 'pdf',
+            tags: ['联调'],
+            department: '研发部',
+            businessCategory: '测试',
+            visibility: 'company',
+          },
+        }),
+        'search',
+        [200, 201],
+      );
+      if (!body.stageTrace) {
+        throw new Error(`search missing stageTrace: ${formatBody(body)}`);
+      }
+      if (!Array.isArray(body.degradedChannels)) {
+        throw new Error(`search missing degradedChannels: ${formatBody(body)}`);
+      }
+      return body;
+    });
+  }
+
+  if (personaId) {
+    await step('Persona 分阶段检索', async () => {
+      const body = expectStatus(
+        await request(`/personas/${personaId}/search/stages`, {
+          method: 'POST',
+          token,
+          timeoutMs: 45000,
+          body: {
+            query: '联调 Persona 检索是否可用？',
+            rerank: false,
+            threshold: 0.1,
+            useGraph: false,
+          },
+        }),
+        'persona search stages',
+        [200, 201],
+      );
+      if (!body.stageTrace) {
+        throw new Error(`persona search missing stageTrace: ${formatBody(body)}`);
+      }
+      return body;
+    });
+
+    await step('Chat 流式接口', async () => {
+      const res = await request('/chat', {
+        method: 'POST',
+        token,
+        timeoutMs: 60000,
+        body: {
+          personaId,
+          message: '请用一句话说明当前联调状态。',
+        },
+      });
+      if (![200, 201].includes(res.status)) {
+        throw new Error(`chat returned ${res.status}: ${formatBody(res.body)}`);
+      }
+      if (!res.raw || res.raw.length < 10) {
+        throw new Error('chat stream response is empty');
+      }
+      return res.raw.slice(0, 120);
+    });
+  }
+
+  await step('读取会话列表', async () => {
+    return expectStatus(await request('/conversations?page=1&pageSize=5', { token }), 'conversations');
+  });
+
+  await step('读取首页统计', async () => {
+    return expectStatus(await request('/dashboard/summary', { token }), 'dashboard summary');
+  });
+
+  await step('读取 RAG 健康统计', async () => {
+    const body = expectStatus(await request('/dashboard/rag-health', { token }), 'dashboard rag health');
+    if (typeof body.noCitationRate !== 'number') {
+      throw new Error(`rag health missing noCitationRate: ${formatBody(body)}`);
+    }
+    if (!body.evalSummary || typeof body.evalSummary.total !== 'number') {
+      throw new Error(`rag health missing evalSummary: ${formatBody(body)}`);
+    }
+    if (!body.taskHealth || typeof body.taskHealth.failed !== 'number') {
+      throw new Error(`rag health missing taskHealth: ${formatBody(body)}`);
+    }
+    return body;
+  });
+
+  await step('读取通知列表', async () => {
+    return expectStatus(await request('/notifications?page=1&pageSize=10', { token }), 'notifications');
+  });
+
+  if (personaId) {
+    await step('清理测试 Persona', async () => {
+      return expectStatus(
+        await request(`/personas/${personaId}`, { method: 'DELETE', token }),
+        'delete persona',
+      );
+    });
+  }
+
+  if (kbId) {
+    await step('清理测试知识库', async () => {
+      return expectStatus(
+        await request(`/knowledge-bases/${kbId}`, { method: 'DELETE', token }),
+        'delete knowledge base',
+      );
+    });
+  }
+
+  const failed = results.filter((item) => !item.ok);
+  console.log('\n联调结果汇总');
+  for (const item of results) {
+    console.log(`${item.ok ? 'PASS' : 'FAIL'} ${item.name} ${item.costMs}ms${item.error ? ` - ${item.error}` : ''}`);
+  }
+  if (failed.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack : error);
+  process.exitCode = 1;
+});

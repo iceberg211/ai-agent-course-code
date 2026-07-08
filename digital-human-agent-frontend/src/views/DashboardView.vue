@@ -146,6 +146,95 @@
         </div>
       </section>
 
+      <section v-if="ragHealth" class="grid-row" aria-label="RAG 健康监控">
+        <article class="feed-card col-12 rag-health-panel">
+          <header class="feed-card__head">
+            <div>
+              <h3>RAG 质量与运营监控</h3>
+              <span class="chat-time">基于最近问答、检索 Trace、文档任务和评估集汇总</span>
+            </div>
+            <button class="text-link" type="button" @click="loadData">刷新指标</button>
+          </header>
+
+          <div class="rag-health-grid">
+            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.noCitationRate > 0.25 }">
+              <span>无引用回答率</span>
+              <strong>{{ percent(ragHealth.noCitationRate) }}</strong>
+              <small>{{ ragHealth.noCitationAnswerCount }} / {{ ragHealth.answerCount }} 条</small>
+            </div>
+            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.lowRatedAnswerCount > 0 }">
+              <span>低评分回答</span>
+              <strong>{{ ragHealth.lowRatedAnswerCount }}</strong>
+              <small>点踩率 {{ percent(ragHealth.downVoteRate) }}</small>
+            </div>
+            <div class="rag-health-metric">
+              <span>平均问答时延</span>
+              <strong>{{ formatLatency(ragHealth.averageLatencyMs) }}s</strong>
+              <small>Rerank {{ formatMs(ragHealth.averageRerankLatencyMs) }}</small>
+            </div>
+            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.permissionFilteredCount > 0 }">
+              <span>权限过滤片段</span>
+              <strong>{{ ragHealth.permissionFilteredCount }}</strong>
+              <small>PG 降级 {{ ragHealth.fallbackToPgCount }} 次</small>
+            </div>
+            <div class="rag-health-metric">
+              <span>评估运行成功率</span>
+              <strong>{{ percent(evalSuccessRate) }}</strong>
+              <small>{{ ragHealth.evalSummary.success }} / {{ ragHealth.evalSummary.total }} 条</small>
+            </div>
+            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.taskHealth.failed > 0 }">
+              <span>失败任务</span>
+              <strong>{{ ragHealth.taskHealth.failed }}</strong>
+              <small>运行中 {{ ragHealth.taskHealth.running }}，待处理 {{ ragHealth.taskHealth.pending }}</small>
+            </div>
+          </div>
+
+          <div class="rag-health-columns">
+            <section class="rag-health-list">
+              <div class="rag-health-list__head">
+                <strong>降级通道</strong>
+                <button class="text-link" type="button" @click="router.push('/search')">查看检索</button>
+              </div>
+              <ul v-if="ragHealth.degradedChannels.length">
+                <li v-for="item in ragHealth.degradedChannels.slice(0, 5)" :key="item.channel">
+                  <span>{{ degradedChannelLabel(item.channel) }}</span>
+                  <strong>{{ item.count }} 次</strong>
+                </li>
+              </ul>
+              <p v-else class="compact-empty">暂无检索降级记录</p>
+            </section>
+
+            <section class="rag-health-list">
+              <div class="rag-health-list__head">
+                <strong>最近失败任务</strong>
+                <button class="text-link" type="button" @click="router.push('/documents')">处理任务</button>
+              </div>
+              <ul v-if="ragHealth.recentFailedTasks.length">
+                <li v-for="task in ragHealth.recentFailedTasks.slice(0, 5)" :key="task.id">
+                  <span :title="task.error || '处理失败'">{{ task.stage || 'failed' }}</span>
+                  <strong>{{ formatDateTime(task.updatedAt || task.updated_at) }}</strong>
+                </li>
+              </ul>
+              <p v-else class="compact-empty">暂无失败任务</p>
+            </section>
+
+            <section class="rag-health-list">
+              <div class="rag-health-list__head">
+                <strong>最近通知</strong>
+                <button class="text-link" type="button" @click="router.push('/profile')">个人中心</button>
+              </div>
+              <ul v-if="ragHealth.recentNotifications.length">
+                <li v-for="notice in ragHealth.recentNotifications.slice(0, 5)" :key="notice.id">
+                  <span :title="notice.message || notice.title">{{ notice.title }}</span>
+                  <strong>{{ formatDateTime(notice.createdAt || notice.created_at) }}</strong>
+                </li>
+              </ul>
+              <p v-else class="compact-empty">暂无通知</p>
+            </section>
+          </div>
+        </article>
+      </section>
+
       <!-- 双栏近态跟踪列表 (2列，每列 col-6) -->
       <section class="grid-row">
         <!-- 1. 最近上传文档 -->
@@ -282,7 +371,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertCircleIcon,
@@ -296,20 +385,32 @@ import {
 } from 'lucide-vue-next'
 import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
-import type { DashboardSummary, KnowledgeDocument } from '@/types'
+import type { DashboardRagHealth, DashboardSummary, KnowledgeDocument } from '@/types'
 
 const router = useRouter()
-const { getDashboardSummary } = useProductizedKnowledge()
+const { getDashboardSummary, getDashboardRagHealth } = useProductizedKnowledge()
 
 const summary = ref<DashboardSummary | null>(null)
+const ragHealth = ref<DashboardRagHealth | null>(null)
 const loading = ref(false)
+const evalSuccessRate = computed(() => {
+  const total = ragHealth.value?.evalSummary.total ?? 0
+  if (!total) return 0
+  return (ragHealth.value?.evalSummary.success ?? 0) / total
+})
 
 async function loadData() {
   loading.value = true
   try {
-    const result = await getDashboardSummary()
+    const [result, healthResult] = await Promise.all([
+      getDashboardSummary(),
+      getDashboardRagHealth(),
+    ])
     if (result) {
       summary.value = result
+    }
+    if (healthResult) {
+      ragHealth.value = healthResult
     }
   } finally {
     loading.value = false
@@ -343,6 +444,11 @@ function formatLatency(ms?: number): string {
   if (!ms) return '0.0'
   const seconds = ms / 1000
   return seconds.toFixed(2)
+}
+
+function formatMs(ms?: number | null): string {
+  if (ms === undefined || ms === null) return '-'
+  return `${Math.round(ms)}ms`
 }
 
 function goDocuments(query: Record<string, string>) {
@@ -404,6 +510,20 @@ function importToEval(item: { question: string; answer: string }) {
       expectedAnswer: item.answer,
     },
   })
+}
+
+function degradedChannelLabel(channel: string) {
+  const labels: Record<string, string> = {
+    vector: '向量召回',
+    keyword: '关键词召回',
+    graph: '图谱召回',
+    memory: '记忆召回',
+    multimodal: '多模态召回',
+    rerank: '重排',
+    queryRewrite: '问题改写',
+    vector_fallback: '向量降级 PG',
+  }
+  return labels[channel] ?? channel
 }
 </script>
 
@@ -853,6 +973,122 @@ function importToEval(item: { question: string; answer: string }) {
   min-height: 120px;
 }
 
+.rag-health-panel {
+  min-height: auto;
+}
+
+.rag-health-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rag-health-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.65);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.72);
+  min-width: 0;
+}
+
+.rag-health-metric.is-warning {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(255, 251, 235, 0.72);
+}
+
+.rag-health-metric span {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--text-muted);
+}
+
+.rag-health-metric strong {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.rag-health-metric small {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rag-health-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.rag-health-list {
+  border: 1px solid rgba(226, 232, 240, 0.65);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 14px;
+  min-width: 0;
+}
+
+.rag-health-list__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rag-health-list__head strong {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rag-health-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rag-health-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.rag-health-list li span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rag-health-list li strong {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.compact-empty {
+  margin: 0;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  border: 1px dashed rgba(226, 232, 240, 0.65);
+  border-radius: 8px;
+}
+
 .error-state {
   display: flex;
   flex-direction: column;
@@ -906,11 +1142,20 @@ function importToEval(item: { question: string; answer: string }) {
   .col-6 {
     grid-column: span 12; /* 双栏变为单栏 */
   }
+  .rag-health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rag-health-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
   .col-3, .col-4, .col-6 {
     grid-column: span 12; /* 手机端全部平铺 */
+  }
+  .rag-health-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

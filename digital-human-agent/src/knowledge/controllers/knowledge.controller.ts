@@ -23,6 +23,7 @@ import {
   KnowledgeGraphListEntitiesQueryDto,
   KnowledgeGraphListRelationsQueryDto,
   KnowledgeGraphNeighborhoodQueryDto,
+  KnowledgeGraphOverviewQueryDto,
 } from '@/knowledge/dto/knowledge-graph-query.dto';
 import type { KnowledgeAccessScope } from '@/knowledge/types/knowledge-content.types';
 
@@ -133,6 +134,22 @@ export class KnowledgeController {
     @Req() req: any,
   ) {
     return this.graphService.listRelations(
+      knowledgeId,
+      query.limit,
+      this.accessScope(req),
+    );
+  }
+
+  @Get(':knowledgeId/graph/overview')
+  @UseGuards(PermissionGuard)
+  @RequirePermissions('documents:view')
+  @ApiOperation({ summary: '查询知识库图谱概览，用于前端关系画布' })
+  getGraphOverview(
+    @Param('knowledgeId', ParseUUIDPipe) knowledgeId: string,
+    @Query() query: KnowledgeGraphOverviewQueryDto,
+    @Req() req: any,
+  ) {
+    return this.graphService.getOverview(
       knowledgeId,
       query.limit,
       this.accessScope(req),

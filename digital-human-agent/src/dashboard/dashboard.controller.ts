@@ -14,4 +14,10 @@ export class DashboardController {
   summary() {
     return this.dashboardService.summary();
   }
+
+  @Get('rag-health')
+  @ApiOperation({ summary: 'RAG 质量、评估与任务健康统计' })
+  ragHealth() {
+    return this.dashboardService.ragHealth();
+  }
 }

@@ -9,7 +9,7 @@
     <footer class="flex gap-2 flex-wrap items-center text-[10px] text-text-muted mt-1.5">
       <span class="font-mono bg-slate-50/80 px-2 py-0.75 rounded-md border border-slate-200/60">threshold {{ kb.retrievalConfig.threshold }}</span>
       <span class="font-mono bg-slate-50/80 px-2 py-0.75 rounded-md border border-slate-200/60">topK {{ kb.retrievalConfig.finalTopK }}</span>
-      <span v-if="kb.retrievalConfig.rerank" class="px-2 py-0.75 rounded-md bg-blue-50 border border-blue-150/40 text-primary font-bold">rerank</span>
+      <span v-if="kb.retrievalConfig.rerank" class="px-2 py-0.75 rounded-md bg-blue-50 border border-blue-200/40 text-primary font-bold">rerank</span>
     </footer>
   </button>
 </template>

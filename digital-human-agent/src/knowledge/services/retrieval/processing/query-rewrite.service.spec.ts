@@ -32,7 +32,7 @@ describe('QueryRewriteService', () => {
     expect(mockInvoke).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
-        signal: abortController.signal,
+        signal: expect.any(AbortSignal),
       }),
     );
   });
@@ -122,5 +122,37 @@ describe('QueryRewriteService', () => {
     expect(result.expandedQueries[1].keywords).toEqual(
       expect.arrayContaining(['系统定位', '智能检索', '包含子主题']),
     );
+  });
+
+  it('能把非标准检索角度归一为 semantic', async () => {
+    const service = new QueryRewriteService();
+    mockInvoke.mockResolvedValue({
+      rewrittenQuery: '系统定位和智能检索的关系',
+      keywords: ['系统定位', '智能检索'],
+      expandedQueries: [
+        {
+          query: '系统定位 智能检索 关系说明',
+          keywords: ['系统定位', '智能检索'],
+          angle: 'unknown-angle',
+        },
+      ],
+      reason: '补充关系表达',
+    });
+
+    const result = await service.rewrite('系统定位和智能检索是什么关系？');
+
+    expect(result.expandedQueries[1].angle).toBe('semantic');
+  });
+
+  it('LLM 超时时会回退原问题，不向上抛出内部 AbortError', async () => {
+    const service = new QueryRewriteService(undefined, {
+      get: jest.fn((key: string) => (key === 'QUERY_REWRITE_TIMEOUT_MS' ? '1' : undefined)),
+    } as any);
+    mockInvoke.mockImplementation(() => new Promise(() => undefined));
+
+    const result = await service.rewrite('系统定位和智能检索是什么关系？');
+
+    expect(result.changed).toBe(false);
+    expect(result.reason).toBe('改写超时，已回退原问题');
   });
 });

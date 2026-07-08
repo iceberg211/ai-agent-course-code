@@ -168,7 +168,7 @@
                   <span class="text-[9.5px] font-bold px-1.5 py-0.5 rounded-[4px]" :class="doc.visibility === 'private' ? 'bg-slate-100 text-slate-700' : doc.visibility === 'department' ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'">
                     {{ doc.visibility === 'private' ? '仅作者' : doc.visibility === 'department' ? '本部门' : '全公司' }}
                   </span>
-                  <span v-if="doc.securityLevel" class="bg-red-55/10 text-red-800 text-[9.5px] font-bold px-1.5 py-0.5 rounded-[4px]">Level {{ doc.securityLevel }}</span>
+                  <span v-if="doc.securityLevel" class="bg-red-50/80 text-red-800 text-[9.5px] font-bold px-1.5 py-0.5 rounded-[4px]">Level {{ doc.securityLevel }}</span>
                 </div>
               </td>
               <td class="p-3.5 px-5 border-b border-border-main">
@@ -232,7 +232,7 @@
 
                   <button
                     v-if="canDeleteDocuments"
-                    class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-55/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="删除文档"
                     type="button"
                     @click="deleteDoc(doc)"

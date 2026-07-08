@@ -25,6 +25,9 @@ describe('DocumentTaskRunnerService', () => {
   let parserServiceMock: {
     parse: jest.Mock;
   };
+  let notificationServiceMock: {
+    create: jest.Mock;
+  };
   let runner: DocumentTaskRunnerService;
 
   beforeEach(() => {
@@ -80,6 +83,9 @@ describe('DocumentTaskRunnerService', () => {
         metadata: {},
       }),
     };
+    notificationServiceMock = {
+      create: jest.fn().mockResolvedValue({ id: 'notification-1' }),
+    };
 
     runner = new DocumentTaskRunnerService(
       taskRepo as any,
@@ -89,6 +95,7 @@ describe('DocumentTaskRunnerService', () => {
       configServiceMock as any,
       storageProviderMock as any,
       parserServiceMock as any,
+      notificationServiceMock as any,
     );
   });
 
@@ -287,6 +294,22 @@ describe('DocumentTaskRunnerService', () => {
       }),
     );
     expect(documentServiceMock.syncGraphOnly).not.toHaveBeenCalled();
+    expect(notificationServiceMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: null,
+        type: 'document_failed',
+        title: '文档处理失败',
+        message: 'demo.md 处理失败',
+        payload: expect.objectContaining({
+          knowledgeId: 'kb-1',
+          documentId: 'doc-123',
+          taskId: 'task-1',
+          stage: 'index',
+          filename: 'demo.md',
+          error: 'embedding quota exhausted',
+        }),
+      }),
+    );
   });
 
   it('graph_sync 失败时应记录图谱失败，但不阻断任务完成', async () => {

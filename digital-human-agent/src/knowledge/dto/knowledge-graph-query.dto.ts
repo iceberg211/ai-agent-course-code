@@ -23,6 +23,15 @@ export class KnowledgeGraphListRelationsQueryDto {
   limit?: number = 100;
 }
 
+export class KnowledgeGraphOverviewQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(300)
+  limit?: number = 120;
+}
+
 export class KnowledgeGraphNeighborhoodQueryDto {
   @IsString()
   @IsNotEmpty()

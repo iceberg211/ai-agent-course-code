@@ -52,6 +52,16 @@ describe('DashboardService', () => {
 
   const mockEvalCaseRepo = {
     createQueryBuilder: jest.fn(),
+    find: jest.fn(),
+  };
+
+  const mockTaskRepo = {
+    count: jest.fn(),
+    find: jest.fn(),
+  };
+
+  const mockNotificationRepo = {
+    find: jest.fn(),
   };
 
   let service: DashboardService;
@@ -65,6 +75,8 @@ describe('DashboardService', () => {
       mockConversationRepo as never,
       mockMessageRepo as never,
       mockEvalCaseRepo as never,
+      mockTaskRepo as never,
+      mockNotificationRepo as never,
     );
   });
 
@@ -192,5 +204,140 @@ describe('DashboardService', () => {
     expect(result.averageDocumentProcessTimeMs).toBe(10000); // 10000ms = 10s
     expect(result.totalPermissionFilteredCount).toBe(2);
     expect(result.blockedAccessCount).toBe(1);
+  });
+
+  it('ragHealth() 应该聚合问答质量、任务健康、评估指标和最近告警', async () => {
+    mockDocumentRepo.count.mockImplementation((options?: any) => {
+      if (options?.where?.status === 'failed') return Promise.resolve(2);
+      if (options?.where?.status === 'processing') return Promise.resolve(3);
+      if (options?.where?.graphSyncStatus === 'failed') return Promise.resolve(1);
+      if (options?.where?.chunkCount === 0) return Promise.resolve(4);
+      return Promise.resolve(20);
+    });
+    mockDocumentRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(5),
+    });
+    mockTaskRepo.count.mockImplementation((options?: any) => {
+      if (options?.where?.status === 'pending') return Promise.resolve(1);
+      if (options?.where?.status === 'running') return Promise.resolve(2);
+      if (options?.where?.status === 'failed') return Promise.resolve(3);
+      return Promise.resolve(0);
+    });
+    mockTaskRepo.find.mockResolvedValue([{ id: 'task-1', status: 'failed' }]);
+    mockNotificationRepo.find.mockResolvedValue([{ id: 'notice-1' }]);
+    mockDocumentRepo.find.mockResolvedValue([{ id: 'doc-1', status: 'failed' }]);
+    mockMessageRepo.count.mockResolvedValue(2);
+    mockMessageRepo.find.mockResolvedValue([
+      {
+        ragTrace: {
+          retrievalTrace: [
+            {
+              fallbackToPg: true,
+              skippedChannels: ['graph'],
+              permissionFilter: { filtered: 2 },
+              rrfFusion: [{ chunkId: 'chunk-1' }],
+            },
+          ],
+          stageTrace: {
+            rerankLatencyMs: 42,
+            permissionFilter: { filtered: 1 },
+            rrfFusion: [{ chunkId: 'chunk-2' }],
+          },
+          degradedChannels: [{ channel: 'rerank' }],
+        },
+      },
+    ]);
+
+    const answerStatsQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({
+        answerCount: '10',
+        noCitationAnswerCount: '4',
+        averageLatencyMs: '1500',
+      }),
+    };
+    const lowRatedQueryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        {
+          question: '问题',
+          answer: '回答',
+          answerId: 'answer-1',
+          conversationId: 'conv-1',
+          createdAt: new Date(),
+          latencyMs: 1500,
+        },
+      ]),
+    };
+    mockMessageRepo.createQueryBuilder.mockImplementation((alias) => {
+      if (alias === 'answerStats') return answerStatsQueryBuilder;
+      if (alias === 'answer') return lowRatedQueryBuilder;
+      return {};
+    });
+    mockEvalCaseRepo.find.mockResolvedValue([
+      {
+        lastRunStatus: 'success',
+        userReviewStatus: 'passed',
+        lastRunHitAt1: 1,
+        lastRunHitAt3: 1,
+        lastRunRecallAt5: 0.8,
+        lastRunRecallAt10: 1,
+        lastRunRetrievalLatencyMs: 120,
+        lastRunRerankLatencyMs: 42,
+      },
+      {
+        lastRunStatus: 'failed',
+        userReviewStatus: 'failed',
+        lastRunHitAt1: null,
+        lastRunHitAt3: null,
+        lastRunRecallAt5: null,
+        lastRunRecallAt10: null,
+        lastRunRetrievalLatencyMs: null,
+        lastRunRerankLatencyMs: null,
+      },
+    ]);
+
+    const result = await service.ragHealth();
+
+    expect(result.answerCount).toBe(10);
+    expect(result.noCitationRate).toBe(0.4);
+    expect(result.downVoteRate).toBe(0.2);
+    expect(result.averageLatencyMs).toBe(1500);
+    expect(result.permissionFilteredCount).toBe(3);
+    expect(result.fallbackToPgCount).toBe(1);
+    expect(result.rrfFusionTraceCount).toBe(2);
+    expect(result.averageRerankLatencyMs).toBe(42);
+    expect(result.documentHealth).toMatchObject({
+      total: 20,
+      failed: 2,
+      processing: 3,
+      multimodal: 5,
+      multimodalRate: 0.25,
+      graphFailed: 1,
+      unchunked: 4,
+    });
+    expect(result.taskHealth).toEqual({ pending: 1, running: 2, failed: 3 });
+    expect(result.evalSummary).toMatchObject({
+      total: 2,
+      success: 1,
+      failed: 1,
+      reviewedPassed: 1,
+      reviewedFailed: 1,
+      hitAt1: 1,
+      recallAt5: 0.8,
+      avgRetrievalLatencyMs: 120,
+      avgRerankLatencyMs: 42,
+    });
+    expect(result.recentLowRatedAnswers).toHaveLength(1);
+    expect(result.recentFailedTasks).toHaveLength(1);
+    expect(result.recentNotifications).toHaveLength(1);
   });
 });

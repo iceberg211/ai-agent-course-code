@@ -3,7 +3,7 @@
            :class="tone === 'warning' ? 'border-amber-500/20 bg-gradient-to-b from-amber-50/10 to-amber-500/5' : tone === 'success' ? 'border-blue-500/20 bg-gradient-to-b from-blue-50/10 to-blue-500/5' : 'border-slate-200/60 bg-gradient-to-b from-white to-slate-50/50'"
            aria-label="问答引导">
     <div class="w-13 h-13 rounded-2xl inline-flex items-center justify-center border shrink-0"
-         :class="tone === 'warning' ? 'text-amber-600 bg-amber-50/90 border-amber-250/90 shadow-[0_10px_24px_rgba(217,119,6,0.08)]' : 'text-primary bg-blue-50/92 border-blue-200/90 shadow-[0_10px_24px_rgba(37,99,235,0.08)]'"
+         :class="tone === 'warning' ? 'text-amber-600 bg-amber-50/90 border-amber-200/90 shadow-[0_10px_24px_rgba(217,119,6,0.08)]' : 'text-primary bg-blue-50/92 border-blue-200/90 shadow-[0_10px_24px_rgba(37,99,235,0.08)]'"
          aria-hidden="true">
       <component :is="iconComponent" :size="26" />
     </div>
@@ -38,7 +38,7 @@
             v-for="q in suggestedQuestions"
             :key="q"
             type="button"
-            class="px-3.5 py-1.8 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-text-secondary cursor-pointer hover:bg-primary-bg hover:border-primary-muted hover:text-primary transition-all duration-200 shadow-[0_2px_8px_rgba(15,23,42,0.01)] hover:-translate-y-[0.5px]"
+            class="px-3.5 py-[7px] bg-white border border-slate-200 rounded-xl text-xs font-semibold text-text-secondary cursor-pointer hover:bg-primary-bg hover:border-primary-muted hover:text-primary transition-all duration-200 shadow-[0_2px_8px_rgba(15,23,42,0.01)] hover:-translate-y-[0.5px]"
             @click="$emit('select-question', q)"
           >
             {{ q }}

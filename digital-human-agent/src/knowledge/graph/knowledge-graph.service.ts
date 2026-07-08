@@ -516,6 +516,165 @@ export class KnowledgeGraphService {
     });
   }
 
+  async getOverview(
+    knowledgeId: string,
+    limit = 120,
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<{
+    nodes: Array<{
+      id: string;
+      label: string;
+      type: string | null;
+      entityType: string | null;
+      degree: number;
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      label: string;
+      relationType: string;
+      confidence: number | null;
+      documentId: string | null;
+      chunkId: string | null;
+      evidenceText: string | null;
+    }>;
+    stats: {
+      nodeCount: number;
+      edgeCount: number;
+      visibleChunkCount: number;
+      enabled: boolean;
+    };
+  }> {
+    if (!this.isEnabled()) {
+      return {
+        nodes: [],
+        edges: [],
+        stats: {
+          nodeCount: 0,
+          edgeCount: 0,
+          visibleChunkCount: 0,
+          enabled: false,
+        },
+      };
+    }
+
+    const chunkIds = await this.findVisibleCurrentChunkIds(knowledgeId, accessScope);
+    if (chunkIds.length === 0) {
+      return {
+        nodes: [],
+        edges: [],
+        stats: {
+          nodeCount: 0,
+          edgeCount: 0,
+          visibleChunkCount: 0,
+          enabled: true,
+        },
+      };
+    }
+
+    const rows = await this.neo4jGraphService.query<{
+      edgeKey: string | null;
+      sourceKey: string;
+      sourceName: string;
+      sourceType: string | null;
+      sourceEntityType: string | null;
+      targetKey: string;
+      targetName: string;
+      targetType: string | null;
+      targetEntityType: string | null;
+      relationType: string | null;
+      relationLabel: string | null;
+      confidence: number | null;
+      documentId: string | null;
+      chunkId: string | null;
+      evidenceText: string | null;
+    }>(
+      `
+        MATCH (c:KnowledgeChunk {knowledgeId: $knowledgeId})
+        MATCH (source:GraphNode)-[rel]->(target:GraphNode)
+        WHERE rel.chunkId = c.id AND c.enabled = true AND c.id IN $chunkIds
+        RETURN
+          rel.edgeKey as edgeKey,
+          source.nodeKey as sourceKey,
+          source.displayName as sourceName,
+          source.nodeType as sourceType,
+          source.entityType as sourceEntityType,
+          target.nodeKey as targetKey,
+          target.displayName as targetName,
+          target.nodeType as targetType,
+          target.entityType as targetEntityType,
+          rel.relationType as relationType,
+          rel.relationLabel as relationLabel,
+          rel.confidence as confidence,
+          rel.documentId as documentId,
+          rel.chunkId as chunkId,
+          rel.evidenceText as evidenceText
+        LIMIT $limit
+      `,
+      {
+        knowledgeId,
+        chunkIds,
+        limit: Math.max(1, Math.min(300, limit)),
+      },
+    );
+
+    const nodes = new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        type: string | null;
+        entityType: string | null;
+        degree: number;
+      }
+    >();
+    const edges = rows.map((row, index) => {
+      const source = this.toGraphOverviewNode(
+        row.sourceKey,
+        row.sourceName,
+        row.sourceType,
+        row.sourceEntityType,
+      );
+      const target = this.toGraphOverviewNode(
+        row.targetKey,
+        row.targetName,
+        row.targetType,
+        row.targetEntityType,
+      );
+      nodes.set(source.id, {
+        ...(nodes.get(source.id) ?? source),
+        degree: (nodes.get(source.id)?.degree ?? 0) + 1,
+      });
+      nodes.set(target.id, {
+        ...(nodes.get(target.id) ?? target),
+        degree: (nodes.get(target.id)?.degree ?? 0) + 1,
+      });
+      return {
+        id: row.edgeKey ?? `${row.sourceKey}-${row.targetKey}-${index}`,
+        source: row.sourceKey,
+        target: row.targetKey,
+        label: row.relationLabel ?? row.relationType ?? '关联',
+        relationType: row.relationType ?? 'RELATED',
+        confidence: row.confidence ?? null,
+        documentId: row.documentId ?? null,
+        chunkId: row.chunkId ?? null,
+        evidenceText: row.evidenceText ?? null,
+      };
+    });
+
+    return {
+      nodes: Array.from(nodes.values()).sort((a, b) => b.degree - a.degree),
+      edges,
+      stats: {
+        nodeCount: nodes.size,
+        edgeCount: edges.length,
+        visibleChunkCount: chunkIds.length,
+        enabled: true,
+      },
+    };
+  }
+
   async getNeighborhood(
     knowledgeId: string,
     nodeKey: string,
@@ -551,6 +710,27 @@ export class KnowledgeGraphService {
       nodeKey,
       chunkIds,
     });
+  }
+
+  private toGraphOverviewNode(
+    key: string,
+    name: string,
+    type: string | null,
+    entityType: string | null,
+  ): {
+    id: string;
+    label: string;
+    type: string | null;
+    entityType: string | null;
+    degree: number;
+  } {
+    return {
+      id: key,
+      label: name || key,
+      type,
+      entityType,
+      degree: 0,
+    };
   }
 
   async rebuildGraph(knowledgeId: string): Promise<{

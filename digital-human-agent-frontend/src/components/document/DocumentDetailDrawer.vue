@@ -122,16 +122,26 @@
                 <div class="body">
                   <!-- 图片预览 -->
                   <div v-if="asset.assetType === 'image'" class="image-box">
-                    <img :src="asset.storageUrl || asset.storage_key" class="asset-img" />
+                    <img v-if="assetUrl(asset)" :src="assetUrl(asset)" class="asset-img" />
+                    <div v-else class="asset-fallback">图片预览暂不可用</div>
                   </div>
                   <!-- 视频帧与时间戳 -->
                   <div v-else-if="asset.assetType === 'video'" class="video-box">
-                    <img :src="asset.imageUrl" class="asset-img" />
-                    <div class="time-tag">时间: {{ formatTime(asset.startMs) }} - {{ formatTime(asset.endMs) }}</div>
+                    <video v-if="assetUrl(asset)" controls :src="assetUrl(asset)" class="mini-video-player"></video>
+                    <div v-else class="asset-fallback">视频预览暂不可用</div>
+                    <div class="time-tag">时间: {{ formatTime(asset.startMs ?? asset.start_ms) }} - {{ formatTime(asset.endMs ?? asset.end_ms) }}</div>
                   </div>
                   <!-- 音频 -->
                   <div v-else-if="asset.assetType === 'audio'" class="audio-box">
-                    <audio controls :src="asset.storageUrl" class="mini-audio-player"></audio>
+                    <audio v-if="assetUrl(asset)" controls :src="assetUrl(asset)" class="mini-audio-player"></audio>
+                    <div v-else class="asset-fallback">音频预览暂不可用</div>
+                  </div>
+
+                  <div class="asset-meta">
+                    <span :title="asset.filename || asset.storageKey || asset.storage_key">
+                      {{ asset.filename || asset.storageKey || asset.storage_key }}
+                    </span>
+                    <span v-if="asset.pageNo || asset.page_no">第 {{ asset.pageNo ?? asset.page_no }} 页</span>
                   </div>
 
                   <!-- OCR 文字与描述 -->
@@ -422,6 +432,10 @@ function formatTime(ms?: number | null): string {
   const min = Math.floor(sec / 60)
   const s = sec % 60
   return `${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function assetUrl(asset: any): string {
+  return asset.url || asset.storageUrl || asset.storage_url || ''
 }
 
 function statusLabelOf(status?: string): string {
@@ -754,8 +768,35 @@ select:focus, input[type="text"]:focus {
   object-fit: contain;
 }
 
+.asset-fallback {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .video-box {
   position: relative;
+}
+
+.mini-video-player {
+  width: 100%;
+  max-height: 160px;
+  border-radius: 8px;
+}
+
+.asset-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.asset-meta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .time-tag {

@@ -26,6 +26,20 @@
     <div class="graph-body">
       <!-- 左侧：实体列表 -->
       <aside class="entity-aside">
+        <div class="graph-stats">
+          <div>
+            <strong>{{ overview.stats.nodeCount }}</strong>
+            <span>节点</span>
+          </div>
+          <div>
+            <strong>{{ overview.stats.edgeCount }}</strong>
+            <span>关系</span>
+          </div>
+          <div>
+            <strong>{{ overview.stats.visibleChunkCount }}</strong>
+            <span>可见切片</span>
+          </div>
+        </div>
         <h3>图谱实体 ({{ filteredEntities.length }})</h3>
         <ul v-if="filteredEntities.length" class="entity-list">
           <li
@@ -44,6 +58,57 @@
 
       <!-- 右侧：关系证据与邻居 -->
       <main class="relation-main">
+        <section class="graph-canvas-panel">
+          <header class="canvas-head">
+            <h3>关系网络概览</h3>
+            <span v-if="loadingOverview" class="tip-inline">正在加载…</span>
+            <span v-else-if="!overview.stats.enabled" class="tip-inline">Neo4j 未启用</span>
+          </header>
+          <div v-if="overview.nodes.length === 0 && !loadingOverview" class="canvas-empty">
+            当前知识库暂无可展示的图谱关系
+          </div>
+          <svg v-else class="graph-canvas" viewBox="0 0 760 280" role="img" aria-label="知识图谱概览">
+            <g class="edge-layer">
+              <line
+                v-for="edge in positionedEdges"
+                :key="edge.id"
+                :x1="edge.source.x"
+                :y1="edge.source.y"
+                :x2="edge.target.x"
+                :y2="edge.target.y"
+                class="graph-edge"
+                :class="{ 'graph-edge--active': selectedEdge?.id === edge.id }"
+                @click="selectEdge(edge.raw)"
+              />
+              <text
+                v-for="edge in positionedEdges.slice(0, 24)"
+                :key="`${edge.id}-label`"
+                :x="(edge.source.x + edge.target.x) / 2"
+                :y="(edge.source.y + edge.target.y) / 2 - 4"
+                class="edge-label"
+              >
+                {{ edge.raw.label }}
+              </text>
+            </g>
+            <g class="node-layer">
+              <g
+                v-for="node in positionedNodes"
+                :key="node.id"
+                class="graph-node"
+                :class="{ 'graph-node--active': selectedEntity?.key === node.id }"
+                @click="selectGraphNode(node)"
+              >
+                <circle :cx="node.x" :cy="node.y" :r="node.radius" />
+                <text :x="node.x" :y="node.y + node.radius + 14">{{ node.label }}</text>
+              </g>
+            </g>
+          </svg>
+          <div v-if="selectedEdge" class="edge-evidence">
+            <strong>{{ selectedEdge.label }}</strong>
+            <p>{{ selectedEdge.evidenceText || '暂无证据文本' }}</p>
+          </div>
+        </section>
+
         <div v-if="selectedEntity" class="neighborhood-view">
           <header class="neighborhood-head">
             <h3>
@@ -129,6 +194,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { usePermissions } from '@/hooks/usePermissions'
+import type { KnowledgeGraphOverview, KnowledgeGraphOverviewEdge, KnowledgeGraphOverviewNode } from '@/types'
 
 const props = defineProps<{ kbId: string }>()
 const hook = useKnowledgeBase()
@@ -139,13 +205,84 @@ const searchQuery = ref('')
 const rebuilding = ref(false)
 const loadingEntities = ref(false)
 const loadingRelations = ref(false)
+const loadingOverview = ref(false)
 
 const entities = ref<any[]>([])
 const filteredEntities = ref<any[]>([])
 const selectedEntity = ref<any | null>(null)
 const relations = ref<any[]>([])
+const selectedEdge = ref<KnowledgeGraphOverviewEdge | null>(null)
+const overview = ref<KnowledgeGraphOverview>({
+  nodes: [],
+  edges: [],
+  stats: {
+    nodeCount: 0,
+    edgeCount: 0,
+    visibleChunkCount: 0,
+    enabled: true,
+  },
+})
 
 const previewingChunk = ref<any | null>(null)
+
+type PositionedNode = KnowledgeGraphOverviewNode & {
+  x: number
+  y: number
+  radius: number
+}
+
+const positionedNodes = computed(() => {
+  const nodes = overview.value.nodes.slice(0, 36)
+  const count = Math.max(nodes.length, 1)
+  const centerX = 380
+  const centerY = 140
+  const radiusX = 270
+  const radiusY = 92
+  return nodes.map((node, index) => {
+    const angle = (Math.PI * 2 * index) / count - Math.PI / 2
+    const degreeBoost = Math.min(10, Math.max(0, node.degree - 1))
+    return {
+      ...node,
+      x: centerX + Math.cos(angle) * radiusX,
+      y: centerY + Math.sin(angle) * radiusY,
+      radius: 12 + degreeBoost,
+    }
+  })
+})
+
+const positionedNodeMap = computed(() => {
+  return new Map(positionedNodes.value.map((node) => [node.id, node]))
+})
+
+const positionedEdges = computed(() => {
+  return overview.value.edges
+    .map((edge) => {
+      const source = positionedNodeMap.value.get(edge.source)
+      const target = positionedNodeMap.value.get(edge.target)
+      if (!source || !target) return null
+      return {
+        id: edge.id,
+        source,
+        target,
+        raw: edge,
+      }
+    })
+    .filter(Boolean) as Array<{
+      id: string
+      source: PositionedNode
+      target: PositionedNode
+      raw: KnowledgeGraphOverviewEdge
+    }>
+})
+
+async function loadOverview() {
+  loadingOverview.value = true
+  try {
+    overview.value = await hook.getGraphOverview(props.kbId, 160)
+  } finally {
+    loadingOverview.value = false
+  }
+}
 
 // 加载实体列表
 async function loadEntities() {
@@ -157,6 +294,20 @@ async function loadEntities() {
   } finally {
     loadingEntities.value = false
   }
+}
+
+function selectGraphNode(node: KnowledgeGraphOverviewNode) {
+  const matched =
+    entities.value.find((item) => item.key === node.id) ??
+    {
+      key: node.id,
+      name: node.label,
+    }
+  void selectEntity(matched)
+}
+
+function selectEdge(edge: KnowledgeGraphOverviewEdge) {
+  selectedEdge.value = edge
 }
 
 // 搜索实体
@@ -196,7 +347,9 @@ async function handleRebuild() {
     if (res.success) {
       alert('图谱重建任务提交成功！')
       selectedEntity.value = null
+      selectedEdge.value = null
       relations.value = []
+      await loadOverview()
       await loadEntities()
     } else {
       alert('图谱重建失败，请稍后重试')
@@ -215,11 +368,14 @@ function previewChunk(chunk: any) {
 
 onMounted(() => {
   void permissionApi.loadPermissions()
+  void loadOverview()
   void loadEntities()
 })
 watch(() => props.kbId, () => {
   selectedEntity.value = null
+  selectedEdge.value = null
   relations.value = []
+  loadOverview()
   loadEntities()
 })
 </script>
@@ -303,6 +459,30 @@ watch(() => props.kbId, () => {
   border-right: 1px solid var(--border);
   padding-right: 16px;
 }
+.graph-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.graph-stats div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 6px;
+  background: var(--surface-soft);
+  text-align: center;
+}
+.graph-stats strong {
+  display: block;
+  font-size: 15px;
+  color: var(--primary);
+}
+.graph-stats span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
 .entity-aside h3 {
   margin: 0 0 12px;
   font-size: 14px;
@@ -349,6 +529,104 @@ watch(() => props.kbId, () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  gap: 16px;
+}
+.graph-canvas-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.canvas-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.canvas-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+.tip-inline {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.graph-canvas {
+  width: 100%;
+  height: 280px;
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    #f8fafc;
+  background-size: 28px 28px;
+}
+.canvas-empty {
+  height: 180px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.graph-edge {
+  stroke: rgba(100, 116, 139, 0.45);
+  stroke-width: 1.4;
+  cursor: pointer;
+}
+.graph-edge:hover,
+.graph-edge--active {
+  stroke: var(--primary);
+  stroke-width: 2.2;
+}
+.edge-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+.graph-node {
+  cursor: pointer;
+}
+.graph-node circle {
+  fill: #ffffff;
+  stroke: var(--primary);
+  stroke-width: 2;
+  filter: drop-shadow(0 4px 10px rgba(37, 99, 235, 0.16));
+}
+.graph-node:hover circle,
+.graph-node--active circle {
+  fill: rgba(37, 99, 235, 0.12);
+  stroke-width: 3;
+}
+.graph-node text {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+}
+.edge-evidence {
+  border-left: 3px solid var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.edge-evidence strong {
+  font-size: 12px;
+  color: var(--primary);
+}
+.edge-evidence p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .neighborhood-view {
   display: flex;

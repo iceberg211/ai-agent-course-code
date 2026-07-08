@@ -1,4 +1,88 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+@source "./src/**/*.{vue,ts,js,html}";
+
+@theme {
+  /* 颜色映射 */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-light: #60a5fa;
+  --color-primary-bg: #eff6ff;
+  --color-primary-muted: #bfdbfe;
+  
+  --color-text-main: #0f172a;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748b;
+  
+  --color-border-main: #d7e2f1;
+  --color-border-muted: #edf2f9;
+  --color-border-focus: rgba(59, 130, 246, 0.4);
+  --color-border-glass: rgba(255, 255, 255, 0.6);
+
+  --color-error: #ef4444;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+
+  /* 阴影映射 */
+  --shadow-btn: 0 4px 14px 0 rgba(59, 130, 246, 0.3);
+  --shadow-btn-hover: 0 6px 20px 0 rgba(59, 130, 246, 0.4);
+  --shadow-card: 0 4px 20px rgba(15, 23, 42, 0.015);
+  --shadow-card-hover: 0 10px 30px rgba(15, 23, 42, 0.04);
+  
+  /* 圆角映射 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+@layer utilities {
+  /* 语义原子类兜底：避免 Tailwind 主题生成遗漏时页面掉色 */
+  .text-text-main { color: var(--text); }
+  .text-text-secondary { color: var(--text-secondary); }
+  .text-text-muted { color: var(--text-muted); }
+  .text-success { color: var(--success); }
+  .text-warning { color: var(--warning); }
+  .text-error { color: var(--error); }
+
+  .bg-primary { background-color: var(--primary); }
+  .bg-primary-hover { background-color: var(--primary-hover); }
+  .bg-primary-bg { background-color: var(--primary-bg); }
+  .bg-surface { background-color: var(--surface); }
+  .bg-surface-soft { background-color: var(--surface-soft); }
+  .bg-surface-hover { background-color: var(--surface-hover); }
+  .bg-success { background-color: var(--success); }
+  .bg-warning { background-color: var(--warning); }
+  .bg-error { background-color: var(--error); }
+
+  .border-primary { border-color: var(--primary); }
+  .border-primary-hover { border-color: var(--primary-hover); }
+  .border-primary-muted { border-color: var(--primary-muted); }
+  .border-border-main { border-color: var(--border); }
+  .border-border-muted { border-color: var(--border-muted); }
+  .border-border-focus { border-color: var(--border-focus); }
+
+  .shadow-btn { box-shadow: var(--shadow-btn); }
+  .shadow-btn-hover { box-shadow: var(--shadow-btn-hover); }
+  .shadow-card { box-shadow: 0 6px 24px rgba(15, 23, 42, 0.035); }
+  .shadow-card-hover { box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04); }
+
+  .hover\:text-primary:hover { color: var(--primary); }
+  .hover\:text-primary-hover:hover { color: var(--primary-hover); }
+  .hover\:text-text-main:hover { color: var(--text); }
+  .hover\:text-error:hover { color: var(--error); }
+  .hover\:bg-primary-bg:hover { background-color: var(--primary-bg); }
+  .hover\:bg-primary-hover:hover { background-color: var(--primary-hover); }
+  .hover\:border-primary:hover { border-color: var(--primary); }
+  .hover\:border-primary-muted:hover { border-color: var(--primary-muted); }
+  .hover\:border-primary-hover:hover { border-color: var(--primary-hover); }
+  .hover\:shadow-card-hover:hover { box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04); }
+
+  .focus\:border-primary:focus { border-color: var(--primary); }
+  .focus\:ring-border-focus:focus,
+  .focus-visible\:ring-border-focus:focus-visible { --tw-ring-color: var(--border-focus); }
+  .disabled\:border-border-main:disabled { border-color: var(--border); }
+  .disabled\:text-text-muted:disabled { color: var(--text-muted); }
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -69,7 +153,6 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-
 /* ── 基础 ─────────────────────────────────────────────────────────────────── */
 html, body, #app { height: 100%; }
 
@@ -102,9 +185,14 @@ body {
   outline-offset: 1px;
 }
 
-/* ── 滚动条 ───────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
+/* ── 滚动条 (原生 CSS 嵌套) ────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
   background: rgba(100, 116, 139, 0.3);
   border-radius: var(--radius-full);
@@ -137,4 +225,395 @@ button {
 
 @media (max-width: 1024px) {
   #app { padding: 8px; }
+}
+
+/* ── 全局状态 Badge (Pills) ── */
+.pill--success {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+.pill--warning {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+}
+.pill--error {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+.pill--secondary {
+  background-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* ── 全局文档与徽章通用样式 (Pills & Badges) ── */
+.status-indicator-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+}
+
+.kb-badge {
+  display: inline-block !important;
+  padding: 2px 8px !important;
+  background: #f1f5f9 !important;
+  border-radius: 6px !important;
+  font-size: 11.5px !important;
+  color: var(--text-secondary) !important;
+  font-weight: 600 !important;
+  max-width: 130px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.visibility-badge {
+  display: inline-block !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+/* ── 操作按钮 (Action Buttons) ── */
+.action-btn {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--border) !important;
+  background: #fff !important;
+  color: var(--text-secondary) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.action-btn:hover:not(:disabled) {
+  border-color: var(--primary-muted) !important;
+  background: var(--primary-bg) !important;
+  color: var(--primary) !important;
+}
+
+.action-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.action-btn--danger:hover {
+  border-color: #fca5a5 !important;
+  background: #fef2f2 !important;
+  color: #dc2626 !important;
+}
+
+/* ── RAG 全局公共组件与弹窗样式 ── */
+
+/* 1. 表单 & 输入域 */
+.field {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.field select {
+  height: 38px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  color: var(--text) !important;
+  outline: none !important;
+}
+
+.label {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+}
+
+.required {
+  color: #dc2626 !important;
+}
+
+.field-error {
+  margin: 0 !important;
+  font-size: 11.5px !important;
+  color: #dc2626 !important;
+  background: #fef2f2 !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+}
+
+/* 2. 按钮组件 */
+.btn-cancel {
+  padding: 8px 16px !important;
+  border: 1px solid var(--border) !important;
+  background: #fff !important;
+  color: var(--text-secondary) !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-cancel:hover {
+  background: var(--page-bg-accent) !important;
+}
+
+.btn-submit {
+  padding: 8px 18px !important;
+  border: none !important;
+  background: var(--primary) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-submit:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* 3. 模态弹框 (Modal) & 抽屉 (Drawer) */
+.modal-backdrop,
+.drawer-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100 !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+}
+
+.modal {
+  width: 100% !important;
+  max-width: 440px !important;
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-xl) !important;
+  overflow: hidden !important;
+}
+
+.modal-head {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid var(--border-muted) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.modal-head h3 {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+.modal-close,
+.drawer-close {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.modal-close:hover,
+.drawer-close:hover {
+  background: var(--page-bg-accent) !important;
+  color: var(--text) !important;
+}
+
+.modal-body {
+  padding: 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+.modal-foot {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+}
+
+/* 4. 文件上传拖拽区 */
+.file-picker input {
+  display: none !important;
+}
+
+.file-picker__dropzone {
+  border: 2px dashed var(--border) !important;
+  border-radius: 8px !important;
+  padding: 24px !important;
+  text-align: center !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px !important;
+  cursor: pointer !important;
+  background: #fafafb !important;
+  color: var(--text-muted) !important;
+  font-size: 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.file-picker__dropzone:hover {
+  border-color: var(--primary) !important;
+  background: var(--primary-bg) !important;
+}
+
+.picker-icon {
+  color: var(--text-muted) !important;
+}
+
+/* ── 导航侧边栏样式与项间距 Fallback ── */
+aside {
+  background-color: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  border-right: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+nav.flex-col {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+nav.flex-col a {
+  padding: 10px 14px !important;
+  border-radius: 8px !important;
+  margin-bottom: 2px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s ease !important;
+}
+
+nav.flex-col a:hover {
+  color: var(--primary) !important;
+  background-color: rgba(59, 130, 246, 0.05) !important;
+}
+
+nav.flex-col a.router-link-active {
+  background-color: #eff6ff !important;
+  color: #3b82f6 !important;
+  border-color: rgba(191, 219, 254, 0.6) !important;
+}
+
+/* ── 表格结构与内边距 Fallback ── */
+table th {
+  padding: 12px 16px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border-bottom: 1px solid var(--border-main) !important;
+}
+
+table td {
+  padding: 12px 16px !important;
+  vertical-align: middle !important;
+  border-bottom: 1px solid var(--border-muted) !important;
+}
+
+table tr:hover {
+  background-color: rgba(59, 130, 246, 0.025) !important;
+}
+
+/* ── 全局页面及高级检索 Fallback ── */
+main.p-6 {
+  padding: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+section.p-5 {
+  padding: 20px !important;
+  border-radius: 12px !important;
+  box-sizing: border-box !important;
+}
+
+/* 检索框高度与定位兜底 */
+.h-11 {
+  height: 44px !important;
+}
+.pl-10\.5 {
+  padding-left: 42px !important;
+}
+.pr-4 {
+  padding-right: 16px !important;
+}
+.gap-4 {
+  gap: 16px !important;
+}
+.gap-3 {
+  gap: 12px !important;
+}
+
+/* ── 导航菜单高度限制与滑动防截断 ── */
+nav.flex-col {
+  overflow-y: auto !important;
+  max-height: calc(100vh - 120px) !important;
+}
+
+nav.flex-col::-webkit-scrollbar {
+  width: 0px !important;
+  background: transparent !important;
+}
+
+/* ── 账户下拉菜单防半透明按钮穿透与内边距 ── */
+[role="menu"] {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  padding: 8px 0 !important;
+  box-sizing: border-box !important;
+}
+
+[role="menu"] > div:first-child {
+  padding: 8px 14px 10px !important;
+}
+
+[role="menu"] button {
+  padding: 8px 14px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+/* ── Logo 区域间距 Fallback ── */
+aside > div:first-child {
+  margin-bottom: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding-left: 8px !important;
 }

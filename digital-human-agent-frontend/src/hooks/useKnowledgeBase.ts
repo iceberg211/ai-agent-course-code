@@ -7,6 +7,7 @@ import type {
   KnowledgeChunk,
   KnowledgeDocumentDetail,
   KnowledgeEvalCase,
+  KnowledgeGraphOverview,
   KnowledgeSearchResult,
   PaginatedResult,
   RetrievalConfig,
@@ -645,6 +646,23 @@ export function useKnowledgeBase() {
     return (await apiJson<any[]>(`/api/knowledge-bases/${kbId}/graph/neighborhood?nodeKey=${encodeURIComponent(nodeKey)}`)) ?? []
   }
 
+  async function getGraphOverview(kbId: string, limit = 120): Promise<KnowledgeGraphOverview> {
+    return (
+      (await apiJson<KnowledgeGraphOverview>(
+        `/api/knowledge-bases/${kbId}/graph/overview?limit=${limit}`,
+      )) ?? {
+        nodes: [],
+        edges: [],
+        stats: {
+          nodeCount: 0,
+          edgeCount: 0,
+          visibleChunkCount: 0,
+          enabled: false,
+        },
+      }
+    )
+  }
+
   async function rebuildGraph(kbId: string): Promise<{ success: boolean; message?: string }> {
     return (await apiJson<any>(`/api/knowledge-bases/${kbId}/graph/rebuild`, { method: 'POST' })) ?? { success: false }
   }
@@ -698,6 +716,7 @@ export function useKnowledgeBase() {
     listGraphEntities,
     listGraphRelations,
     getGraphNeighborhood,
+    getGraphOverview,
     rebuildGraph,
   }
 }

@@ -139,6 +139,83 @@ export interface KnowledgeSearchChunk {
   keyword_score?: number
   graph_score?: number
   retrieval_sources?: string[]
+  rrf_score?: number
+  channel_rank?: Record<string, number>
+  raw_score?: Record<string, number>
+}
+
+export interface RetrievalChannelTrace {
+  enabled: boolean
+  backend: string
+  resultCount: number
+  skipped: boolean
+  error?: string
+}
+
+export interface RetrievalRrfTraceItem {
+  chunkId: string
+  retrievalSources: string[]
+  channelRanks: Record<string, number>
+  rawScores: Record<string, number>
+  rrfScore: number
+}
+
+export interface RetrievalRerankTraceItem {
+  chunkId: string
+  beforeRank: number
+  afterRank: number
+  rerankScore: number | null
+}
+
+export interface RetrievalStageTrace {
+  queryRewrite: string[]
+  channels: Record<string, RetrievalChannelTrace>
+  rrfFusion: RetrievalRrfTraceItem[]
+  rerank: RetrievalRerankTraceItem[]
+  rerankLatencyMs?: number
+  permissionFilter: {
+    before: number
+    after: number
+    filtered: number
+  }
+  finalChunks: string[]
+}
+
+export interface RetrievalDegradedChannel {
+  channel: string
+  reason: string
+  backend?: string
+}
+
+export interface KnowledgeGraphOverviewNode {
+  id: string
+  label: string
+  type?: string | null
+  entityType?: string | null
+  degree: number
+}
+
+export interface KnowledgeGraphOverviewEdge {
+  id: string
+  source: string
+  target: string
+  label: string
+  relationType: string
+  confidence?: number | null
+  documentId?: string | null
+  chunkId?: string | null
+  evidenceText?: string | null
+}
+
+export interface KnowledgeGraphOverview {
+  nodes: KnowledgeGraphOverviewNode[]
+  edges: KnowledgeGraphOverviewEdge[]
+  stats: {
+    nodeCount: number
+    edgeCount: number
+    visibleChunkCount: number
+    enabled: boolean
+  }
 }
 
 export interface KnowledgeSearchResult {
@@ -147,6 +224,8 @@ export interface KnowledgeSearchResult {
   retrievalQueries?: unknown[]
   rewrite?: unknown
   retrievalTrace?: unknown[]
+  stageTrace?: RetrievalStageTrace
+  degradedChannels?: RetrievalDegradedChannel[]
   hybridChunks?: KnowledgeSearchChunk[]
   rerankedChunks?: KnowledgeSearchChunk[]
   options?: {
@@ -303,6 +382,60 @@ export interface DashboardSummary {
   multimodalRate?: number | null
   blockedAccessCount?: number | null
   totalPermissionFilteredCount?: number | null
+}
+
+export interface DashboardRagHealth {
+  answerCount: number
+  noCitationAnswerCount: number
+  noCitationRate: number
+  lowRatedAnswerCount: number
+  downVoteRate: number
+  averageLatencyMs: number
+  averageRerankLatencyMs?: number | null
+  permissionFilteredCount: number
+  fallbackToPgCount: number
+  degradedChannels: Array<{ channel: string; count: number }>
+  rrfFusionTraceCount: number
+  documentHealth: {
+    total: number
+    failed: number
+    processing: number
+    multimodal: number
+    multimodalRate: number
+    graphFailed: number
+    unchunked: number
+  }
+  taskHealth: {
+    pending: number
+    running: number
+    failed: number
+  }
+  evalSummary: {
+    total: number
+    success: number
+    failed: number
+    unrun: number
+    reviewedPassed: number
+    reviewedFailed: number
+    unreviewed: number
+    hitAt1?: number | null
+    hitAt3?: number | null
+    recallAt5?: number | null
+    recallAt10?: number | null
+    avgRetrievalLatencyMs?: number | null
+    avgRerankLatencyMs?: number | null
+  }
+  recentLowRatedAnswers: Array<{
+    question: string
+    answer: string
+    answerId: string
+    conversationId: string
+    createdAt: string
+    latencyMs?: number | null
+  }>
+  recentFailedDocuments: KnowledgeDocument[]
+  recentFailedTasks: DocumentTaskItem[]
+  recentNotifications: NotificationItem[]
 }
 
 export interface ChunkContext {

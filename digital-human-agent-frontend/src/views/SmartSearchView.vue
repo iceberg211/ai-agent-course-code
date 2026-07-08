@@ -166,9 +166,9 @@
                   第 {{ (c.chunkIndex ?? c.chunk_index) + 1 }} 段 · 分数 {{ formatScore(c) }}
                 </span>
                 <!-- 渠道 Badge -->
-                <div class="flex gap-1 mt-0.5">
-                  <span v-for="src in c.retrieval_sources" :key="src" class="text-[9px] p-0.25 px-1 rounded-[3px] font-bold" :class="src === 'vector' ? 'bg-blue-100 text-blue-800' : src === 'keyword' ? 'bg-emerald-100 text-emerald-800' : 'bg-purple-100 text-purple-800'">
-                    {{ src === 'vector' ? '向量' : src === 'keyword' ? '全文' : '图谱' }}
+                <div class="flex gap-1 mt-0.5 flex-wrap">
+                  <span v-for="src in c.retrieval_sources" :key="src" class="text-[9px] p-0.25 px-1 rounded-[3px] font-bold" :class="channelBadgeClass(src)">
+                    {{ channelLabel(src) }}
                   </span>
                 </div>
               </div>
@@ -238,24 +238,34 @@
               <h5 class="m-0 mb-2 text-xs font-bold text-text-main">🔀 召回渠道与融合 RRF</h5>
               <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5">
                 <div class="flex flex-col gap-1.5">
-                  <div class="flex justify-between items-center">
-                    <span>向量召回 (Vector)</span>
-                    <strong class="font-bold text-text-main">{{ channelCounts.vector }} chunks</strong>
+                  <div v-for="row in channelRows" :key="row.key" class="flex justify-between items-center gap-2">
+                    <span>{{ row.label }} <em class="not-italic text-[10px] text-text-muted">({{ row.backend }})</em></span>
+                    <strong class="font-bold" :class="row.skipped ? 'text-text-muted' : 'text-text-main'">
+                      {{ row.resultCount }} chunks
+                    </strong>
                   </div>
-                  <div class="flex justify-between items-center">
-                    <span>全文召回 (Keyword)</span>
-                    <strong class="font-bold text-text-main">{{ channelCounts.keyword }} chunks</strong>
-                  </div>
-                  <div class="flex justify-between items-center">
-                    <span>图谱召回 (Graph)</span>
-                    <strong class="font-bold text-text-main">{{ channelCounts.graph }} chunks</strong>
+                  <div class="flex justify-between items-center pt-1 border-t border-slate-100">
+                    <span>RRF 融合候选</span>
+                    <strong class="font-bold text-text-main">{{ rrfFusionCount }} items</strong>
                   </div>
                 </div>
               </div>
             </div>
 
+            <!-- 降级与回退提示 -->
+            <div v-if="degradedChannels.length > 0" class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <h5 class="m-0 mb-2 text-xs font-bold text-amber-900">降级与回退</h5>
+              <ul class="list-none p-0 m-0 flex flex-col gap-2">
+                <li v-for="item in degradedChannels" :key="`${item.channel}-${item.reason}`" class="text-[11px] text-amber-900 leading-relaxed">
+                  <strong>{{ channelLabel(item.channel) }}</strong>
+                  <span v-if="item.backend" class="text-amber-700"> / {{ item.backend }}</span>
+                  <span>：{{ item.reason }}</span>
+                </li>
+              </ul>
+            </div>
+
             <!-- 重排前后位次对照 -->
-            <div class="bg-white border border-slate-200/60 rounded-lg p-3" v-if="searchResult.stage1 && searchResult.stage2">
+            <div class="bg-white border border-slate-200/60 rounded-lg p-3" v-if="rerankTraceRows.length > 0">
               <h5 class="m-0 mb-2 text-xs font-bold text-text-main">🔄 Rerank 降序位次对照</h5>
               <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5 font-mono">
                 <div class="flex flex-col gap-1">
@@ -264,10 +274,10 @@
                     <span>初筛</span>
                     <span>重排</span>
                   </div>
-                  <div v-for="(c, idx) in searchResult.stage2.slice(0, 5)" :key="c.id" class="grid grid-cols-[2fr_1fr_1fr] gap-1.5 py-1">
-                    <span class="overflow-hidden text-ellipsis whitespace-nowrap" :title="c.source">{{ c.source.slice(0, 10) }}...</span>
-                    <span>#{{ findStage1Rank(c.id) }}</span>
-                    <span class="text-success font-bold">#{{ idx + 1 }}</span>
+                  <div v-for="row in rerankTraceRows.slice(0, 5)" :key="row.chunkId" class="grid grid-cols-[2fr_1fr_1fr] gap-1.5 py-1">
+                    <span class="overflow-hidden text-ellipsis whitespace-nowrap" :title="row.source">{{ row.source.slice(0, 10) }}...</span>
+                    <span>#{{ row.beforeRank }}</span>
+                    <span class="text-success font-bold">#{{ row.afterRank }}</span>
                   </div>
                 </div>
               </div>
@@ -329,7 +339,7 @@
                   v-for="item in contextItems"
                   :key="item.id"
                   class="border border-border-main rounded-lg p-3.5 bg-slate-50/50 text-left"
-                  :class="item.id === activeChunk?.id ? '!border-blue-550/40 !bg-blue-50/50' : ''"
+                  :class="item.id === activeChunk?.id ? '!border-blue-600/40 !bg-blue-50/50' : ''"
                 >
                   <header class="flex justify-between mb-2 text-[11px] font-bold">
                     <span class="text-text-muted">§ {{ item.chunkIndex + 1 }}</span>
@@ -391,6 +401,14 @@ const searchResult = ref<KnowledgeSearchResult | null>(null)
 
 // 衍生统计项
 const channelCounts = computed(() => {
+  const stageChannels = searchResult.value?.stageTrace?.channels
+  if (stageChannels) {
+    return {
+      vector: stageChannels.vector?.resultCount ?? 0,
+      keyword: stageChannels.keyword?.resultCount ?? 0,
+      graph: stageChannels.graph?.resultCount ?? 0,
+    }
+  }
   const counts = { vector: 0, keyword: 0, graph: 0 }
   const stage1List = searchResult.value?.stage1 ?? []
   for (const c of stage1List) {
@@ -401,7 +419,50 @@ const channelCounts = computed(() => {
   return counts
 })
 
+const channelRows = computed(() => {
+  const channels = searchResult.value?.stageTrace?.channels
+  if (channels) {
+    return Object.entries(channels).map(([key, trace]) => ({
+      key,
+      label: channelLabel(key),
+      backend: trace.backend || 'disabled',
+      resultCount: trace.resultCount ?? 0,
+      skipped: trace.skipped || trace.backend === 'disabled',
+    }))
+  }
+  return [
+    { key: 'vector', label: '向量召回', backend: 'unknown', resultCount: channelCounts.value.vector, skipped: false },
+    { key: 'keyword', label: '全文召回', backend: 'unknown', resultCount: channelCounts.value.keyword, skipped: false },
+    { key: 'graph', label: '图谱召回', backend: 'unknown', resultCount: channelCounts.value.graph, skipped: false },
+  ]
+})
+
+const rrfFusionCount = computed(() => searchResult.value?.stageTrace?.rrfFusion?.length ?? 0)
+
+const degradedChannels = computed(() => searchResult.value?.degradedChannels ?? [])
+
+const rerankTraceRows = computed(() => {
+  const chunks = new Map<string, KnowledgeSearchChunk>()
+  for (const chunk of [
+    ...(searchResult.value?.hybridChunks ?? []),
+    ...(searchResult.value?.rerankedChunks ?? []),
+    ...(searchResult.value?.stage1 ?? []),
+    ...(searchResult.value?.stage2 ?? []),
+  ]) {
+    chunks.set(chunk.id, chunk)
+  }
+  return (searchResult.value?.stageTrace?.rerank ?? []).map((item) => ({
+    ...item,
+    source: chunks.get(item.chunkId)?.source ?? item.chunkId,
+  }))
+})
+
 const aclFilteredCount = computed(() => {
+  const stageFilter = searchResult.value?.stageTrace?.permissionFilter
+  if (stageFilter) return stageFilter.filtered
+  if (typeof searchResult.value?.permissionFilteredCount === 'number') {
+    return searchResult.value.permissionFilteredCount
+  }
   const stage1Count = searchResult.value?.stage1?.length ?? 0
   const stage2Count = searchResult.value?.stage2?.length ?? 0
   // 如果初筛到的比重排后通过过滤返回的还要多得多，并且超出了合理的截断，则计入过滤
@@ -410,6 +471,31 @@ const aclFilteredCount = computed(() => {
   }
   return 0
 })
+
+function channelLabel(channel: string): string {
+  const labels: Record<string, string> = {
+    vector: '向量召回',
+    keyword: '全文召回',
+    graph: '图谱召回',
+    memory: '记忆召回',
+    multimodal: '多模态召回',
+    queryRewrite: '问题改写',
+    rerank: '语义重排',
+    permission: '权限过滤',
+  }
+  return labels[channel] ?? channel
+}
+
+function channelBadgeClass(channel: string): string {
+  const classes: Record<string, string> = {
+    vector: 'bg-blue-100 text-blue-800',
+    keyword: 'bg-emerald-100 text-emerald-800',
+    graph: 'bg-purple-100 text-purple-800',
+    memory: 'bg-amber-100 text-amber-800',
+    multimodal: 'bg-cyan-100 text-cyan-800',
+  }
+  return classes[channel] ?? 'bg-slate-100 text-slate-700'
+}
 
 async function loadKbs() {
   const res = await kbApi.listAll()

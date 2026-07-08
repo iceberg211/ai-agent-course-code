@@ -165,6 +165,12 @@ export interface RetrievalStageTrace {
   finalChunks: string[];
 }
 
+export interface RetrievalDegradedChannel {
+  channel: KnowledgeRetrievalSource | 'queryRewrite' | 'rerank' | 'permission';
+  reason: string;
+  backend?: string | 'disabled';
+}
+
 export interface RetrieveKnowledgeDebugResult {
   query: string;
   retrievalQuery: string;
@@ -173,6 +179,7 @@ export interface RetrieveKnowledgeDebugResult {
   options: NormalizedRetrieveKnowledgeOptions;
   retrievalTrace: RetrieveKnowledgeTraceItem[];
   stageTrace?: RetrievalStageTrace;
+  degradedChannels?: RetrievalDegradedChannel[];
   hybridChunks: KnowledgeChunk[];
   rerankedChunks: KnowledgeChunk[];
 }

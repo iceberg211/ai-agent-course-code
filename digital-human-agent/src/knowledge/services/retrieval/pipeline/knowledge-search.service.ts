@@ -14,7 +14,9 @@ import type {
   KnowledgeChunk,
   DocumentSearchFilters,
   KnowledgeQueryRewriteResult,
+  KnowledgeRetrievalSource,
   NormalizedRetrieveKnowledgeOptions,
+  RetrievalDegradedChannel,
   RetrieveKnowledgeDebugResult,
   RetrieveKnowledgeOptions,
   RetrievalQueryItem,
@@ -94,6 +96,19 @@ function buildEmptyResult(
     rewrite: fallbackRewrite,
     options,
     retrievalTrace: [],
+    stageTrace: {
+      queryRewrite: query ? [query] : [],
+      channels: {},
+      rrfFusion: [],
+      rerank: [],
+      permissionFilter: {
+        before: 0,
+        after: 0,
+        filtered: 0,
+      },
+      finalChunks: [],
+    },
+    degradedChannels: [],
     hybridChunks: [],
     rerankedChunks: [],
   };
@@ -119,6 +134,7 @@ interface HybridLoadResult {
 interface RerankSelectionResult {
   chunks: KnowledgeChunk[];
   trace: RerankTraceItem[];
+  degradedReason?: string;
 }
 
 // ==========================================
@@ -435,6 +451,15 @@ export class KnowledgeSearchService {
       options.signal,
     );
     const rerankLatencyMs = Date.now() - rerankStart;
+    const stageTrace = this.buildStageTrace({
+      rewrite,
+      retrievalTrace: loadResult.hybridResult.trace,
+      hybridChunks,
+      rerankedChunks: rerankResult.chunks,
+      rerankTrace: rerankResult.trace,
+      permissionFilter: permissionFiltered.trace,
+      rerankLatencyMs,
+    });
 
     return {
       query: searchInput.query,
@@ -445,14 +470,13 @@ export class KnowledgeSearchService {
       retrievalTrace: loadResult.hybridResult.trace,
       hybridChunks,
       rerankedChunks: rerankResult.chunks,
-      stageTrace: this.buildStageTrace({
+      stageTrace,
+      degradedChannels: this.buildDegradedChannels({
         rewrite,
+        stageTrace,
         retrievalTrace: loadResult.hybridResult.trace,
-        hybridChunks,
-        rerankedChunks: rerankResult.chunks,
-        rerankTrace: rerankResult.trace,
-        permissionFilter: permissionFiltered.trace,
-        rerankLatencyMs,
+        strategy: searchInput.strategy,
+        rerankDegradedReason: rerankResult.degradedReason,
       }),
     };
   }
@@ -499,8 +523,84 @@ export class KnowledgeSearchService {
       return {
         chunks: fallbackRerankedChunks,
         trace: this.buildRerankTrace(hybridChunks, fallbackRerankedChunks),
+        degradedReason: `Rerank 失败，已使用融合排序：${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
+  }
+
+  private buildDegradedChannels(input: {
+    rewrite: KnowledgeQueryRewriteResult;
+    stageTrace: RetrievalStageTrace;
+    retrievalTrace: KnowledgeHybridRetrievalResult['trace'];
+    strategy: RetrievalStrategy;
+    rerankDegradedReason?: string;
+  }): RetrievalDegradedChannel[] {
+    const degraded: RetrievalDegradedChannel[] = [];
+    const push = (item: RetrievalDegradedChannel) => {
+      if (
+        degraded.some(
+          (existing) =>
+            existing.channel === item.channel && existing.reason === item.reason,
+        )
+      ) {
+        return;
+      }
+      degraded.push(item);
+    };
+
+    if (/失败|超时/.test(input.rewrite.reason)) {
+      push({
+        channel: 'queryRewrite',
+        reason: input.rewrite.reason,
+      });
+    }
+
+    const expectedChannels: Record<KnowledgeRetrievalSource, boolean> = {
+      vector: input.strategy.useVector,
+      keyword: input.strategy.useKeyword,
+      graph: input.strategy.useGraph,
+      memory: Boolean(input.strategy.useMemory),
+      multimodal: Boolean(input.strategy.useMultimodal),
+    };
+
+    for (const channel of Object.keys(expectedChannels) as KnowledgeRetrievalSource[]) {
+      if (!expectedChannels[channel]) continue;
+      const trace = input.stageTrace.channels[channel];
+      if (!trace || trace.backend === 'disabled' || trace.skipped) {
+        push({
+          channel,
+          reason: '策略要求该通道参与检索，但本次未产生有效召回',
+          backend: trace?.backend ?? 'disabled',
+        });
+        continue;
+      }
+      if (trace.error) {
+        push({
+          channel,
+          reason: trace.error,
+          backend: trace.backend,
+        });
+      }
+    }
+
+    if (input.retrievalTrace.some((item) => item.fallbackToPg)) {
+      push({
+        channel: 'keyword',
+        reason: 'Elasticsearch 不可用或检索失败，已回退 PostgreSQL 全文检索',
+        backend: 'pg',
+      });
+    }
+
+    if (input.rerankDegradedReason) {
+      push({
+        channel: 'rerank',
+        reason: input.rerankDegradedReason,
+      });
+    }
+
+    return degraded;
   }
 
   private buildStageTrace(input: {

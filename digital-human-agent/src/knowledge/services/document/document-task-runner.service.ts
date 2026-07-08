@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -16,6 +16,7 @@ import type { UploadTaskExecutionInput } from './document-task.types';
 import { DocumentAsset } from '@/knowledge/entities/document-asset.entity';
 import { DocumentParserService } from './parsers/document-parser.service';
 import type { IngestKnowledgeDocumentOptions } from '@/knowledge/types/knowledge-content.types';
+import { NotificationService } from '@/notification/notification.service';
 
 type TaskPatch = Partial<
   Pick<
@@ -72,6 +73,8 @@ export class DocumentTaskRunnerService {
     @Inject(ObjectStorageProviderToken)
     private readonly storageProvider: ObjectStorageProvider,
     private readonly parserService: DocumentParserService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
   ) {}
 
   async runUploadIngestTask(params: UploadTaskExecutionInput): Promise<void> {
@@ -220,7 +223,13 @@ export class DocumentTaskRunnerService {
         });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        await this.markDocumentFailed(documentId, errMsg);
+        await this.markDocumentFailed(documentId, errMsg, {
+          knowledgeBaseId,
+          filename: file.originalname,
+          ownerId: input.ownerId ?? null,
+          taskId,
+          stage: 'parse',
+        });
         await this.updateStep(taskId, 'parse', {
           status: 'failed',
           error: errMsg,
@@ -314,7 +323,13 @@ export class DocumentTaskRunnerService {
         });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        await this.markDocumentFailed(docId, errMsg);
+        await this.markDocumentFailed(docId, errMsg, {
+          knowledgeBaseId,
+          filename: file.originalname,
+          ownerId: input.ownerId ?? null,
+          taskId,
+          stage: 'index',
+        });
         await this.updateStep(taskId, 'index', {
           status: 'failed',
           error: errMsg,
@@ -424,14 +439,59 @@ export class DocumentTaskRunnerService {
   private async markDocumentFailed(
     documentId: string | null | undefined,
     error: string,
+    context?: {
+      knowledgeBaseId?: string;
+      filename?: string;
+      ownerId?: string | null;
+      taskId?: string;
+      stage?: string;
+    },
   ): Promise<void> {
-    if (!documentId) return;
+    if (documentId) {
+      await this.documentService.updateDocument(documentId, {
+        status: 'failed',
+        processingStage: 'failed',
+        processingError: error,
+      });
+    }
 
-    await this.documentService.updateDocument(documentId, {
-      status: 'failed',
-      processingStage: 'failed',
-      processingError: error,
-    });
+    await this.createDocumentFailedNotification(documentId ?? null, error, context);
+  }
+
+  private async createDocumentFailedNotification(
+    documentId: string | null,
+    error: string,
+    context?: {
+      knowledgeBaseId?: string;
+      filename?: string;
+      ownerId?: string | null;
+      taskId?: string;
+      stage?: string;
+    },
+  ): Promise<void> {
+    if (!this.notificationService) return;
+    try {
+      await this.notificationService.create({
+        ownerId: context?.ownerId ?? null,
+        type: 'document_failed',
+        title: '文档处理失败',
+        message: `${context?.filename ?? '文档'} 处理失败`,
+        payload: {
+          knowledgeId: context?.knowledgeBaseId,
+          documentId,
+          taskId: context?.taskId,
+          stage: context?.stage,
+          filename: context?.filename,
+          error,
+        },
+      });
+    } catch (notifyError) {
+      this.logger.warn(
+        `创建文档失败通知失败：${
+          notifyError instanceof Error ? notifyError.message : String(notifyError)
+        }`,
+      );
+    }
   }
 
   private async markDocumentGraphFailed(

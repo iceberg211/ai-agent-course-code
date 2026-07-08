@@ -66,6 +66,83 @@ describe('KnowledgeGraphService', () => {
     );
   });
 
+  it('getOverview 返回可直接渲染的节点和关系，并按可见 chunk 过滤', async () => {
+    const { service, neo4jGraphService, chunkRepo } = createService();
+    const qb = createQueryBuilderMock([{ id: 'chunk-1' }]);
+    chunkRepo.createQueryBuilder.mockReturnValue(qb);
+    neo4jGraphService.query.mockResolvedValue([
+      {
+        edgeKey: 'edge-1',
+        sourceKey: 'node-a',
+        sourceName: '乔峰',
+        sourceType: 'Entity',
+        sourceEntityType: 'person',
+        targetKey: 'node-b',
+        targetName: '契丹',
+        targetType: 'Entity',
+        targetEntityType: 'group',
+        relationType: 'MENTIONS',
+        relationLabel: '提到',
+        confidence: 0.9,
+        documentId: 'doc-1',
+        chunkId: 'chunk-1',
+        evidenceText: '乔峰是契丹人。',
+      },
+    ]);
+
+    const result = await service.getOverview('kb-1', 20, {
+      ownerId: 'user-1',
+      department: '研发部',
+      role: 'user',
+    });
+
+    expect(neo4jGraphService.query).toHaveBeenCalledWith(
+      expect.stringContaining('c.id IN $chunkIds'),
+      expect.objectContaining({
+        knowledgeId: 'kb-1',
+        chunkIds: ['chunk-1'],
+        limit: 20,
+      }),
+    );
+    expect(result).toEqual({
+      nodes: [
+        {
+          id: 'node-a',
+          label: '乔峰',
+          type: 'Entity',
+          entityType: 'person',
+          degree: 1,
+        },
+        {
+          id: 'node-b',
+          label: '契丹',
+          type: 'Entity',
+          entityType: 'group',
+          degree: 1,
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-1',
+          source: 'node-a',
+          target: 'node-b',
+          label: '提到',
+          relationType: 'MENTIONS',
+          confidence: 0.9,
+          documentId: 'doc-1',
+          chunkId: 'chunk-1',
+          evidenceText: '乔峰是契丹人。',
+        },
+      ],
+      stats: {
+        nodeCount: 2,
+        edgeCount: 1,
+        visibleChunkCount: 1,
+        enabled: true,
+      },
+    });
+  });
+
   it('rebuildGraph 只重建当前版本，并统计单文档同步失败', async () => {
     const { service, documentRepo, chunkRepo } = createService();
     documentRepo.find.mockResolvedValue([

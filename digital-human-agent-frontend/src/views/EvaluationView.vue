@@ -110,10 +110,10 @@
                     <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-primary/45 hover:text-primary hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" title="通过审核" @click="reviewCase(item, 'passed')">
                       <CheckIcon :size="13" />
                     </button>
-                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-55/5 disabled:opacity-50 disabled:cursor-not-allowed" title="驳回/不通过" @click="reviewCase(item, 'failed')">
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50 disabled:opacity-50 disabled:cursor-not-allowed" title="驳回/不通过" @click="reviewCase(item, 'failed')">
                       <XIcon :size="13" />
                     </button>
-                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-55/5 disabled:opacity-50 disabled:cursor-not-allowed" title="删除" @click="deleteCase(item)">
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50 disabled:opacity-50 disabled:cursor-not-allowed" title="删除" @click="deleteCase(item)">
                       <Trash2Icon :size="13" />
                     </button>
                   </div>
