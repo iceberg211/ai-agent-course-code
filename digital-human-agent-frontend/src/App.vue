@@ -1,9 +1,9 @@
 <template>
-  <div class="app-root" :class="{ 'no-nav': route.meta.hideNav }">
+  <div class="h-full flex bg-transparent overflow-hidden" :class="route.meta.hideNav ? 'block' : 'flex-row max-sm:flex-col'">
     <AppNav v-if="!route.meta.hideNav" />
-    <div class="app-main-container">
+    <div class="flex flex-col h-full bg-transparent flex-1 min-w-0" :class="route.meta.hideNav ? 'w-full h-full' : 'max-sm:h-[calc(100%-68px)]'">
       <AppHeader v-if="!route.meta.hideNav" />
-      <RouterView class="app-content-view" />
+      <RouterView class="flex-1 min-h-0 overflow-y-auto" />
     </div>
   </div>
 </template>
@@ -16,52 +16,6 @@ import AppHeader from '@/components/knowledge-base/AppHeader.vue'
 const route = useRoute()
 </script>
 
-<style>
-.app-root {
-  height: 100%;
-  display: flex;
-  flex-direction: row;
-  background: transparent;
-  overflow: hidden;
-}
-.app-root.no-nav {
-  display: block;
-}
-.app-root > :last-child {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-}
-.app-root.no-nav > :last-child {
-  width: 100%;
-  height: 100%;
-}
-
-/* 主内容包裹区 */
-.app-main-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: transparent;
-}
-
-/* 核心内容视口区 */
-.app-content-view {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-@media (max-width: 640px) {
-  .app-root {
-    flex-direction: column;
-  }
-  .app-root.no-nav {
-    display: block;
-  }
-  .app-root > :last-child {
-    height: calc(100% - 68px); /* 减去底部手机胶囊导航的高度 */
-  }
-}
+<style scoped>
+/* 全局根布局已通过 Tailwind 响应式与动态 class 替代，无须局部样式 */
 </style>

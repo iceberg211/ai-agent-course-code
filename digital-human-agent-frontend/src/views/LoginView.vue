@@ -1,51 +1,48 @@
 <template>
-  <div class="login-container">
-    <!-- 保留科技感发光球，但改为与亮色契合的淡粉紫和淡青蓝 -->
-    <div class="glow-orb orb-1"></div>
-    <div class="glow-orb orb-2"></div>
-    <div class="glow-orb orb-3"></div>
+  <div class="relative w-full h-screen flex justify-center items-center bg-transparent overflow-hidden">
+    <!-- 发光球动画 -->
+    <div class="absolute rounded-full blur-[120px] opacity-12 pointer-events-none w-[450px] h-[450px] bg-gradient-to-r from-indigo-400 to-purple-400 -top-[5%] left-[5%] animate-[floatOrb_22s_ease-in-out_infinite_alternate]"></div>
+    <div class="absolute rounded-full blur-[120px] opacity-12 pointer-events-none w-[500px] h-[500px] bg-gradient-to-r from-blue-400 to-sky-400 -bottom-[10%] right-[5%] animate-[floatOrb_26s_ease-in-out_infinite_alternate-reverse]"></div>
+    <div class="absolute rounded-full blur-[120px] opacity-12 pointer-events-none w-[350px] h-[350px] bg-gradient-to-r from-indigo-400 to-blue-400 top-[35%] left-[45%] animate-[floatOrb_18s_ease-in-out_infinite_alternate]"></div>
 
     <!-- 登录注册卡片：高通透亮色磨砂玻璃 -->
-    <div class="login-card">
-      <div class="card-header">
-        <h1 class="logo-text">Digital Human Agent</h1>
-        <p class="subtitle-text">
+    <div class="relative w-[420px] p-11 pb-9 bg-white/45 backdrop-blur-[20px] border border-white/70 rounded-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.04),0_20px_40px_-15px_rgba(59,130,246,0.08),inset_0_1px_0_0_rgba(255,255,255,0.6)] z-10 transition-all duration-300 hover:border-white/95 hover:shadow-[0_12px_35px_-10px_rgba(0,0,0,0.06),0_25px_45px_-12px_rgba(59,130,246,0.12)]">
+      <div class="text-center mb-8">
+        <h1 class="text-[26px] font-bold tracking-tight mb-2 bg-gradient-to-br from-text-main to-primary bg-clip-text text-transparent">Digital Human Agent</h1>
+        <p class="text-xs text-text-muted leading-relaxed">
           {{ isLogin ? '探索下一代多模态 RAG 对话智能体' : '开启您的智能代理之旅' }}
         </p>
       </div>
 
       <!-- Tab 切换 -->
-      <div class="tab-wrapper">
+      <div class="relative flex bg-blue-300/8 border border-blue-300/15 p-[3px] rounded-md mb-7">
         <button
-          class="tab-btn"
-          :class="{ active: isLogin }"
+          class="relative flex-1 bg-transparent border-none text-text-muted text-[13.5px] font-medium py-2 cursor-pointer z-10 transition-colors duration-300"
+          :class="{ 'text-primary font-semibold': isLogin }"
           @click="switchTab(true)"
         >
           登录账户
         </button>
         <button
-          class="tab-btn"
-          :class="{ active: !isLogin }"
+          class="relative flex-1 bg-transparent border-none text-text-muted text-[13.5px] font-medium py-2 cursor-pointer z-10 transition-colors duration-300"
+          :class="{ 'text-primary font-semibold': !isLogin }"
           @click="switchTab(false)"
         >
           快速注册
         </button>
         <!-- 滚动滑块背景 -->
         <div
-          class="tab-slider"
+          class="absolute top-[3px] bottom-[3px] left-[3px] w-[calc(50%-3px)] bg-white rounded-[10px] z-[1] shadow-[0_2px_8px_rgba(59,130,246,0.1)] transition-transform duration-300 border border-white/80"
           :style="{ transform: `translateX(${isLogin ? '0%' : '100%'})` }"
         ></div>
       </div>
 
       <!-- 表单区域 -->
-      <form
-        class="form-body"
-        @submit.prevent="handleSubmit"
-      >
-        <div class="input-group">
-          <label for="username">用户名</label>
-          <div class="input-wrapper">
-            <span class="icon">
+      <form class="flex flex-col gap-[18px]" @submit.prevent="handleSubmit">
+        <div class="flex flex-col gap-1.5 text-left">
+          <label for="username" class="text-[12.5px] font-medium text-text-secondary">用户名</label>
+          <div class="relative flex items-center">
+            <span class="absolute left-[14px] text-text-muted flex items-center justify-center transition-colors duration-300 pointer-events-none">
               <!-- Lucide User Icon -->
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
             </span>
@@ -53,6 +50,7 @@
               id="username"
               v-model="form.username"
               type="text"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请输入您的用户名"
               autocomplete="username"
               required
@@ -60,10 +58,10 @@
           </div>
         </div>
 
-        <div class="input-group">
-          <label for="password">密码</label>
-          <div class="input-wrapper">
-            <span class="icon">
+        <div class="flex flex-col gap-1.5 text-left">
+          <label for="password" class="text-[12.5px] font-medium text-text-secondary">密码</label>
+          <div class="relative flex items-center">
+            <span class="absolute left-[14px] text-text-muted flex items-center justify-center transition-colors duration-300 pointer-events-none">
               <!-- Lucide Lock Icon -->
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
             </span>
@@ -71,6 +69,7 @@
               id="password"
               v-model="form.password"
               type="password"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请输入您的密码"
               autocomplete="current-password"
               required
@@ -78,13 +77,10 @@
           </div>
         </div>
 
-        <div
-          v-if="!isLogin"
-          class="input-group"
-        >
-          <label for="confirmPassword">确认密码</label>
-          <div class="input-wrapper">
-            <span class="icon">
+        <div v-if="!isLogin" class="flex flex-col gap-1.5 text-left">
+          <label for="confirmPassword" class="text-[12.5px] font-medium text-text-secondary">确认密码</label>
+          <div class="relative flex items-center">
+            <span class="absolute left-[14px] text-text-muted flex items-center justify-center transition-colors duration-300 pointer-events-none">
               <!-- Lucide Check Icon -->
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
             </span>
@@ -92,6 +88,7 @@
               id="confirmPassword"
               v-model="form.confirmPassword"
               type="password"
+              class="w-full bg-white border border-border-main rounded-md py-[11px] px-[14px] pl-10 text-text-main text-[13.5px] outline-none transition-all placeholder-gray-450 focus:border-primary focus:ring-3 focus:ring-border-focus"
               placeholder="请再次确认您的密码"
               autocomplete="new-password"
               required
@@ -103,25 +100,22 @@
         <Transition name="fade-alert">
           <div
             v-if="errorMsg"
-            class="error-alert"
+            class="flex items-center gap-2 bg-red-500/8 border border-red-500/15 p-2 px-3 rounded-md text-error text-[12.5px] leading-relaxed text-left"
           >
-            <span class="alert-icon">
+            <span class="flex-shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
             </span>
-            <span class="alert-text">{{ errorMsg }}</span>
+            <span>{{ errorMsg }}</span>
           </div>
         </Transition>
 
         <!-- 按钮 -->
         <button
           type="submit"
-          class="submit-btn"
+          class="relative bg-[linear-gradient(135deg,#4f46e5_0%,#3b82f6_50%,#06b6d4_100%)] bg-[length:200%_200%] animate-[moveGradient_8s_ease_infinite] border-none rounded-md py-[13px] text-white text-[14.5px] font-semibold cursor-pointer flex justify-center items-center shadow-[0_6px_20px_rgba(59,130,246,0.25)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_10px_25px_rgba(59,130,246,0.35)] active:translate-y-[1px] disabled:opacity-65 disabled:pointer-events-none disabled:-translate-y-0 disabled:shadow-none mt-2"
           :disabled="loading"
         >
-          <span
-            v-if="loading"
-            class="spinner"
-          ></span>
+          <span v-if="loading" class="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin"></span>
           <span v-else>{{ isLogin ? '开启智能对话' : '立即注册账户' }}</span>
         </button>
       </form>
@@ -131,8 +125,8 @@
     <Transition name="toast-slide">
       <div
         v-if="toastMsg"
-        class="toast-popup"
-        :class="toastType"
+        class="fixed top-6 left-1/2 -translate-x-1/2 py-2.5 px-5 rounded-md text-[13.5px] font-medium shadow-[0_8px_24px_rgba(0,0,0,0.08)] z-[999] backdrop-blur-[8px]"
+        :class="toastType === 'success' ? 'bg-emerald-500/10 border border-emerald-500/25 text-success' : 'bg-red-500/10 border border-red-500/25 text-error'"
       >
         {{ toastMsg }}
       </div>
@@ -238,252 +232,9 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
-.login-container {
-  position: relative;
-  width: 100%;
-  height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  /* 移除了原本深色的背景颜色，直接承接 body 既有的网格渐变，保证视觉一体性 */
-  background: transparent;
-  overflow: hidden;
-}
-
-/* 契合系统主色彩的浮动发光球，透明度稍弱以防喧宾夺主 */
-.glow-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(120px);
-  opacity: 0.12;
-  pointer-events: none;
-}
-
-.orb-1 {
-  width: 450px;
-  height: 450px;
-  background: radial-gradient(circle, #818cf8 0%, #c084fc 100%);
-  top: -5%;
-  left: 5%;
-  animation: floatOrb 22s ease-in-out infinite alternate;
-}
-
-.orb-2 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, #60a5fa 0%, #38bdf8 100%);
-  bottom: -10%;
-  right: 5%;
-  animation: floatOrb 26s ease-in-out infinite alternate-reverse;
-}
-
-.orb-3 {
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, #818cf8 0%, #60a5fa 100%);
-  top: 35%;
-  left: 45%;
-  animation: floatOrb 18s ease-in-out infinite alternate;
-}
-
 @keyframes floatOrb {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  100% {
-    transform: translate(60px, 40px) scale(1.05);
-  }
-}
-
-/* 亮色科技感磨砂玻璃卡片 */
-.login-card {
-  position: relative;
-  width: 420px;
-  padding: 44px 36px;
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: var(--radius-xl);
-  box-shadow: 
-    0 10px 30px -10px rgba(0, 0, 0, 0.04),
-    0 20px 40px -15px rgba(59, 130, 246, 0.08),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
-  z-index: 10;
-  transition: transform 0.3s var(--ease-out), border-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
-}
-
-.login-card:hover {
-  border-color: rgba(255, 255, 255, 0.95);
-  box-shadow: 
-    0 12px 35px -10px rgba(0, 0, 0, 0.06),
-    0 25px 45px -12px rgba(59, 130, 246, 0.12);
-}
-
-.card-header {
-  text-align: center;
-  margin-bottom: 32px;
-}
-
-.logo-text {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: var(--text);
-  margin: 0 0 8px 0;
-  background: linear-gradient(135deg, var(--text) 40%, var(--primary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.subtitle-text {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 0;
-  line-height: 1.5;
-}
-
-/* Tab 切换：契合亮色设计 */
-.tab-wrapper {
-  position: relative;
-  display: flex;
-  background: rgba(147, 197, 253, 0.08);
-  border: 1px solid rgba(147, 197, 253, 0.15);
-  padding: 3px;
-  border-radius: var(--radius-md);
-  margin-bottom: 28px;
-}
-
-.tab-btn {
-  position: relative;
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 13.5px;
-  font-weight: 500;
-  padding: 8px 0;
-  cursor: pointer;
-  z-index: 2;
-  transition: color 0.3s var(--ease-out);
-}
-
-.tab-btn.active {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.tab-slider {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc(50% - 3px);
-  background: #ffffff;
-  border-radius: calc(var(--radius-md) - 2px);
-  z-index: 1;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
-  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-}
-
-/* 表单主体 */
-.form-body {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.input-group label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input-wrapper input {
-  width: 100%;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 11px 14px 11px 40px;
-  color: var(--text);
-  font-size: 13.5px;
-  outline: none;
-  transition: border-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
-}
-
-.input-wrapper input::placeholder {
-  color: #a0aec0;
-}
-
-.input-wrapper input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--border-focus);
-}
-
-.input-wrapper .icon {
-  position: absolute;
-  left: 14px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.3s var(--ease-out);
-}
-
-.input-wrapper input:focus + .icon {
-  color: var(--primary);
-}
-
-/* 错误警告框：柔和淡红色磨砂 */
-.error-alert {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.15);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  color: var(--error);
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.error-alert svg {
-  flex-shrink: 0;
-}
-
-/* 提交按钮：采用系统内置的高科技渐变色 */
-.submit-btn {
-  position: relative;
-  background: var(--tech-gradient);
-  background-size: 200% 200%;
-  animation: moveGradient 8s ease infinite;
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 13px;
-  color: #ffffff;
-  font-size: 14.5px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.25);
-  transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
-  margin-top: 8px;
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 40px) scale(1.05); }
 }
 
 @keyframes moveGradient {
@@ -492,69 +243,15 @@ async function handleSubmit() {
   100% { background-position: 0% 50%; }
 }
 
-.submit-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.35);
+.input-wrapper:focus-within .icon {
+  color: var(--color-primary) !important;
 }
 
-.submit-btn:active {
-  transform: translateY(1px);
-}
-
-.submit-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Toast 弹出框样式：高通透毛玻璃 */
-.toast-popup {
-  position: fixed;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 20px;
-  border-radius: var(--radius-md);
-  font-size: 13.5px;
-  font-weight: 500;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  z-index: 999;
-}
-
-.toast-popup.success {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  color: var(--success);
-  backdrop-filter: blur(8px);
-}
-
-.toast-popup.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: var(--error);
-  backdrop-filter: blur(8px);
-}
-
-/* 动画 */
+/* Transitions */
 .fade-alert-enter-active,
 .fade-alert-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-
 .fade-alert-enter-from,
 .fade-alert-leave-to {
   opacity: 0;
@@ -565,7 +262,6 @@ async function handleSubmit() {
 .toast-slide-leave-active {
   transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .toast-slide-enter-from,
 .toast-slide-leave-to {
   opacity: 0;

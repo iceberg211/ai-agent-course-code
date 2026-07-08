@@ -1,39 +1,59 @@
 <template>
-  <section class="chat-empty" :class="`chat-empty--${tone}`" aria-label="问答引导">
-    <div class="chat-empty__icon" aria-hidden="true">
+  <section class="flex-1 min-h-0 m-3 px-6 py-5.5 rounded-2xl border flex flex-col justify-center gap-4.5 shadow-sm text-left"
+           :class="tone === 'warning' ? 'border-amber-500/20 bg-gradient-to-b from-amber-50/10 to-amber-500/5' : tone === 'success' ? 'border-blue-500/20 bg-gradient-to-b from-blue-50/10 to-blue-500/5' : 'border-slate-200/60 bg-gradient-to-b from-white to-slate-50/50'"
+           aria-label="问答引导">
+    <div class="w-13 h-13 rounded-2xl inline-flex items-center justify-center border shrink-0"
+         :class="tone === 'warning' ? 'text-amber-600 bg-amber-50/90 border-amber-250/90 shadow-[0_10px_24px_rgba(217,119,6,0.08)]' : 'text-primary bg-blue-50/92 border-blue-200/90 shadow-[0_10px_24px_rgba(37,99,235,0.08)]'"
+         aria-hidden="true">
       <component :is="iconComponent" :size="26" />
     </div>
 
-    <div class="chat-empty__copy">
-      <p class="chat-empty__eyebrow">{{ eyebrow }}</p>
-      <h2>{{ title }}</h2>
-      <p class="chat-empty__desc">{{ description }}</p>
+    <div class="flex flex-col gap-2.5 max-w-[720px] text-left">
+      <p class="m-0 text-[11px] font-bold tracking-wider uppercase text-text-muted">{{ eyebrow }}</p>
+      <h2 class="m-0 text-xl md:text-2xl font-black text-text-main tracking-tight leading-tight">{{ title }}</h2>
+      <p class="m-0 text-xs md:text-sm leading-relaxed text-text-secondary">{{ description }}</p>
 
-      <ul v-if="steps.length" class="chat-empty__steps" role="list">
-        <li v-for="(step, index) in steps" :key="`${index}-${step}`" class="chat-empty__step">
-          <span class="chat-empty__step-index">{{ index + 1 }}</span>
+      <ul v-if="steps.length" class="list-none grid grid-cols-1 md:grid-cols-3 gap-2.5 p-0 m-0 mt-1.5" role="list">
+        <li v-for="(step, index) in steps" :key="`${index}-${step}`" class="flex items-center gap-2.5 min-h-11 p-2.5 px-3 rounded-xl bg-slate-50/90 border border-slate-200/80 text-xs font-medium text-text-secondary">
+          <span class="w-5.5 h-5.5 rounded-full inline-flex items-center justify-center shrink-0 bg-primary-bg text-primary text-[11px] font-bold">{{ index + 1 }}</span>
           <span>{{ step }}</span>
         </li>
       </ul>
 
-      <div v-if="capabilities.length" class="chat-empty__caps" aria-label="可用能力">
+      <div v-if="capabilities.length" class="flex flex-wrap gap-2" aria-label="可用能力">
         <span
           v-for="capability in capabilities"
           :key="capability"
-          class="chat-empty__cap"
+          class="inline-flex items-center min-h-7 px-2.5 rounded-full bg-blue-50/90 text-primary text-[11.5px] font-bold"
         >
           {{ capability }}
         </span>
+      </div>
+
+      <!-- 推荐引导问题 Prompt Starters -->
+      <div v-if="suggestedQuestions.length" class="mt-3.5 flex flex-col gap-2">
+        <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">推荐您问：</span>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="q in suggestedQuestions"
+            :key="q"
+            type="button"
+            class="px-3.5 py-1.8 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-text-secondary cursor-pointer hover:bg-primary-bg hover:border-primary-muted hover:text-primary transition-all duration-200 shadow-[0_2px_8px_rgba(15,23,42,0.01)] hover:-translate-y-[0.5px]"
+            @click="$emit('select-question', q)"
+          >
+            {{ q }}
+          </button>
+        </div>
       </div>
     </div>
 
     <div
       v-if="primaryActionLabel || secondaryActionLabel"
-      class="chat-empty__actions"
+      class="flex flex-wrap gap-2.5 mt-2"
     >
       <button
         v-if="primaryActionLabel"
-        class="chat-empty__btn chat-empty__btn--primary"
+        class="min-h-10 px-4 rounded-full border border-primary bg-primary text-white text-xs font-bold cursor-pointer transition-all hover:bg-primary-hover hover:border-primary-hover shadow-btn"
         type="button"
         @click="$emit('primary-action')"
       >
@@ -41,7 +61,7 @@
       </button>
       <button
         v-if="secondaryActionLabel"
-        class="chat-empty__btn"
+        class="min-h-10 px-4 rounded-full border border-border-main bg-white text-text-secondary text-xs font-bold cursor-pointer transition-all hover:bg-primary-bg hover:text-primary hover:border-primary-muted"
         type="button"
         @click="$emit('secondary-action')"
       >
@@ -69,17 +89,20 @@ const props = withDefaults(defineProps<{
   capabilities?: string[]
   primaryActionLabel?: string
   secondaryActionLabel?: string
+  suggestedQuestions?: string[]
 }>(), {
   tone: 'default',
   steps: () => [],
   capabilities: () => [],
   primaryActionLabel: '',
   secondaryActionLabel: '',
+  suggestedQuestions: () => [],
 })
 
 defineEmits<{
   (e: 'primary-action'): void
   (e: 'secondary-action'): void
+  (e: 'select-question', question: string): void
 }>()
 
 const iconComponent = computed(() => {
@@ -91,199 +114,5 @@ const iconComponent = computed(() => {
 </script>
 
 <style scoped>
-.chat-empty {
-  flex: 1;
-  min-height: 0;
-  margin: 12px 16px 0;
-  padding: 22px 24px;
-  border-radius: 22px;
-  border: 1px solid var(--border);
-  background:
-    radial-gradient(circle at top right, rgba(191, 219, 254, 0.22), transparent 28%),
-    linear-gradient(180deg, #ffffff, #f7fbff);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 18px;
-  box-shadow: var(--shadow-xs);
-}
-
-.chat-empty--warning {
-  border-color: rgba(245, 158, 11, 0.22);
-  background:
-    radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 30%),
-    linear-gradient(180deg, #fffef8, #fffaf0);
-}
-
-.chat-empty--success {
-  border-color: rgba(59, 130, 246, 0.22);
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.22), transparent 32%),
-    linear-gradient(180deg, #ffffff, #f4faff);
-}
-
-.chat-empty__icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary);
-  background: rgba(239, 246, 255, 0.92);
-  border: 1px solid rgba(191, 219, 254, 0.9);
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
-}
-
-.chat-empty--warning .chat-empty__icon {
-  color: #d97706;
-  background: rgba(255, 247, 237, 0.96);
-  border-color: rgba(253, 186, 116, 0.92);
-  box-shadow: 0 10px 24px rgba(217, 119, 6, 0.08);
-}
-
-.chat-empty__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 720px;
-}
-
-.chat-empty__eyebrow {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.chat-empty__copy h2 {
-  margin: 0;
-  font-size: clamp(24px, 3.3vw, 30px);
-  line-height: 1.2;
-  letter-spacing: -0.03em;
-  color: var(--text);
-}
-
-.chat-empty__desc {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--text-secondary);
-}
-
-.chat-empty__steps {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  padding: 0;
-  margin: 6px 0 0;
-}
-
-.chat-empty__step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.92);
-  border: 1px solid rgba(226, 232, 240, 0.86);
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.chat-empty__step-index {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--primary-bg);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.chat-empty__caps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chat-empty__cap {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(239, 246, 255, 0.9);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.chat-empty__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.chat-empty__btn {
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 700;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
-}
-
-.chat-empty__btn:hover {
-  background: var(--primary-bg);
-  color: var(--primary);
-  border-color: var(--primary-muted);
-}
-
-.chat-empty__btn--primary {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-  box-shadow: var(--shadow-btn);
-}
-
-.chat-empty__btn--primary:hover {
-  background: var(--primary-hover);
-  color: #fff;
-  border-color: var(--primary-hover);
-}
-
-@media (max-width: 720px) {
-  .chat-empty {
-    margin: 10px 12px 0;
-    padding: 18px;
-  }
-
-  .chat-empty__copy h2 {
-    font-size: 22px;
-  }
-
-  .chat-empty__steps {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-empty__actions {
-    flex-direction: column;
-  }
-
-  .chat-empty__btn {
-    width: 100%;
-  }
-}
+/* 本组件已全量改用 Tailwind CSS v4 原子类适配，无须 scoped CSS 样式 */
 </style>

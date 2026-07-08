@@ -1,27 +1,27 @@
 <template>
-  <aside class="app-sidebar" aria-label="侧边主导航">
+  <aside class="relative flex flex-col w-[200px] h-full p-6 px-4 border-r border-slate-200/80 bg-white/65 backdrop-blur-md z-50 shrink-0 transition-all duration-300 max-lg:w-[68px] max-lg:p-6 max-lg:px-2 max-lg:items-center max-sm:fixed max-sm:bottom-3 max-sm:left-3 max-sm:right-3 max-sm:h-14 max-sm:w-[calc(100%-24px)] max-sm:flex-row max-sm:items-center max-sm:justify-around max-sm:px-4 max-sm:rounded-full max-sm:border max-sm:border-slate-200/80 max-sm:shadow-[0_12px_32px_rgba(15,23,42,0.08),0_1px_3px_rgba(15,23,42,0.02)] max-sm:bg-white/85 max-sm:backdrop-blur-20" aria-label="侧边主导航">
     <!-- 顶部 Logo & 产品名称 -->
-    <div class="brand">
-      <div class="brand__logo" aria-hidden="true">
+    <div class="flex items-center gap-2.5 mb-7 max-lg:mb-6 max-lg:justify-center max-sm:hidden">
+      <div class="flex items-center justify-center w-8 h-8 rounded-[10px] bg-[linear-gradient(135deg,#4f46e5_0%,#3b82f6_50%,#06b6d4_100%)] shadow-[0_4px_12px_rgba(59,130,246,0.25)] shrink-0" aria-hidden="true">
         <SparklesIcon :size="16" color="#fff" />
       </div>
-      <div class="brand__text">
-        <span class="brand__title">数字人知识助手</span>
-        <span class="brand__subtitle">Digital Human Agent</span>
+      <div class="flex flex-col text-left max-lg:hidden">
+        <span class="text-[13.5px] font-bold text-text-main tracking-tight whitespace-nowrap">企业 RAG 智能助手</span>
+        <span class="text-[9px] font-semibold text-text-muted uppercase tracking-wider -mt-0.5 whitespace-nowrap">RAG Knowledge Agent</span>
       </div>
     </div>
 
     <!-- 垂直链接导航 -->
-    <nav class="nav-tabs" role="navigation">
+    <nav class="flex flex-col gap-1.5 flex-1 bg-transparent border-none p-0 rounded-none max-sm:flex-row max-sm:w-full max-sm:justify-around max-sm:gap-0" role="navigation">
       <RouterLink
         v-for="item in items"
         :key="item.to"
         :to="item.to"
-        class="nav-tab"
-        active-class="nav-tab--active"
+        class="flex items-center gap-2.5 p-2.5 px-3 border border-transparent rounded-lg text-xs font-semibold text-text-secondary no-underline transition-all duration-200 hover:text-primary hover:bg-primary/4 max-lg:justify-center max-lg:p-2.5 max-lg:w-11 max-lg:h-11 max-sm:p-2 max-sm:px-4 max-sm:rounded-full"
+        active-class="!bg-primary-bg !text-primary !border-blue-200/60"
       >
         <component :is="item.icon" :size="16" aria-hidden="true" />
-        <span class="tab-label">{{ item.label }}</span>
+        <span class="max-lg:hidden max-sm:hidden">{{ item.label }}</span>
       </RouterLink>
     </nav>
   </aside>
@@ -88,159 +88,5 @@ async function loadMenus() {
 </script>
 
 <style scoped>
-.app-sidebar {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 200px;
-  height: 100%;
-  padding: 24px 16px;
-  border-right: 1px solid rgba(226, 232, 240, 0.8);
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  z-index: 50;
-  flex-shrink: 0;
-  transition: width 0.3s var(--ease-out), padding 0.3s var(--ease-out);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 28px;
-}
-
-.brand__logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: var(--tech-gradient);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-  flex-shrink: 0;
-}
-
-.brand__text {
-  display: flex;
-  flex-direction: column;
-  transition: opacity 0.2s ease;
-}
-
-.brand__title {
-  font-size: 13.5px;
-  font-weight: 750;
-  color: var(--text);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-}
-
-.brand__subtitle {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: -1px;
-  white-space: nowrap;
-}
-
-.nav-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  border: none;
-}
-
-.nav-tab {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-decoration: none;
-  transition: all 0.2s var(--ease-out);
-}
-
-.nav-tab:hover {
-  color: var(--primary);
-  background: rgba(59, 130, 246, 0.04);
-}
-
-.nav-tab--active {
-  background: var(--primary-bg) !important;
-  color: var(--primary);
-  border: 1px solid rgba(191, 219, 254, 0.6);
-  box-shadow: none;
-}
-
-/* 平板端适配：收起至 68px */
-@media (max-width: 1024px) and (min-width: 641px) {
-  .app-sidebar {
-    width: 68px;
-    padding: 24px 10px;
-    align-items: center;
-  }
-  .brand {
-    margin-bottom: 24px;
-    justify-content: center;
-  }
-  .brand__text,
-  .tab-label {
-    display: none !important;
-  }
-  .nav-tab {
-    justify-content: center;
-    padding: 10px;
-    width: 44px;
-    height: 44px;
-  }
-}
-
-/* 手机端适配：固定在底部的横向胶囊导航 */
-@media (max-width: 640px) {
-  .app-sidebar {
-    position: fixed;
-    bottom: 12px;
-    left: 12px;
-    right: 12px;
-    height: 56px;
-    width: calc(100% - 24px);
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-around;
-    padding: 0 16px;
-    border-radius: var(--radius-full);
-    border: 1px solid rgba(226, 232, 240, 0.8);
-    box-shadow: 
-      0 12px 32px rgba(15, 23, 42, 0.08),
-      0 1px 3px rgba(15, 23, 42, 0.02);
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-  }
-  .brand,
-  .tab-label {
-    display: none !important;
-  }
-  .nav-tabs {
-    flex-direction: row;
-    width: 100%;
-    justify-content: space-around;
-    gap: 0;
-  }
-  .nav-tab {
-    padding: 8px 16px;
-    border-radius: var(--radius-full);
-  }
-}
+/* 本组件已完全使用 Tailwind 响应式和重要原子类替代，无须任何 scoped css */
 </style>

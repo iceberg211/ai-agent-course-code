@@ -1,19 +1,19 @@
 <template>
-  <main class="rbac-view">
-    <header class="page-head">
+  <main class="p-6 h-full overflow-y-auto bg-transparent text-left flex flex-col gap-6 w-full box-border">
+    <header class="mb-1">
       <div>
-        <h2>系统管理 & 权限矩阵</h2>
-        <p class="subtitle">配置基于角色的访问控制 (RBAC) 与文档级 ACL 白名单</p>
+        <h2 class="text-xl font-extrabold text-text-main tracking-tight m-0">系统管理 & 权限矩阵</h2>
+        <p class="text-xs text-text-muted mt-1">配置基于角色的访问控制 (RBAC) 与文档级 ACL 白名单</p>
       </div>
     </header>
 
     <!-- 功能标签页 -->
-    <div class="rbac-tabs">
+    <div class="flex gap-2 border-b border-border-main mb-1">
       <button 
         v-for="tab in tabs" 
         :key="tab.key" 
-        class="tab-btn" 
-        :class="{ 'tab-btn--active': activeTab === tab.key }"
+        class="relative p-2.5 px-4 text-[13.5px] font-bold text-text-secondary border-none bg-transparent cursor-pointer" 
+        :class="activeTab === tab.key ? 'text-primary after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary' : 'hover:text-primary'"
         @click="activeTab = tab.key"
       >
         {{ tab.label }}
@@ -21,22 +21,22 @@
     </div>
 
     <!-- Tab 1: 角色管理 -->
-    <section v-if="activeTab === 'roles'" class="rbac-section">
-      <div class="section-head">
-        <h3>系统内置角色</h3>
-        <span class="badge badge--primary">{{ permissions.length }} 项权限</span>
+    <section v-if="activeTab === 'roles'" class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] flex flex-col gap-4">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-text-main m-0">系统内置角色</h3>
+        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary-bg text-primary">{{ permissions.length }} 项权限</span>
       </div>
-      <div class="role-grid">
-        <div v-for="r in rolesList" :key="r.id" class="role-card">
-          <header class="role-card-header">
-            <h4>{{ r.name }}</h4>
-            <span class="badge" :class="r.code === 'admin' ? 'badge--danger' : 'badge--primary'">{{ r.code }}</span>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div v-for="r in rolesList" :key="r.id" class="border border-border-main rounded-lg p-4 flex flex-col gap-2 bg-white/40">
+          <header class="flex justify-between items-center">
+            <h4 class="text-sm font-bold text-text-secondary m-0">{{ r.name }}</h4>
+            <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold" :class="r.code === 'admin' ? 'bg-red-50 text-red-700' : 'bg-primary-bg text-primary'">{{ r.code }}</span>
           </header>
-          <p class="desc">{{ r.description }}</p>
-          <div class="perms-list">
-            <h5>关联权限码:</h5>
-            <div class="tags">
-              <span v-for="p in r.permissionCodes" :key="p" class="tag">{{ p }}</span>
+          <p class="text-xs text-text-muted leading-relaxed">{{ r.description }}</p>
+          <div class="flex flex-col">
+            <h5 class="m-0 mb-1.5 text-[10px] text-text-muted">关联权限码:</h5>
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="p in r.permissionCodes" :key="p" class="bg-slate-100 text-slate-700 p-0.5 px-2 rounded-sm text-[10px] font-mono font-semibold">{{ p }}</span>
             </div>
           </div>
         </div>
@@ -44,36 +44,38 @@
     </section>
 
     <!-- Tab 2: 部门管理 -->
-    <section v-if="activeTab === 'departments'" class="rbac-section">
-      <div class="section-head">
-        <h3>企业部门架构</h3>
-        <button class="btn-secondary btn-sm" @click="addDept">
+    <section v-if="activeTab === 'departments'" class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] flex flex-col gap-4">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-text-main m-0">企业部门架构</h3>
+        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" @click="addDept">
           <PlusIcon :size="13" /> 新增部门
         </button>
       </div>
-      <div class="table-container">
-        <table class="rbac-table">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left">
           <thead>
             <tr>
-              <th scope="col">部门ID</th>
-              <th scope="col">部门名称</th>
-              <th scope="col">数据可见层级</th>
-              <th scope="col">管理员角色</th>
-              <th scope="col" class="text-right">操作</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">部门ID</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">部门名称</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">数据可见层级</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">管理员角色</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="dept in departments" :key="dept.id">
-              <td><strong>{{ dept.code }}</strong></td>
-              <td>{{ dept.name }}</td>
-              <td>
-                <span class="status-pill status-pill--passed">{{ dept.parentId ? '子部门' : '一级部门' }}</span>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary"><strong>{{ dept.code }}</strong></td>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">{{ dept.name }}</td>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">
+                <span class="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-[4px] text-[10.5px] font-bold">{{ dept.parentId ? '子部门' : '一级部门' }}</span>
               </td>
-              <td>{{ dept.parentId || '-' }}</td>
-              <td class="text-right cell-actions">
-                <button class="action-btn action-btn--danger" title="删除" @click="removeDept(dept.id)">
-                  <Trash2Icon :size="13" />
-                </button>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">{{ dept.parentId || '-' }}</td>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary text-right">
+                <div class="flex justify-end gap-1.5">
+                  <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50" title="删除" @click="removeDept(dept.id)">
+                    <Trash2Icon :size="13" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -82,43 +84,45 @@
     </section>
 
     <!-- Tab 3: 用户授权分配 -->
-    <section v-if="activeTab === 'users'" class="rbac-section">
-      <div class="section-head">
-        <h3>用户角色分配</h3>
+    <section v-if="activeTab === 'users'" class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] flex flex-col gap-4">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-text-main m-0">用户角色分配</h3>
       </div>
-      <div class="table-container">
-        <table class="rbac-table">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left">
           <thead>
             <tr>
-              <th scope="col">用户 ID</th>
-              <th scope="col">用户名</th>
-              <th scope="col">当前所属角色</th>
-              <th scope="col">所属部门</th>
-              <th scope="col" class="text-right">分配操作</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">用户 ID</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">用户名</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">当前所属角色</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">所属部门</th>
+              <th scope="col" class="p-3.5 px-3 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary text-right">分配操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
-              <td><strong>{{ u.id }}</strong></td>
-              <td>{{ u.username }}</td>
-              <td>
-                <select v-model="u.selectedRole" class="select-sm">
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary"><strong>{{ u.id }}</strong></td>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">{{ u.username }}</td>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">
+                <select v-model="u.selectedRole" class="h-8 px-2 border border-border-main rounded-md text-[11px] bg-white text-text-main outline-none focus:border-primary">
                   <option value="">未分配</option>
                   <option v-for="role in rolesList" :key="role.id" :value="role.code">
                     {{ role.name }} ({{ role.code }})
                   </option>
                 </select>
               </td>
-              <td>
-                <select v-model="u.selectedDepartment" class="select-sm">
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">
+                <select v-model="u.selectedDepartment" class="h-8 px-2 border border-border-main rounded-md text-[11px] bg-white text-text-main outline-none focus:border-primary">
                   <option value="">未分配</option>
                   <option v-for="dept in departments" :key="dept.id" :value="dept.code">
                     {{ dept.name }} ({{ dept.code }})
                   </option>
                 </select>
               </td>
-              <td class="text-right cell-actions">
-                <button class="btn-secondary btn-sm" @click="saveUserAuth(u)">保存授权</button>
+              <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary text-right">
+                <div class="flex justify-end">
+                  <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" @click="saveUserAuth(u)">保存授权</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -201,164 +205,5 @@ async function saveUserAuth(u: EditableUser) {
 </script>
 
 <style scoped>
-.rbac-view {
-  padding: 24px;
-  height: 100%;
-  overflow-y: auto;
-  background: var(--bg-surface);
-}
-
-.page-head {
-  margin-bottom: 24px;
-}
-
-.rbac-tabs {
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
-}
-
-.tab-btn {
-  padding: 10px 16px;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  position: relative;
-}
-
-.tab-btn--active {
-  color: var(--primary);
-}
-
-.tab-btn--active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--primary);
-}
-
-.rbac-section {
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.role-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.role-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.role-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.role-card-header h4 {
-  margin: 0;
-  font-weight: 800;
-}
-
-.role-card .desc {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}
-
-.perms-list h5 {
-  margin: 0 0 6px 0;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tag {
-  background: var(--surface-soft);
-  color: var(--text-secondary);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  font-family: var(--font-mono, monospace);
-  font-weight: 600;
-}
-
-.table-container {
-  overflow-x: auto;
-}
-
-.rbac-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.rbac-table th {
-  padding: 12px;
-  border-bottom: 2px solid var(--border-muted);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.rbac-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--border-muted);
-  font-size: 13px;
-  vertical-align: middle;
-}
-
-.select-sm {
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  background: #fff;
-}
-
-.status-pill--passed {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.cell-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
+/* 系统管理已完全使用 Tailwind CSS 改造，无须 scoped style */
 </style>

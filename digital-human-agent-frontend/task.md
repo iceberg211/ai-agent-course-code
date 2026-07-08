@@ -15,5 +15,11 @@
   - `[x]` 在 `MessageItem.vue` 中集入复制、有用/无用点踩反馈（持久化）及重新生成
   - `[x]` 升级引用气泡 `CitationChips.vue` 点击行为冒泡
   - `[x]` 开发独立的引用详情侧边抽屉 `CitationDetailDrawer.vue` 并集成到 `ChatView.vue`
-- `[x]` 验证与构建
-  - `[x]` 前端 `npm run build` 打包校验
+- `[x]` 任务五：编译分析与打包发布校验
+  - `[x]` 运行 `pnpm type-check` 验证 Vue 单文件组件编译状态
+  - `[x]` 运行 `pnpm build` 进行 CSS 编译产物打包和审查
+- `[x]` 任务六：用户体验与动线文案升级 (UX & Branding Modernization)
+  - `[x]` 重构导航栏与首页 Brand：替换“数字人助手”为“企业 RAG 智能助手”与“RAG 问答与通话”
+  - `[x]` 引入 Prompt Starters：设计引导性推荐问题面板，支持一键载入填充与发送
+  - `[x]` 智能命中高亮：在 SmartSearchView 沙盒中，对原内容动态渲染 query 关键词发光高亮 (Safe HTML Mark)
+  - `[x]` Onboarding 文案提质：在 ChatView 无角色及未关联知识库的空状态中采用更显性与专业的文字向导

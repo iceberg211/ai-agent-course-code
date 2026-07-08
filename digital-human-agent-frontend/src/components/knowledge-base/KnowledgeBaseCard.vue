@@ -1,14 +1,15 @@
 <template>
-  <button class="kb-card" type="button" @click="$emit('open', kb.id)">
-    <div class="kb-card__head">
-      <BookOpenIcon :size="18" color="var(--primary)" aria-hidden="true" />
-      <h3 class="kb-card__name">{{ kb.name }}</h3>
+  <button class="flex flex-col gap-2.5 w-full p-5.5 border border-slate-200/60 rounded-2xl bg-white/75 backdrop-blur-md text-left cursor-pointer transition-all duration-250 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover shadow-card outline-none focus-visible:ring-3 focus-visible:ring-border-focus" type="button" @click="$emit('open', kb.id)">
+    <div class="flex items-center gap-2">
+      <BookOpenIcon :size="16" class="text-primary shrink-0" aria-hidden="true" />
+      <h3 class="m-0 text-sm font-extrabold text-text-main tracking-tight line-clamp-1">{{ kb.name }}</h3>
     </div>
-    <p v-if="kb.description" class="kb-card__desc">{{ kb.description }}</p>
-    <footer class="kb-card__footer">
-      <span class="kb-card__meta">threshold {{ kb.retrievalConfig.threshold }}</span>
-      <span class="kb-card__meta">topK {{ kb.retrievalConfig.finalTopK }}</span>
-      <span v-if="kb.retrievalConfig.rerank" class="kb-card__tag">rerank</span>
+    <p v-if="kb.description" class="m-0 text-xs text-text-secondary leading-relaxed line-clamp-2 min-h-[38px]">{{ kb.description }}</p>
+    <div v-else class="min-h-[38px] text-xs text-text-muted/60 italic">暂无该知识库的相关简介说明。</div>
+    <footer class="flex gap-2 flex-wrap items-center text-[10px] text-text-muted mt-1.5">
+      <span class="font-mono bg-slate-50/80 px-2 py-0.75 rounded-md border border-slate-200/60">threshold {{ kb.retrievalConfig.threshold }}</span>
+      <span class="font-mono bg-slate-50/80 px-2 py-0.75 rounded-md border border-slate-200/60">topK {{ kb.retrievalConfig.finalTopK }}</span>
+      <span v-if="kb.retrievalConfig.rerank" class="px-2 py-0.75 rounded-md bg-blue-50 border border-blue-150/40 text-primary font-bold">rerank</span>
     </footer>
   </button>
 </template>
@@ -22,77 +23,5 @@ defineEmits<{ (e: 'open', kbId: string): void }>()
 </script>
 
 <style scoped>
-.kb-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  padding: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  appearance: none;
-  transition: all 0.25s var(--ease-out);
-}
-.kb-card:hover {
-  border-color: var(--primary-light);
-  transform: translateY(-2px);
-  box-shadow: 
-    0 14px 30px rgba(59, 130, 246, 0.08),
-    0 4px 12px rgba(59, 130, 246, 0.04);
-}
-.kb-card:focus-visible {
-  border-color: var(--primary);
-  box-shadow:
-    0 0 0 3px rgba(37, 99, 235, 0.12),
-    0 14px 30px rgba(59, 130, 246, 0.08);
-}
-.kb-card__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.kb-card__name {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-}
-.kb-card__desc {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.kb-card__footer {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-.kb-card__meta { 
-  font-variant-numeric: tabular-nums; 
-  background: var(--surface-soft);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(226, 232, 240, 0.5);
-}
-.kb-card__tag {
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: rgba(59, 130, 246, 0.08);
-  color: var(--primary);
-  font-weight: 700;
-  border: 1px solid rgba(59, 130, 246, 0.12);
-}
+/* 组件已全量使用 Tailwind CSS v4 适配，无需 scoped 样式 */
 </style>

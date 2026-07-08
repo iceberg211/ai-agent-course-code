@@ -234,6 +234,49 @@
           <p v-else class="empty-feed">暂无高频提问统计</p>
         </article>
       </section>
+
+      <!-- 5. 用户负反馈诊断 (仅管理员可见) -->
+      <section v-if="summary?.lowRatedAnswers?.length" class="grid-row" style="margin-top: 24px;">
+        <article class="feed-card col-12">
+          <header class="feed-card__head">
+            <div class="flex items-center gap-2">
+              <h3 class="m-0">用户负反馈诊断 (Bad Cases)</h3>
+              <span class="badge badge--error text-[10px] font-bold">低分回答</span>
+            </div>
+            <span class="chat-time">追踪用户点踩的回答并一键转化为评测回归用例</span>
+          </header>
+          <div class="overflow-x-auto w-full">
+            <table class="w-full border-collapse text-left">
+              <thead>
+                <tr>
+                  <th scope="col" class="p-3 px-3.5 border-b border-slate-200/60 text-xs font-bold text-text-secondary w-1/4">提问 (Question)</th>
+                  <th scope="col" class="p-3 px-3.5 border-b border-slate-200/60 text-xs font-bold text-text-secondary w-1/2">当时回答 (Answer)</th>
+                  <th scope="col" class="p-3 px-3.5 border-b border-slate-200/60 text-xs font-bold text-text-secondary w-1/6">反馈时间</th>
+                  <th scope="col" class="p-3 px-3.5 border-b border-slate-200/60 text-xs font-bold text-text-secondary w-1/12 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in summary.lowRatedAnswers" :key="item.answerId" class="hover:bg-slate-50/40">
+                  <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-middle font-bold max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap" :title="item.question">
+                    {{ item.question }}
+                  </td>
+                  <td class="p-3 px-3.5 border-b border-slate-200/40 text-[11.5px] text-text-muted align-middle max-w-[400px] overflow-hidden text-ellipsis whitespace-nowrap" :title="item.answer">
+                    {{ item.answer }}
+                  </td>
+                  <td class="p-3 px-3.5 border-b border-slate-200/40 text-[10.5px] text-text-muted align-middle">
+                    {{ formatDateTime(item.createdAt) }}
+                  </td>
+                  <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs align-middle text-right">
+                    <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-md text-[10.5px] font-bold cursor-pointer hover:brightness-104 shadow-btn" type="button" @click="importToEval(item)">
+                      <span>一键转评测</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
     </div>
   </main>
 </template>
@@ -344,6 +387,23 @@ function formatProcessTime(ms?: number): string {
 function latestFailedTrendCount(): number {
   const trend = summary.value?.failedDocumentTrend ?? []
   return trend.length ? trend[trend.length - 1].count : (summary.value?.failedDocumentCount ?? 0)
+}
+
+function formatDateTime(val?: string) {
+  if (!val) return '-'
+  const d = new Date(val)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function importToEval(item: { question: string; answer: string }) {
+  router.push({
+    path: '/evaluation',
+    query: {
+      addQuestion: item.question,
+      expectedAnswer: item.answer,
+    },
+  })
 }
 </script>
 

@@ -1,9 +1,9 @@
 <template>
-  <div class="app-shell">
+  <div class="flex h-full relative overflow-hidden bg-slate-50/85 backdrop-blur-[20px] border border-white/60 rounded-3xl shadow-[0_24px_64px_rgba(15,23,42,0.08),0_4px_16px_rgba(15,23,42,0.04)] max-lg:rounded-2xl">
     <Transition name="sidebar">
       <div
         v-if="historySidebarOpen"
-        class="sidebar-wrapper"
+        class="w-[240px] shrink-0 h-full border-r border-slate-200/60 bg-white/35 overflow-hidden"
       >
         <ConversationHistoryPanel
           :persona-id="personaStore.selectedId || ''"
@@ -15,7 +15,7 @@
     </Transition>
 
     <!-- 中间对话区 -->
-    <main class="chat-main">
+    <main class="flex-1 flex flex-col overflow-hidden bg-transparent">
       <ChatHeader
         :sidebar-open="historySidebarOpen"
         :knowledge-drawer-open="knowledgeDrawerOpen"
@@ -33,16 +33,14 @@
       />
 
       <div
-        class="chat-body"
-        :class="{
-          'chat-body--digital': mode === 'digital-human',
-          'chat-body--drawer-open': citationDrawerOpen || knowledgeDrawerOpen
-        }"
+        class="flex-1 min-h-0 flex"
+        :class="mode === 'digital-human' ? 'flex-row gap-6 p-5 px-6 relative w-full overflow-hidden max-lg:flex-col max-lg:p-3.5 max-lg:px-4 max-lg:gap-5' : 'p-5 px-6'"
       >
         <!-- 数字人视频窗口（仅数字人模式下呈现在左侧） -->
         <DigitalHumanWorkspace
           v-if="mode === 'digital-human'"
-          class="chat-body__stage"
+          class="w-[340px] shrink-0 h-full transition-all duration-300 max-lg:w-full max-lg:h-[280px]"
+          :class="{ 'max-[1300px]:w-[160px]': citationDrawerOpen || knowledgeDrawerOpen }"
           :bind-video="digitalHuman.bindVideo"
           :status="digitalHumanStatus"
           :error="digitalHumanError"
@@ -54,7 +52,7 @@
         />
 
         <!-- 主体聊天记录与控制面板 -->
-        <div class="chat-content-pane">
+        <div class="flex-1 flex flex-col min-h-0 relative w-full bg-white/75 backdrop-blur-[16px] rounded-3xl border border-slate-200/60 shadow-[0_8px_32px_rgba(15,23,42,0.02),inset_0_1px_0_rgba(255,255,255,0.6)] overflow-hidden">
           <ChatEmptyState
             v-if="!sessionStore.historyLoading && conversationMessages.length === 0"
             :eyebrow="emptyStateCard.eyebrow"
@@ -65,18 +63,21 @@
             :capabilities="emptyStateCard.capabilities"
             :primary-action-label="emptyStateCard.primaryAction?.label"
             :secondary-action-label="emptyStateCard.secondaryAction?.label"
+            :suggested-questions="emptyStateCard.suggestedQuestions"
             @primary-action="runChatAction(emptyStateCard.primaryAction)"
             @secondary-action="runChatAction(emptyStateCard.secondaryAction)"
+            @select-question="onSendText"
           />
           <MessageList
             v-else
             :messages="conversationMessages"
             :loading="sessionStore.historyLoading"
+            class="flex-1 m-0 min-h-0 h-full p-4.5 px-5"
             @show-citation-detail="handleShowCitation"
             @regenerate="handleRegenerate"
           />
 
-          <!-- 输入区：统一收纳于聊天控制台面板内底栏，建立一致的边界感 -->
+          <!-- 输入区：统一收纳于聊天控制台面板内底栏 -->
           <ChatComposer
             :disabled="!personaStore.selectedId || !sessionStore.connected"
             :busy="sessionStore.historyLoading || conversationState === 'thinking' || conversationState === 'speaking' || conversationState === 'recording'"
@@ -136,7 +137,6 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePersonaStore } from '@/stores/persona'
 import { useSessionStore } from '@/stores/session'
 import ConversationHistoryPanel from '@/components/chat/ConversationHistoryPanel.vue'
-import type { Persona } from '@/types'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ChatEmptyState from '@/components/chat/ChatEmptyState.vue'
 import DigitalHumanWorkspace from '@/components/chat/DigitalHumanWorkspace.vue'
@@ -145,8 +145,8 @@ import ChatComposer from '@/components/chat/ChatComposer.vue'
 import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowledgeBaseDrawer.vue'
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
-import type { ChatMessage } from '@/types'
 import CitationDetailDrawer from '@/components/chat/CitationDetailDrawer.vue'
+import type { Persona } from '@/types'
 
 type ChatActionType =
   | 'create-persona'
@@ -168,6 +168,7 @@ interface ChatStateCard {
   capabilities?: string[]
   primaryAction?: ChatAction
   secondaryAction?: ChatAction
+  suggestedQuestions?: string[]
 }
 
 // ── Stores（子组件直接消费，无需透传）────────────────────────────────────────
@@ -242,161 +243,119 @@ const focusKnowledgeBaseId = computed(() => {
 const focusKnowledgeBaseName = computed(() => {
   const knowledgeId = focusKnowledgeBaseId.value
   if (!knowledgeId) return ''
-  return knowledgeBaseStore.byId.get(knowledgeId)?.name
-    ?? (knowledgeBaseStore.current?.id === knowledgeId ? knowledgeBaseStore.current.name : '')
+  return knowledgeBaseStore.current?.id === knowledgeId ? knowledgeBaseStore.current.name : ''
 })
 
 const hasMountedKnowledgeBases = computed(
   () => mountedKnowledgeBases.value.length > 0,
 )
 
-const focusKnowledgeBaseMounted = computed(() => {
-  const knowledgeId = focusKnowledgeBaseId.value
-  if (!knowledgeId) return false
-  return mountedKnowledgeBases.value.some((kb) => kb.id === knowledgeId)
-})
-
 const knowledgeSummary = computed(() => {
-  if (!personaStore.selectedId) return '选择知识助手后开始问答'
-  if (loadingMountedKnowledgeBases.value) return '正在读取知识范围…'
-
-  const focusKnowledgeId = focusKnowledgeBaseId.value
-  const mounted = mountedKnowledgeBases.value
-
-  if (focusKnowledgeId) {
-    const mountedTarget = mounted.find((kb) => kb.id === focusKnowledgeId)
-    if (mountedTarget) return `当前正在验证：${mountedTarget.name}`
-    if (focusKnowledgeBaseName.value) return `待挂载验证：${focusKnowledgeBaseName.value}`
-    return '已从知识库工作区进入问答验证'
-  }
-
-  if (mounted.length === 0) return '当前未挂载知识库'
-  if (mounted.length === 1) return `当前回答基于 1 个知识库：${mounted[0].name}`
-  return `当前回答基于 ${mounted.length} 个知识库：${mounted[0].name} 等`
-})
-
-const knowledgeSummaryTone = computed(() => {
-  if (!personaStore.selectedId || loadingMountedKnowledgeBases.value) return 'default'
   if (focusKnowledgeBaseId.value) {
-    return focusKnowledgeBaseMounted.value ? 'active' : 'warning'
+    return `已锁定调试知识库「${focusKnowledgeBaseName.value || '加载中...'}」`
   }
-  return hasMountedKnowledgeBases.value ? 'active' : 'warning'
+  if (loadingMountedKnowledgeBases.value) {
+    return '正在获取角色挂载的知识库…'
+  }
+  if (!hasMountedKnowledgeBases.value) {
+    return '当前角色尚未挂载任何知识库，回答将仅依赖大模型内置知识。'
+  }
+  const names = mountedKnowledgeBases.value.map((kb) => kb.name).join('、')
+  return `当前角色已挂载 ${mountedKnowledgeBases.value.length} 个知识库：${names}。回答将基于检索召回段融合。`
 })
 
 const knowledgeSummaryCompact = computed(() => {
-  if (!personaStore.selectedId) return ''
-  if (loadingMountedKnowledgeBases.value) return '知识范围读取中'
-
   if (focusKnowledgeBaseId.value) {
-    const focusName = focusKnowledgeBaseName.value || '目标知识库'
-    return focusKnowledgeBaseMounted.value
-      ? `验证：${focusName}`
-      : `待挂载：${focusName}`
+    return `已锁定: ${focusKnowledgeBaseName.value || '...'}`
   }
+  if (loadingMountedKnowledgeBases.value) return '正在获取...'
+  if (!hasMountedKnowledgeBases.value) return '未挂载知识'
+  return `挂载了 ${mountedKnowledgeBases.value.length} 个知识库`
+})
 
-  if (!hasMountedKnowledgeBases.value) return '未挂载知识库'
-  if (mountedKnowledgeBases.value.length === 1) return mountedKnowledgeBases.value[0].name
-  return `${mountedKnowledgeBases.value.length} 个知识库`
+const knowledgeSummaryTone = computed(() => {
+  if (focusKnowledgeBaseId.value) return 'warning'
+  if (!hasMountedKnowledgeBases.value) return 'default'
+  return 'success'
 })
 
 const emptyStateCard = computed<ChatStateCard>(() => {
   const persona = personaStore.selectedPersona
-  const personaName = persona?.name || '当前角色'
-  const focusName = focusKnowledgeBaseName.value || '目标知识库'
-
   if (!persona) {
     return {
-      eyebrow: '开始使用',
-      title: '先选择一个知识助手，再开始问答',
-      description: '左侧可以直接选择已有角色，也可以先新建一个角色。选好后，再为它挂载知识库，就能开始文字或语音提问。',
-      tone: 'default',
-      steps: ['创建或选择角色', '为角色挂载知识库', '输入真实问题开始验证'],
-      capabilities: ['知识问答', '语音提问', '数字人播报'],
-      primaryAction: { label: '新建角色', type: 'create-persona' },
-      secondaryAction: { label: '进入知识库', type: 'go-knowledge-base' },
-    }
-  }
-
-  if (loadingMountedKnowledgeBases.value) {
-    return {
-      eyebrow: '准备中',
-      title: `正在读取 ${personaName} 的知识范围`,
-      description: '知识范围确认完成后，就可以直接开始第一轮问答。',
-      tone: 'default',
-      steps: ['读取角色信息', '确认知识范围', '准备问题'],
-    }
-  }
-
-  if (focusKnowledgeBaseId.value && !focusKnowledgeBaseMounted.value) {
-    return {
-      eyebrow: '待完成验证',
-      title: `${focusName} 还没有参与当前会话`,
-      description: '你是从知识库工作区进入验证的，但目标知识库还没挂到当前角色。先完成挂载，再回来提问，结果才会准确。',
+      eyebrow: '配置向导',
+      title: '您好！欢迎使用企业级 RAG 智能助手',
+      description: '要开始对话，请先在顶部左侧选择或新建一个专属于您的 AI 知识分身角色。',
       tone: 'warning',
-      steps: ['打开右侧知识范围', `挂载 ${focusName}`, '返回对话开始验证'],
-      primaryAction: { label: '立即挂载', type: 'open-knowledge-drawer' },
-      secondaryAction: { label: '查看知识库详情', type: 'go-focus-knowledge-base' },
+      steps: ['① 在顶部选择预设的 AI 角色', '② 可在右侧面板为其挂载企业知识库文档', '③ 在底栏输入文字或点击麦克风开启通话'],
+      primaryAction: {
+        label: '立即新建专属知识角色',
+        type: 'create-persona',
+      },
+      suggestedQuestions: [],
+    }
+  }
+
+  if (focusKnowledgeBaseId.value) {
+    return {
+      eyebrow: '知识锁定调试模式',
+      title: `正在验证知识库「${focusKnowledgeBaseName.value || '...'}」`,
+      description: `系统已在 Query 参数中锁定了测试范围。当前所有的对话召回都物理限制在此单一知识库内。`,
+      tone: 'active',
+      capabilities: ['仅召回当前锁定知识库的分片', '不受角色默认挂载知识库范围干扰', '支持随时切换为数字人视频连线'],
+      primaryAction: {
+        label: '去知识库详情看文档',
+        type: 'go-focus-knowledge-base',
+      },
+      suggestedQuestions: ['详细解释此知识库的解析流程', '分析向量初筛阶段的相似度过滤', '测试该文档的一跳图谱关联度'],
     }
   }
 
   if (!hasMountedKnowledgeBases.value) {
     return {
-      eyebrow: '下一步',
-      title: `先为 ${personaName} 挂载知识库`,
-      description: '角色已经准备好，但它还没有业务知识范围。挂载完成后，回答才会真正基于知识库内容生成。',
+      eyebrow: '知识未挂载告警',
+      title: `角色「${persona.name}」已就绪，但尚未关联企业知识`,
+      description: '在没有挂载任何知识库文档的情况下，AI 的回答完全源自基座大模型的通识记忆。',
       tone: 'warning',
-      steps: ['打开右侧知识范围', '选择需要挂载的知识库', '回到输入框开始提问'],
-      primaryAction: { label: '挂载知识库', type: 'open-knowledge-drawer' },
-      secondaryAction: { label: '进入知识库', type: 'go-knowledge-base' },
+      steps: ['① 点击右侧的「知识库 (0)」展开设置', '② 勾选要关联的文档分类或具体知识库', '③ 返回此处输入您的问题即可使用 RAG 检索'],
+      primaryAction: {
+        label: '立即挂载知识库',
+        type: 'open-knowledge-drawer',
+      },
+      secondaryAction: {
+        label: '去管理所有知识库',
+        type: 'go-knowledge-base',
+      },
+      suggestedQuestions: ['如何在线修改分片文本？', '向导式声纹克隆如何工作？'],
     }
   }
 
   return {
-    eyebrow: '已就绪',
-    title: `${personaName} 已准备好开始问答`,
-    description: focusKnowledgeBaseId.value && focusKnowledgeBaseMounted.value
-      ? `当前会话会优先用于验证 ${focusName} 的效果。你可以直接输入真实问题，观察回答和引用是否符合预期。`
-      : '当前知识范围已经准备好，可以直接输入问题，也可以用语音或数字人模式验证表达效果。',
+    eyebrow: 'RAG 检索增强已就绪',
+    title: `与「${persona.name}」开始多模态对话`,
+    description: `系统已为您关联了 ${mountedKnowledgeBases.value.length} 个核心企业知识库（例如：${mountedKnowledgeBases.value.slice(0,2).map(k=>k.name).join('、')}${mountedKnowledgeBases.value.length > 2 ? ' 等' : ''}）。`,
     tone: 'success',
-    capabilities: [
-      '文本提问',
-      sessionStore.connected ? '语音提问' : '语音链路连接中',
-      '数字人播报',
-    ],
-    primaryAction: { label: '管理知识范围', type: 'open-knowledge-drawer' },
-    secondaryAction: focusKnowledgeBaseId.value
-      ? { label: '查看知识库详情', type: 'go-focus-knowledge-base' }
-      : undefined,
+    capabilities: ['支持音视频连线，大模型在 1.2s 内低延迟应答', '支持 RRF 检索融合与 Rerank 语义重排', '支持溯源追溯与引用文档段落展示'],
+    suggestedQuestions: ['检索召回率如何调优？', '混合检索RRF的分数是如何计算的？', 'Neo4j图谱一跳关联是如何召回的？'],
   }
 })
 
-function onPersonaCreated(persona: Persona) {
-  createModalOpen.value = false
-  onSelectPersona(persona.id)
-}
-
-onMounted(() => {
-  if (route.query.useSearchDraft === '1') {
-    const raw = localStorage.getItem('__draft_rag_search')
-    if (raw) {
-      try {
-        const draft = JSON.parse(raw)
-        if (draft.query) {
-          // 开启新会话以装载新的 RAG 上下文并触发回答
-          onNewConversation()
-          setTimeout(() => {
-            void onSendText(draft.query)
-            localStorage.removeItem('__draft_rag_search')
-          }, 500)
-        }
-      } catch (e) {
-        console.error('Failed to load search draft:', e)
-      }
+function runChatAction(act?: ChatAction) {
+  if (!act) return
+  if (act.type === 'create-persona') {
+    createModalOpen.value = true
+  } else if (act.type === 'open-knowledge-drawer') {
+    knowledgeDrawerOpen.value = true
+  } else if (act.type === 'go-knowledge-base') {
+    router.push('/kb')
+  } else if (act.type === 'go-focus-knowledge-base') {
+    if (focusKnowledgeBaseId.value) {
+      router.push(`/kb/${focusKnowledgeBaseId.value}`)
     }
   }
-})
+}
 
-async function refreshMountedKnowledgeBases(personaId: string) {
+async function refreshMountedKnowledgeBases(personaId?: string) {
   if (!personaId) {
     mountedKnowledgeBases.value = []
     return
@@ -410,41 +369,46 @@ async function refreshMountedKnowledgeBases(personaId: string) {
   }
 }
 
-function openKnowledgeBaseWorkspace() {
-  if (focusKnowledgeBaseId.value) {
-    void router.push(`/kb/${focusKnowledgeBaseId.value}`)
-    return
-  }
-  void router.push('/kb')
+function onPersonaCreated(persona: Persona) {
+  createModalOpen.value = false
+  onSelectPersona(persona.id)
 }
 
-function runChatAction(action?: ChatAction) {
-  if (!action) return
-
-  switch (action.type) {
-    case 'create-persona':
-      createModalOpen.value = true
-      break
-    case 'open-knowledge-drawer':
-      knowledgeDrawerOpen.value = true
-      break
-    case 'go-focus-knowledge-base':
-      if (focusKnowledgeBaseId.value) {
-        void router.push(`/kb/${focusKnowledgeBaseId.value}`)
-      } else {
-        openKnowledgeBaseWorkspace()
+onMounted(() => {
+  if (route.query.useSearchDraft === '1') {
+    const raw = localStorage.getItem('__draft_rag_search')
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw)
+        if (draft.query) {
+          onNewConversation()
+          setTimeout(() => {
+            void onSendText(draft.query)
+            localStorage.removeItem('__draft_rag_search')
+          }, 500)
+        }
+      } catch (e) {
+        console.error('Failed to load search draft:', e)
       }
-      break
-    case 'go-knowledge-base':
-      openKnowledgeBaseWorkspace()
-      break
+    }
   }
-}
-
-watch(audioEl, (el) => {
-  audio.initAudioElement(el)
-  digitalHuman.bindAudio(el)
 })
+
+// 监听锁定知识库载入
+watch(
+  () => focusKnowledgeBaseId.value,
+  (id) => {
+    if (id) {
+      void knowledgeBaseHook.getById(id).then((res) => {
+        if (res) {
+          knowledgeBaseStore.setCurrent(res)
+          knowledgeBaseStore.upsert(res)
+        }
+      })
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => personaStore.selectedId,
@@ -473,134 +437,45 @@ watch(
 
 const digitalHumanStatus = computed(() => digitalHuman.status.value)
 const digitalHumanError = computed(() => digitalHuman.lastError.value)
+
+watch(audioEl, (el) => {
+  if (el) {
+    audio.initAudioElement(el)
+    digitalHuman.bindAudio(el)
+  }
+})
 </script>
 
 <style scoped>
-.app-shell {
-  display: flex;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-  background: rgba(248, 250, 252, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: var(--radius-xl);
-  box-shadow:
-    0 24px 64px rgba(15, 23, 42, 0.08),
-    0 4px 16px rgba(15, 23, 42, 0.04);
-}
-
-/* 侧边栏容器 */
-.sidebar-wrapper {
-  width: 240px;
-  flex-shrink: 0;
-  height: 100%;
-  border-right: 1px solid rgba(226, 232, 240, 0.6);
-  background: rgba(255, 255, 255, 0.35);
-  overflow: hidden;
-}
-
-/* 侧边栏进出动画 (ChatGPT 风格平滑推拉) */
+/* 侧边栏进出动画 */
 .sidebar-enter-active {
-  transition: width 0.28s var(--ease-spring), opacity 0.2s ease;
+  transition: width 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.1), opacity 0.2s ease;
   overflow: hidden;
 }
-
 .sidebar-leave-active {
   transition: width 0.22s ease-in, opacity 0.18s ease-in;
   overflow: hidden;
 }
-
 .sidebar-enter-from,
 .sidebar-leave-to {
   width: 0 !important;
   opacity: 0;
 }
 
-.chat-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: transparent;
+/* 知识库抽屉滑入动画 */
+.slide-drawer-enter-active {
+  transition: transform 300ms cubic-bezier(0.175, 0.885, 0.32, 1.1), opacity 200ms ease-out;
+}
+.slide-drawer-leave-active {
+  transition: transform 200ms ease-in, opacity 180ms ease-in;
+}
+.slide-drawer-enter-from,
+.slide-drawer-leave-to {
+  transform: translateX(30px);
+  opacity: 0;
 }
 
-.chat-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 20px 24px;
-}
-
-.chat-content-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  position: relative;
-  width: 100%;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-radius: var(--radius-xl);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  box-shadow: 
-    0 8px 32px rgba(15, 23, 42, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  overflow: hidden;
-}
-/* 核心：数字人分栏独立滚动布局 */
-.chat-body--digital {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: row;
-  gap: 24px;
-  padding: 20px 24px;
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-}
-
-/* 数字人视频容器：外层仅控制骨架，内部组件自行渲染磨砂与阴影，防止出现双层边框重影 */
-.chat-body--digital .chat-body__stage {
-  width: 340px;
-  flex-shrink: 0;
-  height: 100%;
-  transition: width 0.3s var(--ease-spring);
-}
-
-/* 防挤压：当中屏（<1300px）且右侧抽屉拉出时，左侧数字人自动平滑收起至 160px，确保聊天气泡有足够宽度 */
-@media (max-width: 1300px) {
-  .chat-body--digital.chat-body--drawer-open .chat-body__stage {
-    width: 160px;
-  }
-}
-
-/* 数字人模式下的聊天控制台面板：完美复用卡片样式并限定高度 */
-.chat-body--digital .chat-content-pane {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-.chat-body--digital :deep(.message-list) {
-  flex: 1;
-  margin: 0;
-  min-height: 0;
-  height: 100%;
-  padding: 16px 20px;
-}
-
-.chat-body--digital :deep(.chat-empty) {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-}
-
-/* 适配内嵌在卡片底部的输入栏 */
+/* 数字人输入框深度选择适配，确保其在底栏边界完美吻合 */
 .chat-content-pane :deep(.composer-wrap) {
   padding: 10px 20px 16px;
   border-top: 1px solid var(--border-muted);
@@ -608,41 +483,7 @@ const digitalHumanError = computed(() => digitalHuman.lastError.value)
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-
 .chat-content-pane :deep(.composer-pill) {
-  max-width: 100%; /* 卡片内部输入框占满宽度 */
-}
-
-/* ── 知识库抽屉滑入动画 ─────────────────────────────────────────────────────── */
-.slide-drawer-enter-active {
-  transition: transform 300ms var(--ease-spring), opacity 200ms ease-out;
-}
-
-.slide-drawer-leave-active {
-  transition: transform 200ms ease-in, opacity 180ms ease-in;
-}
-
-.slide-drawer-enter-from,
-.slide-drawer-leave-to {
-  transform: translateX(30px);
-  opacity: 0;
-}
-
-@media (max-width: 1024px) {
-  .app-shell {
-    border-radius: var(--radius-lg);
-  }
-
-  .chat-body--digital {
-    display: flex;
-    flex-direction: column;
-    padding: 14px 16px;
-    gap: 20px;
-  }
-
-  .chat-body--digital .chat-body__stage {
-    width: 100%;
-    height: 280px;
-  }
+  max-width: 100%;
 }
 </style>

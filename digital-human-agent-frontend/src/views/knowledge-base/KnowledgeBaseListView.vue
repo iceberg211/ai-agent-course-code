@@ -1,18 +1,18 @@
 <template>
-  <main class="kb-list">
-    <header class="kb-list__head">
-      <h2>知识库</h2>
-      <button class="btn-primary" @click="createOpen = true">
+  <main class="p-8 px-6 h-full overflow-y-auto bg-transparent">
+    <header class="flex items-center justify-between mb-6 text-left">
+      <h2 class="m-0 text-2xl font-extrabold text-text-main tracking-tight">知识库</h2>
+      <button class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-200 hover:-translate-y-[0.5px] hover:brightness-104" @click="createOpen = true">
         <PlusIcon :size="16" />
-        新建
+        <span>新建</span>
       </button>
     </header>
 
-    <div v-if="store.list.length === 0 && !hook.listLoading.value" class="empty">
+    <div v-if="store.list.length === 0 && !hook.listLoading.value" class="p-16 px-8 text-center text-text-muted border border-dashed border-slate-200/90 rounded-xl bg-white/60 backdrop-blur-md text-sm">
       还没有知识库，点右上角"新建"创建第一个
     </div>
 
-    <div v-else class="kb-grid">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       <KnowledgeBaseCard
         v-for="kb in store.list"
         :key="kb.id"
@@ -77,59 +77,5 @@ async function onCreate(payload: { name: string; description?: string }) {
 </script>
 
 <style scoped>
-.kb-list { 
-  padding: 32px 24px; 
-  height: 100%; 
-  overflow-y: auto; 
-  background: transparent;
-}
-.kb-list__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-.kb-list__head h2 { 
-  margin: 0; 
-  font-size: 24px; 
-  font-weight: 800; 
-  color: var(--text);
-  letter-spacing: -0.02em;
-}
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: var(--primary-gradient);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--shadow-btn);
-  transition: all 0.2s ease;
-}
-.btn-primary:hover { 
-  background: var(--primary-hover);
-  box-shadow: var(--shadow-btn-hover);
-  transform: translateY(-1px);
-}
-.kb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-}
-.empty {
-  padding: 64px 32px;
-  text-align: center;
-  color: var(--text-muted);
-  border: 1px dashed rgba(226, 232, 240, 0.9);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  font-size: 14px;
-}
+/* 知识库主列表已完全使用 Tailwind CSS 原子类改造，无须 scoped style */
 </style>

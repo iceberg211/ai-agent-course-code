@@ -1,120 +1,122 @@
 <template>
-  <main class="evaluation-view">
-    <header class="page-head">
+  <main class="p-6 h-full overflow-y-auto bg-transparent text-left flex flex-col gap-6 w-full box-border">
+    <header class="flex justify-between items-center gap-5 mb-1">
       <div>
-        <h2>评估验证</h2>
-        <p class="subtitle">评测多路检索召回率与大模型作答忠实度，确保知识回答可信度</p>
+        <h2 class="text-xl font-extrabold text-text-main tracking-tight m-0">评估验证</h2>
+        <p class="text-xs text-text-muted mt-1">评测多路检索召回率与大模型作答忠实度，确保知识回答可信度</p>
       </div>
-      <div class="head-actions">
-        <select v-model="selectedKbId" class="select-kb" @change="loadEvalCases">
+      <div class="flex items-center gap-3">
+        <select v-model="selectedKbId" class="h-10 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary" @change="loadEvalCases">
           <option value="" disabled>选择要评估的知识库</option>
           <option v-for="kb in kbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
         </select>
-        <button class="btn-primary" :disabled="running || !selectedKbId" @click="runEvaluation">
-          <PlayIcon :size="15" :class="{ 'spin': running }" />
-          {{ running ? '批量评测运行中…' : '运行批量评测' }}
+        <button class="inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-[12.5px] font-bold cursor-pointer shadow-btn transition-all duration-200 hover:brightness-104 hover:-translate-y-[0.5px] disabled:opacity-60 disabled:cursor-not-allowed" :disabled="running || !selectedKbId" @click="runEvaluation">
+          <PlayIcon :size="15" :class="{ 'animate-spin': running }" />
+          <span>{{ running ? '批量评测运行中…' : '运行批量评测' }}</span>
         </button>
       </div>
     </header>
 
     <!-- 如果没有选择知识库 -->
-    <div v-if="!selectedKbId" class="state-placeholder">
-      <ShieldCheckIcon :size="48" class="placeholder-icon" />
-      <h3>请选择目标知识库</h3>
-      <p>选择一个知识库以查看其对应的黄金测试集（Golden Dataset）与最近运行 of 召回评估统计</p>
+    <div v-if="!selectedKbId" class="flex flex-col items-center justify-center p-12 text-center text-text-muted bg-white/65 border border-white/50 rounded-xl gap-3">
+      <ShieldCheckIcon :size="48" class="text-text-muted" />
+      <h3 class="text-sm font-bold text-text-main m-0">请选择目标知识库</h3>
+      <p class="text-xs text-text-muted">选择一个知识库以查看其对应的黄金测试集（Golden Dataset）与最近运行 of 召回评估统计</p>
     </div>
 
     <!-- 评估内容区 -->
-    <div v-else class="eval-layout">
+    <div v-else class="flex flex-col gap-6">
       <!-- 顶部汇总看板 -->
-      <section class="metrics-dashboard">
-        <div class="metric-card">
-          <span class="label">测试用例总数</span>
-          <span class="value">{{ cases.length }}</span>
-          <span class="desc">黄金评测数据集</span>
+      <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="p-5 rounded-xl bg-white border border-border-main flex flex-col gap-1 text-left">
+          <span class="text-xs text-text-muted font-semibold">测试用例总数</span>
+          <span class="text-[28px] font-black text-text-main leading-none">{{ cases.length }}</span>
+          <span class="text-[11px] text-text-secondary mt-1">黄金评测数据集</span>
         </div>
-        <div class="metric-card highlight-green">
-          <span class="label">平均检索命中率 (Hit Rate)</span>
-          <span class="value">{{ formatPercent(avgHitRate) }}</span>
-          <span class="desc">Top-K 覆盖黄金文档率</span>
+        <div class="p-5 rounded-xl border flex flex-col gap-1 text-left border-emerald-500/28 bg-emerald-500/3">
+          <span class="text-xs text-emerald-800 font-semibold">平均检索命中率 (Hit Rate)</span>
+          <span class="text-[28px] font-black text-success leading-none">{{ formatPercent(avgHitRate) }}</span>
+          <span class="text-[11px] text-emerald-700 mt-1">Top-K 黄金片段覆盖率</span>
         </div>
-        <div class="metric-card highlight-blue">
-          <span class="label">黄金召回率 (Golden Recall)</span>
-          <span class="value">{{ formatPercent(avgRecall) }}</span>
-          <span class="desc">语义重排最终覆盖率</span>
+        <div class="p-5 rounded-xl border flex flex-col gap-1 text-left border-blue-500/28 bg-blue-500/3">
+          <span class="text-xs text-blue-800 font-semibold">黄金召回率 (Golden Recall)</span>
+          <span class="text-[28px] font-black text-primary leading-none">{{ formatPercent(avgRecall) }}</span>
+          <span class="text-[11px] text-blue-700 mt-1">语义重排最终覆盖率</span>
         </div>
-        <div class="metric-card" :class="passRateClass">
-          <span class="label">人工验证通过率</span>
-          <span class="value">{{ formatPercent(verifiedPassRate) }}</span>
-          <span class="desc">黄金测试审核通过</span>
+        <div class="p-5 rounded-xl border flex flex-col gap-1 text-left" :class="passRateClass === 'highlight-green' ? 'border-emerald-500/28 bg-emerald-500/3' : passRateClass === 'highlight-blue' ? 'border-blue-500/28 bg-blue-500/3' : 'border-red-500/28 bg-red-500/3'">
+          <span class="text-xs font-semibold" :class="passRateClass === 'highlight-green' ? 'text-emerald-800' : passRateClass === 'highlight-blue' ? 'text-blue-800' : 'text-red-800'">人工验证通过率</span>
+          <span class="text-[28px] font-black leading-none" :class="passRateClass === 'highlight-green' ? 'text-success' : passRateClass === 'highlight-blue' ? 'text-primary' : 'text-error'">{{ formatPercent(verifiedPassRate) }}</span>
+          <span class="text-[11px] mt-1" :class="passRateClass === 'highlight-green' ? 'text-emerald-750' : passRateClass === 'highlight-blue' ? 'text-blue-750' : 'text-red-750'">黄金测试审核通过</span>
         </div>
       </section>
 
       <!-- 核心表格区 -->
-      <section class="list-section">
-        <div class="section-head">
-          <h3>测试用例列表 ({{ cases.length }})</h3>
-          <button class="btn-secondary btn-sm" @click="openCreateModal">
+      <section class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] flex flex-col gap-4">
+        <div class="flex justify-between items-center">
+          <h3 class="text-sm font-bold text-text-main m-0">测试用例列表 ({{ cases.length }})</h3>
+          <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" @click="openCreateModal">
             <PlusIcon :size="13" /> 添加测试用例
           </button>
         </div>
 
-        <div v-if="loading" class="loading-box">
-          <div class="spinner"></div>
+        <div v-if="loading" class="flex flex-col items-center justify-center p-16 bg-white/65 rounded-xl border border-dashed border-border-main text-text-muted text-xs gap-3">
+          <div class="w-7 h-7 border-3 border-blue-500/20 border-t-primary rounded-full animate-spin"></div>
           <p>加载评测清单中…</p>
         </div>
-        <div v-else-if="cases.length === 0" class="empty-box">
+        <div v-else-if="cases.length === 0" class="flex flex-col items-center justify-center p-16 bg-white/65 rounded-xl border border-dashed border-border-main text-text-muted text-xs gap-3">
           <p>该知识库暂未创建测试用例</p>
-          <button class="btn-ghost" @click="openCreateModal">创建首条黄金测试用例</button>
+          <button class="bg-transparent border-none text-primary font-bold cursor-pointer hover:underline" @click="openCreateModal">创建首条黄金测试用例</button>
         </div>
-        <div v-else class="table-container">
-          <table class="eval-table">
+        <div v-else class="overflow-x-auto">
+          <table class="w-full border-collapse text-left">
             <thead>
               <tr>
-                <th scope="col">黄金问题 (Question)</th>
-                <th scope="col">预期答案/参考依据</th>
-                <th scope="col">上次评测答案</th>
-                <th scope="col">检索命中率</th>
-                <th scope="col">LLM 评分</th>
-                <th scope="col">审核状态</th>
-                <th scope="col" class="text-right">操作</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">黄金问题 (Question)</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">预期答案/参考依据</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">上次评测答案</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">检索命中率</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">LLM 评分</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary">审核状态</th>
+                <th scope="col" class="p-3 px-3.5 border-b-2 border-slate-200/60 text-xs font-bold text-text-secondary text-right">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in cases" :key="item.id">
-                <td class="cell-question">
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top max-w-[200px]">
                   <strong>{{ item.question }}</strong>
                 </td>
-                <td class="cell-pre text-muted">{{ item.expectedAnswer || '未提供黄金参考' }}</td>
-                <td class="cell-pre">{{ resolveActualAnswer(item) || '暂无运行记录' }}</td>
-                <td>
-                  <span class="score-badge" :class="scoreClass(resolveHitRate(item))">
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top max-w-[250px] whitespace-pre-wrap font-mono text-[11px] text-text-muted">{{ item.expectedAnswer || '未提供黄金参考' }}</td>
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top max-w-[250px] whitespace-pre-wrap font-mono text-[11px]">{{ resolveActualAnswer(item) || '暂无运行记录' }}</td>
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top">
+                  <span class="inline-flex p-0.75 px-2 rounded-full text-[10.5px] font-bold" :class="scoreClass(resolveHitRate(item)) === 'score-high' ? 'bg-emerald-500/10 text-success' : scoreClass(resolveHitRate(item)) === 'score-mid' ? 'bg-amber-500/10 text-warning' : 'bg-red-500/10 text-error'">
                     {{ formatPercent(resolveHitRate(item)) }}
                   </span>
                 </td>
-                <td>
-                  <span class="score-badge" :class="scoreClass(resolveRecall(item))">
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top">
+                  <span class="inline-flex p-0.75 px-2 rounded-full text-[10.5px] font-bold" :class="scoreClass(resolveRecall(item)) === 'score-high' ? 'bg-emerald-500/10 text-success' : scoreClass(resolveRecall(item)) === 'score-mid' ? 'bg-amber-500/10 text-warning' : 'bg-red-500/10 text-error'">
                     {{ formatPercent(resolveRecall(item)) }}
                   </span>
                 </td>
-                <td>
-                  <span class="status-pill" :class="reviewClass(resolveReviewStatus(item))">
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top">
+                  <span class="inline-flex p-0.75 px-2 rounded-sm text-[10.5px] font-bold" :class="resolveReviewStatus(item) === 'passed' ? 'bg-emerald-100 text-emerald-800' : resolveReviewStatus(item) === 'failed' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'">
                     {{ reviewLabel(resolveReviewStatus(item)) }}
                   </span>
                 </td>
-                <td class="text-right cell-actions">
-                  <button class="action-btn" title="立即运行此例" :disabled="running" @click="runSingleCase(item)">
-                    <PlayIcon :size="13" />
-                  </button>
-                  <button class="action-btn" title="通过审核" @click="reviewCase(item, 'passed')">
-                    <CheckIcon :size="13" />
-                  </button>
-                  <button class="action-btn action-btn--danger" title="驳回/不通过" @click="reviewCase(item, 'failed')">
-                    <XIcon :size="13" />
-                  </button>
-                  <button class="action-btn action-btn--danger" title="删除" @click="deleteCase(item)">
-                    <Trash2Icon :size="13" />
-                  </button>
+                <td class="p-3 px-3.5 border-b border-slate-200/40 text-xs text-text-secondary align-top text-right">
+                  <div class="flex justify-end gap-1">
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-primary/45 hover:text-primary hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" title="立即运行此例" :disabled="running" @click="runSingleCase(item)">
+                      <PlayIcon :size="13" />
+                    </button>
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-primary/45 hover:text-primary hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed" title="通过审核" @click="reviewCase(item, 'passed')">
+                      <CheckIcon :size="13" />
+                    </button>
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-55/5 disabled:opacity-50 disabled:cursor-not-allowed" title="驳回/不通过" @click="reviewCase(item, 'failed')">
+                      <XIcon :size="13" />
+                    </button>
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-55/5 disabled:opacity-50 disabled:cursor-not-allowed" title="删除" @click="deleteCase(item)">
+                      <Trash2Icon :size="13" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -125,26 +127,26 @@
 
     <!-- 创建 Modal -->
     <Teleport to="body">
-      <div v-if="createOpen" class="modal-backdrop" @click.self="createOpen = false">
-        <div class="modal">
-          <header class="modal-head">
-            <h3>添加黄金测试用例</h3>
-            <button class="modal-close" @click="createOpen = false">
+      <div v-if="createOpen" class="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[1000] flex items-center justify-center" @click.self="createOpen = false">
+        <div class="bg-white rounded-xl shadow-[0_20px_25px_-5px_rgba(15,23,42,0.1)] w-[500px] max-w-full overflow-hidden flex flex-col border border-border-main">
+          <header class="p-5 border-b border-border-main flex items-center justify-between bg-slate-50/50">
+            <h3 class="m-0 text-sm font-bold text-text-main">添加黄金测试用例</h3>
+            <button class="bg-transparent border-none text-text-muted cursor-pointer" @click="createOpen = false">
               <XIcon :size="16" />
             </button>
           </header>
-          <form class="modal-body" @submit.prevent="submitCreate">
-            <div class="field">
-              <label class="label">黄金测试提问 <span class="required">*</span></label>
-              <textarea v-model="form.question" rows="3" placeholder="输入用户真实可能提问的典型 query…" required></textarea>
+          <form class="p-5 flex flex-col gap-4 text-left" @submit.prevent="submitCreate">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-bold text-text-secondary">黄金测试提问 <span class="text-error">*</span></label>
+              <textarea v-model="form.question" class="w-full p-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" rows="3" placeholder="输入用户真实可能提问的典型 query…" required></textarea>
             </div>
-            <div class="field">
-              <label class="label">标准黄金答案 / 评测依据文段</label>
-              <textarea v-model="form.expectedAnswer" rows="4" placeholder="大模型作答评测将以本段作为真值（Ground Truth）参考…"></textarea>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-bold text-text-secondary">标准黄金答案 / 评测依据文段</label>
+              <textarea v-model="form.expectedAnswer" class="w-full p-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" rows="4" placeholder="大模型作答评测将以本段作为真值（Ground Truth）参考…"></textarea>
             </div>
-            <footer class="modal-foot">
-              <button class="btn-cancel" type="button" @click="createOpen = false">取消</button>
-              <button class="btn-submit" type="submit" :disabled="submitting">添加</button>
+            <footer class="p-5 border-t border-border-main flex justify-end gap-3 bg-slate-50/50">
+              <button class="h-9 px-4 border border-border-main bg-white rounded-lg text-xs font-semibold text-text-secondary cursor-pointer hover:bg-slate-50" type="button" @click="createOpen = false">取消</button>
+              <button class="h-9 px-5 bg-gradient-to-br from-indigo-500 via-blue-500 to-sky-500 text-white border-none rounded-lg text-xs font-bold cursor-pointer hover:brightness-104 shadow-[0_4px_12px_rgba(99,102,241,0.2)] disabled:opacity-50" type="submit" :disabled="submitting">添加</button>
             </footer>
           </form>
         </div>
@@ -155,7 +157,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   PlayIcon,
   PlusIcon,
@@ -169,6 +171,7 @@ import type { KnowledgeBase, KnowledgeEvalCase } from '@/types'
 
 const kbApi = useKnowledgeBase()
 const route = useRoute()
+const router = useRouter()
 const kbs = ref<KnowledgeBase[]>([])
 const selectedKbId = ref('')
 const cases = ref<KnowledgeEvalCase[]>([])
@@ -215,6 +218,20 @@ onMounted(async () => {
   if (list.length > 0) {
     selectedKbId.value = list.some((kb) => kb.id === routeKbId) ? routeKbId : list[0].id
     void loadEvalCases()
+  }
+
+  const addQuestion = route.query.addQuestion
+  const expectedAnswer = route.query.expectedAnswer
+  if (typeof addQuestion === 'string') {
+    form.value.question = addQuestion
+    form.value.expectedAnswer = typeof expectedAnswer === 'string' ? expectedAnswer : ''
+    createOpen.value = true
+
+    // 清空 URL query 参数，避免刷新时反复弹窗
+    const newQuery = { ...route.query }
+    delete newQuery.addQuestion
+    delete newQuery.expectedAnswer
+    void router.replace({ query: newQuery })
   }
 })
 
@@ -313,10 +330,6 @@ function reviewLabel(status?: string) {
   return labels[status ?? ''] ?? '待审核'
 }
 
-function reviewClass(status?: string) {
-  return `review--${status ?? 'unreviewed'}`
-}
-
 function resolveActualAnswer(item: KnowledgeEvalCase): string {
   return item.lastRunActualAnswer ?? item.last_run_actual_answer ?? ''
 }
@@ -335,219 +348,5 @@ function resolveReviewStatus(item: KnowledgeEvalCase): string {
 </script>
 
 <style scoped>
-.evaluation-view {
-  padding: 24px;
-  height: 100%;
-  overflow-y: auto;
-  background: var(--bg-surface);
-}
-
-.page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.head-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.select-kb {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  background: #fff;
-}
-
-.eval-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.metrics-dashboard {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.metric-card {
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  background: #fff;
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.metric-card .label {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.metric-card .value {
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--text);
-}
-
-.metric-card .desc {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.highlight-green {
-  border-color: rgba(16, 185, 129, 0.28);
-  background: rgba(16, 185, 129, 0.03);
-}
-.highlight-green .value {
-  color: var(--success);
-}
-
-.highlight-blue {
-  border-color: rgba(59, 130, 246, 0.28);
-  background: rgba(59, 130, 246, 0.03);
-}
-.highlight-blue .value {
-  color: var(--primary);
-}
-
-.highlight-red {
-  border-color: rgba(239, 68, 68, 0.28);
-  background: rgba(239, 68, 68, 0.03);
-}
-.highlight-red .value {
-  color: var(--error);
-}
-
-.list-section {
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.table-container {
-  overflow-x: auto;
-}
-
-.eval-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.eval-table th {
-  padding: 12px;
-  border-bottom: 2px solid var(--border-muted);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.eval-table td {
-  padding: 12px;
-  border-bottom: 1px solid var(--border-muted);
-  font-size: 13px;
-  vertical-align: top;
-}
-
-.cell-question {
-  max-width: 200px;
-}
-
-.cell-pre {
-  max-width: 250px;
-  white-space: pre-wrap;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-}
-
-.score-badge {
-  display: inline-flex;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.score-high {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success);
-}
-.score-mid {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--warning);
-}
-.score-low {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--error);
-}
-
-.status-pill {
-  display: inline-flex;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.review--passed {
-  background: #d1fae5;
-  color: #065f46;
-}
-.review--failed {
-  background: #fee2e2;
-  color: #991b1b;
-}
-.review--unreviewed {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.cell-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.loading-box,
-.empty-box,
-.state-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
-  text-align: center;
-  color: var(--text-muted);
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-
-.placeholder-icon {
-  margin-bottom: 16px;
-  color: var(--text-muted);
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* 评测分析已全部使用 Tailwind CSS 原子类替换，无须 scoped style */
 </style>
