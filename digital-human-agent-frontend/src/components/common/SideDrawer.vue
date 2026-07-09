@@ -7,21 +7,19 @@
       @click.self="$emit('close')"
     >
       <aside
-        class="h-full bg-white flex flex-col shadow-[-8px_0_32px_rgba(15,23,42,0.12)] max-w-full"
-        :class="side === 'left' ? 'shadow-[8px_0_32px_rgba(15,23,42,0.12)]' : ''"
+        class="side-drawer"
+        :class="side === 'left' ? 'side-drawer--left' : 'side-drawer--right'"
         :style="{ width }"
         role="dialog"
         :aria-label="title"
       >
-        <header class="p-5 px-6 border-b border-border-main flex items-start justify-between gap-4 bg-slate-50/50">
-          <div class="min-w-0 text-left">
-            <h3 class="m-0 text-sm font-bold text-text-main">{{ title }}</h3>
-            <p v-if="subtitle" class="m-0 mt-1 text-xs text-text-muted truncate" :title="subtitle">
-              {{ subtitle }}
-            </p>
+        <header class="side-drawer__head">
+          <div class="side-drawer__titles">
+            <h3>{{ title }}</h3>
+            <p v-if="subtitle" :title="subtitle">{{ subtitle }}</p>
           </div>
           <button
-            class="bg-transparent border-none text-text-muted cursor-pointer p-1 rounded-md hover:bg-slate-100"
+            class="side-drawer__close"
             type="button"
             aria-label="关闭"
             @click="$emit('close')"
@@ -29,10 +27,10 @@
             <XIcon :size="16" />
           </button>
         </header>
-        <div class="flex-1 overflow-y-auto p-5 px-6">
+        <div class="side-drawer__body">
           <slot />
         </div>
-        <footer v-if="$slots.footer" class="p-4 px-6 border-t border-border-main bg-white">
+        <footer v-if="$slots.footer" class="side-drawer__footer">
           <slot name="footer" />
         </footer>
       </aside>
@@ -62,3 +60,77 @@ defineEmits<{
   (e: 'close'): void
 }>()
 </script>
+
+<style scoped>
+.side-drawer {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  height: 100%;
+  background: #fff;
+}
+
+.side-drawer--right {
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+}
+
+.side-drawer--left {
+  box-shadow: 8px 0 32px rgba(15, 23, 42, 0.12);
+}
+
+.side-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.side-drawer__titles {
+  min-width: 0;
+  text-align: left;
+}
+
+.side-drawer__titles h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.side-drawer__titles p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-drawer__close {
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.side-drawer__close:hover {
+  background: #f1f5f9;
+}
+
+.side-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.side-drawer__footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+</style>

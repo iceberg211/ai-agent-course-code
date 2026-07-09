@@ -84,10 +84,17 @@
   .disabled\:text-text-muted:disabled { color: var(--text-muted); }
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/*
+ * 注意：不要在这里写未分层的 margin/padding 重置。
+ * Tailwind 的间距工具类位于 @layer utilities，会被未分层的 * 重置盖掉，
+ * 导致页面看起来“内边距丢失”。盒模型重置放到 base 层即可。
+ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 }
 
 :root {

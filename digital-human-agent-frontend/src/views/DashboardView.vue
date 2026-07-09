@@ -1,20 +1,20 @@
 <template>
-  <main class="p-6 bg-transparent flex flex-col gap-6 box-border w-full">
+  <main class="p-6 bg-transparent flex flex-col gap-6 box-border w-full min-w-0">
     <!-- 头部：清爽的 Title 和快捷操作 -->
-    <header class="flex items-center justify-between gap-5 mb-1">
-      <div class="dashboard__head-title">
+    <header class="flex items-center justify-between gap-5">
+      <div class="min-w-0">
         <h2 class="m-0 mb-1 text-xl font-extrabold text-text-main tracking-tight text-left">控制台大盘</h2>
         <p class="m-0 text-xs text-text-muted text-left">实时监控您的企业知识底座、问答效能与多模态安全审计指标</p>
       </div>
-      <button class="inline-flex items-center gap-2 p-2.5 px-4.5 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-250 ease-out hover:-translate-y-[1.5px] hover:shadow-btn-hover hover:brightness-103 shrink-0" type="button" @click="router.push('/chat')">
+      <button class="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-250 ease-out hover:-translate-y-px hover:shadow-btn-hover hover:brightness-105 shrink-0" type="button" @click="router.push('/chat')">
         <MessageSquareIcon :size="14" />
         <span>发起数字人通话</span>
       </button>
     </header>
 
     <!-- 1. 系统组件运行状态监控 -->
-    <section class="w-full bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-4.5 flex flex-col gap-3 text-left shadow-card">
-      <div class="flex justify-between items-center">
+    <section class="w-full bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 flex flex-col gap-4 text-left shadow-card">
+      <div class="flex justify-between items-center gap-3">
         <div class="flex items-center gap-2">
           <ShieldAlertIcon v-if="!isSystemAllHealthy" :size="15" class="text-red-500 animate-bounce" />
           <ShieldCheckIcon v-else :size="15" class="text-emerald-500" />
@@ -25,18 +25,24 @@
         </button>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div v-for="(probe, name) in systemHealth?.checks" :key="name" 
-             class="flex flex-col gap-1 p-2.5 px-3 border rounded-lg bg-slate-50/50"
-             :class="probe.status === 'ok' ? 'border-slate-200/60' : 'border-red-500/20 bg-red-500/5'"
+      <div v-if="!systemHealth?.checks" class="min-h-20 flex items-center justify-center text-text-muted text-[11px] border border-dashed border-slate-200 rounded-lg bg-slate-50/50 px-4 py-5">
+        正在获取系统健康指标...
+      </div>
+      <div v-else class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div
+          v-for="(probe, name) in systemHealth.checks"
+          :key="name"
+          class="flex flex-col gap-1.5 p-3 border rounded-lg bg-slate-50/50 min-w-0"
+          :class="probe.status === 'ok' ? 'border-slate-200/60' : 'border-red-500/20 bg-red-500/5'"
         >
           <div class="flex items-center justify-between gap-1.5">
-            <span class="text-[11px] font-extrabold text-text-secondary capitalize">{{ formatComponentName(name) }}</span>
-            <span class="w-1.5 h-1.5 rounded-full"
-                  :class="probe.status === 'ok' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'"
+            <span class="text-[11px] font-extrabold text-text-secondary capitalize truncate">{{ formatComponentName(name) }}</span>
+            <span
+              class="w-1.5 h-1.5 rounded-full shrink-0"
+              :class="probe.status === 'ok' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'"
             />
           </div>
-          <div class="flex items-baseline gap-1 mt-0.5">
+          <div class="flex items-baseline gap-1">
             <strong class="text-xs text-text-main font-bold">
               {{ probe.status === 'ok' ? '运行中' : '故障' }}
             </strong>
@@ -47,9 +53,6 @@
           <span v-if="probe.message" class="text-[9px] text-red-500/80 truncate block w-full" :title="probe.message">
             {{ probe.message }}
           </span>
-        </div>
-        <div v-if="!systemHealth?.checks" class="col-span-6 py-2 text-center text-text-muted text-[11px]">
-          正在获取系统健康指标...
         </div>
       </div>
     </section>

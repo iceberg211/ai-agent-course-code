@@ -1,34 +1,34 @@
 <template>
-  <aside class="relative flex flex-col w-[236px] h-full p-5 px-4 border-r border-slate-200/80 bg-white/72 backdrop-blur-md z-50 shrink-0 transition-all duration-300 max-lg:w-[76px] max-lg:p-5 max-lg:px-2 max-lg:items-center max-sm:fixed max-sm:bottom-3 max-sm:left-3 max-sm:right-3 max-sm:h-14 max-sm:w-[calc(100%-24px)] max-sm:flex-row max-sm:items-center max-sm:justify-around max-sm:px-4 max-sm:rounded-full max-sm:border max-sm:border-slate-200/80 max-sm:shadow-[0_12px_32px_rgba(15,23,42,0.08),0_1px_3px_rgba(15,23,42,0.02)] max-sm:bg-white/90 max-sm:backdrop-blur-[20px]" aria-label="侧边主导航">
+  <aside class="app-nav" aria-label="侧边主导航">
     <!-- 顶部 Logo & 产品名称 -->
-    <div class="flex items-center gap-2.5 mb-7 max-lg:mb-6 max-lg:justify-center max-sm:hidden">
-      <div class="flex items-center justify-center w-8 h-8 rounded-[10px] bg-[linear-gradient(135deg,#4f46e5_0%,#3b82f6_50%,#06b6d4_100%)] shadow-[0_4px_12px_rgba(59,130,246,0.25)] shrink-0" aria-hidden="true">
+    <div class="app-nav__brand">
+      <div class="app-nav__logo" aria-hidden="true">
         <SparklesIcon :size="16" color="#fff" />
       </div>
-      <div class="flex flex-col text-left max-lg:hidden">
-        <span class="text-[13.5px] font-bold text-text-main tracking-tight whitespace-nowrap">企业知识运营台</span>
-        <span class="text-[9px] font-semibold text-text-muted uppercase tracking-wider -mt-0.5 whitespace-nowrap">Knowledge Ops</span>
+      <div class="app-nav__brand-text">
+        <span class="app-nav__title">企业知识运营台</span>
+        <span class="app-nav__subtitle">Knowledge Ops</span>
       </div>
     </div>
 
-    <nav class="flex flex-col gap-4 flex-1 bg-transparent border-none p-0 rounded-none max-sm:flex-row max-sm:w-full max-sm:justify-around max-sm:gap-0" role="navigation">
+    <nav class="app-nav__menu" role="navigation">
       <section
         v-for="group in groupedItems"
         :key="group.key"
-        class="flex flex-col gap-1.5 max-sm:contents"
+        class="app-nav__group"
       >
-        <h2 class="px-3 text-[10px] font-extrabold text-text-muted tracking-wider max-lg:hidden max-sm:hidden">
+        <h2 class="app-nav__group-label">
           {{ group.label }}
         </h2>
         <RouterLink
           v-for="item in group.items"
           :key="item.to"
           :to="item.to"
-          class="flex items-center gap-2.5 p-2.5 px-3 border border-transparent rounded-lg text-xs font-semibold text-text-secondary no-underline transition-all duration-200 hover:text-primary hover:bg-primary/4 max-lg:justify-center max-lg:p-2.5 max-lg:w-11 max-lg:h-11 max-sm:p-2 max-sm:px-4 max-sm:rounded-full"
-          active-class="!bg-primary-bg !text-primary !border-blue-200/60"
+          class="app-nav__link"
+          active-class="app-nav__link--active"
         >
           <component :is="item.icon" :size="16" aria-hidden="true" />
-          <span class="max-lg:hidden max-sm:hidden">{{ item.label }}</span>
+          <span class="app-nav__link-label">{{ item.label }}</span>
         </RouterLink>
       </section>
     </nav>
@@ -113,5 +113,184 @@ async function loadMenus() {
 </script>
 
 <style scoped>
-/* 本组件已完全使用 Tailwind 响应式和重要原子类替代，无须任何 scoped css */
+.app-nav {
+  position: relative;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 236px;
+  height: 100%;
+  padding: 20px 16px;
+  border-right: 1px solid rgba(226, 232, 240, 0.8);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  transition: width 0.25s ease, padding 0.25s ease;
+}
+
+.app-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.app-nav__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #06b6d4 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  flex-shrink: 0;
+}
+
+.app-nav__brand-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-width: 0;
+}
+
+.app-nav__title {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.app-nav__subtitle {
+  margin-top: -2px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.app-nav__menu {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.app-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-nav__group-label {
+  margin: 0;
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.app-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.app-nav__link:hover {
+  color: var(--primary);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.app-nav__link--active {
+  color: var(--primary) !important;
+  background: var(--primary-bg) !important;
+  border-color: rgba(191, 219, 254, 0.6) !important;
+}
+
+.app-nav__link-label {
+  white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  .app-nav {
+    width: 76px;
+    padding: 20px 8px;
+    align-items: center;
+  }
+
+  .app-nav__brand {
+    margin-bottom: 24px;
+    justify-content: center;
+  }
+
+  .app-nav__brand-text,
+  .app-nav__group-label,
+  .app-nav__link-label {
+    display: none;
+  }
+
+  .app-nav__link {
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-nav {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 50;
+    width: calc(100% - 24px);
+    height: 56px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 16px;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.02);
+  }
+
+  .app-nav__brand {
+    display: none;
+  }
+
+  .app-nav__menu {
+    flex-direction: row;
+    width: 100%;
+    justify-content: space-around;
+    gap: 0;
+  }
+
+  .app-nav__group {
+    display: contents;
+  }
+
+  .app-nav__link {
+    width: auto;
+    height: auto;
+    padding: 8px 16px;
+    border-radius: 999px;
+  }
+}
 </style>
