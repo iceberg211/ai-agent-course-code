@@ -51,6 +51,7 @@ import {
 import { APP_NAV_GROUPS, APP_NAV_ITEMS } from '@/common/constants'
 import { useAuthStore } from '@/stores/auth'
 import { apiJson } from '@/api/client'
+import { usePermissions } from '@/hooks/usePermissions'
 
 const iconMap = {
   dashboard: BarChart3Icon,
@@ -64,6 +65,7 @@ const iconMap = {
 } as const
 
 const authStore = useAuthStore()
+const { can, loadPermissions } = usePermissions()
 const allowedMenuPaths = ref<Set<string> | null>(null)
 
 const items = computed(() => {
@@ -73,7 +75,10 @@ const items = computed(() => {
         return allowedMenuPaths.value.has(item.to)
       }
       if (item.to === '/rbac') {
-        return authStore.user?.role === 'admin'
+        return can('rbac:manage') || authStore.user?.role === 'admin'
+      }
+      if (item.to === '/evaluation') {
+        return can('evaluation:manage') || authStore.user?.role === 'admin'
       }
       return true
     })
@@ -92,8 +97,11 @@ const groupedItems = computed(() => {
     .filter((group) => group.items.length > 0)
 })
 
-onMounted(() => {
-  void loadMenus()
+onMounted(async () => {
+  await Promise.all([
+    loadMenus(),
+    loadPermissions()
+  ])
 })
 
 async function loadMenus() {

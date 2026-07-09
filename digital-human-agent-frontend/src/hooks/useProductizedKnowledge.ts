@@ -91,6 +91,45 @@ export function useProductizedKnowledge() {
     return res?.deleted === true
   }
 
+  async function getSystemHealth(): Promise<any> {
+    return apiJson<any>('/api/health')
+  }
+
+  async function listMemories(q?: string): Promise<any[]> {
+    loading.value = true
+    try {
+      const url = q ? `/api/memories?q=${encodeURIComponent(q)}` : '/api/memories'
+      return (await apiJson<any[]>(url)) ?? []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function createMemory(content: string): Promise<any> {
+    loading.value = true
+    try {
+      return await apiJson<any>('/api/memories', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content, category: 'preference', visibility: 'private' }),
+      })
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteMemory(id: string): Promise<boolean> {
+    loading.value = true
+    try {
+      const res = await apiJson<{ deleted: boolean }>(`/api/memories/${id}`, {
+        method: 'DELETE',
+      })
+      return res?.deleted === true
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading,
     getDashboardSummary,
@@ -99,5 +138,9 @@ export function useProductizedKnowledge() {
     listConversationMessages,
     setMessageFeedback,
     deleteConversation,
+    getSystemHealth,
+    listMemories,
+    createMemory,
+    deleteMemory,
   }
 }

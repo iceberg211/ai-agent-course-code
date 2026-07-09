@@ -1,340 +1,368 @@
 <template>
-  <main class="dashboard">
+  <main class="p-6 bg-transparent flex flex-col gap-6 box-border w-full">
     <!-- 头部：清爽的 Title 和快捷操作 -->
-    <PageHeader
-      eyebrow="工作台"
-      title="控制台大盘"
-      description="查看知识资产、处理任务、RAG 质量与系统健康状态。"
-    >
-      <template #actions>
-        <button class="btn-primary" type="button" @click="router.push('/chat')">
-          <MessageSquareIcon :size="14" />
-          <span>发起数字人通话</span>
+    <header class="flex items-center justify-between gap-5 mb-1">
+      <div class="dashboard__head-title">
+        <h2 class="m-0 mb-1 text-xl font-extrabold text-text-main tracking-tight text-left">控制台大盘</h2>
+        <p class="m-0 text-xs text-text-muted text-left">实时监控您的企业知识底座、问答效能与多模态安全审计指标</p>
+      </div>
+      <button class="inline-flex items-center gap-2 p-2.5 px-4.5 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-250 ease-out hover:-translate-y-[1.5px] hover:shadow-btn-hover hover:brightness-103 shrink-0" type="button" @click="router.push('/chat')">
+        <MessageSquareIcon :size="14" />
+        <span>发起数字人通话</span>
+      </button>
+    </header>
+
+    <!-- 1. 系统组件运行状态监控 -->
+    <section class="w-full bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-4.5 flex flex-col gap-3 text-left shadow-card">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <ShieldAlertIcon v-if="!isSystemAllHealthy" :size="15" class="text-red-500 animate-bounce" />
+          <ShieldCheckIcon v-else :size="15" class="text-emerald-500" />
+          <strong class="text-xs font-bold text-text-main">三方系统服务连接状态</strong>
+        </div>
+        <button class="bg-transparent border-none text-primary text-[11px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="loadData">
+          重新检测
         </button>
-      </template>
-    </PageHeader>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div v-for="(probe, name) in systemHealth?.checks" :key="name" 
+             class="flex flex-col gap-1 p-2.5 px-3 border rounded-lg bg-slate-50/50"
+             :class="probe.status === 'ok' ? 'border-slate-200/60' : 'border-red-500/20 bg-red-500/5'"
+        >
+          <div class="flex items-center justify-between gap-1.5">
+            <span class="text-[11px] font-extrabold text-text-secondary capitalize">{{ formatComponentName(name) }}</span>
+            <span class="w-1.5 h-1.5 rounded-full"
+                  :class="probe.status === 'ok' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'"
+            />
+          </div>
+          <div class="flex items-baseline gap-1 mt-0.5">
+            <strong class="text-xs text-text-main font-bold">
+              {{ probe.status === 'ok' ? '运行中' : '故障' }}
+            </strong>
+            <span v-if="probe.latencyMs !== undefined" class="text-[9.5px] text-text-muted ml-1">
+              {{ Math.round(probe.latencyMs) }}ms
+            </span>
+          </div>
+          <span v-if="probe.message" class="text-[9px] text-red-500/80 truncate block w-full" :title="probe.message">
+            {{ probe.message }}
+          </span>
+        </div>
+        <div v-if="!systemHealth?.checks" class="col-span-6 py-2 text-center text-text-muted text-[11px]">
+          正在获取系统健康指标...
+        </div>
+      </div>
+    </section>
 
     <!-- 新手指引：快捷操作路径 (3列，每列 col-4) -->
-    <section class="grid-row" aria-label="快捷向导">
-      <div class="quick-card col-4" @click="router.push('/documents')">
-        <div class="quick-card__icon bg-step1">
+    <section class="grid grid-cols-12 gap-6 w-full box-border" aria-label="快捷向导">
+      <div class="flex flex-col items-start p-5 rounded-lg bg-white/70 border border-slate-200/60 cursor-pointer transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)] text-left col-span-12 lg:col-span-4 group" @click="router.push('/documents')">
+        <div class="flex items-center justify-center w-8 h-8 rounded-[9px] mb-3 bg-primary/8 text-primary">
           <PlusIcon :size="15" />
         </div>
         <div class="quick-card__info">
-          <h4>① 录入企业知识</h4>
-          <p>支持 PDF 及音视频，后台自动进行分片和解析入库任务。</p>
+          <h4 class="m-0 mb-1.5 text-sm font-bold text-text-main">① 录入企业知识</h4>
+          <p class="m-0 mb-3.5 text-xs text-text-muted leading-[1.55] min-h-[38px]">支持 PDF 及音视频，后台自动进行分片和解析入库任务。</p>
         </div>
-        <span class="quick-card__link">立即导入 →</span>
+        <span class="text-[11.5px] font-bold text-primary mt-auto transition-transform duration-200 group-hover:translate-x-0.5">立即导入 →</span>
       </div>
 
-      <div class="quick-card col-4" @click="router.push('/search')">
-        <div class="quick-card__icon bg-step2">
+      <div class="flex flex-col items-start p-5 rounded-lg bg-white/70 border border-slate-200/60 cursor-pointer transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)] text-left col-span-12 lg:col-span-4 group" @click="router.push('/search')">
+        <div class="flex items-center justify-center w-8 h-8 rounded-[9px] mb-3 bg-purple-500/8 text-purple-600">
           <SearchIcon :size="15" />
         </div>
         <div class="quick-card__info">
-          <h4>② 检索关联资产</h4>
-          <p>实时调参，洞察多路 RRF 融合与重排 Trace 轨迹。</p>
+          <h4 class="m-0 mb-1.5 text-sm font-bold text-text-main">② 检索关联资产</h4>
+          <p class="m-0 mb-3.5 text-xs text-text-muted leading-[1.55] min-h-[38px]">实时调参，洞察多路 RRF 融合与重排 Trace 轨迹。</p>
         </div>
-        <span class="quick-card__link">检索测试 →</span>
+        <span class="text-[11.5px] font-bold text-primary mt-auto transition-transform duration-200 group-hover:translate-x-0.5">检索测试 →</span>
       </div>
 
-      <div class="quick-card col-4" @click="router.push('/chat')">
-        <div class="quick-card__icon bg-step3">
+      <div class="flex flex-col items-start p-5 rounded-lg bg-white/70 border border-slate-200/60 cursor-pointer transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)] text-left col-span-12 lg:col-span-4 group" @click="router.push('/chat')">
+        <div class="flex items-center justify-center w-8 h-8 rounded-[9px] mb-3 bg-teal-500/8 text-teal-600">
           <MessageSquareIcon :size="15" />
         </div>
         <div class="quick-card__info">
-          <h4>③ 数字人对话</h4>
-          <p>与您的专属 3D/2D 虚拟分身建立高拟真音视频通话。</p>
+          <h4 class="m-0 mb-1.5 text-sm font-bold text-text-main">③ 数字人对话</h4>
+          <p class="m-0 mb-3.5 text-xs text-text-muted leading-[1.55] min-h-[38px]">与您的专属 3D/2D 虚拟分身建立高拟真音视频通话。</p>
         </div>
-        <span class="quick-card__link">建立连线 →</span>
+        <span class="text-[11.5px] font-bold text-primary mt-auto transition-transform duration-200 group-hover:translate-x-0.5">建立连线 →</span>
       </div>
     </section>
 
     <!-- 2. 数据加载时的 Skeleton 骨架屏占位 -->
-    <div v-if="loading && !summary" class="skeleton-wrapper" aria-label="正在加载系统指标">
-      <div class="grid-row">
-        <div v-for="i in 3" :key="i" class="col-4 skeleton-pulse" style="height: 110px; border-radius: 12px" />
-      </div>
-      <div class="grid-row">
-        <div v-for="i in 4" :key="i" class="col-3 skeleton-pulse" style="height: 120px; border-radius: 12px" />
-      </div>
-      <div class="grid-row">
-        <div class="col-6 skeleton-pulse" style="height: 280px; border-radius: 12px" />
-        <div class="col-6 skeleton-pulse" style="height: 280px; border-radius: 12px" />
-      </div>
-    </div>
+    <LoadingSkeleton v-if="loading && !summary" :rows="5" :row-height="110" label="正在加载系统指标" />
 
     <!-- 3. 数据拉取失败提示 -->
-    <div v-else-if="!summary" class="error-state" role="alert">
-      <AlertCircleIcon :size="32" class="error-icon" />
-      <p>首页大盘数据加载失败，可能由于本地后端连接中断，请检查服务状态。</p>
-      <button class="btn-ghost" type="button" @click="loadData">重新加载</button>
-    </div>
+    <ErrorState
+      v-else-if="!summary"
+      title="首页大盘数据加载失败"
+      description="可能由于本地后端连接中断，请检查服务状态后重试。"
+      @retry="loadData"
+    />
 
     <!-- 4. 实体仪表盘内容 -->
-    <div v-else class="dashboard__body">
+    <div v-else class="flex flex-col gap-6 w-full">
       <!-- 4 个精心设计的大版块核心指标卡片 (4列，每列 col-3) -->
-      <section class="grid-row" aria-label="核心指标看板">
+      <section class="grid grid-cols-12 gap-6 w-full box-border" aria-label="核心指标看板">
         <!-- 卡片 1：知识库资产 -->
-        <div class="stat-card-opt col-3">
-          <div class="stat-card-opt__header">
-            <span class="title">知识库资产</span>
-            <LibraryIcon :size="15" class="icon-blue" />
+        <div class="flex flex-col p-4.5 px-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-lg shadow-card transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover text-left col-span-12 md:col-span-6 lg:col-span-3">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-[11px] font-bold text-text-muted uppercase tracking-[0.03em]">知识库资产</span>
+            <LibraryIcon :size="15" class="text-blue-500" />
           </div>
-          <div class="stat-card-opt__body">
-            <div class="metric">
-              <strong class="number">{{ summary?.knowledgeBaseCount ?? 0 }}</strong>
-              <span class="unit">个知识库</span>
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline gap-1.5">
+              <strong class="text-[28px] font-extrabold text-text-main leading-none">{{ summary?.knowledgeBaseCount ?? 0 }}</strong>
+              <span class="text-[11px] font-bold text-text-secondary">个知识库</span>
             </div>
-            <div class="sub-metrics">
-              <span>文档：<strong>{{ summary?.documentCount ?? 0 }}</strong> 篇</span>
-              <span class="separator">|</span>
-              <span>分片：<strong>{{ summary?.chunkCount ?? 0 }}</strong> 段</span>
+            <div class="text-[11.5px] text-text-muted flex gap-1.5 items-center">
+              <span>文档：<strong class="text-text-secondary font-bold">{{ summary?.documentCount ?? 0 }}</strong> 篇</span>
+              <span class="text-slate-200/80">|</span>
+              <span>分片：<strong class="text-text-secondary font-bold">{{ summary?.chunkCount ?? 0 }}</strong> 段</span>
             </div>
           </div>
         </div>
 
         <!-- 卡片 2：会话与交互 -->
-        <div class="stat-card-opt col-3">
-          <div class="stat-card-opt__header">
-            <span class="title">会话与交互</span>
-            <MessageSquareIcon :size="15" class="icon-teal" />
+        <div class="flex flex-col p-4.5 px-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-lg shadow-card transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover text-left col-span-12 md:col-span-6 lg:col-span-3">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-[11px] font-bold text-text-muted uppercase tracking-[0.03em]">会话与交互</span>
+            <MessageSquareIcon :size="15" class="text-teal-500" />
           </div>
-          <div class="stat-card-opt__body">
-            <div class="metric">
-              <strong class="number">{{ summary?.conversationCount ?? 0 }}</strong>
-              <span class="unit">次会话</span>
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline gap-1.5">
+              <strong class="text-[28px] font-extrabold text-text-main leading-none">{{ summary?.conversationCount ?? 0 }}</strong>
+              <span class="text-[11px] font-bold text-text-secondary">次会话</span>
             </div>
-            <div class="sub-metrics">
-              <span>消息总数：<strong>{{ summary?.messageCount ?? 0 }}</strong> 条</span>
+            <div class="text-[11.5px] text-text-muted flex gap-1.5 items-center">
+              <span>消息总数：<strong class="text-text-secondary font-bold">{{ summary?.messageCount ?? 0 }}</strong> 条</span>
             </div>
           </div>
         </div>
 
         <!-- 卡片 3：检索与系统时延 -->
-        <div class="stat-card-opt col-3">
-          <div class="stat-card-opt__header">
-            <span class="title">平均问答时延</span>
-            <SparklesIcon :size="15" class="icon-indigo" />
+        <div class="flex flex-col p-4.5 px-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-lg shadow-card transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover text-left col-span-12 md:col-span-6 lg:col-span-3">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-[11px] font-bold text-text-muted uppercase tracking-[0.03em]">平均问答时延</span>
+            <SparklesIcon :size="15" class="text-indigo-500" />
           </div>
-          <div class="stat-card-opt__body">
-            <div class="metric">
-              <strong class="number">{{ formatLatency(summary?.averageLatencyMs) }}</strong>
-              <span class="unit">秒</span>
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline gap-1.5">
+              <strong class="text-[28px] font-extrabold text-text-main leading-none">{{ formatLatency(summary?.averageLatencyMs) }}</strong>
+              <span class="text-[11px] font-bold text-text-secondary">秒</span>
             </div>
-            <div class="sub-metrics">
-              <span>文档处理耗时：<strong>{{ formatProcessTime(summary?.averageDocumentProcessTimeMs) }}</strong></span>
+            <div class="text-[11.5px] text-text-muted flex gap-1.5 items-center">
+              <span>文档处理耗时：<strong class="text-text-secondary font-bold">{{ formatProcessTime(summary?.averageDocumentProcessTimeMs) }}</strong></span>
             </div>
           </div>
         </div>
 
         <!-- 卡片 4：安全隔离与健康 -->
-        <div class="stat-card-opt col-3" :class="{ 'has-alert': (summary?.failedDocumentCount ?? 0) > 0 }">
-          <div class="stat-card-opt__header">
-            <span class="title">安全与故障审计</span>
-            <AlertCircleIcon :size="15" :class="(summary?.failedDocumentCount ?? 0) > 0 ? 'icon-red' : 'icon-green'" />
+        <div class="flex flex-col p-4.5 px-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-lg shadow-card transition-all duration-250 ease-out hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-card-hover text-left col-span-12 md:col-span-6 lg:col-span-3" :class="{ 'border-red-500/25 bg-red-50/35 hover:border-red-500/45': (summary?.failedDocumentCount ?? 0) > 0 }">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-[11px] font-bold text-text-muted uppercase tracking-[0.03em]">安全与故障审计</span>
+            <AlertCircleIcon :size="15" :class="(summary?.failedDocumentCount ?? 0) > 0 ? 'text-error' : 'text-success'" />
           </div>
-          <div class="stat-card-opt__body">
-            <div class="metric">
-              <strong class="number">{{ summary?.failedDocumentCount ?? 0 }}</strong>
-              <span class="unit" :class="{ 'text-red': (summary?.failedDocumentCount ?? 0) > 0 }">篇解析失败</span>
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline gap-1.5">
+              <strong class="text-[28px] font-extrabold text-text-main leading-none">{{ summary?.failedDocumentCount ?? 0 }}</strong>
+              <span class="text-[11px] font-bold text-text-secondary" :class="{ 'text-error': (summary?.failedDocumentCount ?? 0) > 0 }">篇解析失败</span>
             </div>
-            <div class="sub-metrics">
-              <span>拦截：<strong>{{ summary?.blockedAccessCount ?? 0 }}</strong> 次</span>
-              <span class="separator">|</span>
-              <span>过滤：<strong>{{ summary?.totalPermissionFilteredCount ?? 0 }}</strong> 段</span>
+            <div class="text-[11.5px] text-text-muted flex gap-1.5 items-center">
+              <span>拦截：<strong class="text-text-secondary font-bold">{{ summary?.blockedAccessCount ?? 0 }}</strong> 次</span>
+              <span class="text-slate-200/80">|</span>
+              <span>过滤：<strong class="text-text-secondary font-bold">{{ summary?.totalPermissionFilteredCount ?? 0 }}</strong> 段</span>
             </div>
           </div>
         </div>
       </section>
 
-      <section v-if="ragHealth" class="grid-row" aria-label="RAG 健康监控">
-        <article class="feed-card col-12 rag-health-panel">
-          <header class="feed-card__head">
+      <section v-if="ragHealth" class="grid grid-cols-12 gap-6 w-full box-border" aria-label="RAG 健康监控">
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-0 transition-all duration-250 ease-out col-span-12">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
             <div>
-              <h3>RAG 质量与运营监控</h3>
-              <span class="chat-time">基于最近问答、检索 Trace、文档任务和评估集汇总</span>
+              <h3 class="m-0 text-sm font-bold text-text-main">RAG 质量与运营监控</h3>
+              <span class="text-[10.5px] text-text-muted">基于最近问答、检索 Trace、文档任务和评估集汇总</span>
             </div>
-            <button class="text-link" type="button" @click="loadData">刷新指标</button>
+            <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="loadData">刷新指标</button>
           </header>
 
-          <div class="rag-health-grid">
-            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.noCitationRate > 0.25 }">
-              <span>无引用回答率</span>
-              <strong>{{ percent(ragHealth.noCitationRate) }}</strong>
-              <small>{{ ragHealth.noCitationAnswerCount }} / {{ ragHealth.answerCount }} 条</small>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0" :class="{ 'border-amber-500/32 bg-amber-50/72': ragHealth.noCitationRate > 0.25 }">
+              <span class="text-[11px] font-bold text-text-muted">无引用回答率</span>
+              <strong class="text-2xl leading-none text-text-main">{{ percent(ragHealth.noCitationRate) }}</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">{{ ragHealth.noCitationAnswerCount }} / {{ ragHealth.answerCount }} 条</small>
             </div>
-            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.lowRatedAnswerCount > 0 }">
-              <span>低评分回答</span>
-              <strong>{{ ragHealth.lowRatedAnswerCount }}</strong>
-              <small>点踩率 {{ percent(ragHealth.downVoteRate) }}</small>
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0" :class="{ 'border-amber-500/32 bg-amber-50/72': ragHealth.lowRatedAnswerCount > 0 }">
+              <span class="text-[11px] font-bold text-text-muted">低评分回答</span>
+              <strong class="text-2xl leading-none text-text-main">{{ ragHealth.lowRatedAnswerCount }}</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">点踩率 {{ percent(ragHealth.downVoteRate) }}</small>
             </div>
-            <div class="rag-health-metric">
-              <span>平均问答时延</span>
-              <strong>{{ formatLatency(ragHealth.averageLatencyMs) }}s</strong>
-              <small>Rerank {{ formatMs(ragHealth.averageRerankLatencyMs) }}</small>
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0">
+              <span class="text-[11px] font-bold text-text-muted">平均问答时延</span>
+              <strong class="text-2xl leading-none text-text-main">{{ formatLatency(ragHealth.averageLatencyMs) }}s</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">Rerank {{ formatMs(ragHealth.averageRerankLatencyMs) }}</small>
             </div>
-            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.permissionFilteredCount > 0 }">
-              <span>权限过滤片段</span>
-              <strong>{{ ragHealth.permissionFilteredCount }}</strong>
-              <small>PG 降级 {{ ragHealth.fallbackToPgCount }} 次</small>
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0" :class="{ 'border-amber-500/32 bg-amber-50/72': ragHealth.permissionFilteredCount > 0 }">
+              <span class="text-[11px] font-bold text-text-muted">权限过滤片段</span>
+              <strong class="text-2xl leading-none text-text-main">{{ ragHealth.permissionFilteredCount }}</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">PG 降级 {{ ragHealth.fallbackToPgCount }} 次</small>
             </div>
-            <div class="rag-health-metric">
-              <span>评估运行成功率</span>
-              <strong>{{ percent(evalSuccessRate) }}</strong>
-              <small>{{ ragHealth.evalSummary.success }} / {{ ragHealth.evalSummary.total }} 条</small>
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0">
+              <span class="text-[11px] font-bold text-text-muted">评估运行成功率</span>
+              <strong class="text-2xl leading-none text-text-main">{{ percent(evalSuccessRate) }}</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">{{ ragHealth.evalSummary.success }} / {{ ragHealth.evalSummary.total }} 条</small>
             </div>
-            <div class="rag-health-metric" :class="{ 'is-warning': ragHealth.taskHealth.failed > 0 }">
-              <span>失败任务</span>
-              <strong>{{ ragHealth.taskHealth.failed }}</strong>
-              <small>运行中 {{ ragHealth.taskHealth.running }}，待处理 {{ ragHealth.taskHealth.pending }}</small>
+            <div class="flex flex-col gap-1.5 p-3.5 border border-slate-200/65 rounded-lg bg-slate-50/72 min-w-0" :class="{ 'border-amber-500/32 bg-amber-50/72': ragHealth.taskHealth.failed > 0 }">
+              <span class="text-[11px] font-bold text-text-muted">失败任务</span>
+              <strong class="text-2xl leading-none text-text-main">{{ ragHealth.taskHealth.failed }}</strong>
+              <small class="text-text-muted text-[10.5px] whitespace-nowrap overflow-hidden text-ellipsis">运行中 {{ ragHealth.taskHealth.running }}，待处理 {{ ragHealth.taskHealth.pending }}</small>
             </div>
           </div>
 
-          <div class="rag-health-columns">
-            <section class="rag-health-list">
-              <div class="rag-health-list__head">
-                <strong>降级通道</strong>
-                <button class="text-link" type="button" @click="router.push('/search')">查看检索</button>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3.5">
+            <section class="border border-slate-200/65 rounded-lg bg-white/62 p-3.5 min-w-0">
+              <div class="flex justify-between items-center gap-2.5 mb-2.5">
+                <strong class="text-xs text-text-secondary">降级通道</strong>
+                <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/search')">查看检索</button>
               </div>
-              <ul v-if="ragHealth.degradedChannels.length">
-                <li v-for="item in ragHealth.degradedChannels.slice(0, 5)" :key="item.channel">
-                  <span>{{ degradedChannelLabel(item.channel) }}</span>
-                  <strong>{{ item.count }} 次</strong>
+              <ul v-if="ragHealth.degradedChannels.length" class="list-none p-0 m-0 flex flex-col gap-2">
+                <li v-for="item in ragHealth.degradedChannels.slice(0, 5)" :key="item.channel" class="flex justify-between gap-3 items-center text-[11.5px] text-text-muted">
+                  <span class="overflow-hidden whitespace-nowrap text-ellipsis">{{ degradedChannelLabel(item.channel) }}</span>
+                  <strong class="shrink-0 text-text-secondary text-[11px]">{{ item.count }} 次</strong>
                 </li>
               </ul>
-              <p v-else class="compact-empty">暂无检索降级记录</p>
+              <p v-else class="m-0 min-h-[72px] flex items-center justify-center text-text-muted text-xs border border-dashed border-slate-200/65 rounded-lg">暂无检索降级记录</p>
             </section>
 
-            <section class="rag-health-list">
-              <div class="rag-health-list__head">
-                <strong>最近失败任务</strong>
-                <button class="text-link" type="button" @click="router.push('/documents')">处理任务</button>
+            <section class="border border-slate-200/65 rounded-lg bg-white/62 p-3.5 min-w-0">
+              <div class="flex justify-between items-center gap-2.5 mb-2.5">
+                <strong class="text-xs text-text-secondary">最近失败任务</strong>
+                <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/documents')">处理任务</button>
               </div>
-              <ul v-if="ragHealth.recentFailedTasks.length">
-                <li v-for="task in ragHealth.recentFailedTasks.slice(0, 5)" :key="task.id">
-                  <span :title="task.error || '处理失败'">{{ task.stage || 'failed' }}</span>
-                  <strong>{{ formatDateTime(task.updatedAt || task.updated_at) }}</strong>
+              <ul v-if="ragHealth.recentFailedTasks.length" class="list-none p-0 m-0 flex flex-col gap-2">
+                <li v-for="task in ragHealth.recentFailedTasks.slice(0, 5)" :key="task.id" class="flex justify-between gap-3 items-center text-[11.5px] text-text-muted">
+                  <span class="overflow-hidden whitespace-nowrap text-ellipsis" :title="task.error || '处理失败'">{{ task.stage || 'failed' }}</span>
+                  <strong class="shrink-0 text-text-secondary text-[11px]">{{ formatDateTime(task.updatedAt || task.updated_at) }}</strong>
                 </li>
               </ul>
-              <p v-else class="compact-empty">暂无失败任务</p>
+              <p v-else class="m-0 min-h-[72px] flex items-center justify-center text-text-muted text-xs border border-dashed border-slate-200/65 rounded-lg">暂无失败任务</p>
             </section>
 
-            <section class="rag-health-list">
-              <div class="rag-health-list__head">
-                <strong>最近通知</strong>
-                <button class="text-link" type="button" @click="router.push('/profile')">个人中心</button>
+            <section class="border border-slate-200/65 rounded-lg bg-white/62 p-3.5 min-w-0">
+              <div class="flex justify-between items-center gap-2.5 mb-2.5">
+                <strong class="text-xs text-text-secondary">最近通知</strong>
+                <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/profile')">个人中心</button>
               </div>
-              <ul v-if="ragHealth.recentNotifications.length">
-                <li v-for="notice in ragHealth.recentNotifications.slice(0, 5)" :key="notice.id">
-                  <span :title="notice.message || notice.title">{{ notice.title }}</span>
-                  <strong>{{ formatDateTime(notice.createdAt || notice.created_at) }}</strong>
+              <ul v-if="ragHealth.recentNotifications.length" class="list-none p-0 m-0 flex flex-col gap-2">
+                <li v-for="notice in ragHealth.recentNotifications.slice(0, 5)" :key="notice.id" class="flex justify-between gap-3 items-center text-[11.5px] text-text-muted">
+                  <span class="overflow-hidden whitespace-nowrap text-ellipsis" :title="notice.message || notice.title">{{ notice.title }}</span>
+                  <strong class="shrink-0 text-text-secondary text-[11px]">{{ formatDateTime(notice.createdAt || notice.created_at) }}</strong>
                 </li>
               </ul>
-              <p v-else class="compact-empty">暂无通知</p>
+              <p v-else class="m-0 min-h-[72px] flex items-center justify-center text-text-muted text-xs border border-dashed border-slate-200/65 rounded-lg">暂无通知</p>
             </section>
           </div>
         </article>
       </section>
 
       <!-- 双栏近态跟踪列表 (2列，每列 col-6) -->
-      <section class="grid-row">
+      <section class="grid grid-cols-12 gap-6 w-full box-border">
         <!-- 1. 最近上传文档 -->
-        <article class="feed-card col-6">
-          <header class="feed-card__head">
-            <h3>最近录入文档</h3>
-            <button class="text-link" type="button" @click="router.push('/documents')">查看全部</button>
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-[280px] transition-all duration-250 ease-out col-span-12 lg:col-span-6">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
+            <h3 class="m-0 text-sm font-bold text-text-main">最近录入文档</h3>
+            <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/documents')">查看全部</button>
           </header>
-          <ul v-if="summary?.recentDocuments?.length" class="doc-feed">
-            <li v-for="doc in summary.recentDocuments" :key="doc.id" class="doc-feed-item">
-              <div class="doc-feed-item__info">
-                <FileTextIcon :size="13" class="doc-icon" />
-                <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
+          <ul v-if="summary?.recentDocuments?.length" class="list-none m-0 p-0 flex flex-col gap-2.5">
+            <li v-for="doc in summary.recentDocuments" :key="doc.id" class="flex items-center justify-between p-2.5 px-3.5 bg-slate-50/50 rounded-lg border border-slate-200/30">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <FileTextIcon :size="13" class="text-text-muted shrink-0" />
+                <span class="text-[12.5px] font-semibold text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap max-w-[150px] text-left" :title="doc.filename">{{ doc.filename }}</span>
               </div>
-              <div class="doc-feed-item__status">
-                <span class="badge" :class="badgeClassOf(doc)">
-                  {{ statusLabelOf(doc) }}
-                </span>
-                <span class="time">{{ formatDate(doc.createdAt || doc.created_at) }}</span>
+              <div class="flex items-center gap-2.5 shrink-0">
+                <StatusBadge :status="doc.status" :label="statusLabelOf(doc)" />
+                <span class="text-[10.5px] text-text-muted">{{ formatDate(doc.createdAt || doc.created_at) }}</span>
               </div>
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无最近录入的文档数据</p>
+          <p v-else class="flex-1 flex items-center justify-center text-text-muted text-[12.5px] border border-dashed border-slate-200/60 rounded-lg m-0 min-h-[120px]">暂无最近录入的文档数据</p>
         </article>
 
         <!-- 2. 最近对话历史 -->
-        <article class="feed-card col-6">
-          <header class="feed-card__head">
-            <h3>最近对话历史</h3>
-            <button class="text-link" type="button" @click="router.push('/chat')">查看全部</button>
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-[280px] transition-all duration-250 ease-out col-span-12 lg:col-span-6">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
+            <h3 class="m-0 text-sm font-bold text-text-main">最近对话历史</h3>
+            <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/chat')">查看全部</button>
           </header>
-          <ul v-if="summary?.recentConversations?.length" class="chat-feed">
-            <li v-for="conv in summary.recentConversations" :key="conv.id" class="chat-feed-item" @click="goChat(conv.id)">
-              <div class="chat-feed-item__meta">
-                <span class="icon-avatar">💬</span>
-                <div class="chat-details">
-                  <strong class="chat-question" :title="conv.lastMessage?.content || '新对话'">
+          <ul v-if="summary?.recentConversations?.length" class="list-none m-0 p-0 flex flex-col gap-2.5">
+            <li v-for="conv in summary.recentConversations" :key="conv.id" class="flex items-center justify-between p-2.5 px-3.5 bg-white border border-slate-200/60 rounded-lg cursor-pointer transition-all duration-200 hover:bg-slate-50/60 hover:border-primary/25 hover:translate-x-[1px]" @click="goChat(conv.id)">
+              <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <span class="text-[16px]">💬</span>
+                <div class="flex flex-col min-w-0 text-left">
+                  <strong class="text-[12.5px] font-semibold text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap" :title="conv.lastMessage?.content || '新对话'">
                     {{ conv.lastMessage?.content || '新对话' }}
                   </strong>
-                  <span class="chat-time">{{ formatDate(conv.updatedAt) }}</span>
+                  <span class="mt-0.5 text-[10.5px] text-text-muted">{{ formatDate(conv.updatedAt) }}</span>
                 </div>
               </div>
-              <ChevronRightIcon :size="13" class="arrow-icon" />
+              <ChevronRightIcon :size="13" class="text-text-muted shrink-0" />
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无近期对话历史</p>
+          <p v-else class="flex-1 flex items-center justify-center text-text-muted text-[12.5px] border border-dashed border-slate-200/60 rounded-lg m-0 min-h-[120px]">暂无近期对话历史</p>
         </article>
       </section>
 
       <!-- 下方辅助分析栏 (2列，每列 col-6) -->
-      <section class="grid-row">
+      <section class="grid grid-cols-12 gap-6 w-full box-border">
         <!-- 3. 最近失败详情 -->
-        <article class="feed-card col-6">
-          <header class="feed-card__head">
-            <h3>故障日志记录</h3>
-            <button class="text-link" type="button" @click="goDocuments({ status: 'failed' })">查看详情</button>
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-[280px] transition-all duration-250 ease-out col-span-12 lg:col-span-6">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
+            <h3 class="m-0 text-sm font-bold text-text-main">故障日志记录</h3>
+            <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="goDocuments({ status: 'failed' })">查看详情</button>
           </header>
-          <ul v-if="summary?.recentFailedDocuments?.length" class="doc-feed">
-            <li v-for="doc in summary.recentFailedDocuments" :key="doc.id" class="doc-feed-item">
-              <div class="doc-feed-item__info">
-                <AlertCircleIcon :size="13" class="doc-icon text-red" />
-                <span class="doc-name" :title="doc.filename">{{ doc.filename }}</span>
+          <ul v-if="summary?.recentFailedDocuments?.length" class="list-none m-0 p-0 flex flex-col gap-2.5">
+            <li v-for="doc in summary.recentFailedDocuments" :key="doc.id" class="flex items-center justify-between p-2.5 px-3.5 bg-slate-50/50 rounded-lg border border-slate-200/30">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <AlertCircleIcon :size="13" class="text-error shrink-0" />
+                <span class="text-[12.5px] font-semibold text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap max-w-[150px] text-left" :title="doc.filename">{{ doc.filename }}</span>
               </div>
-              <span class="time error-log-text" :title="doc.processingError ?? doc.processing_error ?? '解析异常'">
+              <span class="text-[10.5px] text-text-muted inline-block max-w-[50%] overflow-hidden text-ellipsis whitespace-nowrap text-right" :title="doc.processingError ?? doc.processing_error ?? '解析异常'">
                 {{ doc.processingError ?? doc.processing_error ?? '处理失败' }}
               </span>
             </li>
           </ul>
-          <p v-else class="empty-feed">近态无资产处理故障</p>
+          <p v-else class="flex-1 flex items-center justify-center text-text-muted text-[12.5px] border border-dashed border-slate-200/60 rounded-lg m-0 min-h-[120px]">近态无资产处理故障</p>
         </article>
 
         <!-- 4. 热门问题统计 -->
-        <article class="feed-card col-6">
-          <header class="feed-card__head">
-            <h3>热门业务问题追踪</h3>
-            <button class="text-link" type="button" @click="router.push('/chat')">发起提问</button>
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-[280px] transition-all duration-250 ease-out col-span-12 lg:col-span-6">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
+            <h3 class="m-0 text-sm font-bold text-text-main">热门业务问题追踪</h3>
+            <button class="bg-transparent border-none text-primary text-[11.5px] font-bold cursor-pointer p-0 hover:underline" type="button" @click="router.push('/chat')">发起提问</button>
           </header>
-          <ul v-if="summary?.hotQuestions?.length" class="chat-feed">
-            <li v-for="item in summary.hotQuestions" :key="item.question" class="chat-feed-item chat-feed-item--no-hover">
-              <div class="chat-details">
-                <strong class="chat-question">{{ item.question }}</strong>
-                <span class="chat-time">业务提问频次：出现 {{ item.count }} 次</span>
+          <ul v-if="summary?.hotQuestions?.length" class="list-none m-0 p-0 flex flex-col gap-2.5">
+            <li v-for="item in summary.hotQuestions" :key="item.question" class="flex items-center justify-between p-2.5 px-3.5 bg-white border border-slate-200/60 rounded-lg cursor-default">
+              <div class="flex flex-col min-w-0 text-left">
+                <strong class="text-[12.5px] font-semibold text-text-secondary overflow-hidden text-ellipsis whitespace-nowrap">{{ item.question }}</strong>
+                <span class="mt-0.5 text-[10.5px] text-text-muted">业务提问频次：出现 {{ item.count }} 次</span>
               </div>
             </li>
           </ul>
-          <p v-else class="empty-feed">暂无高频提问统计</p>
+          <p v-else class="flex-1 flex items-center justify-center text-text-muted text-[12.5px] border border-dashed border-slate-200/60 rounded-lg m-0 min-h-[120px]">暂无高频提问统计</p>
         </article>
       </section>
 
       <!-- 5. 用户负反馈诊断 (仅管理员可见) -->
-      <section v-if="summary?.lowRatedAnswers?.length" class="grid-row" style="margin-top: 24px;">
-        <article class="feed-card col-12">
-          <header class="feed-card__head">
+      <section v-if="summary?.lowRatedAnswers?.length" class="grid grid-cols-12 gap-6 w-full box-border" style="margin-top: 24px;">
+        <article class="bg-white/65 backdrop-blur-md border border-white/50 rounded-lg p-5 shadow-card flex flex-col min-h-0 transition-all duration-250 ease-out col-span-12">
+          <header class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/50">
             <div class="flex items-center gap-2">
               <h3 class="m-0">用户负反馈诊断 (Bad Cases)</h3>
-              <span class="badge badge--error text-[10px] font-bold">低分回答</span>
+              <span class="p-0.5 px-2 rounded-[6px] text-[10px] font-bold bg-red-50 text-red-700">低分回答</span>
             </div>
-            <span class="chat-time">追踪用户点踩的回答并一键转化为评测回归用例</span>
+            <span class="text-[10.5px] text-text-muted">追踪用户点踩的回答并一键转化为评测回归用例</span>
           </header>
           <div class="overflow-x-auto w-full">
             <table class="w-full border-collapse text-left">
@@ -384,36 +412,52 @@ import {
   SparklesIcon,
   SearchIcon,
   PlusIcon,
+  ShieldCheckIcon,
+  ShieldAlertIcon,
 } from 'lucide-vue-next'
 import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
-import PageHeader from '@/components/common/PageHeader.vue'
 import type { DashboardRagHealth, DashboardSummary, KnowledgeDocument } from '@/types'
+import PageHeader from '@/components/common/PageHeader.vue'
+import LoadingSkeleton from '@/components/common/LoadingSkeleton.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import StatusBadge from '@/components/common/StatusBadge.vue'
 
 const router = useRouter()
-const { getDashboardSummary, getDashboardRagHealth } = useProductizedKnowledge()
+const { getDashboardSummary, getDashboardRagHealth, getSystemHealth } = useProductizedKnowledge()
 
 const summary = ref<DashboardSummary | null>(null)
 const ragHealth = ref<DashboardRagHealth | null>(null)
+const systemHealth = ref<any>(null)
 const loading = ref(false)
+
 const evalSuccessRate = computed(() => {
   const total = ragHealth.value?.evalSummary.total ?? 0
   if (!total) return 0
   return (ragHealth.value?.evalSummary.success ?? 0) / total
 })
 
+const isSystemAllHealthy = computed(() => {
+  if (!systemHealth.value?.checks) return true
+  return Object.values(systemHealth.value.checks).every((c: any) => c.status === 'ok')
+})
+
 async function loadData() {
   loading.value = true
   try {
-    const [result, healthResult] = await Promise.all([
+    const [result, healthResult, systemHealthResult] = await Promise.all([
       getDashboardSummary(),
       getDashboardRagHealth(),
+      getSystemHealth(),
     ])
     if (result) {
       summary.value = result
     }
     if (healthResult) {
       ragHealth.value = healthResult
+    }
+    if (systemHealthResult) {
+      systemHealth.value = systemHealthResult
     }
   } finally {
     loading.value = false
@@ -425,21 +469,6 @@ onMounted(loadData)
 function statusLabelOf(doc: KnowledgeDocument): string {
   const status = doc.status || 'pending'
   return KNOWLEDGE_DOCUMENT_STATUS_LABELS[status] ?? status
-}
-
-function badgeClassOf(doc: KnowledgeDocument): string {
-  const status = doc.status || 'pending'
-  if (status === 'completed') return 'badge--success'
-  if (status === 'failed') return 'badge--error'
-  if (status === 'processing') return 'badge--warning'
-  return 'badge--secondary'
-}
-
-function goChat(conversationId: string) {
-  router.push({
-    path: '/chat',
-    query: { conversationId },
-  })
 }
 
 // 格式化问答耗时（毫秒转秒）
@@ -458,6 +487,7 @@ function goDocuments(query: Record<string, string>) {
   router.push({ path: '/documents', query })
 }
 
+// 百分比格式化
 function percent(value?: number) {
   const n = Number(value ?? 0)
   if (!Number.isFinite(n)) return '0%'
@@ -528,637 +558,24 @@ function degradedChannelLabel(channel: string) {
   }
   return labels[channel] ?? channel
 }
+
+function formatComponentName(name: string | number) {
+  const key = String(name)
+  const map: Record<string, string> = {
+    postgres: 'PostgreSQL',
+    elasticsearch: 'Elasticsearch',
+    neo4j: 'Neo4j (图图谱)',
+    redis: 'Redis (二级缓存)',
+    minio: 'MinIO (文件对象存储)',
+    worker: 'Worker (解析并发队列)',
+  }
+  return map[key] ?? key
+}
+
+function goChat(conversationId: string) {
+  router.push({
+    path: '/chat',
+    query: { conversationId },
+  })
+}
 </script>
-
-<style scoped>
-/* ── 统一 12 栏标准网格系统 ── */
-.grid-row {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 24px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.col-12 { grid-column: span 12; }
-.col-6  { grid-column: span 6; }
-.col-4  { grid-column: span 4; }
-.col-3  { grid-column: span 3; }
-
-/* ── 骨架屏 ── */
-.skeleton-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.skeleton-pulse {
-  background: linear-gradient(90deg, rgba(241, 245, 249, 0.4) 25%, rgba(226, 232, 240, 0.6) 50%, rgba(241, 245, 249, 0.4) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-loading 1.6s infinite ease-in-out;
-}
-
-@keyframes skeleton-loading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* 首页主容器 */
-.dashboard {
-  padding: 24px;
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  box-sizing: border-box;
-  width: 100%;
-}
-
-.dashboard__body {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-}
-
-/* 头部 Header */
-.dashboard__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 4px;
-}
-
-.dashboard__head h2 {
-  margin: 0 0 4px;
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--text);
-  letter-spacing: -0.02em;
-  text-align: left;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  text-align: left;
-}
-
-/* 按钮设计 */
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  background: var(--primary-gradient);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 12.5px;
-  font-weight: 750;
-  cursor: pointer;
-  box-shadow: var(--shadow-btn);
-  transition: all 0.25s var(--ease-out);
-  flex-shrink: 0;
-}
-
-.btn-primary:hover {
-  transform: translateY(-1.5px);
-  box-shadow: var(--shadow-btn-hover);
-  filter: brightness(1.03);
-}
-
-/* 快捷向导卡片 */
-.quick-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  cursor: pointer;
-  transition: all 0.25s var(--ease-out);
-  text-align: left;
-}
-
-.quick-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.25);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
-}
-
-.quick-card__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  margin-bottom: 12px;
-}
-
-.bg-step1 { background: rgba(59, 130, 246, 0.08); color: var(--primary); }
-.bg-step2 { background: rgba(168, 85, 247, 0.08); color: #9333ea; }
-.bg-step3 { background: rgba(20, 184, 166, 0.08); color: #0d9488; }
-
-.quick-card__info h4 {
-  margin: 0 0 6px;
-  font-size: 14px;
-  font-weight: 750;
-  color: var(--text);
-}
-
-.quick-card__info p {
-  margin: 0 0 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.55;
-  min-height: 38px;
-}
-
-.quick-card__link {
-  font-size: 11.5px;
-  font-weight: 750;
-  color: var(--primary);
-  margin-top: auto;
-  transition: transform 0.2s ease;
-}
-
-.quick-card:hover .quick-card__link {
-  transform: translateX(2px);
-}
-
-/* 4格整合核心统计指标架 */
-.stat-card-opt {
-  display: flex;
-  flex-direction: column;
-  padding: 18px 20px;
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.015);
-  transition: all 0.25s var(--ease-out);
-  text-align: left;
-}
-
-.stat-card-opt:hover {
-  transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.25);
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.04);
-}
-
-.stat-card-opt.has-alert {
-  border-color: rgba(239, 68, 68, 0.25);
-  background: rgba(254, 242, 242, 0.35);
-}
-
-.stat-card-opt.has-alert:hover {
-  border-color: rgba(239, 68, 68, 0.45);
-}
-
-.stat-card-opt__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.stat-card-opt__header .title {
-  font-size: 11px;
-  font-weight: 750;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.stat-card-opt__body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.stat-card-opt__body .metric {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.stat-card-opt__body .number {
-  font-size: 28px;
-  font-weight: 850;
-  color: var(--text);
-  line-height: 1;
-}
-
-.stat-card-opt__body .unit {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.stat-card-opt__body .sub-metrics {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.stat-card-opt__body .separator {
-  color: rgba(226, 232, 240, 0.8);
-}
-
-.icon-blue { color: #2563eb; }
-.icon-teal { color: #0d9488; }
-.icon-indigo { color: #4f46e5; }
-.icon-green { color: #059669; }
-.icon-red { color: #dc2626; }
-
-/* 双栏动态内容追踪 */
-.feed-card {
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.01);
-  display: flex;
-  flex-direction: column;
-  min-height: 280px;
-  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
-}
-
-.feed-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
-}
-
-.feed-card__head h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 750;
-  color: var(--text);
-}
-
-.text-link {
-  background: none;
-  border: none;
-  color: var(--primary);
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  padding: 0;
-}
-
-.text-link:hover {
-  text-decoration: underline;
-}
-
-.doc-feed,
-.chat-feed {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.doc-feed-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: rgba(248, 250, 252, 0.5);
-  border-radius: 8px;
-  border: 1px solid rgba(226, 232, 240, 0.3);
-}
-
-.doc-feed-item__info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.doc-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.doc-name {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 150px;
-  text-align: left;
-}
-
-.error-log-text {
-  display: inline-block;
-  max-width: 50%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: right;
-}
-
-.doc-feed-item__status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.badge {
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.badge--success { background: #ecfdf5; color: #059669; }
-.badge--warning { background: #fffbeb; color: #d97706; }
-.badge--error { background: #fef2f2; color: #dc2626; }
-.badge--secondary { background: #f1f5f9; color: #475569; }
-
-.time,
-.chat-time {
-  font-size: 10.5px;
-  color: var(--text-muted);
-}
-
-.chat-feed-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.chat-feed-item:hover:not(.chat-feed-item--no-hover) {
-  background: rgba(248, 250, 252, 0.6);
-  border-color: rgba(59, 130, 246, 0.25);
-  transform: translateX(1px);
-}
-
-.chat-feed-item--no-hover {
-  cursor: default;
-}
-
-.chat-feed-item__meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex: 1;
-}
-
-.icon-avatar {
-  font-size: 16px;
-}
-
-.chat-details {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  text-align: left;
-}
-
-.chat-question {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-time {
-  margin-top: 2px;
-}
-
-.arrow-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.empty-feed {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 12.5px;
-  border: 1px dashed rgba(226, 232, 240, 0.6);
-  border-radius: 8px;
-  margin: 0;
-  min-height: 120px;
-}
-
-.rag-health-panel {
-  min-height: auto;
-}
-
-.rag-health-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.rag-health-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid rgba(226, 232, 240, 0.65);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.72);
-  min-width: 0;
-}
-
-.rag-health-metric.is-warning {
-  border-color: rgba(245, 158, 11, 0.32);
-  background: rgba(255, 251, 235, 0.72);
-}
-
-.rag-health-metric span {
-  font-size: 11px;
-  font-weight: 750;
-  color: var(--text-muted);
-}
-
-.rag-health-metric strong {
-  font-size: 22px;
-  line-height: 1;
-  color: var(--text);
-}
-
-.rag-health-metric small {
-  color: var(--text-muted);
-  font-size: 10.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rag-health-columns {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.rag-health-list {
-  border: 1px solid rgba(226, 232, 240, 0.65);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.62);
-  padding: 14px;
-  min-width: 0;
-}
-
-.rag-health-list__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.rag-health-list__head strong {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.rag-health-list ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.rag-health-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.rag-health-list li span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.rag-health-list li strong {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.compact-empty {
-  margin: 0;
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 12px;
-  border: 1px dashed rgba(226, 232, 240, 0.65);
-  border-radius: 8px;
-}
-
-.error-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 64px 32px;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: var(--radius-lg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  min-height: 320px;
-}
-
-.error-icon {
-  color: var(--error);
-  margin-bottom: 12px;
-}
-
-.error-state p {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin: 0 0 16px;
-}
-
-.btn-ghost {
-  padding: 8px 16px;
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-ghost:hover {
-  background: rgba(59, 130, 246, 0.05);
-  color: var(--primary);
-}
-
-/* ── 响应式 12 栏网格规则 ── */
-@media (max-width: 1024px) {
-  .col-3 {
-    grid-column: span 6; /* 4 列在大屏变为 2 列 */
-  }
-  .col-4 {
-    grid-column: span 12; /* 3 列向导在平板直接垂直单列，规避最后一张卡片孤立掉行的问题 */
-  }
-  .col-6 {
-    grid-column: span 12; /* 双栏变为单栏 */
-  }
-  .rag-health-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .rag-health-columns {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .col-3, .col-4, .col-6 {
-    grid-column: span 12; /* 手机端全部平铺 */
-  }
-  .rag-health-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

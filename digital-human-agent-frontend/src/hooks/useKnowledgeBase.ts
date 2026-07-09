@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { apiFetch, apiJson } from '@/api/client'
+import { apiFetch, apiJson, apiJsonOrThrow } from '@/api/client'
 import type {
   KnowledgeBase,
   ChunkContext,
@@ -14,6 +14,8 @@ import type {
 } from '@/types'
 
 export interface CreateKnowledgeBasePayload {
+  visibility?: 'company' | 'department' | 'private' | string
+  visibilityDepartments?: string[]
   name: string
   description?: string
   ownerPersonaId?: string
@@ -153,10 +155,8 @@ export function useKnowledgeBase() {
   ): Promise<PaginatedResult<KnowledgeDocumentDetail>> {
     documentsLoading.value = true
     try {
-      return (
-        (await apiJson<PaginatedResult<KnowledgeDocumentDetail>>(
-          `/api/documents${toQuery(query)}`,
-        )) ?? { items: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 }
+      return await apiJsonOrThrow<PaginatedResult<KnowledgeDocumentDetail>>(
+        `/api/documents${toQuery(query)}`,
       )
     } finally {
       documentsLoading.value = false

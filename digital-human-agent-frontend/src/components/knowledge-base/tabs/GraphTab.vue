@@ -9,17 +9,19 @@
           placeholder="搜索图谱实体 (如：乔峰)..."
           @input="onSearchInput"
         />
-        <span class="search-icon">🔍</span>
+        <SearchIcon :size="14" class="search-icon" />
       </div>
-      <button
-        v-if="canRebuildGraph"
-        class="btn-rebuild"
-        type="button"
-        @click="handleRebuild"
-        :disabled="rebuilding"
-      >
-        {{ rebuilding ? '正在重建图谱关系…' : '🔄 重建图谱关系' }}
-      </button>
+      <PermissionGate code="documents:retry">
+        <button
+          class="btn-rebuild"
+          type="button"
+          @click="handleRebuild"
+          :disabled="rebuilding"
+        >
+          <RefreshCwIcon :size="14" :class="{ 'animate-spin': rebuilding }" />
+          {{ rebuilding ? '正在重建图谱关系…' : '重建图谱关系' }}
+        </button>
+      </PermissionGate>
     </header>
 
     <!-- 主体容器 -->
@@ -161,7 +163,9 @@
       <div class="preview-drawer">
         <header class="drawer-header">
           <h3>文档片段详情 (ID: {{ previewingChunk.id }})</h3>
-          <button class="btn-close" @click="previewingChunk = null">❌</button>
+          <button class="btn-close" type="button" aria-label="关闭" @click="previewingChunk = null">
+            <XIcon :size="14" />
+          </button>
         </header>
         <div class="drawer-content">
           <div class="meta-item">
@@ -192,14 +196,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RefreshCwIcon, SearchIcon, XIcon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
-import { usePermissions } from '@/hooks/usePermissions'
+import PermissionGate from '@/components/common/PermissionGate.vue'
 import type { KnowledgeGraphOverview, KnowledgeGraphOverviewEdge, KnowledgeGraphOverviewNode } from '@/types'
 
 const props = defineProps<{ kbId: string }>()
 const hook = useKnowledgeBase()
-const permissionApi = usePermissions()
-const canRebuildGraph = computed(() => permissionApi.can('documents:retry'))
 
 const searchQuery = ref('')
 const rebuilding = ref(false)
@@ -367,7 +370,6 @@ function previewChunk(chunk: any) {
 }
 
 onMounted(() => {
-  void permissionApi.loadPermissions()
   void loadOverview()
   void loadEntities()
 })
@@ -421,8 +423,8 @@ watch(() => props.kbId, () => {
 .search-icon {
   position: absolute;
   left: 12px;
-  top: 10px;
-  font-size: 14px;
+  top: 12px;
+  color: var(--text-muted);
 }
 .btn-rebuild {
   height: 38px;
@@ -430,6 +432,9 @@ watch(() => props.kbId, () => {
   border: 1px solid var(--primary);
   border-radius: var(--radius-md);
   background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--primary);
   font-size: 13px;
   font-weight: 700;

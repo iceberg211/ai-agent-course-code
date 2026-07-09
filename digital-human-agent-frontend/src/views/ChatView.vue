@@ -80,6 +80,7 @@
             :loading="sessionStore.historyLoading"
             class="flex-1 m-0 min-h-0 h-full p-4.5 px-5"
             @show-citation-detail="handleShowCitation"
+            @show-explain="handleShowExplain"
             @regenerate="handleRegenerate"
           />
 
@@ -131,6 +132,14 @@
         @close="citationDrawerOpen = false"
       />
     </Transition>
+
+    <MessageExplainDrawer
+      :open="explainDrawerOpen"
+      :message="activeExplainMessage"
+      @close="explainDrawerOpen = false"
+      @open-citation="handleShowCitation"
+      @import-eval="importExplainToEval"
+    />
   </div>
   </div>
 </template>
@@ -153,8 +162,9 @@ import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowl
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
 import CitationDetailDrawer from '@/components/chat/CitationDetailDrawer.vue'
+import MessageExplainDrawer from '@/components/chat/MessageExplainDrawer.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
-import type { Persona } from '@/types'
+import type { ChatMessage, Persona } from '@/types'
 
 type ChatActionType =
   | 'create-persona'
@@ -221,10 +231,34 @@ const audioEl = ref<HTMLAudioElement | null>(null)
 const knowledgeDrawerOpen = ref(false)
 const activeCitation = ref<any | null>(null)
 const citationDrawerOpen = ref(false)
+const explainDrawerOpen = ref(false)
+const activeExplainMessage = ref<ChatMessage | null>(null)
 
 function handleShowCitation(citation: any) {
   activeCitation.value = citation
   citationDrawerOpen.value = true
+}
+
+function handleShowExplain(message: ChatMessage) {
+  activeExplainMessage.value = message
+  explainDrawerOpen.value = true
+}
+
+function importExplainToEval() {
+  const answerMsg = activeExplainMessage.value
+  if (!answerMsg) return
+  const msgs = conversationMessages.value
+  const idx = msgs.findIndex((m) => m.id === answerMsg.id)
+  const prev = idx > 0 ? msgs[idx - 1] : null
+  const question = prev?.role === 'user' ? prev.content : ''
+  if (!question) return
+  router.push({
+    path: '/evaluation',
+    query: {
+      addQuestion: question,
+      expectedAnswer: answerMsg.content || '',
+    },
+  })
 }
 
 function handleRegenerate() {

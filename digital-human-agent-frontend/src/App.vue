@@ -10,8 +10,8 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import AppNav from '@/components/knowledge-base/AppNav.vue'
-import AppHeader from '@/components/knowledge-base/AppHeader.vue'
+import AppNav from '@/components/layout/AppNav.vue'
+import AppHeader from '@/components/layout/AppHeader.vue'
 
 const route = useRoute()
 </script>

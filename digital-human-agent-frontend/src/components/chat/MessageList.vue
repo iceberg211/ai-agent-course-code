@@ -19,8 +19,10 @@
         v-for="(msg, idx) in messages"
         :key="msg.id"
         :message="msg"
+        :prev-message="idx > 0 ? messages[idx - 1] : undefined"
         :is-last="idx === messages.length - 1"
         @show-citation-detail="$emit('show-citation-detail', $event)"
+        @show-explain="$emit('show-explain', $event)"
         @regenerate="$emit('regenerate')"
       />
     </template>
@@ -112,6 +114,7 @@ onMounted(async () => {
 
 defineEmits<{
   (e: 'show-citation-detail', citation: any): void
+  (e: 'show-explain', message: ChatMessage): void
   (e: 'regenerate'): void
 }>()
 

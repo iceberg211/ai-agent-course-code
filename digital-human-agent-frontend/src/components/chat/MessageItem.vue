@@ -45,6 +45,26 @@
           >
             <ThumbsDownIcon :size="12" />
           </button>
+          <button
+            v-if="message.role === 'assistant'"
+            type="button"
+            title="查看引用、Trace、记忆与权限过滤"
+            class="text-[10px] font-bold text-text-muted hover:text-primary hover:bg-slate-100/80 p-0.5 px-1.5 rounded transition-all border border-transparent hover:border-slate-200/60 inline-flex items-center gap-1.5 ml-2 cursor-pointer"
+            @click="$emit('show-explain', message)"
+          >
+            <ShieldCheckIcon :size="11" />
+            <span>可解释</span>
+          </button>
+          <button
+            v-if="message.role === 'assistant'"
+            type="button"
+            title="一键转为黄金评测集用例"
+            class="text-[10px] font-bold text-text-muted hover:text-primary hover:bg-slate-100/80 p-0.5 px-1.5 rounded transition-all border border-transparent hover:border-slate-200/60 inline-flex items-center gap-1.5 ml-2 cursor-pointer"
+            @click="importToEval"
+          >
+            <SparklesIcon :size="11" />
+            <span>转评测</span>
+          </button>
         </div>
         <span 
           v-if="message.status && message.status !== 'completed' && !message.streaming" 
@@ -139,6 +159,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ShieldCheckIcon,
+  SparklesIcon,
 } from 'lucide-vue-next'
 import { MESSAGE_STATUS_LABELS } from '@/common/constants'
 import TypingIndicator from '@/components/chat/TypingIndicator.vue'
@@ -152,10 +173,12 @@ const showExplain = ref(false)
 
 // marked 配置：开启 gfm（GitHub Flavored Markdown）
 marked.setOptions({ gfm: true })
+import { useRouter } from 'vue-router'
 
 const props = withDefaults(
   defineProps<{
     message: ChatMessage
+    prevMessage?: ChatMessage
     isLast?: boolean
   }>(),
   {
@@ -165,9 +188,11 @@ const props = withDefaults(
 
 defineEmits<{
   (e: 'show-citation-detail', citation: any): void
+  (e: 'show-explain', message: ChatMessage): void
   (e: 'regenerate'): void
 }>()
 
+const router = useRouter()
 const personaStore = usePersonaStore()
 const sessionStore = useSessionStore()
 const productApi = useProductizedKnowledge()
@@ -203,6 +228,19 @@ async function setFeedback(next: 'up' | 'down') {
     feedback,
   )
   if (ok) props.message.feedback = feedback
+}
+
+function importToEval() {
+  const question = props.prevMessage?.content || ''
+  const answer = props.message.content || ''
+  if (!question) return
+  router.push({
+    path: '/evaluation',
+    query: {
+      addQuestion: question,
+      expectedAnswer: answer,
+    },
+  })
 }
 </script>
 

@@ -23,3 +23,18 @@
   - `[x]` 引入 Prompt Starters：设计引导性推荐问题面板，支持一键载入填充与发送
   - `[x]` 智能命中高亮：在 SmartSearchView 沙盒中，对原内容动态渲染 query 关键词发光高亮 (Safe HTML Mark)
   - `[x]` Onboarding 文案提质：在 ChatView 无角色及未关联知识库的空状态中采用更显性与专业的文字向导
+- `[x]` 任务七：企业知识运营工作台收口（阶段 9 + 工程化）
+  - `[x]` 统一 API 客户端：`apiJsonResult` / `apiJsonOrThrow`、401 跳转、结构化 `ApiError`
+  - `[x]` 沉淀公共组件：`StatusBadge`、`EmptyState`、`ErrorState`、`LoadingSkeleton`、`MetricCard`、`SideDrawer`、`ConfirmDialog`、`TaskTimeline`、`TracePanel`、`FilterBar`
+  - `[x]` 布局迁移：`AppNav` / `AppHeader` → `components/layout`
+  - `[x]` 文档详情拆分：Info/Task/Markdown/Asset/Chunk/Version 面板，`DocumentDetailDrawer` 降至 ~300 行
+  - `[x]` 问答可解释抽屉：`MessageExplainDrawer`（引用 / Trace / 图谱 / 记忆 / 权限过滤）
+  - `[x]` 关键页面接入 loading/empty/error 与权限门控；修复评估 Sandbox 检索方法
+  - `[x]` `pnpm type-check` + `pnpm build` 通过
+- `[x]` 任务八：后续建议收口
+  - `[x]` SmartSearch 拆 `components/search` + `useSearchTrace` + 复用 `TracePanel`
+  - `[x]` Evaluation 拆 `components/evaluation` + 权限门控 + ConfirmDialog
+  - `[x]` Profile 拆 `components/profile` + ConfirmDialog
+  - `[x]` HitTestTab 拆 Case/Results 面板（1043 → ~250 行）
+  - `[x]` RBAC / 图谱 / 评估按钮级 PermissionGate 覆盖
+  - `[x]` type-check + build 通过

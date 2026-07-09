@@ -7,11 +7,13 @@
     />
 
     <section class="grid grid-cols-1 md:grid-cols-4 gap-3">
-      <div v-for="item in rbacSummary" :key="item.label" class="bg-white border border-border-main rounded-xl p-4">
-        <span class="block text-[10.5px] font-bold text-text-muted">{{ item.label }}</span>
-        <strong class="block text-2xl font-black text-text-main mt-1">{{ item.value }}</strong>
-        <span class="block text-[11px] text-text-muted mt-1">{{ item.hint }}</span>
-      </div>
+      <MetricCard
+        v-for="item in rbacSummary"
+        :key="item.label"
+        :label="item.label"
+        :value="item.value"
+        :hint="item.hint"
+      />
     </section>
 
     <!-- 功能标签页 -->
@@ -54,9 +56,11 @@
     <section v-if="activeTab === 'departments'" class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-[0_4px_20px_rgba(15,23,42,0.015)] flex flex-col gap-4">
       <div class="flex justify-between items-center">
         <h3 class="text-sm font-bold text-text-main m-0">企业部门架构</h3>
-        <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" @click="addDept">
-          <PlusIcon :size="13" /> 新增部门
-        </button>
+        <PermissionGate code="rbac:manage">
+          <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" type="button" @click="addDept">
+            <PlusIcon :size="13" /> 新增部门
+          </button>
+        </PermissionGate>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full border-collapse text-left">
@@ -79,9 +83,11 @@
               <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary">{{ dept.parentId || '-' }}</td>
               <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary text-right">
                 <div class="flex justify-end gap-1.5">
-                  <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50" title="删除" @click="removeDept(dept.id)">
-                    <Trash2Icon :size="13" />
-                  </button>
+                  <PermissionGate code="rbac:manage">
+                    <button class="w-7 h-7 rounded-md border border-border-main bg-white text-text-muted flex items-center justify-center cursor-pointer transition-all hover:border-red-500/30 hover:text-error hover:bg-red-50/50" title="删除" type="button" @click="removeDept(dept.id)">
+                      <Trash2Icon :size="13" />
+                    </button>
+                  </PermissionGate>
                 </div>
               </td>
             </tr>
@@ -128,7 +134,9 @@
               </td>
               <td class="p-3.5 px-3 border-b border-slate-200/40 text-xs text-text-secondary text-right">
                 <div class="flex justify-end">
-                  <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" @click="saveUserAuth(u)">保存授权</button>
+                  <PermissionGate code="rbac:manage">
+                    <button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all" type="button" @click="saveUserAuth(u)">保存授权</button>
+                  </PermissionGate>
                 </div>
               </td>
             </tr>
@@ -136,6 +144,16 @@
         </table>
       </div>
     </section>
+
+    <ConfirmDialog
+      :open="confirmOpen"
+      title="删除部门"
+      :description="confirmDescription"
+      danger
+      :loading="confirmLoading"
+      @confirm="confirmRemoveDept"
+      @cancel="confirmOpen = false"
+    />
   </main>
 </template>
 
@@ -144,6 +162,9 @@ import { computed, onMounted, ref } from 'vue'
 import { PlusIcon, Trash2Icon } from 'lucide-vue-next'
 import { useRbac } from '@/hooks/useRbac'
 import PageHeader from '@/components/common/PageHeader.vue'
+import PermissionGate from '@/components/common/PermissionGate.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
 import type { RbacDepartmentItem, RbacPermissionItem, RbacRoleItem, RbacUserItem } from '@/types'
 
 const activeTab = ref('roles')
@@ -199,10 +220,28 @@ async function addDept() {
   if (created) departments.value.push(created)
 }
 
-async function removeDept(id: string) {
-  if (!confirm('确定删除这个部门吗？')) return
-  const ok = await rbacApi.deleteDepartment(id)
-  if (ok) departments.value = departments.value.filter((dept) => dept.id !== id)
+const confirmOpen = ref(false)
+const confirmLoading = ref(false)
+const confirmDescription = ref('')
+const pendingDeptId = ref('')
+
+function removeDept(id: string) {
+  pendingDeptId.value = id
+  confirmDescription.value = '确定删除这个部门吗？删除后相关可见范围配置可能受影响。'
+  confirmOpen.value = true
+}
+
+async function confirmRemoveDept() {
+  if (!pendingDeptId.value) return
+  confirmLoading.value = true
+  try {
+    const ok = await rbacApi.deleteDepartment(pendingDeptId.value)
+    if (ok) departments.value = departments.value.filter((dept) => dept.id !== pendingDeptId.value)
+    confirmOpen.value = false
+  } finally {
+    confirmLoading.value = false
+    pendingDeptId.value = ''
+  }
 }
 
 async function saveUserAuth(u: EditableUser) {

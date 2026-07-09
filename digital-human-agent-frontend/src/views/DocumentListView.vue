@@ -39,123 +39,137 @@
     </section>
 
     <!-- 联合筛选区 -->
-    <section class="flex flex-col gap-4 p-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-xl" aria-label="筛选面板">
-      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>搜索文档</span>
-          <input
-            v-model="query.q"
-            type="text"
-            class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all"
-            placeholder="输入文件名模糊搜索…"
-            @input="onSearchInput"
-          />
-        </label>
+    <FilterBar>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>搜索文档</span>
+        <input
+          v-model="query.q"
+          type="text"
+          class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all"
+          placeholder="输入文件名模糊搜索…"
+          @input="onSearchInput"
+        />
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>所属知识库</span>
-          <select v-model="query.knowledgeBaseId" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部知识库</option>
-            <option v-for="kb in kbs" :key="kb.id" :value="kb.id">
-              {{ kb.name }}
-            </option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>所属知识库</span>
+        <select v-model="query.knowledgeBaseId" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部知识库</option>
+          <option v-for="kb in kbs" :key="kb.id" :value="kb.id">
+            {{ kb.name }}
+          </option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>文件类型</span>
-          <select v-model="query.fileType" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部类型</option>
-            <option value="pdf">PDF</option>
-            <option value="md">Markdown (.md)</option>
-            <option value="txt">文本 (.txt)</option>
-            <option value="video">视频文件</option>
-            <option value="audio">音频文件</option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>文件类型</span>
+        <select v-model="query.fileType" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部类型</option>
+          <option value="pdf">PDF</option>
+          <option value="md">Markdown (.md)</option>
+          <option value="txt">文本 (.txt)</option>
+          <option value="video">视频文件</option>
+          <option value="audio">音频文件</option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>解析状态</span>
-          <select v-model="query.status" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部状态</option>
-            <option value="pending">排队中</option>
-            <option value="processing">处理中</option>
-            <option value="completed">就绪</option>
-            <option value="failed">失败</option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>解析状态</span>
+        <select v-model="query.status" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部状态</option>
+          <option value="pending">排队中</option>
+          <option value="processing">处理中</option>
+          <option value="completed">就绪</option>
+          <option value="failed">失败</option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>图谱同步</span>
-          <select v-model="query.graphStatus" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部状态</option>
-            <option value="pending">排队中</option>
-            <option value="indexed">已同步</option>
-            <option value="failed">同步失败</option>
-            <option value="skipped">已跳过</option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>图谱同步</span>
+        <select v-model="query.graphStatus" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部状态</option>
+          <option value="pending">排队中</option>
+          <option value="indexed">已同步</option>
+          <option value="failed">同步失败</option>
+          <option value="skipped">已跳过</option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>处理阶段</span>
-          <select v-model="query.processingStage" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部阶段</option>
-            <option value="uploaded">已上传</option>
-            <option value="parsing">解析中</option>
-            <option value="chunking">分片中</option>
-            <option value="embedding">向量写入中</option>
-            <option value="keyword_indexing">关键词索引中</option>
-            <option value="graph_indexing">图谱同步中</option>
-            <option value="completed">完成</option>
-            <option value="failed">失败</option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>处理阶段</span>
+        <select v-model="query.processingStage" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部阶段</option>
+          <option value="uploaded">已上传</option>
+          <option value="parsing">解析中</option>
+          <option value="chunking">分片中</option>
+          <option value="embedding">向量写入中</option>
+          <option value="keyword_indexing">关键词索引中</option>
+          <option value="graph_indexing">图谱同步中</option>
+          <option value="completed">完成</option>
+          <option value="failed">失败</option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>可见范围</span>
-          <select v-model="query.visibility" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
-            <option value="">全部范围</option>
-            <option value="company">全公司</option>
-            <option value="department">本部门</option>
-            <option value="private">仅作者</option>
-          </select>
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>可见范围</span>
+        <select v-model="query.visibility" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary transition-all" @change="refreshList">
+          <option value="">全部范围</option>
+          <option value="company">全公司</option>
+          <option value="department">本部门</option>
+          <option value="private">仅作者</option>
+        </select>
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>部门</span>
-          <input v-model="query.department" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="输入部门" @input="onSearchInput" />
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>部门</span>
+        <input v-model="query.department" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="输入部门" @input="onSearchInput" />
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>业务分类</span>
-          <input v-model="query.businessCategory" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="输入分类" @input="onSearchInput" />
-        </label>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>业务分类</span>
+        <input v-model="query.businessCategory" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="输入分类" @input="onSearchInput" />
+      </label>
 
-        <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
-          <span>标签</span>
-          <input v-model="query.tags" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="多个标签用逗号分隔" @input="onSearchInput" />
-        </label>
-      </div>
+      <label class="flex flex-col gap-1.5 text-[11px] text-text-secondary text-left font-bold">
+        <span>标签</span>
+        <input v-model="query.tags" type="text" class="h-9.5 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary focus:ring-3 focus:ring-border-focus transition-all" placeholder="多个标签用逗号分隔" @input="onSearchInput" />
+      </label>
 
-      <div class="flex justify-end">
+      <template #actions>
         <button class="px-4 py-2 border border-border-main bg-white rounded-lg text-xs font-bold text-text-secondary cursor-pointer transition-all hover:bg-slate-50 hover:border-primary-muted hover:text-primary" type="button" @click="resetFilters">
           重置筛选
         </button>
-      </div>
-    </section>
+      </template>
+    </FilterBar>
 
     <!-- 列表展示区 -->
     <section class="flex-1">
-      <div v-if="kbApi.documentsLoading.value && items.length === 0" class="flex flex-col items-center justify-center p-16 bg-white/65 rounded-xl border border-dashed border-border-main text-text-muted text-xs gap-3">
-        <div class="w-7 h-7 border-3 border-blue-500/20 border-t-primary rounded-full animate-spin"></div>
-        <p>正在拉取文档清单…</p>
-      </div>
+      <LoadingSkeleton v-if="kbApi.documentsLoading.value && items.length === 0" :rows="4" :row-height="72" label="正在拉取文档清单" />
 
-      <div v-else-if="items.length === 0" class="flex flex-col items-center justify-center p-16 bg-white/65 rounded-xl border border-dashed border-border-main text-text-muted text-xs gap-3">
-        <FileTextIcon :size="28" class="text-text-muted" />
-        <p>没有找到符合筛选条件的文档</p>
-        <button v-if="canUploadDocuments" class="bg-transparent border-none text-primary font-bold cursor-pointer hover:underline" type="button" @click="openUploadModal(null)">上传第一个文档</button>
-      </div>
+      <ErrorState
+        v-else-if="listError"
+        title="文档列表加载失败"
+        :description="listError"
+        @retry="refreshList"
+      />
+
+      <EmptyState
+        v-else-if="items.length === 0"
+        title="没有找到符合筛选条件的文档"
+        description="可调整筛选条件，或上传新的企业知识资产。"
+        :icon="FileTextIcon"
+      >
+        <template #actions>
+          <button
+            v-if="canUploadDocuments"
+            class="bg-transparent border-none text-primary font-bold cursor-pointer hover:underline"
+            type="button"
+            @click="openUploadModal(null)"
+          >
+            上传第一个文档
+          </button>
+        </template>
+      </EmptyState>
 
       <div v-else class="bg-white/65 backdrop-blur-md border border-white/50 rounded-xl shadow-[0_4px_20px_rgba(15,23,42,0.015)] overflow-x-auto">
         <table class="w-full border-collapse text-left">
@@ -199,17 +213,18 @@
                 </div>
               </td>
               <td class="p-3.5 px-5 border-b border-border-main">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10.5px] font-bold whitespace-nowrap" :class="statusClassOf(doc.status)">
+                <StatusBadge :status="doc.status" :label="statusLabelOf(doc.status)">
                   {{ statusLabelOf(doc.status) }}
-                  <span v-if="doc.processingStage || doc.processing_stage" class="text-[9.5px] font-semibold opacity-85">
+                  <span v-if="doc.processingStage || doc.processing_stage" class="opacity-85">
                     ({{ stageLabelOf(doc.processingStage || doc.processing_stage) }})
                   </span>
-                </span>
+                </StatusBadge>
               </td>
               <td class="p-3.5 px-5 border-b border-border-main">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10.5px] font-bold whitespace-nowrap" :class="graphStatusClassOf(doc.graphSyncStatus || doc.graph_sync_status)">
-                  {{ graphStatusLabelOf(doc.graphSyncStatus || doc.graph_sync_status) }}
-                </span>
+                <StatusBadge
+                  :status="doc.graphSyncStatus || doc.graph_sync_status || 'pending'"
+                  :label="graphStatusLabelOf(doc.graphSyncStatus || doc.graph_sync_status)"
+                />
               </td>
               <td class="p-3.5 px-5 border-b border-border-main">
                 <div class="flex flex-col gap-0.5 text-[11px]">
@@ -348,6 +363,11 @@ import { useDocumentFilters } from '@/hooks/useDocumentFilters'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
 import PageHeader from '@/components/common/PageHeader.vue'
 import PermissionGate from '@/components/common/PermissionGate.vue'
+import StatusBadge from '@/components/common/StatusBadge.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import ErrorState from '@/components/common/ErrorState.vue'
+import LoadingSkeleton from '@/components/common/LoadingSkeleton.vue'
+import FilterBar from '@/components/common/FilterBar.vue'
 import type { KnowledgeBase, KnowledgeDocumentDetail } from '@/types'
 
 // 导入拆分后的子组件
@@ -365,6 +385,7 @@ const items = ref<KnowledgeDocumentDetail[]>([])
 const kbs = ref<KnowledgeBase[]>([])
 const total = ref(0)
 const retryingId = ref('')
+const listError = ref('')
 
 const canUploadDocuments = computed(() => permissionApi.can('documents:upload'))
 const canRetryDocuments = computed(() => permissionApi.can('documents:retry'))
@@ -386,9 +407,16 @@ const assetCount = computed(() =>
 
 // 载入列表与基础数据
 async function refreshList() {
-  const res = await kbApi.listAllDocuments(query)
-  items.value = res.items
-  total.value = res.total
+  listError.value = ''
+  try {
+    const res = await kbApi.listAllDocuments(query)
+    items.value = res.items
+    total.value = res.total
+  } catch (error) {
+    listError.value = error instanceof Error ? error.message : '文档列表加载失败'
+    items.value = []
+    total.value = 0
+  }
 }
 
 async function loadKbs() {

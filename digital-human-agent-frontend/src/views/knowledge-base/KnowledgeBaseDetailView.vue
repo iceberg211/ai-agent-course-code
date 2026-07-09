@@ -32,10 +32,13 @@
     </nav>
 
     <section class="flex-1 overflow-y-auto min-h-0 bg-white border border-slate-200/80 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.015)] p-5">
-      <DocumentsTab v-if="active === 'documents'" :kb-id="kbId" />
+      <OverviewTab v-if="active === 'overview'" :kb-id="kbId" />
+      <DocumentsTab v-else-if="active === 'documents'" :kb-id="kbId" />
       <HealthTab v-else-if="active === 'health'" :kb-id="kbId" />
       <GraphTab v-else-if="active === 'graph'" :kb-id="kbId" />
       <HitTestTab v-else-if="active === 'hit-test'" :kb="kb" />
+      <EvaluationTab v-else-if="active === 'evaluation'" :kb-id="kbId" />
+      <PermissionsTab v-else-if="active === 'permissions'" :kb="kb" />
       <SettingsTab v-else-if="active === 'settings'" :kb="kb" @changed="onKbChanged" @deleted="onKbDeleted" />
     </section>
   </main>
@@ -48,14 +51,16 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeftIcon } from 'lucide-vue-next'
-import { KNOWLEDGE_BASE_DETAIL_TABS } from '@/common/constants'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { KnowledgeBase } from '@/types'
+import OverviewTab from '@/components/knowledge-base/tabs/OverviewTab.vue'
 import DocumentsTab from '@/components/knowledge-base/tabs/DocumentsTab.vue'
 import HealthTab from '@/components/knowledge-base/tabs/HealthTab.vue'
 import GraphTab from '@/components/knowledge-base/tabs/GraphTab.vue'
 import HitTestTab from '@/components/knowledge-base/tabs/HitTestTab.vue'
+import EvaluationTab from '@/components/knowledge-base/tabs/EvaluationTab.vue'
+import PermissionsTab from '@/components/knowledge-base/tabs/PermissionsTab.vue'
 import SettingsTab from '@/components/knowledge-base/tabs/SettingsTab.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 
@@ -64,9 +69,18 @@ const router = useRouter()
 const hook = useKnowledgeBase()
 const store = useKnowledgeBaseStore()
 
-type TabKey = 'documents' | 'health' | 'graph' | 'hit-test' | 'settings'
-const tabs: { key: TabKey; label: string }[] = KNOWLEDGE_BASE_DETAIL_TABS
-const active = ref<TabKey>('documents')
+type TabKey = 'overview' | 'documents' | 'health' | 'graph' | 'hit-test' | 'evaluation' | 'permissions' | 'settings'
+const tabs: { key: TabKey; label: string }[] = [
+  { key: 'overview', label: '库概览' },
+  { key: 'documents', label: '资料管理' },
+  { key: 'health', label: '召回健康度' },
+  { key: 'graph', label: '知识图谱' },
+  { key: 'hit-test', label: '检索调试' },
+  { key: 'evaluation', label: '黄金回归测试' },
+  { key: 'permissions', label: 'ACL 权限控制' },
+  { key: 'settings', label: '库配置' },
+]
+const active = ref<TabKey>('overview')
 
 const kb = ref<KnowledgeBase | null>(null)
 const loading = ref(false)
