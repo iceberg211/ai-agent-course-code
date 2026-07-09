@@ -27,7 +27,9 @@ import {
   fuseMultiChannelResultsWithTrace,
 } from '@/knowledge/services/retrieval/channels/knowledge-retrieval-fusion';
 import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-config.service';
+import { ChunkExpansionService } from '@/knowledge/services/document/chunk-expansion.service';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
+import { DataScopeService } from '@/rbac/services/data-scope.service';
 import { FulltextRetrieverService } from './fulltext-retriever.service';
 import type {
   GraphBackend,
@@ -83,6 +85,10 @@ export class HybridRetrieverService {
     @Optional()
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo?: Repository<KnowledgeChunkEntity>,
+    @Optional()
+    private readonly dataScopeService?: DataScopeService,
+    @Optional()
+    private readonly chunkExpansionService?: ChunkExpansionService,
   ) {}
 
   // ==========================================
@@ -229,8 +235,12 @@ export class HybridRetrieverService {
     const results = taskResults.map((t) => t.chunks);
     const trace = taskResults.map((t) => t.traceItem);
 
+    let chunks = mergeHybridResults(results, params.globalRetrievalLimit);
+    chunks = await this.expandChunks(chunks, params.strategy.chunkContextWindow);
+    chunks = await this.applyAccessScopeFilter(chunks, params.accessScope);
+
     return {
-      chunks: mergeHybridResults(results, params.globalRetrievalLimit),
+      chunks,
       trace,
     };
   }
@@ -343,17 +353,21 @@ export class HybridRetrieverService {
         ? Math.max(...rerankLimits)
         : DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
 
+    let chunks = mergeHybridResults(
+      successfulResults.map((item) => item.result.chunks),
+      input.retrievalLimit === undefined
+        ? Math.max(
+            20,
+            ...knowledgeConfigs.map((config) => config.retrievalLimit),
+          )
+        : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
+    );
+    // retrieveForKnowledge 已做过 ACL；persona 合并后再次校准，防御跨库拼装遗漏
+    chunks = await this.applyAccessScopeFilter(chunks, input.accessScope);
+
     return {
       knowledgeCount: successfulResults.length,
-      chunks: mergeHybridResults(
-        successfulResults.map((item) => item.result.chunks),
-        input.retrievalLimit === undefined
-          ? Math.max(
-              20,
-              ...knowledgeConfigs.map((config) => config.retrievalLimit),
-            )
-          : this.runtime.toBoundedNumber(input.retrievalLimit, 20, 1, 50),
-      ),
+      chunks,
       trace: successfulResults.flatMap((item) => item.result.trace),
       rerankLimit,
     };
@@ -929,6 +943,52 @@ export class HybridRetrieverService {
     if (groups[value]) return groups[value];
     const ext = value.replace(/^\./, '');
     return [{ ext, mime: `${ext}/` }];
+  }
+
+  private async applyAccessScopeFilter(
+    chunks: KnowledgeChunk[],
+    accessScope?: KnowledgeAccessScope,
+  ): Promise<KnowledgeChunk[]> {
+    if (!this.dataScopeService || chunks.length === 0) {
+      return chunks;
+    }
+    try {
+      const filtered = await this.dataScopeService.filterKnowledgeChunks(
+        chunks,
+        accessScope,
+      );
+      return filtered.chunks;
+    } catch (error) {
+      this.logger.warn(
+        `DataScope 后置过滤失败，回退当前结果：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return chunks;
+    }
+  }
+
+  private async expandChunks(
+    chunks: KnowledgeChunk[],
+    chunkContextWindow?: number,
+  ): Promise<KnowledgeChunk[]> {
+    if (!this.chunkExpansionService || chunks.length === 0) {
+      return chunks;
+    }
+    const window = Number(chunkContextWindow ?? 0);
+    if (!Number.isFinite(window) || window <= 0) {
+      return chunks;
+    }
+    try {
+      return await this.chunkExpansionService.expand(chunks, window);
+    } catch (error) {
+      this.logger.warn(
+        `Chunk 邻接扩展失败，回退原结果：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return chunks;
+    }
   }
 
   private buildSkippedHybridResult(

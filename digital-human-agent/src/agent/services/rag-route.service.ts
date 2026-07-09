@@ -163,8 +163,11 @@ export class RagRouteService {
     const hitCount = complexPatterns.filter((pattern) =>
       pattern.test(normalized),
     ).length;
+    // 提高 complex 阈值，避免普通中长句被过度拆 hop 导致延迟与费用上升
     const strategy: RagStrategy =
-      hitCount >= 2 || normalized.length >= 28 ? 'complex' : 'simple';
+      hitCount >= 2 || (hitCount >= 1 && normalized.length >= 40)
+        ? 'complex'
+        : 'simple';
 
     return {
       strategy,

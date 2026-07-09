@@ -5,6 +5,7 @@ import { AsrService } from '@/speech/asr/asr.service';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { AgentPipelineService } from '@/gateway/pipeline/agent-pipeline.service';
+import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
 /**
@@ -13,7 +14,7 @@ import { sendJson } from '@/gateway/utils/ws-send.util';
  * 职责：
  * - 验证当前会话存在
  * - 调用 AsrService 识别语音
- * - 保存用户消息到 DB
+ * - 保存用户消息到 DB 与短期记忆
  * - 初始化 turn 状态
  * - 委托 AgentPipelineService 执行 Agent
  */
@@ -24,6 +25,7 @@ export class AudioHandler {
     private readonly conversationService: ConversationService,
     private readonly sessionRegistry: RealtimeSessionRegistry,
     private readonly agentPipeline: AgentPipelineService,
+    private readonly shortTermMemoryService: ShortTermMemoryService,
   ) {}
 
   async handle(
@@ -80,6 +82,11 @@ export class AudioHandler {
       role: 'user',
       content: text,
       status: 'completed',
+    });
+    void this.shortTermMemoryService.appendMessage(session.conversationId, {
+      role: 'user',
+      content: text,
+      turnId,
     });
 
     await this.agentPipeline.run(client, session, text, turnId);

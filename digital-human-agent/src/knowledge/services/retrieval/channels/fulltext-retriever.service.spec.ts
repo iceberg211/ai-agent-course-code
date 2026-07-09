@@ -60,10 +60,33 @@ describe('FulltextRetrieverService', () => {
       getKnowledgeChunkReadAlias: jest.fn().mockReturnValue('alias-read'),
     };
 
+    const existingChunks =
+      options?.existingChunks ??
+      [
+        {
+          id: 'chunk-1',
+          documentId: 'doc-1',
+          content: 'test content',
+          source: 'test.md',
+          chunkIndex: 0,
+          category: 'test',
+          document: {
+            id: 'doc-1',
+            knowledgeBaseId: 'kb-1',
+            isCurrentVersion: true,
+            archivedAt: null,
+            visibility: 'company',
+            ownerId: 'owner-1',
+            department: null,
+          },
+        },
+      ];
+
     const queryBuilder = {
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -73,21 +96,13 @@ describe('FulltextRetrieverService', () => {
       getRawMany: jest
         .fn()
         .mockResolvedValue(options?.pgResult ?? [sampleChunk]),
+      getMany: jest.fn().mockResolvedValue(existingChunks),
     };
 
     const chunkRepo = {
       createQueryBuilder: jest.fn(() => queryBuilder),
       find: jest.fn().mockResolvedValue(
-        options?.existingChunks ?? [
-          {
-            id: 'chunk-1',
-            documentId: 'doc-1',
-            content: 'test content',
-            source: 'test.md',
-            chunkIndex: 0,
-            category: 'test',
-          },
-        ],
+        existingChunks,
       ),
     };
 

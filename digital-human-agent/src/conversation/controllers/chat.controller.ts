@@ -184,6 +184,9 @@ export class ChatController {
               content: assistantReply,
               turnId,
             });
+            void this.shortTermMemoryService.refreshSummaryFromWindow(
+              conversation.id,
+            );
             if (ownerId) {
               void this.longTermMemoryService.captureFromConversation({
                 ownerId,
@@ -192,6 +195,10 @@ export class ChatController {
                 userMessage,
                 assistantMessage: assistantReply,
               });
+              void this.shortTermMemoryService.setActiveContext(
+                ownerId,
+                `最近问题：${userMessage.slice(0, 200)}`,
+              );
             }
           }
 

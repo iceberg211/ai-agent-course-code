@@ -7,6 +7,8 @@ import { RealtimeSessionRegistry } from '@/conversation/services/realtime-sessio
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
+import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
+import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 
 /**
@@ -37,6 +39,8 @@ export class AgentPipelineService {
     private readonly sessionRegistry: RealtimeSessionRegistry,
     private readonly ttsPipeline: TtsPipelineService,
     private readonly speakPipeline: SpeakPipelineService,
+    private readonly shortTermMemoryService: ShortTermMemoryService,
+    private readonly longTermMemoryService: LongTermMemoryService,
   ) {}
 
   /**
@@ -135,6 +139,33 @@ export class AgentPipelineService {
           ragTrace,
           latencyMs: Date.now() - startedAt,
         });
+      }
+
+      // 与 HTTP /chat 对齐：写入短期记忆，并异步抽取长期偏好
+      if (hasWrittenReply) {
+        void this.shortTermMemoryService.appendMessage(session.conversationId, {
+          role: 'assistant',
+          content: fullReply,
+          turnId,
+        });
+        const ownerId = session.accessScope?.ownerId ?? session.ownerId;
+        if (ownerId) {
+          void this.longTermMemoryService.captureFromConversation({
+            ownerId,
+            department:
+              session.accessScope?.department ?? session.department ?? null,
+            conversationId: session.conversationId,
+            userMessage,
+            assistantMessage: fullReply,
+          });
+          void this.shortTermMemoryService.setActiveContext(
+            ownerId,
+            `最近问题：${userMessage.slice(0, 200)}`,
+          );
+        }
+        void this.shortTermMemoryService.refreshSummaryFromWindow(
+          session.conversationId,
+        );
       }
 
       if (shouldSendError) {

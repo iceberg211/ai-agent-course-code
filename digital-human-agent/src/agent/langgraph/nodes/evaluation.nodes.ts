@@ -12,6 +12,7 @@ import { RerankerService } from '@/knowledge/services/retrieval/processing/reran
 import {
   canContinueMultiHop,
   extendSubQuestionsWithMissingFacts,
+  getCurrentQuery,
   getPlannedQuestions,
   shouldUseWebFallback,
   publishCitations,
@@ -33,8 +34,15 @@ export function createRerankNode(rerankerService: RerankerService) {
       } satisfies Partial<RagGraphState>;
     }
 
+    // 多跳时用当前 hop 查询句重排，同时保留原始问题以覆盖整体意图
+    const currentQuery = getCurrentQuery(state);
+    const rerankQuery =
+      currentQuery && currentQuery !== state.question
+        ? `${state.question}\n当前检索焦点：${currentQuery}`
+        : state.question;
+
     const topDocuments = await rerankerService.rerank(
-      state.question,
+      rerankQuery,
       documents,
       state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
       input.signal,
@@ -97,13 +105,15 @@ function resolveStopReason(
     }
   }
 
-  if (state.strategy === 'complex') {
-    if (state.currentHop >= state.maxHops) {
-      return 'max_hops_reached';
-    }
-    if (state.nextSubIdx >= getPlannedQuestions(state).length) {
-      return 'sub_questions_exhausted';
-    }
+  if (state.currentHop >= state.maxHops) {
+    return 'max_hops_reached';
+  }
+  if (state.nextSubIdx >= getPlannedQuestions(state).length) {
+    return state.strategy === 'complex'
+      ? 'sub_questions_exhausted'
+      : 'single_hop_insufficient';
+  }
+  if (state.strategy === 'complex' || state.currentHop > 1) {
     return 'multi_hop_insufficient';
   }
 

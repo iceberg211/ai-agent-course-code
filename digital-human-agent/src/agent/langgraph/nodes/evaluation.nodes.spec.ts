@@ -53,6 +53,36 @@ describe('createRerankNode', () => {
     });
   });
 
+  it('多跳时会用原始问题 + 当前 hop 查询句做 rerank', async () => {
+    const rerankerService = {
+      rerank: jest.fn().mockResolvedValue([documents[0]]),
+    };
+    const node = createRerankNode(rerankerService as never);
+
+    await node(
+      {
+        question: '合同删除与审计要求是什么？',
+        currentQuery: '审计要求是什么？',
+        currentHop: 2,
+        documents,
+      } as never,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(rerankerService.rerank).toHaveBeenCalledWith(
+      '合同删除与审计要求是什么？\n当前检索焦点：审计要求是什么？',
+      documents,
+      5,
+      expect.any(AbortSignal),
+    );
+  });
+
   it('没有 documents 时不会调用 reranker', async () => {
     const rerankerService = {
       rerank: jest.fn(),
@@ -235,6 +265,49 @@ describe('createEvaluateEvidenceNode', () => {
         '审计保留要求是什么？',
       ],
       stopReason: 'multi_hop_insufficient',
+    });
+  });
+
+  it('simple 策略在证据不足时也能扩展缺失事实并回到本地检索', async () => {
+    const evidenceEvaluatorService = {
+      evaluate: jest.fn().mockResolvedValue({
+        enough: false,
+        missingFacts: ['试用期删除时限是几天？'],
+        reason: '缺少关键时限',
+        webQuery: '试用期 删除 时限',
+      }),
+    };
+    const node = createEvaluateEvidenceNode(
+      evidenceEvaluatorService as never,
+      { isEnabled: jest.fn().mockReturnValue(true) } as never,
+    );
+
+    const command = await node(
+      {
+        ...baseState,
+        strategy: 'simple',
+        subQuestions: [],
+        nextSubIdx: 1,
+        currentHop: 1,
+        maxHops: 3,
+      } as RagGraphState,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(command.goto).toEqual(['retrieve']);
+    expect(command.update).toMatchObject({
+      enough: false,
+      subQuestions: [
+        '合同删除条款和审计要求是什么？',
+        '试用期删除时限是几天？',
+      ],
+      stopReason: 'single_hop_insufficient',
     });
   });
 

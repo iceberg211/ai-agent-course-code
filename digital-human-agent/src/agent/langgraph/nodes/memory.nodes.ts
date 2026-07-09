@@ -66,13 +66,7 @@ export function createFilterMemoryByPolicyNode(
 
 export function createMergeMemoryContextNode() {
   return async (state: RagGraphState) => {
-    // ── 企业知识库证据 ──────────────────────────────────────────
-    const knowledgeParts = (state.topDocuments ?? [])
-      .slice(0, 10)
-      .map(
-        (chunk, index) =>
-          `[证据 ${index + 1}] 来源：${chunk.source ?? '未知'}\n${chunk.content}`,
-      );
+    // 知识库证据只在 generate_answer 的 knowledgeBlock 注入，避免双重拼装浪费 token
 
     // ── 短期记忆 ────────────────────────────────────────────────
     const shortWindow = state.shortTermMemory.window
@@ -99,13 +93,9 @@ export function createMergeMemoryContextNode() {
           )}\n${item.content}`,
       );
 
-    // 上下文优先级：系统规则 > 企业知识库事实 > 当前会话上下文 > 用户长期偏好
+    // 仅合并会话记忆与用户偏好；企业知识由 knowledgeBlock 单独提供
     return {
       memoryContext: [
-        '<knowledge_base>',
-        knowledgeParts.join('\n\n') || '（当前检索未命中企业知识库证据）',
-        '</knowledge_base>',
-        '',
         '<conversation_context>',
         shortParts.join('\n\n') || '（当前会话暂无可用短期记忆）',
         '</conversation_context>',

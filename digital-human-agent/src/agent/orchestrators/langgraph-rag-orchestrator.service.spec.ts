@@ -476,7 +476,7 @@ describe('LangGraphRagOrchestratorService', () => {
       }),
     );
     expect(deps.rerankerService.rerank).toHaveBeenCalledWith(
-      '雁门关事件的主谋是谁，他儿子的结局是什么？',
+      '雁门关事件的主谋是谁，他儿子的结局是什么？\n当前检索焦点：慕容博的儿子结局是什么？',
       [chunkA, chunkB],
       5,
       expect.any(AbortSignal),
@@ -575,7 +575,8 @@ describe('LangGraphRagOrchestratorService', () => {
         {
           enough: false,
           reason: '本地证据不足，需要联网补充',
-          missingFacts: ['最新资料'],
+          // 不给 missingFacts，避免 simple 优先走本地补 hop，直接进入 web
+          missingFacts: [],
           webQuery: '雁门关事件 最新资料',
         },
         {
@@ -596,6 +597,7 @@ describe('LangGraphRagOrchestratorService', () => {
       signal: new AbortController().signal,
       onToken: jest.fn(),
       onCitations: jest.fn(),
+      maxHops: 1,
     });
 
     expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
@@ -624,7 +626,7 @@ describe('LangGraphRagOrchestratorService', () => {
         {
           enough: false,
           reason: '需要联网',
-          missingFacts: ['缺少补充资料'],
+          missingFacts: [],
           webQuery: '需要联网的问题 最新进展',
         },
       ],
@@ -639,6 +641,7 @@ describe('LangGraphRagOrchestratorService', () => {
       signal: new AbortController().signal,
       onToken: jest.fn(),
       onCitations: jest.fn(),
+      maxHops: 1,
     });
 
     expect(deps.webFallbackService.search).toHaveBeenCalledTimes(1);
@@ -702,7 +705,7 @@ describe('LangGraphRagOrchestratorService', () => {
         {
           enough: false,
           reason: '本地证据不足，需要联网补充',
-          missingFacts: ['最新资料'],
+          missingFacts: [],
           webQuery: '雁门关事件 最新资料',
         },
         {
@@ -724,6 +727,7 @@ describe('LangGraphRagOrchestratorService', () => {
       signal: new AbortController().signal,
       onToken: jest.fn(),
       onCitations: jest.fn(),
+      maxHops: 1,
     });
 
     expect(deps.webFallbackService.search).toHaveBeenCalledTimes(2);

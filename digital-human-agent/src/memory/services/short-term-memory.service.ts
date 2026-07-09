@@ -85,6 +85,44 @@ export class ShortTermMemoryService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * 基于当前滑动窗口生成轻量会话摘要（无额外 LLM 调用）。
+   * 在 assistant 消息写入后调用，确保 summary 字段可用。
+   */
+  async refreshSummaryFromWindow(conversationId: string): Promise<void> {
+    await this.safeRun(async () => {
+      const windowRows = await this.redis.lrange(
+        this.windowKey(conversationId),
+        0,
+        this.windowLimit - 1,
+      );
+      const items = windowRows
+        .map((row) => safeParseMemoryItem(row))
+        .filter((item): item is ConversationMemoryItem => Boolean(item))
+        .reverse();
+      if (items.length === 0) {
+        return;
+      }
+
+      const summary = items
+        .slice(-8)
+        .map((item) => {
+          const role = item.role === 'user' ? '用户' : '助手';
+          const content = item.content.replace(/\s+/g, ' ').trim().slice(0, 120);
+          return `${role}：${content}`;
+        })
+        .join('；')
+        .slice(0, 4000);
+
+      await this.redis.set(
+        this.summaryKey(conversationId),
+        summary,
+        'EX',
+        this.ttlSeconds,
+      );
+    });
+  }
+
   async getRetrievalCache<T>(queryHash: string): Promise<T | null> {
     return this.safeRun(async () => {
       const value = await this.redis.get(`rag:retrieval-cache:${queryHash}`);

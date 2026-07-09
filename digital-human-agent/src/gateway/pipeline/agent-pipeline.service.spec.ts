@@ -58,6 +58,14 @@ describe('AgentPipelineService', () => {
       enqueue: jest.fn(),
       markFinalize: jest.fn(),
     };
+    const shortTermMemoryService = {
+      appendMessage: jest.fn().mockResolvedValue(undefined),
+      setActiveContext: jest.fn().mockResolvedValue(undefined),
+      refreshSummaryFromWindow: jest.fn().mockResolvedValue(undefined),
+    };
+    const longTermMemoryService = {
+      captureFromConversation: jest.fn().mockResolvedValue(null),
+    };
 
     const service = new AgentPipelineService(
       agentService as never,
@@ -65,6 +73,8 @@ describe('AgentPipelineService', () => {
       sessionRegistry as never,
       ttsPipeline as never,
       speakPipeline as never,
+      shortTermMemoryService as never,
+      longTermMemoryService as never,
     );
 
     const client = {

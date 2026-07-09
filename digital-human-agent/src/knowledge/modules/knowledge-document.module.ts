@@ -74,6 +74,7 @@ import { DocumentParserService } from '@/knowledge/services/document/parsers/doc
     DocumentTaskService,
     DocumentTaskRunnerService,
     DocumentTaskWorkerService,
+    ChunkExpansionService,
     RagRuntimeService,
     elasticsearchProvider,
     ElasticsearchIndexService,

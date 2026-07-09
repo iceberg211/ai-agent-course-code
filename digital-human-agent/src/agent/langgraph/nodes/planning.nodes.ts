@@ -62,8 +62,9 @@ export function createPlanSubQuestionsNode(
 export function createPlanNextStepNode() {
   return async (state: RagGraphState) => {
     const plannedQuestions = getPlannedQuestions(state);
+    // complex 初始多跳，或 simple/complex 扩展后的剩余子问题，在 rerank 前继续本地检索
     const hasRemainingQueries =
-      state.strategy === 'complex' &&
+      state.strategy !== 'none' &&
       state.nextSubIdx < Math.min(state.maxHops, plannedQuestions.length);
     const plannedNext = hasRemainingQueries ? 'retrieve' : 'rerank';
 

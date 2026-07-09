@@ -474,10 +474,14 @@ describe('createGraphReasoningNode', () => {
     expect(graphService.listEntities).toHaveBeenCalledWith(
       'kb-1',
       expect.stringContaining('乔峰'),
-      20,
+      12,
       accessScope,
     );
-    expect(graphService.getNeighborhood).toHaveBeenCalledWith('kb-1', 'Topic::乔峰', accessScope);
+    expect(graphService.getNeighborhood).toHaveBeenCalledWith(
+      'kb-1',
+      'Topic::乔峰',
+      accessScope,
+    );
     expect(result.documents).toHaveLength(2);
     expect(result.graphReasoningTrace).toEqual([
       {
@@ -489,9 +493,67 @@ describe('createGraphReasoningNode', () => {
         reason: undefined,
       },
     ]);
-    
+
     const contents = result.documents.map((d: any) => d.content);
     expect(contents).toContain('乔峰与慕容复齐名。');
     expect(contents).toContain('乔峰是契丹人。');
+  });
+
+  it('hybrid 已有足够图谱证据时跳过二次扩展', async () => {
+    const graphService = {
+      isEnabled: () => true,
+      listEntities: jest.fn(),
+      getNeighborhood: jest.fn(),
+    } as any;
+
+    const node = createGraphReasoningNode(graphService);
+    const result = await node(
+      {
+        ...baseState,
+        documents: [
+          {
+            id: 'g1',
+            content: 'a',
+            source: 't.md',
+            knowledge_base_id: 'kb-1',
+            chunk_index: 0,
+            category: null,
+            graph_score: 0.9,
+            retrieval_sources: ['graph'],
+          },
+          {
+            id: 'g2',
+            content: 'b',
+            source: 't.md',
+            knowledge_base_id: 'kb-1',
+            chunk_index: 1,
+            category: null,
+            graph_score: 0.8,
+            retrieval_sources: ['graph'],
+          },
+          {
+            id: 'g3',
+            content: 'c',
+            source: 't.md',
+            knowledge_base_id: 'kb-1',
+            chunk_index: 2,
+            category: null,
+            graph_score: 0.7,
+            retrieval_sources: ['graph'],
+          },
+        ],
+      },
+      {
+        configurable: {
+          workflowInput: { signal: new AbortController().signal },
+        },
+      } as any,
+    );
+
+    expect(graphService.listEntities).not.toHaveBeenCalled();
+    expect(result.graphReasoningTrace?.[0]).toMatchObject({
+      skipped: true,
+      reason: expect.stringContaining('跳过二次扩展'),
+    });
   });
 });

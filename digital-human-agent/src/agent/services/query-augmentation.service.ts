@@ -139,7 +139,8 @@ export class QueryAugmentationService {
         useMultiQuery: retrievalQueries.length > 1,
         allowWeb: true,
         queryCount: retrievalQueries.length,
-        chunkContextWindow: 0,
+        // 精确查找保持窗口 0；常规问答扩展邻接 chunk 降低跨段截断
+        chunkContextWindow: exactLike ? 0 : 1,
         graphMode: graphLike ? 'path' : 'neighbors',
         graphMaxHops: graphLike ? 2 : 1,
         reason: graphLike

@@ -242,7 +242,30 @@ export function createGraphReasoningNode(
         } satisfies Partial<RagGraphState>;
       }
 
-      // 1. 获取现有召回的 Top 3 chunks 作为提取实体的分析材料
+      // hybrid 通道已带回足够图谱证据时，跳过二次一跳扩展，降低噪声与延迟
+      const existingGraphHits = state.documents.filter(
+        (doc) =>
+          doc.retrieval_sources?.includes('graph') ||
+          (doc.graph_score ?? 0) > 0 ||
+          (doc.graph_evidence?.length ?? 0) > 0,
+      ).length;
+      if (existingGraphHits >= 3) {
+        return {
+          graphReasoningTrace: [
+            ...(state.graphReasoningTrace ?? []),
+            {
+              knowledgeId: '*',
+              matchedEntities: [],
+              expandedChunkIds: [],
+              expandedChunkCount: 0,
+              skipped: true,
+              reason: `hybrid 已命中 ${existingGraphHits} 条图谱证据，跳过二次扩展`,
+            },
+          ],
+        } satisfies Partial<RagGraphState>;
+      }
+
+      // 1. 获取现有召回的 Top 3 chunks 作为实体匹配材料
       const topChunks = state.documents.slice(0, 3);
       if (topChunks.length === 0) return {};
 
@@ -258,51 +281,84 @@ export function createGraphReasoningNode(
       );
       if (kbIds.length === 0) return {};
 
+      const entitySearchTerms = extractGraphEntitySearchTerms(
+        [state.question, currentQueryText(state), docContents].join(' '),
+      );
+      if (entitySearchTerms.length === 0) {
+        return {
+          graphReasoningTrace: [
+            ...(state.graphReasoningTrace ?? []),
+            {
+              knowledgeId: '*',
+              matchedEntities: [],
+              expandedChunkIds: [],
+              expandedChunkCount: 0,
+              skipped: true,
+              reason: '无法从问题与证据中提取实体检索词',
+            },
+          ],
+        } satisfies Partial<RagGraphState>;
+      }
+
       const expandedChunks: KnowledgeChunk[] = [];
       const graphReasoningTrace: RagGraphState['graphReasoningTrace'] = [];
+      const existingChunkIds = new Set(state.documents.map((doc) => doc.id));
 
       for (const kbId of kbIds) {
-        const entitySearchTerms = extractGraphEntitySearchTerms(
-          [state.question, currentQueryText(state), docContents].join(' '),
-        );
         const entityRows = await Promise.all(
           entitySearchTerms.map((term) =>
-            graphService.listEntities(kbId, term, 20, input.accessScope),
+            graphService.listEntities(kbId, term, 12, input.accessScope),
           ),
         );
         const entityByKey = new Map<string, any>();
         for (const row of entityRows.flat()) {
           if (row?.key) entityByKey.set(String(row.key), row);
         }
+        // 不再做空 term 全量实体 fallback，避免噪声注入与额外 Neo4j 开销
         if (entityByKey.size === 0) {
-          const fallbackEntities = await graphService.listEntities(
-            kbId,
-            '',
-            50,
-            input.accessScope,
-          );
-          for (const row of fallbackEntities) {
-            if (row?.key) entityByKey.set(String(row.key), row);
-          }
+          graphReasoningTrace.push({
+            knowledgeId: kbId,
+            matchedEntities: [],
+            expandedChunkIds: [],
+            expandedChunkCount: 0,
+            skipped: true,
+            reason: '实体检索词未命中图谱实体',
+          });
+          continue;
         }
+
         const entities = Array.from(entityByKey.values());
-        const entityMatchText = [docContents, state.question, currentQueryText(state)]
+        const entityMatchText = [
+          docContents,
+          state.question,
+          currentQueryText(state),
+        ]
           .join(' ')
           .toLowerCase();
-        // 匹配问题或已召回证据里出现过的实体名称
-        const matchedEntities = entities.filter((ent) =>
-          ent.name && entityMatchText.includes(ent.name.toLowerCase()),
-        );
+        // 优先精确匹配实体名；要求实体名至少 2 字，降低短词误匹配
+        const matchedEntities = entities
+          .filter((ent) => {
+            const name = String(ent.name ?? '').trim();
+            if (name.length < 2) return false;
+            return entityMatchText.includes(name.toLowerCase());
+          })
+          .sort(
+            (left, right) =>
+              String(right.name ?? '').length - String(left.name ?? '').length,
+          );
         const expandedChunkIds = new Set<string>();
 
-        // 最多对 3 个实体进行一跳邻近节点推理，避免关系爆炸
-        for (const ent of matchedEntities.slice(0, 3)) {
+        // 最多对 2 个实体进行一跳邻近节点推理，避免关系爆炸
+        for (const ent of matchedEntities.slice(0, 2)) {
           const neighborChunks = await graphService.getNeighborhood(
             kbId,
             ent.key,
             input.accessScope,
           );
           for (const row of neighborChunks) {
+            if (existingChunkIds.has(row.id) || expandedChunkIds.has(row.id)) {
+              continue;
+            }
             expandedChunkIds.add(row.id);
             expandedChunks.push({
               id: row.id,
@@ -334,14 +390,15 @@ export function createGraphReasoningNode(
 
         graphReasoningTrace.push({
           knowledgeId: kbId,
-          matchedEntities: matchedEntities.slice(0, 3).map((ent) => ({
+          matchedEntities: matchedEntities.slice(0, 2).map((ent) => ({
             key: String(ent.key),
             name: String(ent.name),
           })),
           expandedChunkIds: Array.from(expandedChunkIds),
           expandedChunkCount: expandedChunkIds.size,
           skipped: expandedChunkIds.size === 0,
-          reason: expandedChunkIds.size === 0 ? '未找到可见的邻居证据' : undefined,
+          reason:
+            expandedChunkIds.size === 0 ? '未找到可见的邻居证据' : undefined,
         });
       }
 
@@ -405,12 +462,39 @@ function extractGraphEntitySearchTerms(text: string): string[] {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
   const terms = new Set<string>();
-  const matches = normalized.match(/[\u4e00-\u9fa5A-Za-z0-9_]{2,32}/g) ?? [];
-  for (const item of matches) {
+  // 优先较长中文/英文短语，过滤过短噪声
+  const matches = normalized.match(/[\u4e00-\u9fa5]{2,16}|[A-Za-z][A-Za-z0-9_-]{1,31}/g) ?? [];
+  // 按长度降序，先保留更可能是实体的词
+  const sorted = [...matches].sort((a, b) => b.length - a.length);
+  for (const item of sorted) {
     const term = item.trim();
     if (term.length < 2) continue;
+    // 跳过常见功能词
+    if (GRAPH_STOP_TERMS.has(term.toLowerCase()) || GRAPH_STOP_TERMS.has(term)) {
+      continue;
+    }
     terms.add(term);
-    if (terms.size >= 6) break;
+    if (terms.size >= 5) break;
   }
   return Array.from(terms);
 }
+
+const GRAPH_STOP_TERMS = new Set([
+  '什么',
+  '怎么',
+  '如何',
+  '为什么',
+  '哪些',
+  '是否',
+  '可以',
+  '需要',
+  '相关',
+  '问题',
+  '关系',
+  '说明',
+  '内容',
+  'the',
+  'and',
+  'for',
+  'with',
+]);

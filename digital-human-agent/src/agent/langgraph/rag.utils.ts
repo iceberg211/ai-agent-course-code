@@ -10,9 +10,11 @@ import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/type
 export function getPlannedQuestions(
   state: Pick<RagGraphState, 'strategy' | 'subQuestions' | 'question'>,
 ): string[] {
-  return state.strategy === 'complex' && state.subQuestions.length > 0
-    ? state.subQuestions
-    : [state.question];
+  // complex 初始规划，或 simple 因 missingFacts 扩展后，都优先使用 subQuestions
+  if ((state.subQuestions?.length ?? 0) > 0) {
+    return state.subQuestions;
+  }
+  return [state.question];
 }
 
 export function getCurrentQuery(
@@ -31,7 +33,7 @@ export function getCurrentQuery(
     return currentQuery;
   }
 
-  const latestQuery = state.retrievalHistory.at(-1)?.query?.trim();
+  const latestQuery = state.retrievalHistory?.at(-1)?.query?.trim();
   if (latestQuery) {
     return latestQuery;
   }
@@ -78,7 +80,8 @@ export function canContinueMultiHop(
     question: string;
   },
 ): boolean {
-  if (state.strategy !== 'complex') {
+  // complex 多跳规划，以及 simple 在证据不足后扩展的补检索，都允许继续本地 hop
+  if (state.strategy === 'none') {
     return false;
   }
 
@@ -95,7 +98,7 @@ export function extendSubQuestionsWithMissingFacts(
   >,
   missingFacts: string[],
 ): string[] {
-  if (state.strategy !== 'complex' || missingFacts.length === 0) {
+  if (state.strategy === 'none' || missingFacts.length === 0) {
     return state.subQuestions;
   }
 
@@ -103,7 +106,7 @@ export function extendSubQuestionsWithMissingFacts(
     state.subQuestions.length > 0 ? state.subQuestions : [state.question];
   const remainingSlots = Math.max(0, state.maxHops - baseQuestions.length);
   if (remainingSlots === 0) {
-    return state.subQuestions;
+    return state.subQuestions.length > 0 ? state.subQuestions : baseQuestions;
   }
 
   const seen = new Set(
