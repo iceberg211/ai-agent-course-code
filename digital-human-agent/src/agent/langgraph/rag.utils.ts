@@ -53,7 +53,23 @@ export function getNextQuery(
   const nextIndex = Number.isFinite(state.nextSubIdx)
     ? state.nextSubIdx
     : state.currentHop;
-  return plannedQuestions[nextIndex]?.trim() || state.question.trim();
+  // 越界时返回空，避免 fallback 原问题造成重复检索
+  if (nextIndex < 0 || nextIndex >= plannedQuestions.length) {
+    return '';
+  }
+  return plannedQuestions[nextIndex]?.trim() || '';
+}
+
+/** 工作流是否已超过 wall-clock 预算 */
+export function isWorkflowBudgetExceeded(
+  state: Pick<RagGraphState, 'workflowStartedAt' | 'workflowBudgetMs'>,
+): boolean {
+  const startedAt = Number(state.workflowStartedAt);
+  const budgetMs = Number(state.workflowBudgetMs);
+  if (!Number.isFinite(startedAt) || !Number.isFinite(budgetMs) || budgetMs <= 0) {
+    return false;
+  }
+  return Date.now() - startedAt >= budgetMs;
 }
 
 export function toWorkflowCitations(

@@ -66,13 +66,8 @@ export function createFilterMemoryByPolicyNode(
 
 export function createMergeMemoryContextNode() {
   return async (state: RagGraphState) => {
-    // 知识库证据只在 generate_answer 的 knowledgeBlock 注入，避免双重拼装浪费 token
-
-    // ── 短期记忆 ────────────────────────────────────────────────
-    const shortWindow = state.shortTermMemory.window
-      .slice(-8)
-      .map((item) => `${item.role}: ${item.content}`)
-      .join('\n');
+    // 对话轮次由 prompt history（DB）统一承载，此处不再重复注入 window，避免 token 三倍膨胀
+    // 短期记忆只保留 summary + activeContext（跨轮任务背景）
     const shortParts = [
       state.shortTermMemory.summary
         ? `会话摘要：${state.shortTermMemory.summary}`
@@ -80,7 +75,6 @@ export function createMergeMemoryContextNode() {
       state.shortTermMemory.activeContext
         ? `当前任务背景：${state.shortTermMemory.activeContext}`
         : '',
-      shortWindow ? `最近对话：\n${shortWindow}` : '',
     ].filter(Boolean);
 
     // ── 长期记忆 ────────────────────────────────────────────────
@@ -93,11 +87,10 @@ export function createMergeMemoryContextNode() {
           )}\n${item.content}`,
       );
 
-    // 仅合并会话记忆与用户偏好；企业知识由 knowledgeBlock 单独提供
     return {
       memoryContext: [
         '<conversation_context>',
-        shortParts.join('\n\n') || '（当前会话暂无可用短期记忆）',
+        shortParts.join('\n\n') || '（当前会话暂无额外摘要/任务背景）',
         '</conversation_context>',
         '',
         '<user_preference>',
@@ -107,4 +100,3 @@ export function createMergeMemoryContextNode() {
     } satisfies Partial<RagGraphState>;
   };
 }
-

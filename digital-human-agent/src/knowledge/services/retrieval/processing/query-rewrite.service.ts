@@ -25,6 +25,10 @@ import type {
   RetrievalQueryAngle,
   RetrievalQueryItem,
 } from '@/knowledge/types/knowledge-content.types';
+import {
+  addTurnDegradation,
+  tryConsumeLlmBudget,
+} from '@/common/rag/turn-budget.context';
 
 // Re-export for backward compatibility with existing consumers
 export { normalizeKeywords } from '@/knowledge/utils/keyword.utils';
@@ -338,6 +342,14 @@ export class QueryRewriteService {
       },
       async () => {
         throwIfAborted(signal);
+
+        if (!tryConsumeLlmBudget(1)) {
+          addTurnDegradation('rewrite_heuristic');
+          return this.buildFallbackRewrite(
+            normalizedQuery,
+            'LLM 预算不足，使用原问题',
+          );
+        }
 
         try {
           const rewriter = this.llm.withStructuredOutput(KnowledgeQueryRewriteSchema);

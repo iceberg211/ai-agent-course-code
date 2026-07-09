@@ -13,7 +13,6 @@ import { createUIMessageStream, pipeUIMessageStreamToResponse } from 'ai';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AgentService } from '@/agent/agent.service';
-import type { RagWorkflowResult } from '@/agent/types/rag-workflow.types';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import type { MessageStatus } from '@/conversation/entities/conversation-message.entity';
 import type { Conversation } from '@/conversation/entities/conversation.entity';
@@ -24,6 +23,8 @@ import { ShortTermMemoryService } from '@/memory/services/short-term-memory.serv
 import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { PermissionGuard } from '@/rbac/guards/permission.guard';
 import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
+import { resolveHttpChatProfileId } from '@/common/rag/rag-profile';
+import { toRagTracePayload } from '@/common/rag/rag-turn-report';
 
 interface MessagePartLike {
   type?: unknown;
@@ -127,6 +128,7 @@ export class ChatController {
             turnId,
             signal: abortController.signal,
             accessScope: this.accessScope(req),
+            profileId: resolveHttpChatProfileId(),
             onToken: (token: string) => {
               assistantReply += token;
               writer.write({
@@ -145,7 +147,14 @@ export class ChatController {
               });
             },
           });
-          ragTrace = this.toRagTrace(result);
+          const latencyMs = Date.now() - startedAt;
+          ragTrace = toRagTracePayload(result, {
+            profileId:
+              result.profileId ??
+              result.state.profileId ??
+              resolveHttpChatProfileId(),
+            latencyMs,
+          });
           status = abortController.signal.aborted ? 'interrupted' : 'completed';
         } catch (error) {
           const isAbortError =
@@ -320,36 +329,4 @@ export class ChatController {
     return '';
   }
 
-  private toRagTrace(result: RagWorkflowResult): Record<string, unknown> {
-    const state = result.state;
-    return {
-      strategy: state.strategy,
-      routeReason: state.routeReason,
-      retrievalStrategy: state.retrievalStrategy,
-      retrievalStrategyReason: state.retrievalStrategyReason,
-      subQuestions: state.subQuestions,
-      retrievalHistory: state.retrievalHistory,
-      retrievalTrace: state.retrievalTrace,
-      graphReasoningTrace: state.graphReasoningTrace,
-      memory: {
-        shortTermWindowCount: state.shortTermMemory?.window?.length ?? 0,
-        hasShortTermSummary: Boolean(state.shortTermMemory?.summary),
-        longTermMemoryCount: state.longTermMemories?.length ?? 0,
-        longTermMemories: state.longTermMemories?.map((item) => ({
-          id: item.id,
-          category: item.category,
-          visibility: item.visibility,
-          confidence: item.confidence,
-          sourceConversationId: item.sourceConversationId,
-        })) ?? [],
-      },
-      enough: state.enough,
-      missingFacts: state.missingFacts,
-      evaluationReason: state.evaluationReason,
-      webSearchUsed: state.webSearchUsed,
-      webSearchQueries: state.webSearchQueries,
-      stopReason: state.stopReason,
-      orchestrator: state.orchestrator,
-    };
-  }
 }

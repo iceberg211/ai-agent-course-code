@@ -20,6 +20,10 @@ import {
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import {
+  addTurnDegradation,
+  tryConsumeLlmBudget,
+} from '@/common/rag/turn-budget.context';
 
 const RagEvidenceEvaluationSchema = z.object({
   enough: z.boolean(),
@@ -92,6 +96,11 @@ export class EvidenceEvaluatorService {
       },
       async () => {
         throwIfAborted(params.signal);
+
+        if (!tryConsumeLlmBudget(1)) {
+          addTurnDegradation('evaluate_heuristic');
+          return this.buildFallbackEvaluation(params);
+        }
 
         try {
           const evaluator = this.llm.withStructuredOutput(

@@ -249,6 +249,11 @@ export interface KnowledgeHybridRetrievalParams {
   globalRetrievalLimit: number;
   documentFilters?: DocumentSearchFilters;
   accessScope?: KnowledgeAccessScope;
+  /**
+   * 是否在 hybrid 内做 DataScope 后置过滤。
+   * 默认 true；当调用方会统一 filter（如 KnowledgeSearch / retrieveForPersona 合并后）时设为 false，避免重复鉴权。
+   */
+  applyAccessScope?: boolean;
   signal?: AbortSignal;
 }
 

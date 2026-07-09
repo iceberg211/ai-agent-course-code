@@ -11,6 +11,10 @@ import {
 } from '@/common/prompts';
 import { RerankerProvider, RerankInput } from './reranker.provider';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import {
+  addTurnDegradation,
+  tryConsumeLlmBudget,
+} from '@/common/rag/turn-budget.context';
 
 interface RerankerItem {
   index: number;
@@ -57,6 +61,10 @@ export class LlmRerankerProvider implements RerankerProvider {
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), rerankCandidates.length);
+    if (!tryConsumeLlmBudget(1)) {
+      addTurnDegradation('rerank_degraded');
+      return candidates.slice(0, safeTopK);
+    }
     try {
       const rewriter = this.llm.withStructuredOutput(RerankResultSchema);
       const result = await rewriter.invoke(

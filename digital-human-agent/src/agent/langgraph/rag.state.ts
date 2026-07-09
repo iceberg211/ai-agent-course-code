@@ -2,9 +2,10 @@ import { Annotation } from '@langchain/langgraph';
 import {
   DEFAULT_RAG_MAX_HOPS,
   DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
+  DEFAULT_RAG_WORKFLOW_BUDGET_MS,
 } from '@/agent/agent.constants';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
-import { DEFAULT_RETRIEVAL_STRATEGY } from '@/common/rag';
+import { DEFAULT_RETRIEVAL_STRATEGY, getRagProfile } from '@/common/rag';
 import {
   getCurrentQuery,
   toKnowledgeCitations,
@@ -68,12 +69,22 @@ export const RagGraphStateAnnotation = Annotation.Root({
   longTermMemories: Annotation<RagWorkflowState['longTermMemories']>(),
   /** 已按规则分区后的记忆上下文 */
   memoryContext: Annotation<string>(),
-  /** 规划好的下一步执行节点名称 */
-  plannedNext: Annotation<RagWorkflowState['plannedNext']>(),
   /** 动态判断后选择的检索召回策略配置 */
   retrievalStrategy: Annotation<RagWorkflowState['retrievalStrategy']>(),
   /** 动态生成该检索策略的推理说明 */
   retrievalStrategyReason: Annotation<string>(),
+  /** 路由级是否允许联网（跨 hop 保持，不被单跳 strategy 覆盖） */
+  routeAllowWeb: Annotation<boolean>(),
+  /** 工作流开始时间戳（ms），用于 wall-clock budget */
+  workflowStartedAt: Annotation<number>(),
+  /** 单轮工作流最大耗时（ms） */
+  workflowBudgetMs: Annotation<number>(),
+  /** 执行剖面 id */
+  profileId: Annotation<RagWorkflowState['profileId']>(),
+  /** 是否允许图一跳扩展 */
+  useGraphExpand: Annotation<boolean>(),
+  evaluateMode: Annotation<RagWorkflowState['evaluateMode']>(),
+  rerankMode: Annotation<RagWorkflowState['rerankMode']>(),
 
   // ── 4. 证据评估 (Evidence Evaluation) ───────────────────────────────────────
   /** 证据充足性评估结果，true 表示已足够作答 */
@@ -129,6 +140,8 @@ export function buildInitialRagGraphState(
   input: RagWorkflowInput,
   history: ConversationMessage[] = [],
 ): RagGraphState {
+  const profile = getRagProfile(input.profileId);
+  const maxHops = input.maxHops ?? profile.maxHops ?? DEFAULT_RAG_MAX_HOPS;
   return {
     conversationId: input.conversationId,
     personaId: input.personaId,
@@ -140,7 +153,7 @@ export function buildInitialRagGraphState(
     nextSubIdx: 0,
     currentQuery: '',
     currentHop: 0,
-    maxHops: input.maxHops ?? DEFAULT_RAG_MAX_HOPS,
+    maxHops,
     documents: [],
     topDocuments: [],
     evidenceChunks: [],
@@ -155,9 +168,15 @@ export function buildInitialRagGraphState(
     },
     longTermMemories: [],
     memoryContext: '',
-    plannedNext: '',
     retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY,
     retrievalStrategyReason: DEFAULT_RETRIEVAL_STRATEGY.reason,
+    routeAllowWeb: profile.allowWeb,
+    workflowStartedAt: Date.now(),
+    workflowBudgetMs: profile.budget.wallClockMs || DEFAULT_RAG_WORKFLOW_BUDGET_MS,
+    profileId: profile.id,
+    useGraphExpand: profile.useGraphExpand,
+    evaluateMode: profile.evaluateMode,
+    rerankMode: profile.rerankMode,
     enough: null,
     missingFacts: [],
     evaluationReason: '',

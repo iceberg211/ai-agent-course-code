@@ -14,6 +14,7 @@ import {
   extendSubQuestionsWithMissingFacts,
   getCurrentQuery,
   getPlannedQuestions,
+  isWorkflowBudgetExceeded,
   shouldUseWebFallback,
   publishCitations,
   toWorkflowCitations,
@@ -34,6 +35,28 @@ export function createRerankNode(rerankerService: RerankerService) {
       } satisfies Partial<RagGraphState>;
     }
 
+    const topK =
+      state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
+    const rerankMode = state.rerankMode ?? 'llm';
+
+    // off / score：不做 LLM rerank，按现有融合分截断
+    if (rerankMode === 'off' || rerankMode === 'score') {
+      const topDocuments = documents.slice(0, topK);
+      publishCitations(
+        input,
+        toWorkflowCitations({
+          documents: state.documents,
+          topDocuments,
+          evidenceChunks: topDocuments,
+          webCitations: state.webCitations,
+        }),
+      );
+      return {
+        topDocuments,
+        evidenceChunks: topDocuments,
+      } satisfies Partial<RagGraphState>;
+    }
+
     // 多跳时用当前 hop 查询句重排，同时保留原始问题以覆盖整体意图
     const currentQuery = getCurrentQuery(state);
     const rerankQuery =
@@ -44,10 +67,11 @@ export function createRerankNode(rerankerService: RerankerService) {
     const topDocuments = await rerankerService.rerank(
       rerankQuery,
       documents,
-      state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit,
+      topK,
       input.signal,
     );
 
+    // 正式 citations：仅在重排后推送，避免粗召回闪变
     publishCitations(
       input,
       toWorkflowCitations({
@@ -80,7 +104,14 @@ function resolveStopReason(
     if (state.strategy === 'complex' && state.currentHop > 1) {
       return 'multi_hop_enough';
     }
+    if (state.currentHop > 1) {
+      return 'multi_hop_enough';
+    }
     return 'single_hop_enough';
+  }
+
+  if (isWorkflowBudgetExceeded(state)) {
+    return 'max_hops_reached';
   }
 
   if (state.webSearchUsed) {
@@ -147,23 +178,59 @@ export function createEvaluateEvidenceNode(
       });
     }
 
-    const remainingSubQuestionCount =
-      state.strategy === 'complex'
-        ? Math.max(getPlannedQuestions(state).length - state.currentHop, 0)
-        : 0;
-    const evaluation = await evidenceEvaluatorService.evaluate({
-      question: state.question,
-      localChunks: state.topDocuments,
-      webCitations: state.webCitations,
-      currentHop: state.currentHop,
-      maxHops: state.maxHops,
-      remainingSubQuestionCount,
-      signal: input.signal,
-    });
+    // 预算耗尽：直接进入生成，不再 hop / web
+    if (isWorkflowBudgetExceeded(state)) {
+      return new Command({
+        update: {
+          enough: false,
+          missingFacts: state.missingFacts,
+          evaluationReason: '工作流耗时预算已用尽，停止继续检索',
+          webQuery: '',
+          stopReason: 'max_hops_reached',
+        } satisfies Partial<RagGraphState>,
+        goto: 'load_context',
+      });
+    }
+
+    // complex 与 simple 补 hop 统一用剩余子问题数提示评估器
+    const remainingSubQuestionCount = Math.max(
+      getPlannedQuestions(state).length - state.currentHop,
+      0,
+    );
+
+    const evaluateMode = state.evaluateMode ?? 'llm';
+    let evaluation: {
+      enough: boolean;
+      missingFacts: string[];
+      reason: string;
+      webQuery: string;
+    };
+
+    if (evaluateMode === 'off') {
+      evaluation = {
+        enough: state.topDocuments.length > 0,
+        missingFacts: [],
+        reason: 'evaluateMode=off，跳过充分性评估',
+        webQuery: '',
+      };
+    } else if (evaluateMode === 'heuristic') {
+      evaluation = buildHeuristicEvaluation(state);
+    } else {
+      evaluation = await evidenceEvaluatorService.evaluate({
+        question: state.question,
+        localChunks: state.topDocuments,
+        webCitations: state.webCitations,
+        currentHop: state.currentHop,
+        maxHops: state.maxHops,
+        remainingSubQuestionCount,
+        signal: input.signal,
+      });
+    }
 
     const webFallbackEnabled =
-      webFallbackService.isEnabled() && state.retrievalStrategy.allowWeb;
-    const plannedQuestionCount = getPlannedQuestions(state).length;
+      webFallbackService.isEnabled() &&
+      state.routeAllowWeb !== false &&
+      state.retrievalStrategy.allowWeb !== false;
     const extendedSubQuestions = extendSubQuestionsWithMissingFacts(
       state,
       evaluation.missingFacts,
@@ -189,9 +256,10 @@ export function createEvaluateEvidenceNode(
       ...state,
       ...update,
     };
+    // hop early-stop：enough 则停；否则在 hop 预算内继续本地检索（含 complex 预规划与 missingFacts 扩展）
     const canRetryLocalKnowledge =
       !nextState.enough &&
-      extendedSubQuestions.length > plannedQuestionCount &&
+      !isWorkflowBudgetExceeded(nextState) &&
       canContinueMultiHop(nextState);
 
     let goto: 'retrieve' | 'web_fallback' | 'load_context' = 'load_context';
@@ -199,7 +267,10 @@ export function createEvaluateEvidenceNode(
       goto = 'load_context';
     } else if (canRetryLocalKnowledge) {
       goto = 'retrieve';
-    } else if (shouldUseWebFallback(nextState, webFallbackEnabled)) {
+    } else if (
+      !isWorkflowBudgetExceeded(nextState) &&
+      shouldUseWebFallback(nextState, webFallbackEnabled)
+    ) {
       goto = 'web_fallback';
     }
 
@@ -207,5 +278,36 @@ export function createEvaluateEvidenceNode(
       update,
       goto,
     });
+  };
+}
+
+function buildHeuristicEvaluation(state: RagGraphState): {
+  enough: boolean;
+  missingFacts: string[];
+  reason: string;
+  webQuery: string;
+} {
+  const highConfidence = state.topDocuments.filter((chunk) => {
+    const score = Math.max(
+      chunk.rerank_score ?? 0,
+      (chunk.hybrid_score ?? 0) * 10,
+      (chunk.similarity ?? 0) * 10,
+      chunk.keyword_score ?? 0,
+    );
+    return score >= 4 || (chunk.similarity ?? 0) >= 0.55;
+  });
+  const webCount = state.webCitations?.length ?? 0;
+  const enough =
+    highConfidence.length >= 2 ||
+    (highConfidence.length >= 1 && webCount >= 1) ||
+    webCount >= 2;
+
+  return {
+    enough,
+    missingFacts: enough ? [] : ['当前证据可能不足以覆盖完整答案'],
+    reason: enough
+      ? '启发式判断证据基本足够'
+      : '启发式判断证据仍不足',
+    webQuery: webCount > 0 ? '' : state.question.trim(),
   };
 }

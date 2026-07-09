@@ -16,6 +16,10 @@ import {
   runInTracedScope,
 } from '@/common/langsmith/langsmith.utils';
 import type { RagMultiHopPlan } from '@/agent/types/rag-workflow.types';
+import {
+  addTurnDegradation,
+  tryConsumeLlmBudget,
+} from '@/common/rag/turn-budget.context';
 
 const MultiHopPlanSchema = z.object({
   subQuestions: z.array(z.string().min(1).max(300)).min(1).max(6),
@@ -68,6 +72,12 @@ export class MultiHopPlannerService {
       },
       async () => {
         throwIfAborted(signal);
+
+        if (!tryConsumeLlmBudget(1)) {
+          addTurnDegradation('budget_llm');
+          addTurnDegradation('plan_fallback');
+          return this.buildFallbackPlan(normalizedQuestion);
+        }
 
         try {
           const planner = this.llm.withStructuredOutput(MultiHopPlanSchema);

@@ -174,11 +174,30 @@ describe('LangGraphRagOrchestratorService', () => {
               : '直接问题',
       }),
     };
-    const queryAugmentationService = {
-      plan: jest.fn().mockImplementation(async ({ question }) => {
-        return (
-          options?.augmentationMap?.[question] ?? createAugmentation(question)
-        );
+    const retrievalPolicyResolver = {
+      resolve: jest.fn().mockImplementation(async ({ question }) => {
+        const plan =
+          options?.augmentationMap?.[question] ?? createAugmentation(question);
+        return {
+          ...plan,
+          profileId: 'balanced_chat',
+          profile: {
+            id: 'balanced_chat',
+            maxHops: 3,
+            allowWeb: true,
+            useMultiQuery: true,
+            useGraphChannel: true,
+            useGraphExpand: true,
+            rewriteMode: 'llm',
+            rerankMode: 'llm',
+            evaluateMode: 'llm',
+            budget: {
+              wallClockMs: 20_000,
+              maxLlmCalls: 5,
+              maxEmbedCalls: 6,
+            },
+          },
+        };
       }),
     };
     const multiHopPlannerService = {
@@ -232,7 +251,7 @@ describe('LangGraphRagOrchestratorService', () => {
         conversationService as never,
         answerGenerationService as never,
         ragRouteService as never,
-        queryAugmentationService as never,
+        retrievalPolicyResolver as never,
         multiHopPlannerService as never,
         rerankerService as never,
         evidenceEvaluatorService as never,
@@ -244,7 +263,7 @@ describe('LangGraphRagOrchestratorService', () => {
         conversationService,
         answerGenerationService,
         ragRouteService,
-        queryAugmentationService,
+        retrievalPolicyResolver,
         multiHopPlannerService,
         rerankerService,
         evidenceEvaluatorService,
@@ -283,10 +302,11 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).not.toHaveBeenCalled();
-    expect(deps.queryAugmentationService.plan).toHaveBeenCalledWith({
+    expect(deps.retrievalPolicyResolver.resolve).toHaveBeenCalledWith({
       question: '乔峰是谁？',
       history: [],
       routeStrategy: 'simple',
+      profileId: 'balanced_chat',
       signal: expect.any(AbortSignal),
     });
     expect(
@@ -322,7 +342,6 @@ describe('LangGraphRagOrchestratorService', () => {
       }),
     ]);
     expect(result.state.orchestrator).toBe('langgraph');
-    expect(result.state.plannedNext).toBe('rerank');
     expect(result.state.topDocuments).toEqual([chunk]);
     expect(result.state.stopReason).toBe('single_hop_enough');
   });
@@ -391,7 +410,7 @@ describe('LangGraphRagOrchestratorService', () => {
     });
 
     expect(deps.multiHopPlannerService.planSubQuestions).not.toHaveBeenCalled();
-    expect(deps.queryAugmentationService.plan).not.toHaveBeenCalled();
+    expect(deps.retrievalPolicyResolver.resolve).not.toHaveBeenCalled();
     expect(
       deps.personaStage1RetrievalService.retrieveForPersona,
     ).not.toHaveBeenCalled();
@@ -417,7 +436,7 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(result.citations).toEqual([]);
   });
 
-  it('complex 路径会先完成多轮 retrieve，再统一 rerank 与评估', async () => {
+  it('complex 路径按 hop 评估，enough 后 early-stop', async () => {
     const chunkA = createChunk('chunk-a', '雁门关事件主谋是慕容博。');
     const chunkB = createChunk('chunk-b', '慕容博的儿子最终疯癫。');
     const { service, deps } = createService({
@@ -428,6 +447,12 @@ describe('LangGraphRagOrchestratorService', () => {
         '慕容博的儿子结局是什么？': [chunkB],
       },
       evaluations: [
+        {
+          enough: false,
+          reason: '还缺儿子结局',
+          missingFacts: [],
+          webQuery: '',
+        },
         {
           enough: true,
           reason: '两轮证据已经齐全',
@@ -475,13 +500,9 @@ describe('LangGraphRagOrchestratorService', () => {
         ],
       }),
     );
-    expect(deps.rerankerService.rerank).toHaveBeenCalledWith(
-      '雁门关事件的主谋是谁，他儿子的结局是什么？\n当前检索焦点：慕容博的儿子结局是什么？',
-      [chunkA, chunkB],
-      5,
-      expect.any(AbortSignal),
-    );
-    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(1);
+    // 每 hop 都会 rerank + evaluate
+    expect(deps.rerankerService.rerank).toHaveBeenCalledTimes(2);
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
         localChunks: [chunkA, chunkB],
@@ -491,6 +512,43 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(result.state.currentHop).toBe(2);
     expect(result.state.nextSubIdx).toBe(2);
     expect(result.state.stopReason).toBe('multi_hop_enough');
+  });
+
+  it('complex 首 hop 证据足够时 early-stop，不再检索后续子问题', async () => {
+    const chunkA = createChunk('chunk-a', '完整答案所需证据。');
+    const { service, deps } = createService({
+      routeStrategy: 'complex',
+      plannerQuestions: ['第一问', '第二问'],
+      retrieveMap: {
+        第一问: [chunkA],
+        第二问: [createChunk('chunk-b', '不应被检索')],
+      },
+      evaluations: [
+        {
+          enough: true,
+          reason: '首跳已够',
+          missingFacts: [],
+          webQuery: '',
+        },
+      ],
+    });
+
+    const result = await service.run({
+      conversationId: 'conv-1',
+      personaId: 'persona-1',
+      question: '复杂问题',
+      turnId: 'turn-1',
+      signal: new AbortController().signal,
+      onToken: jest.fn(),
+      onCitations: jest.fn(),
+    });
+
+    expect(
+      deps.personaStage1RetrievalService.retrieveForPersona,
+    ).toHaveBeenCalledTimes(1);
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(1);
+    expect(result.state.currentHop).toBe(1);
+    expect(result.state.stopReason).toBe('single_hop_enough');
   });
 
   it('complex 路径评估出 missingFacts 且仍有 hop 预算时，会回到本地补检索后再生成回答', async () => {
@@ -505,7 +563,14 @@ describe('LangGraphRagOrchestratorService', () => {
         '慕容博的儿子结局是什么？': [chunkB],
         '监管更新时间是什么？': [chunkC],
       },
+      // hop 级评估：前两跳不足，第二跳扩展 missingFacts，第三跳 enough
       evaluations: [
+        {
+          enough: false,
+          reason: '还缺儿子结局',
+          missingFacts: [],
+          webQuery: '',
+        },
         {
           enough: false,
           reason: '还缺监管更新时间',
@@ -546,7 +611,7 @@ describe('LangGraphRagOrchestratorService', () => {
         ],
       }),
     );
-    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
+    expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(3);
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({

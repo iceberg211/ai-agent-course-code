@@ -16,6 +16,10 @@ import type {
   RagRouteDecision,
   RagStrategy,
 } from '@/agent/types/rag-workflow.types';
+import {
+  addTurnDegradation,
+  tryConsumeLlmBudget,
+} from '@/common/rag/turn-budget.context';
 
 const RagRouteSchema = z.object({
   strategy: z.enum(['simple', 'complex', 'none']),
@@ -100,6 +104,11 @@ export class RagRouteService {
       },
       async () => {
         throwIfAborted(signal);
+
+        if (!tryConsumeLlmBudget(1)) {
+          addTurnDegradation('route_heuristic');
+          return this.buildFallbackDecision(normalizedQuestion);
+        }
 
         try {
           const router = this.llm.withStructuredOutput(RagRouteSchema);

@@ -22,6 +22,11 @@ import type { RetrievalStrategy } from '@/common/rag';
 import type { RagEvidenceAssessmentContext } from '@/common/rag';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type { Persona } from '@/persona/persona.entity';
+import {
+  recordFirstTokenBudget,
+  tryConsumeLlmBudget,
+  addTurnDegradation,
+} from '@/common/rag/turn-budget.context';
 
 export interface GenerateAnswerParams {
   conversationId: string;
@@ -121,6 +126,14 @@ export class AnswerGenerationService {
   ): Promise<string> {
     throwIfAborted(params.signal);
 
+    if (!tryConsumeLlmBudget(1)) {
+      addTurnDegradation('budget_llm');
+      const fallback = '抱歉，当前服务繁忙，请稍后再试。';
+      recordFirstTokenBudget();
+      params.onToken(fallback);
+      return fallback;
+    }
+
     const messages = await DIRECT_CHAT_PROMPT.formatMessages(
       buildDirectChatPromptInput(params.userMessage),
     );
@@ -145,6 +158,7 @@ export class AnswerGenerationService {
       throwIfAborted(params.signal);
       const token = typeof chunk.content === 'string' ? chunk.content : '';
       if (!token) continue;
+      if (!answerText) recordFirstTokenBudget();
       answerText += token;
       params.onToken(token);
     }
@@ -156,6 +170,15 @@ export class AnswerGenerationService {
     params: GenerateAnswerParams,
   ): Promise<string> {
     throwIfAborted(params.signal);
+
+    if (!tryConsumeLlmBudget(1)) {
+      addTurnDegradation('budget_llm');
+      const fallback =
+        '抱歉，当前检索与生成资源紧张，请稍后再试或简化问题。';
+      recordFirstTokenBudget();
+      params.onToken(fallback);
+      return fallback;
+    }
 
     const messages = await AGENT_CHAT_PROMPT.formatMessages(
       buildAgentPromptInput(
@@ -195,6 +218,7 @@ export class AnswerGenerationService {
       throwIfAborted(params.signal);
       const token = typeof chunk.content === 'string' ? chunk.content : '';
       if (!token) continue;
+      if (!answerText) recordFirstTokenBudget();
       answerText += token;
       params.onToken(token);
     }

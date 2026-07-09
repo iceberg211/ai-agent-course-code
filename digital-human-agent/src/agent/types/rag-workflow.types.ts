@@ -3,6 +3,7 @@ import type {
   RagStopReason,
   RetrievalStrategy,
 } from '@/common/rag';
+import type { RagProfileId } from '@/common/rag/rag-profile';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import type {
   KnowledgeAccessScope,
@@ -71,6 +72,8 @@ export interface RagWorkflowInput {
   onCitations: (citations: RagCitation[]) => void;
   accessScope?: KnowledgeAccessScope;
   maxHops?: number;
+  /** 执行剖面；未传时 orchestrator 默认 balanced_chat */
+  profileId?: RagProfileId;
 }
 
 export interface RagWorkflowState {
@@ -97,9 +100,20 @@ export interface RagWorkflowState {
   shortTermMemory: ShortTermMemoryContext;
   longTermMemories: MemoryRecord[];
   memoryContext: string;
-  plannedNext: '' | 'retrieve' | 'rerank';
   retrievalStrategy: RetrievalStrategy;
   retrievalStrategyReason: string;
+  /** 路由级是否允许联网（跨 hop 保持） */
+  routeAllowWeb: boolean;
+  workflowStartedAt: number;
+  workflowBudgetMs: number;
+  /** 当前执行剖面 */
+  profileId: RagProfileId;
+  /** 是否启用图一跳扩展（profile 控制） */
+  useGraphExpand: boolean;
+  /** evaluate 模式：off | heuristic | llm */
+  evaluateMode: 'off' | 'heuristic' | 'llm';
+  /** rerank 模式：off | score | llm | dedicated */
+  rerankMode: 'off' | 'score' | 'llm' | 'dedicated';
   enough: boolean | null;
   missingFacts: string[];
   evaluationReason: string;
@@ -114,10 +128,21 @@ export interface RagWorkflowState {
   rerankLimit: number;
 }
 
+export interface RagTurnBudgetSnapshot {
+  llmCalls: number;
+  embedCalls: number;
+  firstTokenLatencyMs: number | null;
+  degradationFlags: string[];
+}
+
 export interface RagWorkflowResult {
   state: RagWorkflowState;
   citations: RagCitation[];
   answerText: string;
+  /** 本轮解析后的 profileId，便于入口拼 report */
+  profileId?: RagProfileId;
+  /** 本轮预算计数快照（ALS 退出后仍可读） */
+  budgetSnapshot?: RagTurnBudgetSnapshot;
 }
 
 export interface RagRouteDecision {

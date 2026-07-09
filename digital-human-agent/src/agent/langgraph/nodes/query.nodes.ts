@@ -1,6 +1,5 @@
 import { Command } from '@langchain/langgraph';
 import { isAbortError } from '@/common/utils';
-import { QueryAugmentationService } from '@/agent/services/query-augmentation.service';
 import { WebFallbackService } from '@/agent/services/web-fallback.service';
 import {
   ensureWorkflowNotAborted,
@@ -21,12 +20,13 @@ import {
 import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
 
 // ==========================================
 // 1. retrieve 节点
 // ==========================================
 export function createRetrieveNode(
-  queryAugmentationService: QueryAugmentationService,
+  retrievalPolicyResolver: RetrievalPolicyResolver,
   hybridRetrieverService: HybridRetrieverService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
@@ -37,25 +37,36 @@ export function createRetrieveNode(
       return {};
     }
 
-    const augmentation = await queryAugmentationService.plan({
+    const augmentation = await retrievalPolicyResolver.resolve({
       question: currentQuery,
       routeStrategy: state.strategy,
+      profileId: state.profileId ?? input.profileId,
       history: state.history,
       signal: input.signal,
     });
 
+    // 首跳采用 policy 结果（已含 profile 约束）；后续 hop 不覆盖
+    const routeAllowWeb =
+      state.currentHop === 0
+        ? augmentation.strategy.allowWeb !== false
+        : state.routeAllowWeb;
+    const hopStrategy = {
+      ...augmentation.strategy,
+      allowWeb: routeAllowWeb,
+    };
+
     const update = {
       currentQuery,
-      retrievalStrategy: augmentation.strategy,
-      retrievalStrategyReason: augmentation.strategy.reason,
+      retrievalStrategy: hopStrategy,
+      retrievalStrategyReason: hopStrategy.reason,
+      routeAllowWeb,
       currentHop: state.currentHop + 1,
       nextSubIdx: state.nextSubIdx + 1,
       topDocuments: [],
-      plannedNext: '',
     } satisfies Partial<RagGraphState>;
 
     if (
-      !augmentation.strategy.needRetrieval ||
+      !hopStrategy.needRetrieval ||
       augmentation.retrievalQueries.length === 0
     ) {
       return {
@@ -66,8 +77,8 @@ export function createRetrieveNode(
             query: currentQuery,
             resultCount: 0,
             skipped: true,
-            reason: augmentation.strategy.reason,
-            strategy: augmentation.strategy,
+            reason: hopStrategy.reason,
+            strategy: hopStrategy,
           },
         ],
         stopReason: 'retrieval_skipped',
@@ -77,22 +88,14 @@ export function createRetrieveNode(
     const stage1Result = await hybridRetrieverService.retrieveForPersona({
       personaId: input.personaId,
       retrievalQueries: augmentation.retrievalQueries,
-      strategy: augmentation.strategy,
+      strategy: hopStrategy,
       accessScope: input.accessScope,
       signal: input.signal,
     });
 
     const documents = mergeEvidenceChunks(state.documents, stage1Result.chunks);
 
-    publishCitations(
-      input,
-      toWorkflowCitations({
-        documents,
-        topDocuments: [],
-        evidenceChunks: documents,
-        webCitations: state.webCitations,
-      }),
-    );
+    // 不在粗召回阶段推 citations，避免前端闪变；正式引用在 rerank 后发布
 
     return {
       ...update,
@@ -104,7 +107,7 @@ export function createRetrieveNode(
         {
           query: currentQuery,
           resultCount: stage1Result.chunks.length,
-          strategy: augmentation.strategy,
+          strategy: hopStrategy,
         },
       ],
       stopReason: '',
@@ -220,8 +223,8 @@ export function createGraphReasoningNode(
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
 
-    // 如果检索策略里没有开启 useGraph，直接跳过
-    if (!state.retrievalStrategy.useGraph) {
+    // 通道未开 graph，或 profile 关闭 expand，直接跳过
+    if (!state.retrievalStrategy.useGraph || state.useGraphExpand === false) {
       return {};
     }
 
@@ -412,17 +415,8 @@ export function createGraphReasoningNode(
       }
 
       // 3. 把通过图关系发掘扩展出的 chunks 合并到已召回的 documents 中（去重）
+      // 不在此处推 citations，统一在 rerank 后发布
       const documents = mergeEvidenceChunks(state.documents, expandedChunks);
-
-      publishCitations(
-        input,
-        toWorkflowCitations({
-          documents,
-          topDocuments: [],
-          evidenceChunks: documents,
-          webCitations: state.webCitations,
-        }),
-      );
 
       return {
         documents,

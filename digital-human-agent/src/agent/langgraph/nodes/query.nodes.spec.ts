@@ -29,7 +29,6 @@ describe('createRetrieveNode', () => {
     retrievalHistory: [],
     retrievalTrace: [],
     graphReasoningTrace: [],
-    plannedNext: '',
     retrievalStrategy: {
       needRetrieval: false,
       useVector: false,
@@ -41,6 +40,9 @@ describe('createRetrieveNode', () => {
       reason: '寒暄问题，不需要查知识库',
     },
     retrievalStrategyReason: '寒暄问题，不需要查知识库',
+    routeAllowWeb: false,
+    workflowStartedAt: Date.now(),
+    workflowBudgetMs: 60_000,
     enough: null,
     missingFacts: [],
     evaluationReason: '',
@@ -56,11 +58,15 @@ describe('createRetrieveNode', () => {
     answerText: '',
     persona: null,
     history: [],
-  } satisfies RagGraphState;
+    profileId: 'balanced_chat',
+    useGraphExpand: true,
+    evaluateMode: 'llm',
+    rerankMode: 'llm',
+  } as RagGraphState;
 
   it('needRetrieval=false 时不调用 persona stage1，并记录 skipped 历史', async () => {
-    const queryAugmentationService = {
-      plan: jest.fn().mockResolvedValue({
+    const retrievalPolicyResolver = {
+      resolve: jest.fn().mockResolvedValue({
         currentQuery: '你好',
         rewrite: {
           originalQuery: '你好',
@@ -95,13 +101,15 @@ describe('createRetrieveNode', () => {
           allowWeb: false,
           reason: '寒暄问题，不需要查知识库',
         },
+        profileId: 'balanced_chat',
+        profile: { id: 'balanced_chat' },
       }),
     };
     const personaStage1RetrievalService = {
       retrieveForPersona: jest.fn(),
     };
     const node = createRetrieveNode(
-      queryAugmentationService as never,
+      retrievalPolicyResolver as never,
       personaStage1RetrievalService as never,
     );
 
@@ -115,10 +123,11 @@ describe('createRetrieveNode', () => {
       },
     } as never);
 
-    expect(queryAugmentationService.plan).toHaveBeenCalledWith({
+    expect(retrievalPolicyResolver.resolve).toHaveBeenCalledWith({
       question: '你好',
       history: [],
       routeStrategy: 'simple',
+      profileId: 'balanced_chat',
       signal: expect.any(AbortSignal),
     });
     expect(
@@ -141,8 +150,8 @@ describe('createRetrieveNode', () => {
   });
 
   it('会根据增强后的 query 调 persona stage1，并累计 documents 与 trace', async () => {
-    const queryAugmentationService = {
-      plan: jest.fn().mockResolvedValue({
+    const retrievalPolicyResolver = {
+      resolve: jest.fn().mockResolvedValue({
         currentQuery: '乔峰是谁？',
         rewrite: {
           originalQuery: '乔峰是谁？',
@@ -189,6 +198,8 @@ describe('createRetrieveNode', () => {
           allowWeb: true,
           reason: '复杂问题，使用多路 query 检索',
         },
+        profileId: 'balanced_chat',
+        profile: { id: 'balanced_chat' },
       }),
     };
     const personaStage1RetrievalService = {
@@ -217,7 +228,7 @@ describe('createRetrieveNode', () => {
     };
     const onCitations = jest.fn();
     const node = createRetrieveNode(
-      queryAugmentationService as never,
+      retrievalPolicyResolver as never,
       personaStage1RetrievalService as never,
     );
 
@@ -291,17 +302,13 @@ describe('createRetrieveNode', () => {
       stopReason: '',
       rerankLimit: 8,
     });
-    expect(onCitations).toHaveBeenCalledWith([
-      expect.objectContaining({
-        kind: 'knowledge',
-        id: 'chunk-1',
-      }),
-    ]);
+    // 粗召回阶段不再推 citations
+    expect(onCitations).not.toHaveBeenCalled();
   });
 
   it('关系类问题会把 graphMode 和 graphMaxHops 沿 Agent 主链路传给 persona stage1', async () => {
-    const queryAugmentationService = {
-      plan: jest.fn().mockResolvedValue({
+    const retrievalPolicyResolver = {
+      resolve: jest.fn().mockResolvedValue({
         currentQuery: '甲方和乙方是什么关系？',
         rewrite: {
           originalQuery: '甲方和乙方是什么关系？',
@@ -338,6 +345,8 @@ describe('createRetrieveNode', () => {
           graphMaxHops: 2,
           reason: '关系类问题，启用 Neo4j 路径检索',
         },
+        profileId: 'balanced_chat',
+        profile: { id: 'balanced_chat' },
       }),
     };
     const personaStage1RetrievalService = {
@@ -348,7 +357,7 @@ describe('createRetrieveNode', () => {
       }),
     };
     const node = createRetrieveNode(
-      queryAugmentationService as never,
+      retrievalPolicyResolver as never,
       personaStage1RetrievalService as never,
     );
 
@@ -405,6 +414,8 @@ describe('createGraphReasoningNode', () => {
     retrievalStrategy: {
       useGraph: true,
     },
+    useGraphExpand: true,
+    profileId: 'balanced_chat',
     shortTermMemory: { window: [], summary: '', activeContext: '' },
     longTermMemories: [],
     webCitations: [],

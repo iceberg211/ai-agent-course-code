@@ -218,6 +218,8 @@ export class KnowledgeSearchService {
             globalRetrievalLimit: params.options.retrievalLimit,
             documentFilters: options.documentFilters,
             accessScope: options.accessScope,
+            // 本服务在 shared pipeline 统一 DataScope，hybrid 内跳过避免双次鉴权
+            applyAccessScope: false,
             signal: params.signal,
           }),
         })),
@@ -314,6 +316,7 @@ export class KnowledgeSearchService {
               globalRetrievalLimit: params.options.retrievalLimit,
               documentFilters: options.documentFilters,
               accessScope: options.accessScope,
+              applyAccessScope: false,
               signal: params.signal,
             });
             return hybridResult;

@@ -46,6 +46,10 @@ import type {
   RrfTraceItem,
 } from '@/knowledge/types/knowledge-content.types';
 import { applyJsonbAnyTagFilter } from '@/knowledge/utils/document-filter.util';
+import {
+  addTurnDegradation,
+  tryConsumeEmbedBudget,
+} from '@/common/rag/turn-budget.context';
 
 interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
@@ -113,14 +117,21 @@ export class HybridRetrieverService {
           let queryEmbedding: number[] | undefined;
           if (params.strategy.useVector) {
             try {
-              queryEmbedding = await this.runtime.withTransientRetry(
-                'embed query',
-                () => {
-                  throwIfAborted(params.signal);
-                  return this.runtime.embeddings.embedQuery(retrievalQuery.query);
-                },
-                3,
-              );
+              if (!tryConsumeEmbedBudget(1)) {
+                addTurnDegradation('budget_embed');
+                this.logger.warn('embed 预算耗尽，跳过向量通道');
+              } else {
+                queryEmbedding = await this.runtime.withTransientRetry(
+                  'embed query',
+                  () => {
+                    throwIfAborted(params.signal);
+                    return this.runtime.embeddings.embedQuery(
+                      retrievalQuery.query,
+                    );
+                  },
+                  3,
+                );
+              }
             } catch (error) {
               if (isAbortError(error)) {
                 throw error;
@@ -237,7 +248,10 @@ export class HybridRetrieverService {
 
     let chunks = mergeHybridResults(results, params.globalRetrievalLimit);
     chunks = await this.expandChunks(chunks, params.strategy.chunkContextWindow);
-    chunks = await this.applyAccessScopeFilter(chunks, params.accessScope);
+    // 单库路径：由调用方（KnowledgeSearch）或 persona 合并后再做 DataScope，避免 N 次重复
+    if (params.applyAccessScope !== false) {
+      chunks = await this.applyAccessScopeFilter(chunks, params.accessScope);
+    }
 
     return {
       chunks,
@@ -288,6 +302,8 @@ export class HybridRetrieverService {
             threshold: this.resolveThreshold(input.threshold, config),
             documentFilters: input.documentFilters,
             accessScope: input.accessScope,
+            // persona 合并后再统一 DataScope，避免每库重复 N+1
+            applyAccessScope: false,
             globalRetrievalLimit: this.resolveRetrievalLimit(
               input.retrievalLimit,
               config,

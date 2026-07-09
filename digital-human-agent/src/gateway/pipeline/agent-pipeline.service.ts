@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { AgentService } from '@/agent/agent.service';
-import type { RagWorkflowResult } from '@/agent/types/rag-workflow.types';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
@@ -10,6 +9,8 @@ import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service'
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
+import { resolveRealtimeProfileId } from '@/common/rag/rag-profile';
+import { toRagTracePayload } from '@/common/rag/rag-turn-report';
 
 /**
  * Agent 执行 Pipeline。
@@ -81,6 +82,7 @@ export class AgentPipelineService {
           department: session.department ?? null,
           role: session.role ?? null,
         },
+        profileId: resolveRealtimeProfileId(session.mode),
         onToken: (token: string) => {
           fullReply += token;
 
@@ -105,7 +107,14 @@ export class AgentPipelineService {
           });
         },
       });
-      ragTrace = this.toRagTrace(result);
+      const latencyMs = Date.now() - startedAt;
+      ragTrace = toRagTracePayload(result, {
+        profileId:
+          result.profileId ??
+          result.state.profileId ??
+          resolveRealtimeProfileId(session.mode),
+        latencyMs,
+      });
       status = abortController.signal.aborted ? 'interrupted' : 'completed';
     } catch (err: unknown) {
       const isAbortError = (err as { name?: string })?.name === 'AbortError';
@@ -187,27 +196,6 @@ export class AgentPipelineService {
         });
       }
     }
-  }
-
-  private toRagTrace(result: RagWorkflowResult): Record<string, unknown> {
-    const state = result.state;
-    return {
-      strategy: state.strategy,
-      routeReason: state.routeReason,
-      retrievalStrategy: state.retrievalStrategy,
-      retrievalStrategyReason: state.retrievalStrategyReason,
-      subQuestions: state.subQuestions,
-      retrievalHistory: state.retrievalHistory,
-      retrievalTrace: state.retrievalTrace,
-      graphReasoningTrace: state.graphReasoningTrace,
-      enough: state.enough,
-      missingFacts: state.missingFacts,
-      evaluationReason: state.evaluationReason,
-      webSearchUsed: state.webSearchUsed,
-      webSearchQueries: state.webSearchQueries,
-      stopReason: state.stopReason,
-      orchestrator: state.orchestrator,
-    };
   }
 
   // ── 按句缓冲 ───────────────────────────────────────────────────────────────

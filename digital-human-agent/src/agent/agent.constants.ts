@@ -4,3 +4,5 @@ export const DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS = 2;
 export const DEFAULT_RAG_RETRY_INITIAL_INTERVAL_MS = 200;
 export const DEFAULT_RAG_RETRY_BACKOFF_FACTOR = 2;
 export const DEFAULT_RAG_RETRY_MAX_INTERVAL_MS = 1000;
+/** 单轮 RAG 工作流墙钟预算（ms），超时后跳过后续 hop / web，直接生成 */
+export const DEFAULT_RAG_WORKFLOW_BUDGET_MS = 20_000;

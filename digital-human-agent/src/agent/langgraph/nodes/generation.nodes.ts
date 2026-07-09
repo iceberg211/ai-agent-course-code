@@ -36,14 +36,20 @@ export function createLoadContextNode(
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
+    // orchestrator 已预加载 history 时避免重复查库；仅补 persona
+    const hasHistory = (state.history?.length ?? 0) > 0;
     const [persona, history] = await Promise.all([
       personaService.findOne(input.personaId),
-      conversationService.getCompletedMessages(input.conversationId, 10),
+      hasHistory
+        ? Promise.resolve(state.history)
+        : conversationService.getCompletedMessages(input.conversationId, 10),
     ]);
 
     return {
       persona,
-      history: normalizePromptHistory(history, input.turnId),
+      history: hasHistory
+        ? state.history
+        : normalizePromptHistory(history, input.turnId),
     } satisfies Partial<RagGraphState>;
   };
 }

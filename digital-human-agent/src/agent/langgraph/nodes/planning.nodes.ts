@@ -6,7 +6,6 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
-import { getPlannedQuestions } from '@/agent/langgraph/rag.utils';
 
 // ==========================================
 // 1. route_question 节点
@@ -19,7 +18,11 @@ export function createRouteQuestionNode(ragRouteService: RagRouteService) {
       input.signal,
     );
 
-    let goto: 'plan_sub_questions' | 'retrieve' | 'generate_answer' = 'retrieve';
+    // none：直接生成，跳过记忆与检索
+    // complex：先规划子问题，再加载记忆并进入 retrieve 循环
+    // simple：加载记忆后进入 retrieve 循环
+    let goto: 'plan_sub_questions' | 'load_short_term_memory' | 'generate_answer' =
+      'load_short_term_memory';
     if (route.strategy === 'none') {
       goto = 'generate_answer';
     } else if (route.strategy === 'complex') {
@@ -53,26 +56,5 @@ export function createPlanSubQuestionsNode(
       subQuestions:
         plan.subQuestions.length > 0 ? plan.subQuestions : [state.question],
     } satisfies Partial<RagGraphState>;
-  };
-}
-
-// ==========================================
-// 3. plan_next_step 节点
-// ==========================================
-export function createPlanNextStepNode() {
-  return async (state: RagGraphState) => {
-    const plannedQuestions = getPlannedQuestions(state);
-    // complex 初始多跳，或 simple/complex 扩展后的剩余子问题，在 rerank 前继续本地检索
-    const hasRemainingQueries =
-      state.strategy !== 'none' &&
-      state.nextSubIdx < Math.min(state.maxHops, plannedQuestions.length);
-    const plannedNext = hasRemainingQueries ? 'retrieve' : 'rerank';
-
-    return new Command({
-      update: {
-        plannedNext,
-      } satisfies Partial<RagGraphState>,
-      goto: plannedNext,
-    });
   };
 }

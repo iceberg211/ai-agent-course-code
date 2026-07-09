@@ -8,6 +8,7 @@ import type {
   RagOrchestrator,
   RagWorkflowResult,
 } from '@/agent/types/rag-workflow.types';
+import type { RagProfileId } from '@/common/rag/rag-profile';
 import { throwIfAborted } from '@/common/utils';
 import { runInTracedScope } from '@/common/langsmith/langsmith.utils';
 
@@ -20,6 +21,8 @@ export interface RunAgentParams {
   accessScope?: KnowledgeAccessScope;
   onToken: (token: string) => void;
   onCitations: (citations: RagCitation[]) => void;
+  profileId?: RagProfileId;
+  maxHops?: number;
 }
 
 @Injectable()
@@ -55,6 +58,7 @@ export class AgentService {
           subQuestionCount: output.state.subQuestions.length,
           orchestrator: output.state.orchestrator,
           citationCount: output.citations.length,
+          profileId: output.profileId ?? output.state.profileId,
         }),
       },
       () => this.ragOrchestrator.run(this.toWorkflowInput(params)),
@@ -71,6 +75,8 @@ export class AgentService {
       accessScope: params.accessScope,
       onToken: params.onToken,
       onCitations: params.onCitations,
+      profileId: params.profileId,
+      maxHops: params.maxHops,
     };
   }
 }
