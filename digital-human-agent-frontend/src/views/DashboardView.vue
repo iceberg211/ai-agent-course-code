@@ -1,16 +1,18 @@
 <template>
   <main class="dashboard">
     <!-- 头部：清爽的 Title 和快捷操作 -->
-    <header class="dashboard__head">
-      <div class="dashboard__head-title">
-        <h2>控制台大盘</h2>
-        <p class="subtitle">实时监控您的企业知识底座、问答效能与多模态安全审计指标</p>
-      </div>
-      <button class="btn-primary" type="button" @click="router.push('/chat')">
-        <MessageSquareIcon :size="14" />
-        <span>发起数字人通话</span>
-      </button>
-    </header>
+    <PageHeader
+      eyebrow="工作台"
+      title="控制台大盘"
+      description="查看知识资产、处理任务、RAG 质量与系统健康状态。"
+    >
+      <template #actions>
+        <button class="btn-primary" type="button" @click="router.push('/chat')">
+          <MessageSquareIcon :size="14" />
+          <span>发起数字人通话</span>
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- 新手指引：快捷操作路径 (3列，每列 col-4) -->
     <section class="grid-row" aria-label="快捷向导">
@@ -385,6 +387,7 @@ import {
 } from 'lucide-vue-next'
 import { useProductizedKnowledge } from '@/hooks/useProductizedKnowledge'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { DashboardRagHealth, DashboardSummary, KnowledgeDocument } from '@/types'
 
 const router = useRouter()

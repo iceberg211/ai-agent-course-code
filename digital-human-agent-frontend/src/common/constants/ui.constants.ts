@@ -86,12 +86,20 @@ export const KNOWLEDGE_BASE_DETAIL_TABS: Array<{
 ];
 
 export const APP_NAV_ITEMS = [
-  { to: '/dashboard', label: '首页大盘', icon: 'dashboard' },
-  { to: '/documents', label: '文档管理', icon: 'documents' },
-  { to: '/search', label: '智能搜索', icon: 'search' },
-  { to: '/chat', label: 'AI 问答', icon: 'chat' },
-  { to: '/kb', label: '知识库', icon: 'knowledge' },
-  { to: '/evaluation', label: '评估验证', icon: 'evaluation' },
-  { to: '/rbac', label: '系统管理', icon: 'rbac' },
-  { to: '/profile', label: '个人中心', icon: 'profile' },
+  { to: '/dashboard', label: '首页大盘', icon: 'dashboard', group: 'workspace' },
+  { to: '/documents', label: '文档管理', icon: 'documents', group: 'assets' },
+  { to: '/kb', label: '知识库', icon: 'knowledge', group: 'assets' },
+  { to: '/search', label: '智能搜索', icon: 'search', group: 'usage' },
+  { to: '/chat', label: 'AI 问答', icon: 'chat', group: 'usage' },
+  { to: '/evaluation', label: '评估验证', icon: 'evaluation', group: 'quality' },
+  { to: '/rbac', label: '系统管理', icon: 'rbac', group: 'governance' },
+  { to: '/profile', label: '个人中心', icon: 'profile', group: 'governance' },
+] as const;
+
+export const APP_NAV_GROUPS = [
+  { key: 'workspace', label: '工作台' },
+  { key: 'assets', label: '知识资产' },
+  { key: 'usage', label: '智能使用' },
+  { key: 'quality', label: '质量运营' },
+  { key: 'governance', label: '安全治理' },
 ] as const;

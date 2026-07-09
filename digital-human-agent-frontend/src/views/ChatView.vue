@@ -1,5 +1,11 @@
 <template>
-  <div class="flex h-full relative overflow-hidden bg-slate-50/85 backdrop-blur-[20px] border border-white/60 rounded-3xl shadow-[0_24px_64px_rgba(15,23,42,0.08),0_4px_16px_rgba(15,23,42,0.04)] max-lg:rounded-2xl">
+  <div class="flex h-full flex-col gap-4 overflow-hidden p-6 box-border">
+    <PageHeader
+      eyebrow="智能使用"
+      title="AI 问答"
+      description="围绕知识库证据进行对话，回答可查看引用、Trace、反馈和历史会话。"
+    />
+    <div class="flex min-h-0 flex-1 relative overflow-hidden bg-slate-50/85 backdrop-blur-[20px] border border-white/60 rounded-3xl shadow-[0_24px_64px_rgba(15,23,42,0.08),0_4px_16px_rgba(15,23,42,0.04)] max-lg:rounded-2xl">
     <Transition name="sidebar">
       <div
         v-if="historySidebarOpen"
@@ -126,6 +132,7 @@
       />
     </Transition>
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -146,6 +153,7 @@ import MountedKnowledgeBaseDrawer from '@/components/knowledge-base/MountedKnowl
 import ToastAlert from '@/components/common/ToastAlert.vue'
 import PersonaCreateModal from '@/components/persona/PersonaCreateModal.vue'
 import CitationDetailDrawer from '@/components/chat/CitationDetailDrawer.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { Persona } from '@/types'
 
 type ChatActionType =

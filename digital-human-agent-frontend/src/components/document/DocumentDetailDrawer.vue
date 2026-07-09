@@ -4,13 +4,36 @@
       <aside class="drawer drawer--large drawer--right">
         <header class="drawer-head">
           <div class="drawer-title-stack">
-            <h3>文档详情面板</h3>
+            <h3>知识资产详情</h3>
             <p class="drawer-subtitle" :title="doc.filename">{{ doc.filename }}</p>
           </div>
           <button class="drawer-close" type="button" @click="$emit('close')">
             <XIcon :size="16" />
           </button>
         </header>
+
+        <section class="asset-overview-strip" aria-label="文档状态摘要">
+          <article>
+            <span>解析状态</span>
+            <strong :class="statusClassOf(doc.status)">{{ statusLabelOf(doc.status) }}</strong>
+          </article>
+          <article>
+            <span>处理阶段</span>
+            <strong>{{ stageLabelOf(doc.processingStage || doc.processing_stage) }}</strong>
+          </article>
+          <article>
+            <span>切片</span>
+            <strong>{{ doc.chunkCount ?? doc.chunk_count ?? 0 }}</strong>
+          </article>
+          <article>
+            <span>多模态资源</span>
+            <strong>{{ doc.assetCount ?? doc.asset_count ?? 0 }}</strong>
+          </article>
+          <article>
+            <span>可见范围</span>
+            <strong>{{ visibilityLabelOf(doc.visibility) }}</strong>
+          </article>
+        </section>
 
         <div class="drawer-tabs">
           <button 
@@ -80,8 +103,12 @@
                 <input type="text" v-model="govForm.tags" />
               </div>
               <div class="field">
-                <label class="label">业务分类 (Category)</label>
-                <input type="text" v-model="govForm.category" />
+                <label class="label">业务分类</label>
+                <input type="text" v-model="govForm.businessCategory" />
+              </div>
+              <div class="field">
+                <label class="label">过期时间</label>
+                <input type="date" v-model="govForm.expiresAt" />
               </div>
               <button v-if="canUpload" type="submit" class="btn-primary" :disabled="govSaving">
                 {{ govSaving ? '保存中…' : '应用安全设置' }}
@@ -89,7 +116,48 @@
             </form>
           </div>
 
-          <!-- Tab 2: Markdown 预览 -->
+          <!-- Tab 2: 处理任务 -->
+          <div v-if="activeDetailTab === 'tasks'" class="detail-tasks-pane">
+            <div v-if="tasksLoading" class="loader-box">
+              <div class="spinner"></div>
+              <p>读取处理任务与步骤…</p>
+            </div>
+            <div v-else-if="docTasks.length === 0" class="empty-box">
+              <p>该文档暂无处理任务记录</p>
+            </div>
+            <ol v-else class="task-timeline">
+              <li v-for="task in docTasks" :key="task.id" class="task-record">
+                <header class="task-record__head">
+                  <div>
+                    <strong>{{ taskTypeLabelOf(task.taskType || task.task_type) }}</strong>
+                    <span>ID: {{ task.id }}</span>
+                  </div>
+                  <span class="status-indicator-pill" :class="statusClassOf(task.status)">
+                    {{ statusLabelOf(task.status) }}
+                  </span>
+                </header>
+                <div class="task-record__meta">
+                  <span>阶段：{{ stageLabelOf(task.stage) }}</span>
+                  <span>进度：{{ task.progress ?? 0 }}%</span>
+                  <span>开始：{{ formatDateTime(task.startedAt || task.started_at || task.createdAt || task.created_at) }}</span>
+                  <span>结束：{{ formatDateTime(task.finishedAt || task.finished_at) }}</span>
+                </div>
+                <p v-if="task.error" class="task-record__error">{{ task.error }}</p>
+
+                <ol v-if="task.steps?.length" class="task-step-inline-list">
+                  <li v-for="step in task.steps" :key="`${task.id}-${step.step}`">
+                    <span class="step-dot" :class="stepStatusClassOf(step.status)" />
+                    <strong>{{ taskStepLabelOf(step.step) }}</strong>
+                    <small>{{ statusLabelOf(step.status) }}</small>
+                    <em>{{ formatDuration(step.startedAt || step.started_at, step.finishedAt || step.finished_at) }}</em>
+                    <p v-if="step.error">{{ step.error }}</p>
+                  </li>
+                </ol>
+              </li>
+            </ol>
+          </div>
+
+          <!-- Tab 3: Markdown 预览 -->
           <div v-if="activeDetailTab === 'markdown'" class="detail-markdown-pane">
             <div v-if="markdownLoading" class="loader-box">
               <div class="spinner"></div>
@@ -103,7 +171,7 @@
             </div>
           </div>
 
-          <!-- Tab 3: 多模态解析资产 -->
+          <!-- Tab 4: 多模态解析资产 -->
           <div v-if="activeDetailTab === 'assets'" class="detail-assets-pane">
             <div v-if="assetsLoading" class="loader-box">
               <div class="spinner"></div>
@@ -154,7 +222,7 @@
             </div>
           </div>
 
-          <!-- Tab 4: 知识图谱实体与 Chunks -->
+          <!-- Tab 5: 知识图谱实体与 Chunks -->
           <div v-if="activeDetailTab === 'chunks'" class="detail-chunks-pane">
             <div v-if="chunksLoading" class="loader-box">
               <div class="spinner"></div>
@@ -178,7 +246,7 @@
             </ul>
           </div>
 
-          <!-- Tab 5: 版本历史与更替 -->
+          <!-- Tab 6: 版本历史与更替 -->
           <div v-if="activeDetailTab === 'history'" class="detail-history-pane">
             <div class="history-upload-section">
               <h4>更替上传新版本 (v{{ (doc.version ?? 1) + 1 }})</h4>
@@ -220,7 +288,7 @@ import { ref, reactive, watch } from 'vue'
 import { XIcon } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
-import type { KnowledgeDocumentDetail, KnowledgeChunk } from '@/types'
+import type { DocumentTaskItem, KnowledgeDocumentDetail, KnowledgeChunk } from '@/types'
 
 const props = defineProps<{
   open: boolean
@@ -240,6 +308,7 @@ const kbApi = useKnowledgeBase()
 const activeDetailTab = ref('info')
 const detailTabs = [
   { key: 'info', label: '基本信息与治理' },
+  { key: 'tasks', label: '处理任务' },
   { key: 'markdown', label: 'Markdown 预览' },
   { key: 'assets', label: '多模态资产' },
   { key: 'chunks', label: '切片管理' },
@@ -254,6 +323,8 @@ const docAssets = ref<any[]>([])
 const assetsLoading = ref(false)
 const docVersions = ref<KnowledgeDocumentDetail[]>([])
 const versionsLoading = ref(false)
+const docTasks = ref<DocumentTaskItem[]>([])
+const tasksLoading = ref(false)
 
 // 安全治理表单状态
 const govForm = reactive({
@@ -261,7 +332,8 @@ const govForm = reactive({
   securityLevel: 0,
   department: '',
   tags: '',
-  category: '',
+  businessCategory: '',
+  expiresAt: '',
 })
 const govSaving = ref(false)
 
@@ -279,7 +351,8 @@ watch(
       govForm.securityLevel = newDoc.securityLevel ?? 0
       govForm.department = newDoc.department ?? ''
       govForm.tags = Array.isArray(newDoc.tags) ? newDoc.tags.join(',') : (newDoc.tags ?? '')
-      govForm.category = newDoc.category ?? ''
+      govForm.businessCategory = newDoc.businessCategory ?? newDoc.business_category ?? ''
+      govForm.expiresAt = dateInputValue(newDoc.expiresAt || newDoc.expires_at)
     }
   },
   { immediate: true }
@@ -291,7 +364,14 @@ async function switchDetailTab(key: string) {
   const kbId = document?.knowledgeBaseId || document?.knowledge_base_id
   if (!document || !kbId) return
 
-  if (key === 'chunks') {
+  if (key === 'tasks') {
+    tasksLoading.value = true
+    try {
+      docTasks.value = await kbApi.listDocumentTasks(document.id)
+    } finally {
+      tasksLoading.value = false
+    }
+  } else if (key === 'chunks') {
     chunksLoading.value = true
     try {
       chunks.value = await kbApi.listChunks(kbId, document.id)
@@ -344,7 +424,8 @@ async function saveGovernance() {
       securityLevel: govForm.securityLevel,
       department: govForm.department,
       tags: govForm.tags.split(',').map((t) => t.trim()).filter(Boolean),
-      category: govForm.category,
+      businessCategory: govForm.businessCategory,
+      expiresAt: govForm.expiresAt || undefined,
     })
     if (updated) {
       alert('安全治理设置更新成功！')
@@ -426,6 +507,23 @@ function formatDateTime(val?: string) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+function dateInputValue(val?: string | null) {
+  if (!val) return ''
+  const d = new Date(val)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDuration(start?: string | null, end?: string | null) {
+  if (!start || !end) return '未完成'
+  const started = new Date(start).getTime()
+  const finished = new Date(end).getTime()
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return '-'
+  const seconds = Math.round((finished - started) / 1000)
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
 function formatTime(ms?: number | null): string {
   if (ms == null) return '00:00'
   const sec = Math.floor(ms / 1000)
@@ -449,6 +547,33 @@ function statusClassOf(status?: string): string {
   if (status === 'failed') return 'pill--error'
   if (status === 'processing' || status === 'running' || status === 'pending') return 'pill--warning'
   return 'pill--secondary'
+}
+
+function stepStatusClassOf(status?: string): string {
+  if (status === 'completed') return 'step-dot--success'
+  if (status === 'failed') return 'step-dot--error'
+  if (status === 'running' || status === 'pending') return 'step-dot--warning'
+  return 'step-dot--secondary'
+}
+
+function visibilityLabelOf(visibility?: string): string {
+  if (visibility === 'private') return '仅作者'
+  if (visibility === 'department') return '本部门'
+  return '全公司'
+}
+
+function taskTypeLabelOf(type?: string): string {
+  if (type === 'upload_ingest') return '上传入库'
+  return type || '文档处理'
+}
+
+function taskStepLabelOf(step?: string): string {
+  const labels: Record<string, string> = {
+    parse: '解析文件',
+    index: '写入索引',
+    graph_sync: '同步图谱',
+  }
+  return labels[step || ''] ?? step ?? '-'
 }
 
 const stageLabels: Record<string, string> = {
@@ -658,7 +783,16 @@ select, input[type="text"] {
   font-size: 13px;
 }
 
-select:focus, input[type="text"]:focus {
+input[type="date"] {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  font-size: 13px;
+}
+
+select:focus, input[type="text"]:focus, input[type="date"]:focus {
   border-color: var(--primary);
 }
 
@@ -678,6 +812,149 @@ select:focus, input[type="text"]:focus {
 .btn-primary:disabled {
   opacity: 0.6;
 }
+
+.asset-overview-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #f8fafc;
+}
+
+.asset-overview-strip article {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.asset-overview-strip span {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.asset-overview-strip strong {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-tasks-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.task-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-record {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.task-record__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-record__head div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.task-record__head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.task-record__head span:not(.status-indicator-pill) {
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: 10.5px;
+}
+
+.task-record__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.task-record__error,
+.task-step-inline-list p {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 11.5px;
+}
+
+.task-step-inline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-step-inline-list li {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.task-step-inline-list li p {
+  grid-column: 2 / -1;
+}
+
+.task-step-inline-list small,
+.task-step-inline-list em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 10.5px;
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.step-dot--success { background: #10b981; }
+.step-dot--warning { background: #f59e0b; }
+.step-dot--error { background: #ef4444; }
+.step-dot--secondary { background: #94a3b8; }
 
 /* Tab 2: Markdown Preview */
 .detail-markdown-pane {

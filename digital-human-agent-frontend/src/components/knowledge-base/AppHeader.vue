@@ -1,7 +1,7 @@
 <template>
   <header class="h-[60px] border-b border-border-main bg-white/65 backdrop-blur-md px-6 flex items-center justify-between z-30 shrink-0 text-left" aria-label="顶部全局操作栏">
     <!-- 左侧：全局欢迎与路径提示 -->
-    <div class="flex items-center gap-2.5">
+    <div class="flex items-center gap-2.5 min-w-[180px]">
       <span class="text-xs text-text-muted sm:inline hidden">
         欢迎回来，<strong class="font-bold text-text-main">{{ username }}</strong>
       </span>
@@ -9,6 +9,16 @@
         {{ authStore.user?.role === 'admin' ? '系统管理员' : '普通用户' }}
       </span>
     </div>
+
+    <form class="hidden lg:flex items-center flex-1 max-w-[460px] mx-6 relative" role="search" @submit.prevent="submitGlobalSearch">
+      <SearchIcon :size="15" class="absolute left-3 text-text-muted" />
+      <input
+        v-model="globalQuery"
+        class="w-full h-9 pl-9 pr-3 rounded-lg border border-border-main bg-white/80 text-xs text-text-main outline-none transition-all focus:border-primary focus:ring-3 focus:ring-border-focus"
+        type="search"
+        placeholder="全局搜索文档、片段、问题..."
+      />
+    </form>
 
     <!-- 右侧：就绪状态、通知中心、用户下拉名片 -->
     <div class="flex items-center gap-4">
@@ -179,6 +189,7 @@ import {
   RefreshCwIcon,
   CheckIcon,
   ChevronDownIcon,
+  SearchIcon,
 } from 'lucide-vue-next'
 import { useSessionStore } from '@/stores/session'
 import { useAuthStore } from '@/stores/auth'
@@ -194,6 +205,7 @@ const notificationApi = useNotifications()
 const notifications = ref<NotificationItem[]>([])
 const showNotifications = ref(false)
 const showProfileMenu = ref(false)
+const globalQuery = ref('')
 
 // 容器引用（用于点击外部自动收起）
 const noticeContainer = ref<HTMLElement | null>(null)
@@ -272,6 +284,13 @@ function goProfile() {
 function goRbac() {
   showProfileMenu.value = false
   router.push('/rbac')
+}
+
+function submitGlobalSearch() {
+  const q = globalQuery.value.trim()
+  if (!q) return
+  router.push({ path: '/search', query: { q } })
+  globalQuery.value = ''
 }
 
 function handleLogout() {

@@ -1,11 +1,18 @@
 <template>
   <main class="p-6 h-full overflow-y-auto bg-transparent text-left flex flex-col gap-6 w-full box-border">
-    <header class="mb-1">
-      <div>
-        <h2 class="text-xl font-extrabold text-text-main tracking-tight m-0">系统管理 & 权限矩阵</h2>
-        <p class="text-xs text-text-muted mt-1">配置基于角色的访问控制 (RBAC) 与文档级 ACL 白名单</p>
+    <PageHeader
+      eyebrow="安全治理"
+      title="系统管理与权限矩阵"
+      description="配置角色权限、部门范围和用户授权，支撑文档级数据隔离。"
+    />
+
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div v-for="item in rbacSummary" :key="item.label" class="bg-white border border-border-main rounded-xl p-4">
+        <span class="block text-[10.5px] font-bold text-text-muted">{{ item.label }}</span>
+        <strong class="block text-2xl font-black text-text-main mt-1">{{ item.value }}</strong>
+        <span class="block text-[11px] text-text-muted mt-1">{{ item.hint }}</span>
       </div>
-    </header>
+    </section>
 
     <!-- 功能标签页 -->
     <div class="flex gap-2 border-b border-border-main mb-1">
@@ -133,9 +140,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { PlusIcon, Trash2Icon } from 'lucide-vue-next'
 import { useRbac } from '@/hooks/useRbac'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { RbacDepartmentItem, RbacPermissionItem, RbacRoleItem, RbacUserItem } from '@/types'
 
 const activeTab = ref('roles')
@@ -155,6 +163,13 @@ const rolesList = ref<RbacRoleItem[]>([])
 const permissions = ref<RbacPermissionItem[]>([])
 const departments = ref<RbacDepartmentItem[]>([])
 const users = ref<EditableUser[]>([])
+
+const rbacSummary = computed(() => [
+  { label: '角色', value: rolesList.value.length, hint: '系统内置与扩展角色' },
+  { label: '权限码', value: permissions.value.length, hint: '页面、菜单、按钮权限' },
+  { label: '部门', value: departments.value.length, hint: '部门可见资料范围' },
+  { label: '用户', value: users.value.length, hint: '当前授权管理范围' },
+])
 
 onMounted(loadAll)
 

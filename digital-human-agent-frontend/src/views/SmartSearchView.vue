@@ -1,11 +1,10 @@
 <template>
   <main class="p-6 h-full overflow-y-auto bg-transparent flex flex-col gap-5 w-full text-left box-border">
-    <header class="mb-1">
-      <div>
-        <h2 class="text-xl font-extrabold text-text-main tracking-tight m-0">智能检索与 RAG 调试控制台</h2>
-        <p class="text-xs text-text-muted mt-1">针对混合检索（RRF、向量、全文、知识图谱）、重排（Rerank）以及 ACL 权限规则进行全链路可视化调试</p>
-      </div>
-    </header>
+    <PageHeader
+      eyebrow="智能使用"
+      title="智能搜索"
+      description="查找证据、查看多路召回、RRF 融合、Rerank 排序和权限过滤过程。"
+    />
 
     <!-- 搜索与筛选中心 -->
     <section class="p-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-xl shadow-btn flex flex-col gap-4" aria-label="搜索栏">
@@ -201,6 +200,10 @@
                   <MessageSquareIcon :size="13" />
                   <span>去对话验证</span>
                 </button>
+                <button class="p-1.5 px-3 border border-border-main bg-white rounded-md text-xs font-bold text-text-secondary cursor-pointer inline-flex items-center gap-1 hover:bg-slate-50 hover:text-primary" type="button" @click="createEvalFromChunk(activeChunk)">
+                  <CheckSquareIcon :size="13" />
+                  <span>转评估用例</span>
+                </button>
               </div>
             </header>
 
@@ -214,59 +217,64 @@
           </div>
         </article>
 
-        <!-- 3. 右侧专设：混合检索 Trace 日志与安全过滤器统计 -->
+        <!-- 3. 右侧：混合检索 Trace 与权限过滤统计 -->
         <aside class="border-l border-slate-200/50 bg-slate-50 flex flex-col overflow-hidden text-left">
           <header class="p-3.5 bg-white border-b border-slate-200/50 font-bold text-primary text-xs flex items-center gap-1.5">
             <ShieldIcon :size="14" />
-            <span>RAG 检索合流调试 Trace</span>
+            <span>检索链路 Trace</span>
           </header>
 
           <div class="p-4 flex flex-col gap-4 overflow-y-auto flex-1" v-if="searchResult">
-            <!-- 问题改写 -->
-            <div class="bg-white border border-slate-200/60 rounded-lg p-3">
-              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">📝 Query Rewrite 问题重写</h5>
-              <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5">
-                <div class="flex flex-col gap-0.5"><strong>原始提问:</strong> <span>{{ searchResult.query }}</span></div>
-                <div class="bg-blue-50 border-l-3 border-primary p-1 px-2 rounded-r-md flex flex-col gap-0.5" v-if="searchResult.retrievalQuery">
-                  <strong>改写提问:</strong> <span>{{ searchResult.retrievalQuery }}</span>
-                </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div v-for="item in traceSummary" :key="item.label" class="bg-white border border-slate-200/60 rounded-lg p-2.5">
+                <span class="block text-[10px] font-bold text-text-muted">{{ item.label }}</span>
+                <strong class="block mt-1 text-base font-black text-text-main">{{ item.value }}</strong>
               </div>
             </div>
 
-            <!-- 通道召回统计 -->
             <div class="bg-white border border-slate-200/60 rounded-lg p-3">
-              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">🔀 召回渠道与融合 RRF</h5>
+              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">Query Rewrite</h5>
+              <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5">
+                <div class="flex flex-col gap-0.5"><strong>原始提问:</strong> <span>{{ searchResult.query }}</span></div>
+                <div class="bg-blue-50 border-l-3 border-primary p-1 px-2 rounded-r-md flex flex-col gap-1" v-if="rewriteQueries.length">
+                  <strong>检索用语:</strong>
+                  <span v-for="item in rewriteQueries" :key="item" class="leading-relaxed">{{ item }}</span>
+                </div>
+                <p v-else class="m-0 text-[11px] text-text-muted">后端未返回改写结果，将使用原始问题检索。</p>
+              </div>
+            </div>
+
+            <div class="bg-white border border-slate-200/60 rounded-lg p-3">
+              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">多路召回</h5>
               <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5">
                 <div class="flex flex-col gap-1.5">
                   <div v-for="row in channelRows" :key="row.key" class="flex justify-between items-center gap-2">
-                    <span>{{ row.label }} <em class="not-italic text-[10px] text-text-muted">({{ row.backend }})</em></span>
+                    <span class="min-w-0">
+                      {{ row.label }}
+                      <em class="not-italic text-[10px] text-text-muted">({{ row.backend }})</em>
+                    </span>
                     <strong class="font-bold" :class="row.skipped ? 'text-text-muted' : 'text-text-main'">
                       {{ row.resultCount }} chunks
                     </strong>
                   </div>
-                  <div class="flex justify-between items-center pt-1 border-t border-slate-100">
-                    <span>RRF 融合候选</span>
-                    <strong class="font-bold text-text-main">{{ rrfFusionCount }} items</strong>
-                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- 降级与回退提示 -->
-            <div v-if="degradedChannels.length > 0" class="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <h5 class="m-0 mb-2 text-xs font-bold text-amber-900">降级与回退</h5>
-              <ul class="list-none p-0 m-0 flex flex-col gap-2">
-                <li v-for="item in degradedChannels" :key="`${item.channel}-${item.reason}`" class="text-[11px] text-amber-900 leading-relaxed">
-                  <strong>{{ channelLabel(item.channel) }}</strong>
-                  <span v-if="item.backend" class="text-amber-700"> / {{ item.backend }}</span>
-                  <span>：{{ item.reason }}</span>
-                </li>
-              </ul>
+            <div class="bg-white border border-slate-200/60 rounded-lg p-3">
+              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">RRF 融合 Top</h5>
+              <div v-if="rrfTopRows.length" class="flex flex-col gap-1.5 text-[11.5px] text-text-secondary">
+                <div v-for="row in rrfTopRows" :key="row.key" class="grid grid-cols-[24px_1fr_auto] items-center gap-2">
+                  <span class="w-5 h-5 rounded bg-slate-100 inline-flex items-center justify-center font-bold text-[10px] text-text-muted">{{ row.rank }}</span>
+                  <span class="overflow-hidden text-ellipsis whitespace-nowrap" :title="row.source">{{ row.source }}</span>
+                  <strong class="font-mono text-text-main">{{ row.score }}</strong>
+                </div>
+              </div>
+              <p v-else class="m-0 text-[11px] text-text-muted">未返回 RRF 明细，当前仅展示最终候选结果。</p>
             </div>
 
-            <!-- 重排前后位次对照 -->
             <div class="bg-white border border-slate-200/60 rounded-lg p-3" v-if="rerankTraceRows.length > 0">
-              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">🔄 Rerank 降序位次对照</h5>
+              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">Rerank 位次对照</h5>
               <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5 font-mono">
                 <div class="flex flex-col gap-1">
                   <div class="grid grid-cols-[2fr_1fr_1fr] gap-1.5 font-bold text-text-muted border-b border-slate-200/60 pb-1">
@@ -283,19 +291,29 @@
               </div>
             </div>
 
-            <!-- 安全隔离过滤器 -->
-            <div class="bg-white border rounded-lg p-3 border-red-500/28 bg-red-50/50">
-              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">🛡️ ACL 与安全等级防线</h5>
+            <div v-if="degradedChannels.length > 0" class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <h5 class="m-0 mb-2 text-xs font-bold text-amber-900">降级与回退</h5>
+              <ul class="list-none p-0 m-0 flex flex-col gap-2">
+                <li v-for="item in degradedChannels" :key="`${item.channel}-${item.reason}`" class="text-[11px] text-amber-900 leading-relaxed">
+                  <strong>{{ channelLabel(item.channel) }}</strong>
+                  <span v-if="item.backend" class="text-amber-700"> / {{ item.backend }}</span>
+                  <span>：{{ item.reason }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="bg-red-50/50 border rounded-lg p-3 border-red-500/28">
+              <h5 class="m-0 mb-2 text-xs font-bold text-text-main">权限过滤</h5>
               <div class="text-[11.5px] text-text-secondary flex flex-col gap-1.5">
                 <div class="flex flex-col gap-0.5">
-                  <strong>安全规则过滤器:</strong>
-                  <span class="text-success font-bold">BypassFilter (Active)</span>
+                  <strong>过滤策略:</strong>
+                  <span class="text-success font-bold">{{ permissionFilter.strategy }}</span>
                 </div>
                 <div class="flex flex-col gap-0.5">
-                  <strong>被物理过滤数量:</strong>
+                  <strong>过滤数量:</strong>
                   <strong class="text-error font-bold">{{ aclFilteredCount }} 个废弃/未授权片段</strong>
                 </div>
-                <p class="text-[10px] text-text-muted m-0 mt-1 leading-relaxed">根据您的组织架构、密级授权(Level)以及是否是当前最新有效版本进行最底层物理拦截防线。</p>
+                <p class="text-[10px] text-text-muted m-0 mt-1 leading-relaxed">{{ permissionFilter.description }}</p>
               </div>
             </div>
           </div>
@@ -368,8 +386,10 @@ import {
   SlidersHorizontalIcon,
   XIcon,
   ShieldIcon,
+  CheckSquareIcon,
 } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { KnowledgeBase, KnowledgeSearchChunk, KnowledgeSearchResult } from '@/types'
 
 const router = useRouter()
@@ -441,6 +461,56 @@ const rrfFusionCount = computed(() => searchResult.value?.stageTrace?.rrfFusion?
 
 const degradedChannels = computed(() => searchResult.value?.degradedChannels ?? [])
 
+const traceSummary = computed(() => [
+  { label: '改写问题', value: rewriteQueries.value.length || 0 },
+  { label: '召回通道', value: channelRows.value.filter((row) => !row.skipped).length },
+  { label: 'RRF 候选', value: rrfFusionCount.value || results.value.length },
+  { label: '权限过滤', value: aclFilteredCount.value },
+])
+
+const rewriteQueries = computed(() => {
+  const trace = searchResult.value?.stageTrace as
+    | {
+        queryRewrite?: { rewrittenQuery?: string; queries?: string[]; retrievalQueries?: string[] }
+        retrievalQueries?: string[]
+      }
+    | undefined
+  const candidates = [
+    searchResult.value?.retrievalQuery,
+    trace?.queryRewrite?.rewrittenQuery,
+    ...(trace?.queryRewrite?.queries ?? []),
+    ...(trace?.queryRewrite?.retrievalQueries ?? []),
+    ...(trace?.retrievalQueries ?? []),
+  ]
+  return Array.from(new Set(candidates.filter((item): item is string => Boolean(item?.trim()))))
+})
+
+const rrfTopRows = computed(() => {
+  const chunkMap = new Map<string, KnowledgeSearchChunk>()
+  for (const chunk of [
+    ...(searchResult.value?.hybridChunks ?? []),
+    ...(searchResult.value?.rerankedChunks ?? []),
+    ...(searchResult.value?.stage1 ?? []),
+    ...(searchResult.value?.stage2 ?? []),
+    ...results.value,
+  ]) {
+    chunkMap.set(chunk.id, chunk)
+  }
+
+  return (searchResult.value?.stageTrace?.rrfFusion ?? []).slice(0, 5).map((item, index) => {
+    const record = item as { chunkId?: string; id?: string; score?: number; rrfScore?: number }
+    const chunkId = record.chunkId ?? record.id ?? String(index)
+    const chunk = chunkMap.get(chunkId)
+    const score = record.rrfScore ?? record.score
+    return {
+      key: `${chunkId}-${index}`,
+      rank: index + 1,
+      source: chunk?.source ?? chunkId,
+      score: typeof score === 'number' ? score.toFixed(4) : '-',
+    }
+  })
+})
+
 const rerankTraceRows = computed(() => {
   const chunks = new Map<string, KnowledgeSearchChunk>()
   for (const chunk of [
@@ -470,6 +540,17 @@ const aclFilteredCount = computed(() => {
     return Math.max(0, stage1Count - stage2Count - 2)
   }
   return 0
+})
+
+const permissionFilter = computed(() => {
+  const filter = searchResult.value?.stageTrace?.permissionFilter as
+    | { strategy?: string; reason?: string; visibleScopes?: string[]; filtered?: number }
+    | undefined
+  const scopes = filter?.visibleScopes?.length ? `可见范围：${filter.visibleScopes.join('、')}` : '按用户、部门、可见范围与当前版本过滤。'
+  return {
+    strategy: filter?.strategy ?? 'ACL Filter',
+    description: filter?.reason ?? scopes,
+  }
 })
 
 function channelLabel(channel: string): string {
@@ -626,6 +707,17 @@ function startChatWithChunk(chunk: KnowledgeSearchChunk) {
     query: {
       knowledgeBaseId: kbId,
       useSearchDraft: '1',
+    },
+  })
+}
+
+function createEvalFromChunk(chunk: KnowledgeSearchChunk) {
+  router.push({
+    path: '/evaluation',
+    query: {
+      knowledgeBaseId: chunk.knowledgeBaseId || chunk.knowledge_base_id || selectedKbId.value,
+      addQuestion: query.value,
+      expectedAnswer: chunk.content.slice(0, 1200),
     },
   })
 }

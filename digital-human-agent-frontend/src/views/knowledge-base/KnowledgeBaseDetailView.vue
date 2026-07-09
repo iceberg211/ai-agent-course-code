@@ -1,15 +1,21 @@
 <template>
   <main class="p-8 px-6 h-full flex flex-col overflow-hidden bg-transparent text-left" v-if="kb">
-    <header class="mb-5 flex items-start justify-between gap-5 max-md:flex-col max-md:items-stretch">
-      <div>
-        <RouterLink to="/kb" class="inline-flex items-center gap-1 text-xs font-semibold text-text-muted no-underline mb-2 transition-all hover:text-primary hover:-translate-x-0.5"><ChevronLeftIcon :size="14" /> 知识库</RouterLink>
-        <h2 class="m-0 mb-1.5 text-2xl font-extrabold text-text-main tracking-tight">{{ kb.name }}</h2>
-        <p v-if="kb.description" class="m-0 text-xs text-text-secondary leading-relaxed">{{ kb.description }}</p>
-      </div>
-      <button class="inline-flex items-center justify-center min-w-[112px] h-10 px-5 border-none rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xs font-bold cursor-pointer shrink-0 shadow-btn transition-all duration-200 hover:-translate-y-[0.5px] hover:brightness-104 max-md:w-full" type="button" @click="goToChatValidation">
-        去问答验证
-      </button>
-    </header>
+    <div class="mb-5 flex flex-col gap-3">
+      <RouterLink to="/kb" class="inline-flex items-center gap-1 text-xs font-semibold text-text-muted no-underline transition-all hover:text-primary hover:-translate-x-0.5">
+        <ChevronLeftIcon :size="14" /> 知识库
+      </RouterLink>
+      <PageHeader
+        eyebrow="知识库运营"
+        :title="kb.name"
+        :description="kb.description || '围绕单个知识库查看文档、健康、图谱、验证和配置。'"
+      >
+        <template #actions>
+          <button class="inline-flex items-center justify-center min-w-[112px] h-10 px-5 border-none rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-white text-xs font-bold cursor-pointer shrink-0 shadow-btn transition-all duration-200 hover:-translate-y-[0.5px] hover:brightness-104 max-md:w-full" type="button" @click="goToChatValidation">
+            去问答验证
+          </button>
+        </template>
+      </PageHeader>
+    </div>
 
     <nav class="flex gap-2 border-b border-border-main mb-5" role="tablist">
       <button
@@ -51,6 +57,7 @@ import HealthTab from '@/components/knowledge-base/tabs/HealthTab.vue'
 import GraphTab from '@/components/knowledge-base/tabs/GraphTab.vue'
 import HitTestTab from '@/components/knowledge-base/tabs/HitTestTab.vue'
 import SettingsTab from '@/components/knowledge-base/tabs/SettingsTab.vue'
+import PageHeader from '@/components/common/PageHeader.vue'
 
 const props = defineProps<{ kbId: string }>()
 const router = useRouter()

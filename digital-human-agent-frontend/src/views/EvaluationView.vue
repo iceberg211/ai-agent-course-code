@@ -1,11 +1,12 @@
 <template>
   <main class="p-6 h-full overflow-y-auto bg-transparent text-left flex flex-col gap-6 w-full box-border">
-    <header class="flex justify-between items-center gap-5 mb-1">
-      <div>
-        <h2 class="text-xl font-extrabold text-text-main tracking-tight m-0">评估验证</h2>
-        <p class="text-xs text-text-muted mt-1">评测多路检索召回率与大模型作答忠实度，确保知识回答可信度</p>
-      </div>
-      <div class="flex items-center gap-3">
+    <PageHeader
+      eyebrow="质量运营"
+      title="评估验证"
+      description="管理评估集、批量运行检索验证、审核失败用例并沉淀回归案例。"
+    >
+      <template #actions>
+        <div class="flex items-center gap-3">
         <select v-model="selectedKbId" class="h-10 px-3 border border-border-main rounded-lg bg-white text-text-main outline-none text-xs focus:border-primary" @change="loadEvalCases">
           <option value="" disabled>选择要评估的知识库</option>
           <option v-for="kb in kbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
@@ -14,14 +15,15 @@
           <PlayIcon :size="15" :class="{ 'animate-spin': running }" />
           <span>{{ running ? '批量评测运行中…' : '运行批量评测' }}</span>
         </button>
-      </div>
-    </header>
+        </div>
+      </template>
+    </PageHeader>
 
     <!-- 如果没有选择知识库 -->
     <div v-if="!selectedKbId" class="flex flex-col items-center justify-center p-12 text-center text-text-muted bg-white/65 border border-white/50 rounded-xl gap-3">
       <ShieldCheckIcon :size="48" class="text-text-muted" />
       <h3 class="text-sm font-bold text-text-main m-0">请选择目标知识库</h3>
-      <p class="text-xs text-text-muted">选择一个知识库以查看其对应的黄金测试集（Golden Dataset）与最近运行 of 召回评估统计</p>
+      <p class="text-xs text-text-muted">选择一个知识库以查看其对应的黄金测试集与最近运行统计</p>
     </div>
 
     <!-- 评估内容区 -->
@@ -48,6 +50,60 @@
           <span class="text-[28px] font-black leading-none" :class="passRateClass === 'highlight-green' ? 'text-success' : passRateClass === 'highlight-blue' ? 'text-primary' : 'text-error'">{{ formatPercent(verifiedPassRate) }}</span>
           <span class="text-[11px] mt-1" :class="passRateClass === 'highlight-green' ? 'text-emerald-750' : passRateClass === 'highlight-blue' ? 'text-blue-750' : 'text-red-750'">黄金测试审核通过</span>
         </div>
+      </section>
+
+      <section class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+        <div class="bg-white border border-border-main rounded-xl p-5 flex flex-col gap-4">
+          <div class="flex justify-between items-start gap-4">
+            <div>
+              <h3 class="text-sm font-bold text-text-main m-0">失败分析与运行诊断</h3>
+              <p class="text-xs text-text-muted m-0 mt-1">聚合最近一次评测结果，用于发现检索、重排和人工审核中的薄弱项。</p>
+            </div>
+            <button
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border-main rounded-lg text-xs font-bold text-text-secondary cursor-pointer hover:bg-slate-50 hover:text-primary hover:border-primary-muted transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              :disabled="failedCases.length === 0"
+              @click="reviewFailedInSearch"
+            >
+              <SearchIcon :size="13" />
+              <span>复查失败用例</span>
+            </button>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div v-for="item in diagnosticCards" :key="item.label" class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <span class="block text-[10.5px] font-bold text-text-muted">{{ item.label }}</span>
+              <strong class="block text-xl font-black text-text-main mt-1">{{ item.value }}</strong>
+              <span class="block text-[10.5px] text-text-muted mt-1">{{ item.hint }}</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <article v-for="bucket in failureBuckets" :key="bucket.key" class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex justify-between items-center gap-3">
+                <h4 class="m-0 text-xs font-bold text-text-main">{{ bucket.label }}</h4>
+                <span class="text-[11px] font-bold text-text-muted">{{ bucket.count }} 条</span>
+              </div>
+              <p class="m-0 mt-1 text-[11px] leading-relaxed text-text-muted">{{ bucket.description }}</p>
+            </article>
+          </div>
+        </div>
+
+        <aside class="bg-white border border-border-main rounded-xl p-5 flex flex-col gap-3">
+          <h3 class="text-sm font-bold text-text-main m-0">待复查用例</h3>
+          <p class="text-xs text-text-muted m-0">优先复查失败、低命中率或人工驳回的用例。</p>
+          <div v-if="priorityReviewCases.length" class="flex flex-col gap-2">
+            <button
+              v-for="item in priorityReviewCases"
+              :key="item.id"
+              class="text-left border border-slate-200 rounded-lg bg-slate-50/70 p-3 cursor-pointer hover:border-primary/35 hover:bg-blue-50/40 transition-all"
+              type="button"
+              @click="goSearchWithCase(item)"
+            >
+              <strong class="block text-xs text-text-main line-clamp-2">{{ item.question }}</strong>
+              <span class="block text-[11px] text-text-muted mt-1">命中 {{ formatPercent(resolveHitRate(item) ?? 0) }} · 召回 {{ formatPercent(resolveRecall(item) ?? 0) }} · {{ reviewLabel(resolveReviewStatus(item)) }}</span>
+            </button>
+          </div>
+          <p v-else class="text-xs text-text-muted m-0 py-4">暂无需要优先复查的用例。</p>
+        </aside>
       </section>
 
       <!-- 核心表格区 -->
@@ -165,8 +221,10 @@ import {
   XIcon,
   Trash2Icon,
   ShieldCheckIcon,
+  SearchIcon,
 } from 'lucide-vue-next'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { KnowledgeBase, KnowledgeEvalCase } from '@/types'
 
 const kbApi = useKnowledgeBase()
@@ -210,6 +268,73 @@ const passRateClass = computed(() => {
   if (rate >= 0.5) return 'highlight-blue'
   return 'highlight-red'
 })
+
+const failedCases = computed(() =>
+  cases.value.filter((item) => resolveLastRunStatus(item) === 'failed' || resolveReviewStatus(item) === 'failed'),
+)
+
+const lowHitCases = computed(() =>
+  cases.value.filter((item) => {
+    const score = resolveHitRate(item)
+    return score !== null && score < 0.5
+  }),
+)
+
+const unrunCases = computed(() => cases.value.filter((item) => !resolveLastRunStatus(item) && !resolveActualAnswer(item)))
+
+const runningCases = computed(() => cases.value.filter((item) => resolveLastRunStatus(item) === 'running'))
+
+const avgRetrievalLatency = computed(() => averageLatency('retrievalLatencyMs'))
+
+const avgRerankLatency = computed(() => averageLatency('rerankLatencyMs'))
+
+const diagnosticCards = computed(() => [
+  { label: '失败用例', value: failedCases.value.length, hint: '运行失败或审核不通过' },
+  { label: '低命中', value: lowHitCases.value.length, hint: '命中率低于 50%' },
+  { label: '未运行', value: unrunCases.value.length, hint: '尚无评测结果' },
+  { label: '运行中', value: runningCases.value.length, hint: '后端任务未完成' },
+  { label: '平均耗时', value: formatMs(avgRetrievalLatency.value + avgRerankLatency.value), hint: '检索与重排' },
+])
+
+const failureBuckets = computed(() => [
+  {
+    key: 'retrieval',
+    label: '检索不足',
+    count: cases.value.filter((item) => {
+      const hitRate = resolveHitRate(item)
+      return hitRate !== null && hitRate < 0.35
+    }).length,
+    description: '通常需要检查分片质量、关键词召回、向量阈值和知识库范围。',
+  },
+  {
+    key: 'rerank',
+    label: '重排不足',
+    count: cases.value.filter((item) => {
+      const hitRate = resolveHitRate(item)
+      const recall = resolveRecall(item)
+      return hitRate !== null && recall !== null && hitRate >= 0.5 && recall < 0.5
+    }).length,
+    description: '候选已召回但最终排序不理想，可重点查看 Rerank 模型和 TopK 设置。',
+  },
+  {
+    key: 'answer',
+    label: '答案质量不足',
+    count: cases.value.filter((item) => resolveLastRunStatus(item) === 'failed' && resolveHitRate(item) !== null && (resolveHitRate(item) ?? 0) >= 0.5).length,
+    description: '证据可能存在，但生成答案不符合预期，需要复查提示词和引用约束。',
+  },
+  {
+    key: 'review',
+    label: '人工驳回',
+    count: cases.value.filter((item) => resolveReviewStatus(item) === 'failed').length,
+    description: '人工审核标记不通过，适合沉淀为回归测试优先用例。',
+  },
+])
+
+const priorityReviewCases = computed(() =>
+  cases.value
+    .filter((item) => failedCases.value.includes(item) || lowHitCases.value.includes(item))
+    .slice(0, 5),
+)
 
 onMounted(async () => {
   const list = await kbApi.listAll()
@@ -288,6 +413,21 @@ async function deleteCase(item: KnowledgeEvalCase) {
   }
 }
 
+function goSearchWithCase(item: KnowledgeEvalCase) {
+  router.push({
+    path: '/search',
+    query: {
+      knowledgeBaseId: selectedKbId.value,
+      q: item.question,
+    },
+  })
+}
+
+function reviewFailedInSearch() {
+  const first = priorityReviewCases.value[0]
+  if (first) goSearchWithCase(first)
+}
+
 function openCreateModal() {
   form.value.question = ''
   form.value.expectedAnswer = ''
@@ -344,6 +484,29 @@ function resolveRecall(item: KnowledgeEvalCase): number | null {
 
 function resolveReviewStatus(item: KnowledgeEvalCase): string {
   return item.userReviewStatus ?? item.user_review_status ?? 'unreviewed'
+}
+
+function resolveLastRunStatus(item: KnowledgeEvalCase): string {
+  const record = item as KnowledgeEvalCase & { lastRunStatus?: string; last_run_status?: string }
+  return record.lastRunStatus ?? record.last_run_status ?? ''
+}
+
+function averageLatency(field: 'retrievalLatencyMs' | 'rerankLatencyMs'): number {
+  const snakeField = field === 'retrievalLatencyMs' ? 'retrieval_latency_ms' : 'rerank_latency_ms'
+  const values = cases.value
+    .map((item) => {
+      const record = item as KnowledgeEvalCase & Record<string, number | undefined>
+      return record[field] ?? record[snakeField]
+    })
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (!values.length) return 0
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function formatMs(value: number): string {
+  if (!value) return '-'
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`
+  return `${Math.round(value)}ms`
 }
 </script>
 

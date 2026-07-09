@@ -1,15 +1,42 @@
 <template>
   <main class="p-6 h-full overflow-y-auto bg-transparent flex flex-col gap-5 w-full box-border">
-    <header class="flex items-center justify-between gap-5 text-left">
-      <div>
-        <h2 class="m-0 mb-1 text-2xl font-extrabold text-text-main tracking-tight">文档管理</h2>
-        <p class="m-0 text-xs text-text-muted">统一查看和控制所有知识库中的文档解析、多模态资产与数据安全隔离</p>
-      </div>
-      <button v-if="canUploadDocuments" class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-200 hover:brightness-104 hover:-translate-y-[0.5px]" type="button" @click="openUploadModal(null)">
-        <PlusIcon :size="15" />
-        <span>上传文档 & 新建任务</span>
-      </button>
-    </header>
+    <PageHeader
+      eyebrow="知识资产"
+      title="文档管理"
+      description="统一查看文档解析、任务步骤、多模态资源、版本与权限范围。"
+    >
+      <template #actions>
+        <PermissionGate code="documents:upload">
+          <button class="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer shadow-btn transition-all duration-200 hover:brightness-104 hover:-translate-y-[0.5px]" type="button" @click="openUploadModal(null)">
+            <PlusIcon :size="15" />
+            <span>上传文档</span>
+          </button>
+        </PermissionGate>
+      </template>
+    </PageHeader>
+
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-3" aria-label="文档运营摘要">
+      <article class="doc-summary">
+        <span>当前筛选结果</span>
+        <strong>{{ total }}</strong>
+        <small>匹配文档</small>
+      </article>
+      <article class="doc-summary" :class="{ 'doc-summary--warn': failedCount > 0 }">
+        <span>处理失败</span>
+        <strong>{{ failedCount }}</strong>
+        <small>需要查看原因或重试</small>
+      </article>
+      <article class="doc-summary">
+        <span>处理中</span>
+        <strong>{{ processingCount }}</strong>
+        <small>上传、解析或建索引中</small>
+      </article>
+      <article class="doc-summary">
+        <span>多模态资源</span>
+        <strong>{{ assetCount }}</strong>
+        <small>图片、音频、视频解析产物</small>
+      </article>
+    </section>
 
     <!-- 联合筛选区 -->
     <section class="flex flex-col gap-4 p-5 bg-white/65 backdrop-blur-md border border-white/50 rounded-xl" aria-label="筛选面板">
@@ -319,6 +346,8 @@ import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useDocumentFilters } from '@/hooks/useDocumentFilters'
 import { KNOWLEDGE_DOCUMENT_STATUS_LABELS } from '@/common/constants'
+import PageHeader from '@/components/common/PageHeader.vue'
+import PermissionGate from '@/components/common/PermissionGate.vue'
 import type { KnowledgeBase, KnowledgeDocumentDetail } from '@/types'
 
 // 导入拆分后的子组件
@@ -347,6 +376,13 @@ const canSetCurrentVersion = computed(() => permissionApi.can('documents:version
 const { query, onSearchInput, resetFilters, applyRouteQuery } = useDocumentFilters(refreshList)
 
 const maxPage = computed(() => Math.max(1, Math.ceil(total.value / query.pageSize)))
+const failedCount = computed(() => items.value.filter((doc) => isFailed(doc)).length)
+const processingCount = computed(() =>
+  items.value.filter((doc) => ['pending', 'processing', 'running'].includes(doc.status)).length,
+)
+const assetCount = computed(() =>
+  items.value.reduce((sum, doc) => sum + Number(doc.assetCount ?? doc.asset_count ?? 0), 0),
+)
 
 // 载入列表与基础数据
 async function refreshList() {
@@ -522,3 +558,42 @@ function stageLabelOf(stage?: string): string {
   return (stageLabels[stage || ''] ?? stage) || '排队'
 }
 </script>
+
+<style scoped>
+.doc-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.78);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.68);
+  text-align: left;
+}
+
+.doc-summary--warn {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(255, 251, 235, 0.76);
+}
+
+.doc-summary span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.doc-summary strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.doc-summary small {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

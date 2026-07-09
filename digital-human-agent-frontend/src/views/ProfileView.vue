@@ -1,11 +1,10 @@
 <template>
   <main class="profile-page p-6 h-full overflow-y-auto bg-transparent flex flex-col gap-6 w-full text-left">
-    <header class="profile-header flex items-center justify-between gap-5">
-      <div>
-        <h2 class="profile-title text-xl font-extrabold text-text-main tracking-tight">个人中心</h2>
-        <p class="profile-subtitle text-xs text-text-muted mt-1">管理您的个人访问凭证、修改密码与系统配置</p>
-      </div>
-    </header>
+    <PageHeader
+      eyebrow="安全治理"
+      title="个人中心"
+      description="管理个人访问凭证、部门范围、API Key 与账户安全配置。"
+    />
 
     <div class="profile-layout w-full grid grid-cols-12 gap-6">
       <!-- 左栏：个人名片与安全清理 (占 col-4) -->
@@ -53,6 +52,20 @@
       <div class="profile-main col-span-12 lg:col-span-8 flex flex-col gap-6">
         <!-- 子格：凭证与部门并排 (各自占 col-6) -->
         <div class="profile-top-grid grid grid-cols-12 gap-6 w-full">
+          <section class="profile-card bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-6 shadow-[0_4px_20px_rgba(15,23,42,0.02),inset_0_1px_0_rgba(255,255,255,0.6)] col-span-12 flex flex-col gap-4">
+            <div>
+              <h4 class="text-[14.5px] font-bold text-text-main">我的访问能力</h4>
+              <p class="text-xs text-text-muted mt-1">这些信息会影响文档列表、搜索、问答引用和按钮级操作权限。</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div v-for="item in accessSummary" :key="item.label" class="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <span class="block text-[10.5px] font-bold text-text-muted">{{ item.label }}</span>
+                <strong class="block mt-1 text-[13px] font-bold text-text-main break-all">{{ item.value }}</strong>
+                <span class="block mt-1 text-[10.5px] text-text-muted leading-relaxed">{{ item.hint }}</span>
+              </div>
+            </div>
+          </section>
+
           <!-- 数据访问凭证 -->
           <section class="profile-card credential-card bg-white/65 backdrop-blur-md border border-white/50 rounded-xl p-6 shadow-[0_4px_20px_rgba(15,23,42,0.02),inset_0_1px_0_rgba(255,255,255,0.6)] col-span-12 lg:col-span-6 flex flex-col gap-5">
             <div>
@@ -229,6 +242,7 @@ import { useRouter } from 'vue-router'
 import { Trash2Icon, LogOutIcon, KeyRoundIcon } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { apiFetch, apiJson } from '@/api/client'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { ApiKeyItem } from '@/types'
 
 const router = useRouter()
@@ -257,6 +271,33 @@ const initial = computed(() => {
 
 const username = computed(() => authStore.user?.username || '企业管理员')
 const ownerId = computed(() => authStore.user?.id || '无凭证')
+const roleCodes = computed(() => {
+  const user = authStore.user as typeof authStore.user & { roleCodes?: string[]; roles?: string[]; role?: string }
+  const values = user?.roleCodes ?? user?.roles ?? (user?.role ? [user.role] : [])
+  return values.length ? values.join('、') : '未分配'
+})
+const accessSummary = computed(() => [
+  {
+    label: '当前部门',
+    value: authStore.user?.department || departmentInput.value || '未设置',
+    hint: '用于部门可见资料过滤',
+  },
+  {
+    label: '角色权限',
+    value: roleCodes.value,
+    hint: '影响页面、菜单和按钮权限',
+  },
+  {
+    label: 'API Key',
+    value: `${apiKeys.value.filter((item) => item.isActive).length} 个有效`,
+    hint: '用于服务端和脚本调用',
+  },
+  {
+    label: '数据范围',
+    value: 'Owner / Department / Company',
+    hint: '搜索和问答默认按范围过滤',
+  },
+])
 
 onMounted(() => {
   void loadProfile()
