@@ -254,6 +254,8 @@ export interface KnowledgeHybridRetrievalParams {
    * 默认 true；当调用方会统一 filter（如 KnowledgeSearch / retrieveForPersona 合并后）时设为 false，避免重复鉴权。
    */
   applyAccessScope?: boolean;
+  /** persona 多知识库召回时预先计算的 query embedding；null 代表本轮已降级为非向量召回。 */
+  queryEmbeddings?: ReadonlyMap<number, number[] | null>;
   signal?: AbortSignal;
 }
 
@@ -271,6 +273,11 @@ export interface PersonaHybridRetrievalChannels {
 
 export interface PersonaHybridRetrievalInput {
   personaId: string;
+  /**
+   * 上游已解析的挂载配置。Pipeline 为构造 ACL / 内容版本缓存键时会先读取一次，
+   * 传入此值可避免 Hybrid Retriever 再次查询同一份配置。
+   */
+  mountedKnowledgeConfigs?: MountedKnowledgeConfig[];
   retrievalQueries: RetrievalQueryItem[];
   strategy?: RetrievalStrategy;
   channels?: PersonaHybridRetrievalChannels;

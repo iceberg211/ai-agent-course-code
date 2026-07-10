@@ -6,6 +6,7 @@ import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
+import { assembleConversationContextParts } from '@/memory/utils/rolling-summary.utils';
 
 export function createLoadShortTermMemoryNode(
   shortTermMemoryService: ShortTermMemoryService,
@@ -30,11 +31,52 @@ export function createLoadShortTermMemoryNode(
   };
 }
 
+/** 生成前并行读取两类记忆，减少生成前串行 I/O。 */
+export function createLoadGenerationMemoryNode(
+  shortTermMemoryService: ShortTermMemoryService,
+  memoryRetrieverService: MemoryRetrieverService,
+  memoryPolicyService: MemoryPolicyService,
+) {
+  return async (state: RagGraphState, config: RagGraphConfig) => {
+    const input = ensureWorkflowNotAborted(config);
+    const shortTermPromise = shortTermMemoryService
+      .getContext(input.conversationId, input.accessScope?.ownerId)
+      .catch(() => ({ window: [], summary: '', activeContext: '' }));
+    const longTermPromise =
+      state.useLongTermMemory === false
+        ? Promise.resolve([])
+        : memoryRetrieverService
+            .retrieve({
+              query: state.question,
+              ownerId: input.accessScope?.ownerId,
+              department: input.accessScope?.department,
+              accessScope: input.accessScope,
+              limit: state.retrievalStrategy.memoryTopK ?? 5,
+            })
+            .catch(() => []);
+    const [shortTermMemory, longTermMemories] = await Promise.all([
+      shortTermPromise,
+      longTermPromise,
+    ]);
+    return {
+      shortTermMemory,
+      longTermMemories: memoryPolicyService.filterReadable(
+        longTermMemories,
+        input.accessScope,
+      ),
+    } satisfies Partial<RagGraphState>;
+  };
+}
+
 export function createRetrieveLongTermMemoryNode(
   memoryRetrieverService: MemoryRetrieverService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
+    // 长期记忆只用于生成上下文，永不进入 rewrite/retrieve query；profile 可关闭加载
+    if (state.useLongTermMemory === false) {
+      return { longTermMemories: [] } satisfies Partial<RagGraphState>;
+    }
     try {
       const longTermMemories = await memoryRetrieverService.retrieve({
         query: state.question,
@@ -66,25 +108,22 @@ export function createFilterMemoryByPolicyNode(
 
 export function createMergeMemoryContextNode() {
   return async (state: RagGraphState) => {
-    // 对话轮次由 prompt history（DB）统一承载，此处不再重复注入 window，避免 token 三倍膨胀
-    // 短期记忆只保留 summary + activeContext（跨轮任务背景）
-    const shortParts = [
-      state.shortTermMemory.summary
-        ? `会话摘要：${state.shortTermMemory.summary}`
-        : '',
-      state.shortTermMemory.activeContext
-        ? `当前任务背景：${state.shortTermMemory.activeContext}`
-        : '',
-    ].filter(Boolean);
+    // DB history 已作为 prompt history 注入；此处仅保留摘要与任务背景，避免重复最近会话。
+    const shortParts = assembleConversationContextParts({
+      summary: state.shortTermMemory.summary ?? '',
+      activeContext: state.shortTermMemory.activeContext ?? '',
+      window: state.shortTermMemory.window ?? [],
+      recentLimit: 0,
+    });
 
-    // ── 长期记忆 ────────────────────────────────────────────────
-    const longParts = state.longTermMemories
-      .slice(0, 8)
+    // 长期偏好：仅影响风格/习惯，不改写企业知识（由 system prompt 约束）
+    const longParts = (state.longTermMemories ?? [])
+      .slice(0, 5)
       .map(
         (item, index) =>
           `[记忆 ${index + 1}] 类型：${item.category}；可信度：${item.confidence.toFixed(
             2,
-          )}\n${item.content}`,
+          )}\n${item.content.slice(0, 500)}`,
       );
 
     return {

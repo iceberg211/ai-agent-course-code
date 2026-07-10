@@ -74,6 +74,8 @@ export interface RagWorkflowInput {
   maxHops?: number;
   /** 执行剖面；未传时 orchestrator 默认 balanced_chat */
   profileId?: RagProfileId;
+  /** HTTP/WS 入口接收本轮消息的时间戳（ms）。 */
+  startedAt?: number;
 }
 
 export interface RagWorkflowState {
@@ -114,6 +116,10 @@ export interface RagWorkflowState {
   evaluateMode: 'off' | 'heuristic' | 'llm';
   /** rerank 模式：off | score | llm | dedicated */
   rerankMode: 'off' | 'score' | 'llm' | 'dedicated';
+  /** 是否注入长期记忆（不进检索 query） */
+  useLongTermMemory: boolean;
+  /** 路由模式 */
+  routeMode: 'heuristic' | 'llm';
   enough: boolean | null;
   missingFacts: string[];
   evaluationReason: string;

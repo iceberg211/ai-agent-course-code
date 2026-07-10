@@ -15,6 +15,7 @@ const sampleChunk: KnowledgeChunk = {
 
 describe('HybridRetrieverService', () => {
   const strategy: RetrievalStrategy = {
+    name: 'balanced',
     needRetrieval: true,
     useVector: true,
     useKeyword: true,
@@ -23,6 +24,15 @@ describe('HybridRetrieverService', () => {
     useMultiQuery: false,
     allowWeb: false,
     reason: '测试',
+    useMemory: false,
+    useMultimodal: false,
+    vectorTopK: 10,
+    keywordTopK: 10,
+    graphTopK: 5,
+    memoryTopK: 3,
+    rrfK: 60,
+    rerankTopK: 5,
+    minRerankScore: 3,
   };
 
   function createService(options?: {
@@ -203,6 +213,36 @@ describe('HybridRetrieverService', () => {
       graphBackend: 'neo4j',
       graphResultCount: 1,
     });
+  });
+
+  it('persona 多知识库召回应为同一 query 只生成一次 embedding', async () => {
+    const { service, runtime, personaKnowledgeConfigService } = createService();
+    personaKnowledgeConfigService.listMountedKnowledgeConfigs.mockResolvedValue([
+      {
+        knowledgeId: 'kb-1',
+        threshold: 0.6,
+        retrievalLimit: 20,
+        retrievalConfig: {},
+        updatedAt: null,
+      },
+      {
+        knowledgeId: 'kb-2',
+        threshold: 0.6,
+        retrievalLimit: 20,
+        retrievalConfig: {},
+        updatedAt: null,
+      },
+    ]);
+
+    await service.retrieveForPersona({
+      personaId: 'persona-1',
+      retrievalQueries: [
+        { index: 0, query: '同一问题', keywords: ['问题'], angle: 'original' },
+      ],
+      strategy: { ...strategy, useGraph: false },
+    });
+
+    expect(runtime.embeddings.embedQuery).toHaveBeenCalledTimes(1);
   });
 
   it('配置为 elastic 且 ES 可用时优先走 ES', async () => {

@@ -85,6 +85,9 @@ export const RagGraphStateAnnotation = Annotation.Root({
   useGraphExpand: Annotation<boolean>(),
   evaluateMode: Annotation<RagWorkflowState['evaluateMode']>(),
   rerankMode: Annotation<RagWorkflowState['rerankMode']>(),
+  useLongTermMemory: Annotation<boolean>(),
+  /** 路由模式：heuristic | llm */
+  routeMode: Annotation<'heuristic' | 'llm'>(),
 
   // ── 4. 证据评估 (Evidence Evaluation) ───────────────────────────────────────
   /** 证据充足性评估结果，true 表示已足够作答 */
@@ -123,6 +126,8 @@ export const RagGraphStateAnnotation = Annotation.Root({
   persona: Annotation<Persona | null>(),
   /** 历史多轮聊天消息上下文，用于上下文补全 */
   history: Annotation<ConversationMessage[]>(),
+  /** 检索改写使用的轻量历史，独立于生成 prompt history。 */
+  queryHistory: Annotation<ConversationMessage[]>(),
 });
 
 export type RagGraphState = typeof RagGraphStateAnnotation.State;
@@ -171,12 +176,17 @@ export function buildInitialRagGraphState(
     retrievalStrategy: DEFAULT_RETRIEVAL_STRATEGY,
     retrievalStrategyReason: DEFAULT_RETRIEVAL_STRATEGY.reason,
     routeAllowWeb: profile.allowWeb,
-    workflowStartedAt: Date.now(),
+    workflowStartedAt:
+      Number.isFinite(input.startedAt) && (input.startedAt ?? 0) > 0
+        ? (input.startedAt as number)
+        : Date.now(),
     workflowBudgetMs: profile.budget.wallClockMs || DEFAULT_RAG_WORKFLOW_BUDGET_MS,
     profileId: profile.id,
     useGraphExpand: profile.useGraphExpand,
     evaluateMode: profile.evaluateMode,
     rerankMode: profile.rerankMode,
+    useLongTermMemory: profile.useLongTermMemory !== false,
+    routeMode: profile.routeMode === 'heuristic' ? 'heuristic' : 'llm',
     enough: null,
     missingFacts: [],
     evaluationReason: '',
@@ -192,6 +202,7 @@ export function buildInitialRagGraphState(
     answerText: '',
     persona: null,
     history,
+    queryHistory: [],
   };
 }
 
@@ -200,6 +211,7 @@ export function toRagWorkflowState(state: RagGraphState): RagWorkflowState {
     answerText: _answerText,
     persona: _persona,
     history: _history,
+    queryHistory: _queryHistory,
     ...workflowState
   } = state;
 

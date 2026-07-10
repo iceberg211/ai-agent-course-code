@@ -6,7 +6,6 @@ import {
   getRagWorkflowCitations,
   toRagWorkflowState,
 } from '@/agent/langgraph/rag.state';
-import { normalizePromptHistory } from '@/agent/langgraph/nodes/generation.nodes';
 import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
 import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
@@ -23,12 +22,10 @@ import {
 } from '@/common/langsmith/langsmith.utils';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import { PersonaService } from '@/persona/persona.service';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
-import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
 import { getRagProfile } from '@/common/rag/rag-profile';
 import {
@@ -36,6 +33,7 @@ import {
   TurnBudgetContext,
   getTurnBudget,
 } from '@/common/rag/turn-budget.context';
+import { RetrievalPipelineService } from '@/knowledge/services/retrieval/pipeline/retrieval-pipeline.service';
 
 @Injectable()
 export class LangGraphRagOrchestratorService
@@ -45,7 +43,7 @@ export class LangGraphRagOrchestratorService
   private graph: RagGraph;
 
   constructor(
-    private readonly personaHybridRetrieverService: HybridRetrieverService,
+    private readonly retrievalPipelineService: RetrievalPipelineService,
     private readonly personaService: PersonaService,
     private readonly conversationService: ConversationService,
     private readonly answerGenerationService: AnswerGenerationService,
@@ -61,8 +59,6 @@ export class LangGraphRagOrchestratorService
     private readonly memoryRetrieverService: MemoryRetrieverService,
     @Optional()
     private readonly memoryPolicyService: MemoryPolicyService,
-    @Optional()
-    private readonly knowledgeGraphService?: KnowledgeGraphService,
   ) {}
 
   onModuleInit(): void {
@@ -77,7 +73,7 @@ export class LangGraphRagOrchestratorService
 
   private compileGraph(): void {
     this.graph = buildRagGraph({
-      personaHybridRetrieverService: this.personaHybridRetrieverService,
+      retrievalPort: this.retrievalPipelineService,
       personaService: this.personaService,
       conversationService: this.conversationService,
       answerGenerationService: this.answerGenerationService,
@@ -106,11 +102,6 @@ export class LangGraphRagOrchestratorService
         ({
           filterReadable: (items: any[]) => items,
         } as MemoryPolicyService),
-      knowledgeGraphService:
-        this.knowledgeGraphService ??
-        ({
-          isEnabled: () => false,
-        } as unknown as KnowledgeGraphService),
     });
   }
 
@@ -127,6 +118,11 @@ export class LangGraphRagOrchestratorService
     };
 
     const budget = new TurnBudgetContext({
+      startedAt:
+        Number.isFinite(resolvedInput.startedAt) &&
+        (resolvedInput.startedAt ?? 0) > 0
+          ? resolvedInput.startedAt
+          : undefined,
       wallClockMs: profile.budget.wallClockMs,
       maxLlmCalls: profile.budget.maxLlmCalls,
       maxEmbedCalls: profile.budget.maxEmbedCalls,
@@ -175,17 +171,8 @@ export class LangGraphRagOrchestratorService
         },
         async () => {
           throwIfAborted(resolvedInput.signal);
-          const initialHistory = normalizePromptHistory(
-            await this.conversationService.getCompletedMessages(
-              resolvedInput.conversationId,
-              10,
-            ),
-            resolvedInput.turnId,
-          );
-          throwIfAborted(resolvedInput.signal);
-
           const finalState = await this.graph.invoke(
-            buildInitialRagGraphState(resolvedInput, initialHistory),
+            buildInitialRagGraphState(resolvedInput),
             {
               ...buildLangSmithRunnableConfig({
                 runName: 'langgraph_rag_workflow',

@@ -1,3 +1,4 @@
+import { Command } from '@langchain/langgraph';
 import type { ConversationService } from '@/conversation/services/conversation.service';
 import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import type { PersonaService } from '@/persona/persona.service';
@@ -27,6 +28,26 @@ export function normalizePromptHistory(
   return filtered.slice(0, end);
 }
 
+/** 检索前只读取最近两轮，供追问补全使用。 */
+export function createLoadQueryHistoryNode(
+  conversationService: ConversationService,
+) {
+  return async (state: RagGraphState, config: RagGraphConfig) => {
+    const input = ensureWorkflowNotAborted(config);
+    try {
+      const history = await conversationService.getCompletedMessages(
+        input.conversationId,
+        4,
+      );
+      return {
+        queryHistory: normalizePromptHistory(history, input.turnId),
+      } satisfies Partial<RagGraphState>;
+    } catch {
+      return { queryHistory: [] } satisfies Partial<RagGraphState>;
+    }
+  };
+}
+
 // ==========================================
 // 1. load_context 节点
 // ==========================================
@@ -45,12 +66,25 @@ export function createLoadContextNode(
         : conversationService.getCompletedMessages(input.conversationId, 10),
     ]);
 
-    return {
+    const update = {
       persona,
       history: hasHistory
         ? state.history
         : normalizePromptHistory(history, input.turnId),
     } satisfies Partial<RagGraphState>;
+
+    // 闲聊路径：加载人设后直接生成，跳过记忆读取。
+    if (state.strategy === 'none') {
+      return new Command({
+        update,
+        goto: 'generate_answer',
+      });
+    }
+
+    return new Command({
+      update,
+      goto: 'load_generation_memory',
+    });
   };
 }
 
@@ -64,6 +98,9 @@ export function createGenerateAnswerNode(
     const input = ensureWorkflowNotAborted(config);
 
     if (state.strategy === 'none') {
+      if (!state.persona) {
+        throw new Error('闲聊生成前缺少 persona 上下文');
+      }
       const answerText = await answerGenerationService.generateDirect({
         conversationId: input.conversationId,
         personaId: input.personaId,
@@ -71,6 +108,8 @@ export function createGenerateAnswerNode(
         userMessage: input.question,
         signal: input.signal,
         onToken: input.onToken,
+        persona: state.persona,
+        history: state.history,
       });
 
       return {
@@ -108,6 +147,6 @@ export function createGenerateAnswerNode(
 
     return {
       answerText,
-      } satisfies Partial<RagGraphState>;
+    } satisfies Partial<RagGraphState>;
   };
 }

@@ -64,12 +64,38 @@ export class AclIndexRefreshService {
 
     await this.syncElasticsearch(documentId, 'refresh_acl_index');
     await this.syncNeo4j(documentId, metadata, 'refresh_acl_index');
+    await this.bumpAclEpoch(documentId);
 
     return {
       documentId,
       chunkCount: updateResult.affected ?? 0,
       metadata,
     };
+  }
+
+  /** 权限变更后 bump KB epoch，使检索缓存失效 */
+  private async bumpAclEpoch(documentId: string): Promise<void> {
+    try {
+      // 通过 ModuleRef 懒取，避免 Rbac ↔ Knowledge 循环依赖
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { AclEpochService } = require('@/knowledge/services/retrieval/pipeline/acl-epoch.service') as {
+        AclEpochService: new (...args: never[]) => {
+          bumpEpochForDocument: (id: string) => Promise<void>;
+        };
+      };
+      const epochService = this.moduleRef?.get(AclEpochService, {
+        strict: false,
+      }) as { bumpEpochForDocument: (id: string) => Promise<void> } | undefined;
+      if (epochService) {
+        await epochService.bumpEpochForDocument(documentId);
+      }
+    } catch (error) {
+      this.logger.debug(
+        `bump acl epoch 跳过：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private buildMetadata(

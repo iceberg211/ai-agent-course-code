@@ -7,6 +7,7 @@ export type RagProfileId =
 export type RagRewriteMode = 'off' | 'heuristic' | 'llm';
 export type RagRerankMode = 'off' | 'score' | 'llm' | 'dedicated';
 export type RagEvaluateMode = 'off' | 'heuristic' | 'llm';
+export type RagRouteMode = 'heuristic' | 'llm';
 
 export interface RagProfileBudget {
   wallClockMs: number;
@@ -21,6 +22,10 @@ export interface RagProfile {
   useMultiQuery: boolean;
   useGraphChannel: boolean;
   useGraphExpand: boolean;
+  /** 是否加载并注入长期记忆（不进 rewrite/retrieve query） */
+  useLongTermMemory: boolean;
+  /** 路由：heuristic 不打 LLM（realtime 默认） */
+  routeMode: RagRouteMode;
   rewriteMode: RagRewriteMode;
   rerankMode: RagRerankMode;
   evaluateMode: RagEvaluateMode;
@@ -35,6 +40,8 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     useMultiQuery: false,
     useGraphChannel: false,
     useGraphExpand: false,
+    useLongTermMemory: false,
+    routeMode: 'heuristic',
     rewriteMode: 'heuristic',
     rerankMode: 'score',
     evaluateMode: 'heuristic',
@@ -51,6 +58,8 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     useMultiQuery: true,
     useGraphChannel: true,
     useGraphExpand: true,
+    useLongTermMemory: true,
+    routeMode: 'llm',
     rewriteMode: 'llm',
     rerankMode: 'llm',
     evaluateMode: 'llm',
@@ -67,6 +76,8 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     useMultiQuery: true,
     useGraphChannel: true,
     useGraphExpand: true,
+    useLongTermMemory: true,
+    routeMode: 'llm',
     rewriteMode: 'llm',
     rerankMode: 'llm',
     evaluateMode: 'llm',
@@ -83,6 +94,8 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     useMultiQuery: true,
     useGraphChannel: true,
     useGraphExpand: true,
+    useLongTermMemory: false,
+    routeMode: 'llm',
     rewriteMode: 'llm',
     rerankMode: 'llm',
     evaluateMode: 'heuristic',

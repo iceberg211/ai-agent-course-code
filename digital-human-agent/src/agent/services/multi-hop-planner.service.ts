@@ -18,7 +18,8 @@ import {
 import type { RagMultiHopPlan } from '@/agent/types/rag-workflow.types';
 import {
   addTurnDegradation,
-  tryConsumeLlmBudget,
+  tryConsumeAuxiliaryLlmBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 const MultiHopPlanSchema = z.object({
@@ -73,7 +74,7 @@ export class MultiHopPlannerService {
       async () => {
         throwIfAborted(signal);
 
-        if (!tryConsumeLlmBudget(1)) {
+        if (!tryConsumeAuxiliaryLlmBudget(1)) {
           addTurnDegradation('budget_llm');
           addTurnDegradation('plan_fallback');
           return this.buildFallbackPlan(normalizedQuestion);
@@ -81,11 +82,13 @@ export class MultiHopPlannerService {
 
         try {
           const planner = this.llm.withStructuredOutput(MultiHopPlanSchema);
-          const result = await planner.invoke(
-            await MULTI_HOP_PLANNER_PROMPT.formatMessages(
-              buildMultiHopPlannerPromptInput(normalizedQuestion),
-            ),
-            {
+          const messages = await MULTI_HOP_PLANNER_PROMPT.formatMessages(
+            buildMultiHopPlannerPromptInput(normalizedQuestion),
+          );
+          const result = await withRemainingTurnTimeout(
+            'rag_plan_sub_questions_llm',
+            (childSignal) =>
+              planner.invoke(messages, {
               ...buildLangSmithRunnableConfig({
                 runName: 'rag_plan_sub_questions_llm',
                 tags: ['agent', 'rag', 'multi-hop', 'plan', 'llm'],
@@ -93,8 +96,9 @@ export class MultiHopPlannerService {
                   question: normalizedQuestion,
                 },
               }),
-              signal,
-            },
+                signal: childSignal,
+              }),
+            signal,
           );
 
           const subQuestions = this.normalizeSubQuestions(
@@ -107,7 +111,7 @@ export class MultiHopPlannerService {
             reason: result.reason.trim() || '多跳规划完成',
           } satisfies RagMultiHopPlan;
         } catch (error) {
-          if (isAbortError(error)) {
+          if (isAbortError(error) && signal?.aborted) {
             throw error;
           }
           this.logger.warn(

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CommonModule } from '@/common/common.module';
 import { MemoryController } from '@/memory/controllers/memory.controller';
 import { MemoryRecordEntity } from '@/memory/entities/memory-record.entity';
 import {
@@ -15,7 +16,11 @@ import { ShortTermMemoryService } from '@/memory/services/short-term-memory.serv
 import { RbacModule } from '@/rbac/rbac.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MemoryRecordEntity]), RbacModule],
+  imports: [
+    CommonModule,
+    TypeOrmModule.forFeature([MemoryRecordEntity]),
+    RbacModule,
+  ],
   controllers: [MemoryController],
   providers: [
     ShortTermMemoryService,

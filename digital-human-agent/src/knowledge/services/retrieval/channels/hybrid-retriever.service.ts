@@ -40,6 +40,7 @@ import type {
   KnowledgeHybridRetrievalParams,
   KnowledgeHybridRetrievalResult,
   KnowledgeAccessScope,
+  RetrievalQueryItem,
   DocumentSearchFilters,
   PersonaHybridRetrievalInput,
   PersonaHybridRetrievalResult,
@@ -50,6 +51,7 @@ import {
   addTurnDegradation,
   tryConsumeEmbedBudget,
 } from '@/common/rag/turn-budget.context';
+import { RagRetrievalCacheService } from '@/knowledge/services/retrieval/pipeline/rag-retrieval-cache.service';
 
 interface HybridRetrieveResult {
   chunks: KnowledgeChunk[];
@@ -93,6 +95,8 @@ export class HybridRetrieverService {
     private readonly dataScopeService?: DataScopeService,
     @Optional()
     private readonly chunkExpansionService?: ChunkExpansionService,
+    @Optional()
+    private readonly retrievalCache?: RagRetrievalCacheService,
   ) {}
 
   // ==========================================
@@ -114,35 +118,21 @@ export class HybridRetrieverService {
       async (retrievalQuery) => {
         try {
           throwIfAborted(params.signal);
-          let queryEmbedding: number[] | undefined;
-          if (params.strategy.useVector) {
-            try {
-              if (!tryConsumeEmbedBudget(1)) {
-                addTurnDegradation('budget_embed');
-                this.logger.warn('embed 预算耗尽，跳过向量通道');
-              } else {
-                queryEmbedding = await this.runtime.withTransientRetry(
-                  'embed query',
-                  () => {
-                    throwIfAborted(params.signal);
-                    return this.runtime.embeddings.embedQuery(
-                      retrievalQuery.query,
-                    );
-                  },
-                  3,
-                );
-              }
-            } catch (error) {
-              if (isAbortError(error)) {
-                throw error;
-              }
-              this.logger.warn(
-                `query embedding 失败，跳过向量通道：${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
-            }
-          }
+          const hasPreparedEmbedding = params.queryEmbeddings?.has(
+            retrievalQuery.index,
+          );
+          const preparedEmbedding = params.queryEmbeddings?.get(
+            retrievalQuery.index,
+          );
+          const queryEmbedding =
+            hasPreparedEmbedding
+              ? (preparedEmbedding ?? undefined)
+              : params.strategy.useVector
+                ? await this.resolveQueryEmbedding(
+                    retrievalQuery.query,
+                    params.signal,
+                  )
+                : undefined;
 
           throwIfAborted(params.signal);
 
@@ -275,9 +265,9 @@ export class HybridRetrieverService {
       };
     }
 
-    const knowledgeConfigs = await this.listMountedKnowledgeConfigs(
-      input.personaId,
-    );
+    const knowledgeConfigs =
+      input.mountedKnowledgeConfigs ??
+      (await this.listMountedKnowledgeConfigs(input.personaId));
     throwIfAborted(input.signal);
 
     if (knowledgeConfigs.length === 0) {
@@ -289,6 +279,10 @@ export class HybridRetrieverService {
     }
 
     const strategy = this.buildPersonaStrategy(input);
+    // 同一 query 对所有挂载 KB 共用一次 embedding，避免 M 个 query × N 个 KB 的重复调用。
+    const queryEmbeddings = strategy.useVector
+      ? await this.prepareQueryEmbeddings(input.retrievalQueries, input.signal)
+      : undefined;
     const attempts = await mapWithConcurrency(
       knowledgeConfigs,
       this.resolvePersonaConcurrency(),
@@ -304,6 +298,7 @@ export class HybridRetrieverService {
             accessScope: input.accessScope,
             // persona 合并后再统一 DataScope，避免每库重复 N+1
             applyAccessScope: false,
+            queryEmbeddings,
             globalRetrievalLimit: this.resolveRetrievalLimit(
               input.retrievalLimit,
               config,
@@ -387,6 +382,63 @@ export class HybridRetrieverService {
       trace: successfulResults.flatMap((item) => item.result.trace),
       rerankLimit,
     };
+  }
+
+  private async prepareQueryEmbeddings(
+    queries: RetrievalQueryItem[],
+    signal?: AbortSignal,
+  ): Promise<ReadonlyMap<number, number[] | null>> {
+    const entries = await mapWithConcurrency(
+      queries,
+      HYBRID_MULTI_QUERY_CONCURRENCY,
+      async (query) => [
+        query.index,
+        (await this.resolveQueryEmbedding(query.query, signal)) ?? null,
+      ] as const,
+    );
+    return new Map(entries);
+  }
+
+  private async resolveQueryEmbedding(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<number[] | undefined> {
+    try {
+      const modelName =
+        String(
+          this.configService.get<string>('EMBEDDING_MODEL_NAME') ?? 'default',
+        ).trim() || 'default';
+      const cached = await this.retrievalCache?.getEmbedding(modelName, query);
+      if (cached?.length) {
+        // 缓存命中不扣 embed 预算。
+        return cached;
+      }
+      if (!tryConsumeEmbedBudget(1)) {
+        addTurnDegradation('budget_embed');
+        this.logger.warn('embed 预算耗尽，跳过向量通道');
+        return undefined;
+      }
+      const embedding = await this.runtime.withTransientRetry(
+        'embed query',
+        () => {
+          throwIfAborted(signal);
+          return this.runtime.embeddings.embedQuery(query);
+        },
+        3,
+      );
+      if (embedding?.length) {
+        void this.retrievalCache?.setEmbedding(modelName, query, embedding);
+      }
+      return embedding;
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      this.logger.warn(
+        `query embedding 失败，跳过向量通道：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
   }
 
   // ==========================================

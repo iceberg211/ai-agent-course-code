@@ -13,7 +13,8 @@ import { RerankerProvider, RerankInput } from './reranker.provider';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import {
   addTurnDegradation,
-  tryConsumeLlmBudget,
+  tryConsumeAuxiliaryLlmBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 interface RerankerItem {
@@ -61,17 +62,19 @@ export class LlmRerankerProvider implements RerankerProvider {
     }
 
     const safeTopK = Math.min(Math.max(topK, 1), rerankCandidates.length);
-    if (!tryConsumeLlmBudget(1)) {
+    if (!tryConsumeAuxiliaryLlmBudget(1)) {
       addTurnDegradation('rerank_degraded');
       return candidates.slice(0, safeTopK);
     }
     try {
       const rewriter = this.llm.withStructuredOutput(RerankResultSchema);
-      const result = await rewriter.invoke(
-        await KNOWLEDGE_RERANK_PROMPT.formatMessages(
-          buildKnowledgeRerankPromptInput(query, rerankCandidates),
-        ),
-        {
+      const messages = await KNOWLEDGE_RERANK_PROMPT.formatMessages(
+        buildKnowledgeRerankPromptInput(query, rerankCandidates),
+      );
+      const result = await withRemainingTurnTimeout(
+        'knowledge_rerank_llm',
+        (childSignal) =>
+          rewriter.invoke(messages, {
           ...buildLangSmithRunnableConfig({
             runName: 'knowledge_rerank_llm',
             tags: ['knowledge', 'rag', 'rerank', 'llm'],
@@ -81,8 +84,9 @@ export class LlmRerankerProvider implements RerankerProvider {
               topK: safeTopK,
             },
           }),
-          signal,
-        },
+            signal: childSignal,
+          }),
+        signal,
       );
 
       throwIfAborted(signal);
@@ -103,7 +107,7 @@ export class LlmRerankerProvider implements RerankerProvider {
       this.logger.warn('LLM Rerank 未返回有效分数，回退混合召回当前排序');
       return rerankCandidates.slice(0, safeTopK);
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(error) && signal?.aborted) {
         throw error;
       }
       this.logger.warn(

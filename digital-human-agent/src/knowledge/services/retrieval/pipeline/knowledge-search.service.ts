@@ -30,6 +30,8 @@ import { DataScopeService } from '@/rbac/services/data-scope.service';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import { applyJsonbAnyTagFilter } from '@/knowledge/utils/document-filter.util';
+import type { RetrievalPort } from '@/knowledge/services/retrieval/pipeline/retrieval-port';
+import { RetrievalPipelineService } from '@/knowledge/services/retrieval/pipeline/retrieval-pipeline.service';
 
 // ==========================================
 // 辅助函数（原 knowledge-search.utils.ts 内容）
@@ -144,6 +146,7 @@ interface RerankSelectionResult {
 @Injectable()
 export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
+  private readonly retrievalPort: RetrievalPort;
 
   constructor(
     private readonly runtime: RagRuntimeService,
@@ -155,7 +158,19 @@ export class KnowledgeSearchService {
     private readonly knowledgeRepo: Repository<Knowledge>,
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
-  ) {}
+    /** Search 与 Agent 共用 Port；保留 hybrid 注入仅作兼容，默认走 Port */
+    retrievalPipelineService?: RetrievalPipelineService,
+  ) {
+    this.retrievalPort =
+      retrievalPipelineService ??
+      ({
+        retrieve: async () => ({
+          chunks: [],
+          trace: [],
+          knowledgeCount: 0,
+        }),
+      } as RetrievalPort);
+  }
 
   async retrieve(
     knowledgeId: string,
@@ -208,21 +223,28 @@ export class KnowledgeSearchService {
         }),
       },
       () =>
-        this.retrieveWithSharedPipeline(query, options, async (params) => ({
-          knowledgeCount: 1,
-          hybridResult: await this.hybridRetrieverService.retrieveForKnowledge({
+        this.retrieveWithSharedPipeline(query, options, async (params) => {
+          const portResult = await this.retrievalPort.retrieve({
             knowledgeId,
             retrievalQueries: params.retrievalQueries,
             strategy: params.strategy,
             threshold: params.options.threshold,
-            globalRetrievalLimit: params.options.retrievalLimit,
-            documentFilters: options.documentFilters,
+            retrievalLimit: params.options.retrievalLimit,
             accessScope: options.accessScope,
-            // 本服务在 shared pipeline 统一 DataScope，hybrid 内跳过避免双次鉴权
-            applyAccessScope: false,
             signal: params.signal,
-          }),
-        })),
+            graphExpand: params.strategy.useGraph === true,
+            question: query,
+            currentQuery: params.retrievalQueries[0]?.query,
+            profileId: 'search_debug',
+          });
+          return {
+            knowledgeCount: Math.max(portResult.knowledgeCount, 1),
+            hybridResult: {
+              chunks: portResult.chunks,
+              trace: portResult.trace,
+            },
+          };
+        }),
     );
   }
 
@@ -305,38 +327,25 @@ export class KnowledgeSearchService {
         };
       }
 
-      const attempts = await Promise.all(
-        targetIds.map(async (knowledgeId) => {
-          try {
-            const hybridResult = await this.hybridRetrieverService.retrieveForKnowledge({
-              knowledgeId,
-              retrievalQueries: params.retrievalQueries,
-              strategy: params.strategy,
-              threshold: params.options.threshold,
-              globalRetrievalLimit: params.options.retrievalLimit,
-              documentFilters: options.documentFilters,
-              accessScope: options.accessScope,
-              applyAccessScope: false,
-              signal: params.signal,
-            });
-            return hybridResult;
-          } catch (error) {
-            if (isAbortError(error)) throw error;
-            this.logger.warn(
-              `跨知识库检索失败（knowledge=${knowledgeId}）：${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
-            return { chunks: [], trace: [] };
-          }
-        }),
-      );
-
-      const chunks = attempts.flatMap((item) => item.chunks);
-      const trace = attempts.flatMap((item) => item.trace);
+      const portResult = await this.retrievalPort.retrieve({
+        knowledgeIds: targetIds,
+        retrievalQueries: params.retrievalQueries,
+        strategy: params.strategy,
+        threshold: params.options.threshold,
+        retrievalLimit: params.options.retrievalLimit,
+        accessScope: options.accessScope,
+        signal: params.signal,
+        graphExpand: params.strategy.useGraph === true,
+        question: query,
+        currentQuery: params.retrievalQueries[0]?.query,
+        profileId: 'search_debug',
+      });
       return {
         knowledgeCount: targetIds.length,
-        hybridResult: { chunks, trace },
+        hybridResult: {
+          chunks: portResult.chunks,
+          trace: portResult.trace,
+        },
       };
     });
 
@@ -354,29 +363,26 @@ export class KnowledgeSearchService {
     options: RetrieveKnowledgeOptions = {},
   ): Promise<RetrieveKnowledgeDebugResult> {
     return this.retrieveWithSharedPipeline(query, options, async (params) => {
-      const hybridResult = await this.hybridRetrieverService.retrieveForPersona({
+      const portResult = await this.retrievalPort.retrieve({
         personaId,
         retrievalQueries: params.retrievalQueries,
         strategy: params.strategy,
         retrievalLimit: params.options.retrievalLimit,
         threshold: params.options.threshold,
-        documentFilters: options.documentFilters,
         accessScope: options.accessScope,
-        channels: {
-          useVector: params.strategy.useVector,
-          useKeyword: params.strategy.useKeyword,
-          useGraph: params.strategy.useGraph,
-          useExactPhrase: params.strategy.useExactPhrase,
-        },
         signal: params.signal,
+        graphExpand: params.strategy.useGraph === true,
+        question: query,
+        currentQuery: params.retrievalQueries[0]?.query,
+        profileId: 'search_debug',
       });
 
       return {
-        knowledgeCount: hybridResult.knowledgeCount,
+        knowledgeCount: portResult.knowledgeCount,
         emptyReason: `persona ${personaId} 未挂载知识库`,
         hybridResult: {
-          chunks: hybridResult.chunks,
-          trace: hybridResult.trace,
+          chunks: portResult.chunks,
+          trace: portResult.trace,
         },
       };
     });

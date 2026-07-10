@@ -1,58 +1,45 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WebSocket } from 'ws';
 import { AgentService } from '@/agent/agent.service';
-import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
 import { RealtimeSession } from '@/conversation/interfaces/realtime-session.interface';
 import { TtsPipelineService } from '@/gateway/pipeline/tts-pipeline.service';
 import { SpeakPipelineService } from '@/gateway/pipeline/speak-pipeline.service';
-import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
-import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { sendJson } from '@/gateway/utils/ws-send.util';
 import { resolveRealtimeProfileId } from '@/common/rag/rag-profile';
-import { toRagTracePayload } from '@/common/rag/rag-turn-report';
+import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 
 /**
  * Agent 执行 Pipeline。
  *
  * 职责：
  * - 调用 AgentService.run()，接收 token 流
- * - 按句分割缓冲（中文句末符号 / 子句 / 长度溢出）
- * - 根据会话模式将句段分发给 TtsPipeline 或 SpeakPipeline
- * - Agent 完成后保存 assistant 消息并发送 `conversation:done`
+ * - 按句分割缓冲 → TTS / Speak
+ * - Turn 副作用委托 TurnSideEffectService
  */
 @Injectable()
 export class AgentPipelineService {
   private readonly logger = new Logger(AgentPipelineService.name);
 
-  /** 句末标点 → 立即刷出 */
   private static readonly SENTENCE_END = /[。？！；]/;
-  /** 子句标点：缓冲超过阈值才刷出 */
   private static readonly CLAUSE_END = /[，、：]/;
-  /** 子句触发最小长度 */
   private static readonly CLAUSE_MIN_LEN = 15;
-  /** 强制刷出最大长度 */
   private static readonly BUFFER_MAX_LEN = 50;
 
   constructor(
     private readonly agentService: AgentService,
-    private readonly conversationService: ConversationService,
     private readonly sessionRegistry: RealtimeSessionRegistry,
     private readonly ttsPipeline: TtsPipelineService,
     private readonly speakPipeline: SpeakPipelineService,
-    private readonly shortTermMemoryService: ShortTermMemoryService,
-    private readonly longTermMemoryService: LongTermMemoryService,
+    private readonly turnSideEffects: TurnSideEffectService,
   ) {}
 
-  /**
-   * 执行一次完整的 Agent 对话回合并驱动 TTS/播报。
-   * 调用前，调用方应已完成 turn 状态初始化（activeTurnId 等）。
-   */
   async run(
     client: WebSocket,
     session: RealtimeSession,
     userMessage: string,
     turnId: string,
+    options?: { sideEffectFlags?: string[]; startedAt?: number },
   ): Promise<void> {
     const abortController = new AbortController();
     this.sessionRegistry.update(session.sessionId, { abortController });
@@ -68,7 +55,8 @@ export class AgentPipelineService {
     let shouldSendError = false;
     let citations: unknown[] = [];
     let ragTrace: Record<string, unknown> | null = null;
-    const startedAt = Date.now();
+    const startedAt = options?.startedAt ?? Date.now();
+    const profileId = resolveRealtimeProfileId(session.mode);
 
     try {
       const result = await this.agentService.run({
@@ -82,22 +70,20 @@ export class AgentPipelineService {
           department: session.department ?? null,
           role: session.role ?? null,
         },
-        profileId: resolveRealtimeProfileId(session.mode),
+        profileId,
+        startedAt,
         onToken: (token: string) => {
           fullReply += token;
-
-          // 推送文字 token 给前端
           sendJson(client, {
             type: 'conversation:text_chunk',
             sessionId: session.sessionId,
             turnId,
             payload: { token },
           });
-
-          // 按句缓冲 → 分发到对应 Pipeline
           this.flushBuffer(client, session, turnId, token, false);
         },
         onCitations: (items) => {
+          // Turn protocol: evidence ready
           citations = items;
           sendJson(client, {
             type: 'conversation:citations',
@@ -108,11 +94,9 @@ export class AgentPipelineService {
         },
       });
       const latencyMs = Date.now() - startedAt;
-      ragTrace = toRagTracePayload(result, {
-        profileId:
-          result.profileId ??
-          result.state.profileId ??
-          resolveRealtimeProfileId(session.mode),
+      ragTrace = this.turnSideEffects.buildRagTrace({
+        result,
+        profileId,
         latencyMs,
       });
       status = abortController.signal.aborted ? 'interrupted' : 'completed';
@@ -128,54 +112,27 @@ export class AgentPipelineService {
       }
     } finally {
       this.flushBuffer(client, session, turnId, '', true);
-
-      // 确保无论如何都完成 TTS turn（防止前端等待）
       this.markFinalize(client, session, turnId);
       this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });
 
       const isInterrupted = status === 'interrupted';
-      const hasWrittenReply = fullReply.trim().length > 0;
 
-      // 只有在未被打断，或者被打断但确实生成了部分有效文本时，才写入数据库，防止空数据污染
-      if (!isInterrupted || hasWrittenReply) {
-        await this.conversationService.addMessage({
-          conversationId: session.conversationId,
-          turnId,
-          role: 'assistant',
-          content: fullReply,
-          status,
-          citations,
-          ragTrace,
-          latencyMs: Date.now() - startedAt,
-        });
-      }
-
-      // 与 HTTP /chat 对齐：写入短期记忆，并异步抽取长期偏好
-      if (hasWrittenReply) {
-        void this.shortTermMemoryService.appendMessage(session.conversationId, {
-          role: 'assistant',
-          content: fullReply,
-          turnId,
-        });
-        const ownerId = session.accessScope?.ownerId ?? session.ownerId;
-        if (ownerId) {
-          void this.longTermMemoryService.captureFromConversation({
-            ownerId,
-            department:
-              session.accessScope?.department ?? session.department ?? null,
-            conversationId: session.conversationId,
-            userMessage,
-            assistantMessage: fullReply,
-          });
-          void this.shortTermMemoryService.setActiveContext(
-            ownerId,
-            `最近问题：${userMessage.slice(0, 200)}`,
-          );
-        }
-        void this.shortTermMemoryService.refreshSummaryFromWindow(
-          session.conversationId,
-        );
-      }
+      // Turn protocol: end
+      await this.turnSideEffects.onTurnEnd({
+        conversationId: session.conversationId,
+        turnId,
+        userMessage,
+        assistantReply: fullReply,
+        status,
+        citations,
+        ragTrace,
+        latencyMs: Date.now() - startedAt,
+        ownerId: session.accessScope?.ownerId ?? session.ownerId,
+        department:
+          session.accessScope?.department ?? session.department ?? null,
+        persistAssistant: !isInterrupted || fullReply.trim().length > 0,
+        sideEffectFlags: options?.sideEffectFlags,
+      });
 
       if (shouldSendError) {
         sendJson(client, {
@@ -185,8 +142,6 @@ export class AgentPipelineService {
         });
       }
 
-      // 如果是被打断，由 InterruptHandler 负责通知 conversation:interrupted
-      // 避免在此处重复发送 done 导致前端接收事件冲突和状态闪烁
       if (!isInterrupted) {
         sendJson(client, {
           type: 'conversation:done',
@@ -197,8 +152,6 @@ export class AgentPipelineService {
       }
     }
   }
-
-  // ── 按句缓冲 ───────────────────────────────────────────────────────────────
 
   private flushBuffer(
     client: WebSocket,
@@ -218,13 +171,10 @@ export class AgentPipelineService {
       }
 
       let splitIndex = -1;
-
-      // 1. 优先寻找最靠近前面的句末标点 (。？！；)
       const sentenceEndMatch = /[。？！；]/.exec(buffer);
       if (sentenceEndMatch) {
         splitIndex = sentenceEndMatch.index + 1;
       } else {
-        // 2. 如果没有句末标点，从前往后寻找满足最小长度限制的第一个子句标点 (，、：)
         const clauseRegex = /[，、：]/g;
         let match: RegExpExecArray | null;
         while ((match = clauseRegex.exec(buffer)) !== null) {
@@ -233,26 +183,25 @@ export class AgentPipelineService {
             break;
           }
         }
-
-        // 3. 如果依然没有找到，且字数已经达到 BUFFER_MAX_LEN 强制切断，避免过大延迟
-        if (splitIndex === -1 && buffer.length >= AgentPipelineService.BUFFER_MAX_LEN) {
+        if (
+          splitIndex === -1 &&
+          buffer.length >= AgentPipelineService.BUFFER_MAX_LEN
+        ) {
           splitIndex = AgentPipelineService.BUFFER_MAX_LEN;
         }
       }
 
-      // 如果找到了断句位置，进行切割
       if (splitIndex !== -1) {
         const text = buffer.slice(0, splitIndex).trim();
-        this.sessionRegistry.update(session.sessionId, { sentenceBuffer: buffer.slice(splitIndex) });
-
+        this.sessionRegistry.update(session.sessionId, {
+          sentenceBuffer: buffer.slice(splitIndex),
+        });
         if (text) {
           this.sendToPipeline(client, session, turnId, text);
         }
-        // 继续循环处理剩下可能满足条件的句子
         continue;
       }
 
-      // 4. 如果是流结束，把剩余的部分全部刷出去
       if (isEnd && session.sentenceBuffer.trim()) {
         const text = session.sentenceBuffer.trim();
         this.sessionRegistry.update(session.sessionId, { sentenceBuffer: '' });

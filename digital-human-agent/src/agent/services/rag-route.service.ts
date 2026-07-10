@@ -18,7 +18,8 @@ import type {
 } from '@/agent/types/rag-workflow.types';
 import {
   addTurnDegradation,
-  tryConsumeLlmBudget,
+  tryConsumeAuxiliaryLlmBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 const RagRouteSchema = z.object({
@@ -66,6 +67,7 @@ export class RagRouteService {
   async routeQuestion(
     question: string,
     signal?: AbortSignal,
+    options?: { mode?: 'heuristic' | 'llm' },
   ): Promise<RagRouteDecision> {
     const normalizedQuestion = question.trim();
     if (!normalizedQuestion) {
@@ -84,6 +86,12 @@ export class RagRouteService {
         strategy: 'none',
         reason: '命中快捷闲聊特征，无需检索',
       };
+    }
+
+    // realtime 等 profile 强制启发式，省 1 次 LLM 与 TTFT
+    if (options?.mode === 'heuristic') {
+      addTurnDegradation('route_heuristic');
+      return this.buildFallbackDecision(normalizedQuestion);
     }
 
     return runInTracedScope(
@@ -105,18 +113,20 @@ export class RagRouteService {
       async () => {
         throwIfAborted(signal);
 
-        if (!tryConsumeLlmBudget(1)) {
+        if (!tryConsumeAuxiliaryLlmBudget(1)) {
           addTurnDegradation('route_heuristic');
           return this.buildFallbackDecision(normalizedQuestion);
         }
 
         try {
           const router = this.llm.withStructuredOutput(RagRouteSchema);
-          const result = await router.invoke(
-            await RAG_ROUTE_PROMPT.formatMessages(
-              buildRagRoutePromptInput(normalizedQuestion),
-            ),
-            {
+          const messages = await RAG_ROUTE_PROMPT.formatMessages(
+            buildRagRoutePromptInput(normalizedQuestion),
+          );
+          const result = await withRemainingTurnTimeout(
+            'rag_route_llm',
+            (childSignal) =>
+              router.invoke(messages, {
               ...buildLangSmithRunnableConfig({
                 runName: 'rag_route_llm',
                 tags: ['agent', 'rag', 'route', 'llm'],
@@ -124,8 +134,9 @@ export class RagRouteService {
                   question: normalizedQuestion,
                 },
               }),
-              signal,
-            },
+                signal: childSignal,
+              }),
+            signal,
           );
 
           return {
@@ -133,7 +144,7 @@ export class RagRouteService {
             reason: result.reason.trim() || '路由完成',
           } satisfies RagRouteDecision;
         } catch (error) {
-          if (isAbortError(error)) {
+          if (isAbortError(error) && signal?.aborted) {
             throw error;
           }
           this.logger.warn(

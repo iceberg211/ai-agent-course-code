@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,6 +14,7 @@ import { PersonaKnowledge } from '@/knowledge/entities/persona-knowledge.entity'
 import { CreateKnowledgeDto } from '@/knowledge/dto/create-knowledge.dto';
 import { UpdateKnowledgeDto } from '@/knowledge/dto/update-knowledge.dto';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG, KNOWLEDGE_PRESETS } from '@/common/constants';
+import { KnowledgeCacheRevisionService } from '@/common/rag/knowledge-cache-revision.service';
 
 @Injectable()
 export class KnowledgeService {
@@ -21,6 +23,8 @@ export class KnowledgeService {
     private readonly knowledgeRepo: Repository<Knowledge>,
     @InjectRepository(PersonaKnowledge)
     private readonly personaKnowledgeRepo: Repository<PersonaKnowledge>,
+    @Optional()
+    private readonly knowledgeCacheRevisionService?: KnowledgeCacheRevisionService,
   ) {}
 
   listAll(): Promise<Knowledge[]> {
@@ -80,7 +84,9 @@ export class KnowledgeService {
     }
     knowledge.retrievalConfig = newRetrievalConfig;
 
-    return this.knowledgeRepo.save(knowledge);
+    const updated = await this.knowledgeRepo.save(knowledge);
+    await this.knowledgeCacheRevisionService?.bumpRevision(id);
+    return updated;
   }
 
   async remove(id: string): Promise<{ id: string; deleted: true }> {

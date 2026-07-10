@@ -1,7 +1,25 @@
-import { mergeEvidenceChunks } from '@/agent/langgraph/rag.utils';
+import {
+  capCandidateDocuments,
+  mergeEvidenceChunks,
+} from '@/agent/langgraph/rag.utils';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 describe('rag.utils', () => {
+  it('capCandidateDocuments 按分数截断候选池', () => {
+    const docs = Array.from({ length: 5 }, (_, i) => ({
+      id: `c${i}`,
+      content: `c${i}`,
+      source: 'a.md',
+      chunk_index: i,
+      category: null,
+      similarity: i * 0.1,
+      hybrid_score: i,
+    }));
+    const capped = capCandidateDocuments(docs as never, 3);
+    expect(capped).toHaveLength(3);
+    expect(capped.map((d) => d.id)).toEqual(['c4', 'c3', 'c2']);
+  });
+
   it('合并重复证据时保留图谱分数和图谱证据', () => {
     const baseChunk = {
       id: 'chunk-1',

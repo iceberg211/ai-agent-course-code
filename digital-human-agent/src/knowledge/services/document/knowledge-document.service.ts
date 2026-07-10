@@ -27,6 +27,7 @@ import {
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
+import { KnowledgeCacheRevisionService } from '@/common/rag/knowledge-cache-revision.service';
 import type {
   IngestKnowledgeDocumentOptions,
   KnowledgeAccessScope,
@@ -117,14 +118,25 @@ export class KnowledgeDocumentService {
     @Optional()
     @Inject(ObjectStorageProviderToken)
     private readonly storageProvider?: ObjectStorageProvider,
+    @Optional()
+    private readonly knowledgeCacheRevisionService?: KnowledgeCacheRevisionService,
   ) {}
 
   // ==========================================
   // 删除文档与索引清理
   // ==========================================
   async deleteDocument(documentId: string): Promise<void> {
+    const document = await this.documentRepo.findOne({
+      where: { id: documentId },
+      select: { id: true, knowledgeBaseId: true },
+    });
     await this.cleanupDocument(documentId, `删除文档 ${documentId}`);
     await this.documentRepo.delete(documentId);
+    if (document?.knowledgeBaseId) {
+      await this.knowledgeCacheRevisionService?.bumpRevision(
+        document.knowledgeBaseId,
+      );
+    }
   }
 
   async deleteDocumentForKnowledge(
@@ -234,6 +246,7 @@ export class KnowledgeDocumentService {
         graphSyncError: null,
         graphSyncedAt: null,
       });
+      await this.knowledgeCacheRevisionService?.bumpRevision(knowledgeId);
 
       // 3. 后台尽力同步 Neo4j 知识图谱，避免上传请求被长任务阻塞
       this.scheduleGraphSync({
@@ -621,6 +634,7 @@ export class KnowledgeDocumentService {
       processingStage: 'graph_indexing',
       processingError: null,
     });
+    await this.knowledgeCacheRevisionService?.bumpRevision(knowledgeId);
 
     this.scheduleGraphSync({
       documentId: document.id,
@@ -635,7 +649,11 @@ export class KnowledgeDocumentService {
   // ==========================================
   // 启用/停用单个 Chunk 并同步索引
   // ==========================================
-  async updateChunkEnabled(chunkId: string, enabled: boolean): Promise<void> {
+  async updateChunkEnabled(
+    chunkId: string,
+    enabled: boolean,
+    knownKnowledgeId?: string,
+  ): Promise<void> {
     const context = `更新 chunk ${chunkId}`;
     const { error } = await this.runtime.supabase
       .from('knowledge_chunk')
@@ -647,6 +665,11 @@ export class KnowledgeDocumentService {
     }
 
     await this.syncChunkEnabled(chunkId, enabled, context);
+    const knowledgeId =
+      knownKnowledgeId ?? (await this.findKnowledgeIdByChunkId(chunkId));
+    if (knowledgeId) {
+      await this.knowledgeCacheRevisionService?.bumpRevision(knowledgeId);
+    }
   }
 
   async updateChunkEnabledForKnowledge(
@@ -656,7 +679,18 @@ export class KnowledgeDocumentService {
     accessScope?: KnowledgeAccessScope,
   ): Promise<void> {
     await this.findChunkInKnowledgeOrThrow(knowledgeId, chunkId, accessScope);
-    return this.updateChunkEnabled(chunkId, enabled);
+    return this.updateChunkEnabled(chunkId, enabled, knowledgeId);
+  }
+
+  private async findKnowledgeIdByChunkId(
+    chunkId: string,
+  ): Promise<string | null> {
+    if (!this.knowledgeCacheRevisionService) return null;
+    const chunk = await this.chunkRepo.findOne({
+      where: { id: chunkId },
+      relations: { document: true },
+    });
+    return chunk?.document?.knowledgeBaseId ?? null;
   }
 
   private async findDocumentInKnowledgeOrThrow(
@@ -1538,6 +1572,7 @@ export class KnowledgeDocumentService {
       processingStage: 'completed',
       processingError: null,
     });
+    await this.knowledgeCacheRevisionService?.bumpRevision(knowledgeId);
 
     return chunkRows;
   }
@@ -1612,6 +1647,32 @@ export class KnowledgeDocumentService {
 
   async updateDocument(documentId: string, update: Partial<KnowledgeDocument>): Promise<void> {
     await this.documentRepo.update(documentId, update);
+    if (!this.shouldInvalidateRetrievalCache(update)) return;
+    const document = await this.documentRepo.findOne({
+      where: { id: documentId },
+      select: { id: true, knowledgeBaseId: true },
+    });
+    if (document?.knowledgeBaseId) {
+      await this.knowledgeCacheRevisionService?.bumpRevision(
+        document.knowledgeBaseId,
+      );
+    }
+  }
+
+  private shouldInvalidateRetrievalCache(
+    update: Partial<KnowledgeDocument>,
+  ): boolean {
+    const retrievalFields: Array<keyof KnowledgeDocument> = [
+      'ownerId',
+      'department',
+      'businessCategory',
+      'visibility',
+      'expiresAt',
+      'versionGroupId',
+      'isCurrentVersion',
+      'archivedAt',
+    ];
+    return retrievalFields.some((field) => field in update);
   }
 
   async findOneDocument(documentId: string): Promise<KnowledgeDocument | null> {

@@ -46,6 +46,8 @@ describe('createRerankNode', () => {
       documents,
       5,
       expect.any(AbortSignal),
+      undefined,
+      'llm',
     );
     expect(update).toEqual({
       topDocuments: [documents[1], documents[0]],
@@ -80,6 +82,8 @@ describe('createRerankNode', () => {
       documents,
       5,
       expect.any(AbortSignal),
+      undefined,
+      'llm',
     );
   });
 
@@ -136,6 +140,8 @@ describe('createRerankNode', () => {
       documents,
       10,
       expect.any(AbortSignal),
+      undefined,
+      'llm',
     );
     expect(update).toEqual({
       topDocuments: [documents[1]],
@@ -196,6 +202,7 @@ describe('createEvaluateEvidenceNode', () => {
     ],
     retrievalTrace: [],
     retrievalStrategy: {
+      name: 'balanced',
       needRetrieval: true,
       useVector: true,
       useKeyword: true,
@@ -204,6 +211,15 @@ describe('createEvaluateEvidenceNode', () => {
       useMultiQuery: true,
       allowWeb: true,
       reason: '需要知识库事实',
+      useMemory: false,
+      useMultimodal: false,
+      vectorTopK: 10,
+      keywordTopK: 10,
+      graphTopK: 5,
+      memoryTopK: 3,
+      rrfK: 60,
+      rerankTopK: 5,
+      minRerankScore: 3,
     },
     retrievalStrategyReason: '需要知识库事实',
     routeAllowWeb: true,
@@ -213,6 +229,12 @@ describe('createEvaluateEvidenceNode', () => {
     useGraphExpand: true,
     evaluateMode: 'llm',
     rerankMode: 'llm',
+    useLongTermMemory: true,
+    routeMode: 'llm',
+    shortTermMemory: { window: [], summary: '', activeContext: '' },
+    longTermMemories: [],
+    memoryContext: '',
+    graphReasoningTrace: [],
     enough: null,
     missingFacts: [],
     evaluationReason: '',
@@ -475,6 +497,7 @@ describe('createEvaluateEvidenceNode', () => {
         topDocuments: [],
         evidenceChunks: [],
         retrievalStrategy: {
+          name: 'balanced',
           needRetrieval: false,
           useVector: false,
           useKeyword: false,
@@ -483,6 +506,15 @@ describe('createEvaluateEvidenceNode', () => {
           useMultiQuery: false,
           allowWeb: false,
           reason: '寒暄问题，不需要查知识库',
+          useMemory: false,
+          useMultimodal: false,
+          vectorTopK: 10,
+          keywordTopK: 10,
+          graphTopK: 5,
+          memoryTopK: 3,
+          rrfK: 60,
+          rerankTopK: 5,
+          minRerankScore: 3,
         },
         retrievalStrategyReason: '寒暄问题，不需要查知识库',
         stopReason: 'retrieval_skipped',

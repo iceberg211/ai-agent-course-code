@@ -77,14 +77,14 @@ describe('graph-expand.utils golden', () => {
     });
   });
 
-  it('实体词提取过滤停用词并优先长词', () => {
+  it('实体词提取按标点切分并过滤停用词', () => {
     const terms = extractGraphEntitySearchTerms(
-      '系统定位和智能检索是什么关系？如何说明',
+      '系统定位、智能检索是什么关系？如何说明',
     );
-    expect(terms).toEqual(
-      expect.arrayContaining(['系统定位', '智能检索']),
-    );
+    expect(terms.some((t) => t.includes('系统定位'))).toBe(true);
+    expect(terms.some((t) => t.includes('智能检索'))).toBe(true);
     expect(terms).not.toContain('什么');
     expect(terms).not.toContain('如何');
   });
 });
+

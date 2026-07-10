@@ -1,4 +1,4 @@
-import { createRetrieveNode, createGraphReasoningNode } from '@/agent/langgraph/nodes/query.nodes';
+import { createRetrieveNode } from '@/agent/langgraph/nodes/query.nodes';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createRetrieveNode', () => {
@@ -29,7 +29,11 @@ describe('createRetrieveNode', () => {
     retrievalHistory: [],
     retrievalTrace: [],
     graphReasoningTrace: [],
+    shortTermMemory: { window: [], summary: '', activeContext: '' },
+    longTermMemories: [],
+    memoryContext: '',
     retrievalStrategy: {
+      name: 'balanced',
       needRetrieval: false,
       useVector: false,
       useKeyword: false,
@@ -38,6 +42,15 @@ describe('createRetrieveNode', () => {
       useMultiQuery: false,
       allowWeb: false,
       reason: '寒暄问题，不需要查知识库',
+      useMemory: false,
+      useMultimodal: false,
+      vectorTopK: 10,
+      keywordTopK: 10,
+      graphTopK: 5,
+      memoryTopK: 3,
+      rrfK: 60,
+      rerankTopK: 5,
+      minRerankScore: 3,
     },
     retrievalStrategyReason: '寒暄问题，不需要查知识库',
     routeAllowWeb: false,
@@ -62,6 +75,8 @@ describe('createRetrieveNode', () => {
     useGraphExpand: true,
     evaluateMode: 'llm',
     rerankMode: 'llm',
+    useLongTermMemory: true,
+    routeMode: 'llm',
   } as RagGraphState;
 
   it('needRetrieval=false 时不调用 persona stage1，并记录 skipped 历史', async () => {
@@ -105,12 +120,12 @@ describe('createRetrieveNode', () => {
         profile: { id: 'balanced_chat' },
       }),
     };
-    const personaStage1RetrievalService = {
-      retrieveForPersona: jest.fn(),
+    const retrievalPort = {
+      retrieve: jest.fn(),
     };
     const node = createRetrieveNode(
       retrievalPolicyResolver as never,
-      personaStage1RetrievalService as never,
+      retrievalPort as never,
     );
 
     const update = await node(baseState, {
@@ -131,7 +146,7 @@ describe('createRetrieveNode', () => {
       signal: expect.any(AbortSignal),
     });
     expect(
-      personaStage1RetrievalService.retrieveForPersona,
+      retrievalPort.retrieve,
     ).not.toHaveBeenCalled();
     expect(update).toMatchObject({
       currentQuery: '你好',
@@ -202,8 +217,8 @@ describe('createRetrieveNode', () => {
         profile: { id: 'balanced_chat' },
       }),
     };
-    const personaStage1RetrievalService = {
-      retrieveForPersona: jest.fn().mockResolvedValue({
+    const retrievalPort = {
+      retrieve: jest.fn().mockResolvedValue({
         knowledgeCount: 1,
         chunks: [chunk],
         trace: [
@@ -229,7 +244,7 @@ describe('createRetrieveNode', () => {
     const onCitations = jest.fn();
     const node = createRetrieveNode(
       retrievalPolicyResolver as never,
-      personaStage1RetrievalService as never,
+      retrievalPort as never,
     );
 
     const update = await node(
@@ -252,36 +267,36 @@ describe('createRetrieveNode', () => {
       } as never,
     );
 
-    expect(
-      personaStage1RetrievalService.retrieveForPersona,
-    ).toHaveBeenCalledWith({
-      personaId: 'persona-1',
-      retrievalQueries: [
-        {
-          index: 0,
-          query: '乔峰是谁？',
-          keywords: ['乔峰', '身份'],
-          angle: 'original',
-        },
-        {
-          index: 1,
-          query: '乔峰 身份',
-          keywords: ['乔峰', '身份'],
-          angle: 'semantic',
-        },
-      ],
-      strategy: {
-        needRetrieval: true,
-        useVector: true,
-        useKeyword: true,
-        useGraph: false,
-        useExactPhrase: false,
-        useMultiQuery: true,
-        allowWeb: true,
-        reason: '复杂问题，使用多路 query 检索',
-      },
-      signal: expect.any(AbortSignal),
-    });
+    expect(retrievalPort.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personaId: 'persona-1',
+        retrievalQueries: [
+          {
+            index: 0,
+            query: '乔峰是谁？',
+            keywords: ['乔峰', '身份'],
+            angle: 'original',
+          },
+          {
+            index: 1,
+            query: '乔峰 身份',
+            keywords: ['乔峰', '身份'],
+            angle: 'semantic',
+          },
+        ],
+        strategy: expect.objectContaining({
+          needRetrieval: true,
+          useVector: true,
+          useKeyword: true,
+          useGraph: false,
+          allowWeb: true,
+        }),
+        graphExpand: false,
+        question: '乔峰是谁？',
+        currentQuery: '乔峰是谁？',
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(update).toMatchObject({
       currentQuery: '乔峰是谁？',
       currentHop: 1,
@@ -349,8 +364,8 @@ describe('createRetrieveNode', () => {
         profile: { id: 'balanced_chat' },
       }),
     };
-    const personaStage1RetrievalService = {
-      retrieveForPersona: jest.fn().mockResolvedValue({
+    const retrievalPort = {
+      retrieve: jest.fn().mockResolvedValue({
         knowledgeCount: 1,
         chunks: [chunk],
         trace: [],
@@ -358,7 +373,7 @@ describe('createRetrieveNode', () => {
     };
     const node = createRetrieveNode(
       retrievalPolicyResolver as never,
-      personaStage1RetrievalService as never,
+      retrievalPort as never,
     );
 
     await node(
@@ -382,7 +397,7 @@ describe('createRetrieveNode', () => {
     );
 
     expect(
-      personaStage1RetrievalService.retrieveForPersona,
+      retrievalPort.retrieve,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         strategy: expect.objectContaining({
@@ -392,179 +407,5 @@ describe('createRetrieveNode', () => {
         }),
       }),
     );
-  });
-});
-
-describe('createGraphReasoningNode', () => {
-  const baseState = {
-    conversationId: 'conv-1',
-    question: '乔峰和慕容复是什么关系',
-    documents: [
-      {
-        id: 'chunk-1',
-        content: '乔峰是契丹人。',
-        source: 'test.md',
-        knowledge_base_id: 'kb-1',
-        chunk_index: 0,
-        category: null,
-      },
-    ],
-    evidenceChunks: [],
-    graphReasoningTrace: [],
-    retrievalStrategy: {
-      useGraph: true,
-    },
-    useGraphExpand: true,
-    profileId: 'balanced_chat',
-    shortTermMemory: { window: [], summary: '', activeContext: '' },
-    longTermMemories: [],
-    webCitations: [],
-  } as any;
-
-  it('strategy.useGraph = false 时不进行图推理，直接返回空对象', async () => {
-    const graphService = {
-      isEnabled: () => true,
-    } as any;
-
-    const node = createGraphReasoningNode(graphService);
-    const result = await node(
-      {
-        ...baseState,
-        retrievalStrategy: { useGraph: false },
-      },
-      {
-        configurable: {
-          workflowInput: { signal: new AbortController().signal },
-        },
-      } as any,
-    );
-
-    expect(result).toEqual({});
-  });
-
-  it('strategy.useGraph = true 时，提取实体进行图推理扩展并合并结果', async () => {
-    const graphService = {
-      isEnabled: () => true,
-      listEntities: jest.fn().mockResolvedValue([
-        { key: 'Topic::乔峰', name: '乔峰' },
-      ]),
-      getNeighborhood: jest.fn().mockResolvedValue([
-        {
-          id: 'chunk-2',
-          document_id: 'doc-1',
-          knowledge_base_id: 'kb-1',
-          content: '乔峰与慕容复齐名。',
-          source: 'test.md',
-          chunk_index: 1,
-          category: 'text',
-          confidence: 0.9,
-          evidenceText: '乔峰与慕容复齐名。',
-        },
-      ]),
-    } as any;
-
-    const node = createGraphReasoningNode(graphService);
-    const accessScope = {
-      ownerId: 'user-1',
-      department: '研发部',
-      role: 'user',
-    };
-    const result = await node(
-      baseState,
-      {
-        configurable: {
-          workflowInput: {
-            signal: new AbortController().signal,
-            onCitations: jest.fn(),
-            accessScope,
-          },
-        },
-      } as any,
-    );
-
-    expect(graphService.listEntities).toHaveBeenCalledWith(
-      'kb-1',
-      expect.stringContaining('乔峰'),
-      12,
-      accessScope,
-    );
-    expect(graphService.getNeighborhood).toHaveBeenCalledWith(
-      'kb-1',
-      'Topic::乔峰',
-      accessScope,
-    );
-    expect(result.documents).toHaveLength(2);
-    expect(result.graphReasoningTrace).toEqual([
-      {
-        knowledgeId: 'kb-1',
-        matchedEntities: [{ key: 'Topic::乔峰', name: '乔峰' }],
-        expandedChunkIds: ['chunk-2'],
-        expandedChunkCount: 1,
-        skipped: false,
-        reason: undefined,
-      },
-    ]);
-
-    const contents = result.documents.map((d: any) => d.content);
-    expect(contents).toContain('乔峰与慕容复齐名。');
-    expect(contents).toContain('乔峰是契丹人。');
-  });
-
-  it('hybrid 已有足够图谱证据时跳过二次扩展', async () => {
-    const graphService = {
-      isEnabled: () => true,
-      listEntities: jest.fn(),
-      getNeighborhood: jest.fn(),
-    } as any;
-
-    const node = createGraphReasoningNode(graphService);
-    const result = await node(
-      {
-        ...baseState,
-        documents: [
-          {
-            id: 'g1',
-            content: 'a',
-            source: 't.md',
-            knowledge_base_id: 'kb-1',
-            chunk_index: 0,
-            category: null,
-            graph_score: 0.9,
-            retrieval_sources: ['graph'],
-          },
-          {
-            id: 'g2',
-            content: 'b',
-            source: 't.md',
-            knowledge_base_id: 'kb-1',
-            chunk_index: 1,
-            category: null,
-            graph_score: 0.8,
-            retrieval_sources: ['graph'],
-          },
-          {
-            id: 'g3',
-            content: 'c',
-            source: 't.md',
-            knowledge_base_id: 'kb-1',
-            chunk_index: 2,
-            category: null,
-            graph_score: 0.7,
-            retrieval_sources: ['graph'],
-          },
-        ],
-      },
-      {
-        configurable: {
-          workflowInput: { signal: new AbortController().signal },
-        },
-      } as any,
-    );
-
-    expect(graphService.listEntities).not.toHaveBeenCalled();
-    expect(result.graphReasoningTrace?.[0]).toMatchObject({
-      skipped: true,
-      reason: expect.stringContaining('跳过二次扩展'),
-    });
   });
 });

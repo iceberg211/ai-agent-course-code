@@ -58,17 +58,33 @@ describe('RerankerService & Providers', () => {
 
     const llmProvider = new LlmRerankerProvider(llmFactory as any);
     const noopProvider = new NoopRerankerProvider();
+    const scoreProvider = {
+      rerank: jest.fn(async ({ candidates, topK = 5 }: any) =>
+        candidates.slice(0, topK).map((c: any, i: number) => ({
+          ...c,
+          rerank_score: 1 - i * 0.1,
+        })),
+      ),
+    };
+    const dedicatedProvider = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      rerank: scoreProvider.rerank,
+    };
 
     const service = new RerankerService(
       configService as any,
       llmProvider,
       noopProvider,
+      scoreProvider as any,
+      dedicatedProvider as any,
     );
 
     return {
       service,
       model,
       invokeMock,
+      scoreProvider,
+      dedicatedProvider,
     };
   }
 

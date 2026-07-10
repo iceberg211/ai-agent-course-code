@@ -19,12 +19,10 @@ import type { Conversation } from '@/conversation/entities/conversation.entity';
 import { PersonaService } from '@/persona/persona.service';
 import { ChatRequestDto } from '@/conversation/controllers/dto/chat-request.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
-import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
-import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { PermissionGuard } from '@/rbac/guards/permission.guard';
 import { RequirePermissions } from '@/rbac/decorators/permissions.decorator';
 import { resolveHttpChatProfileId } from '@/common/rag/rag-profile';
-import { toRagTracePayload } from '@/common/rag/rag-turn-report';
+import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 
 interface MessagePartLike {
   type?: unknown;
@@ -47,8 +45,7 @@ export class ChatController {
     private readonly agentService: AgentService,
     private readonly conversationService: ConversationService,
     private readonly personaService: PersonaService,
-    private readonly shortTermMemoryService: ShortTermMemoryService,
-    private readonly longTermMemoryService: LongTermMemoryService,
+    private readonly turnSideEffects: TurnSideEffectService,
   ) {}
 
   @Post()
@@ -93,17 +90,11 @@ export class ChatController {
     req.once('aborted', abortByDisconnect);
     req.once('close', abortByDisconnect);
 
-    await this.conversationService.addMessage({
+    // Turn protocol: start
+    const sideEffectFlags = await this.turnSideEffects.onTurnStart({
       conversationId: conversation.id,
       turnId,
-      role: 'user',
-      content: userMessage,
-      status: 'completed',
-    });
-    void this.shortTermMemoryService.appendMessage(conversation.id, {
-      role: 'user',
-      content: userMessage,
-      turnId,
+      userMessage,
     });
 
     const stream = createUIMessageStream({
@@ -129,6 +120,7 @@ export class ChatController {
             signal: abortController.signal,
             accessScope: this.accessScope(req),
             profileId: resolveHttpChatProfileId(),
+            startedAt,
             onToken: (token: string) => {
               assistantReply += token;
               writer.write({
@@ -138,6 +130,7 @@ export class ChatController {
               });
             },
             onCitations: (items) => {
+              // Turn protocol: evidence ready
               citations = items;
               writer.write({
                 type: 'message-metadata',
@@ -148,11 +141,9 @@ export class ChatController {
             },
           });
           const latencyMs = Date.now() - startedAt;
-          ragTrace = toRagTracePayload(result, {
-            profileId:
-              result.profileId ??
-              result.state.profileId ??
-              resolveHttpChatProfileId(),
+          ragTrace = this.turnSideEffects.buildRagTrace({
+            result,
+            profileId: resolveHttpChatProfileId(),
             latencyMs,
           });
           status = abortController.signal.aborted ? 'interrupted' : 'completed';
@@ -177,39 +168,20 @@ export class ChatController {
             });
           }
         } finally {
-          await this.conversationService.addMessage({
+          // Turn protocol: end
+          await this.turnSideEffects.onTurnEnd({
             conversationId: conversation.id,
             turnId,
-            role: 'assistant',
-            content: assistantReply,
+            userMessage,
+            assistantReply,
             status,
             citations,
             ragTrace,
             latencyMs: Date.now() - startedAt,
+            ownerId,
+            department: (req as any).user?.department ?? null,
+            sideEffectFlags,
           });
-          if (assistantReply) {
-            void this.shortTermMemoryService.appendMessage(conversation.id, {
-              role: 'assistant',
-              content: assistantReply,
-              turnId,
-            });
-            void this.shortTermMemoryService.refreshSummaryFromWindow(
-              conversation.id,
-            );
-            if (ownerId) {
-              void this.longTermMemoryService.captureFromConversation({
-                ownerId,
-                department: (req as any).user?.department ?? null,
-                conversationId: conversation.id,
-                userMessage,
-                assistantMessage: assistantReply,
-              });
-              void this.shortTermMemoryService.setActiveContext(
-                ownerId,
-                `最近问题：${userMessage.slice(0, 200)}`,
-              );
-            }
-          }
 
           writer.write({ type: 'text-end', id: textPartId });
           writer.write({ type: 'finish-step' });

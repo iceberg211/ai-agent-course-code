@@ -32,7 +32,7 @@ describe('createLoadContextNode', () => {
     );
 
     const result = await node(
-      {} as never,
+      { strategy: 'simple' } as never,
       {
         context: {
           workflowInput: buildWorkflowInput('turn-2'),
@@ -44,8 +44,13 @@ describe('createLoadContextNode', () => {
       'conv-1',
       10,
     );
-    expect(result.persona).toEqual(persona);
-    expect(result.history).toEqual(history.slice(0, 2));
+    expect(result.goto).toEqual(['load_short_term_memory']);
+    expect(result.update).toEqual(
+      expect.objectContaining({
+        persona,
+        history: history.slice(0, 2),
+      }),
+    );
   });
 
   it('会丢弃末尾没有 assistant 响应的历史用户消息', async () => {
@@ -66,7 +71,7 @@ describe('createLoadContextNode', () => {
     );
 
     const result = await node(
-      {} as never,
+      { strategy: 'simple' } as never,
       {
         context: {
           workflowInput: buildWorkflowInput('turn-3'),
@@ -74,7 +79,37 @@ describe('createLoadContextNode', () => {
       } as never,
     );
 
-    expect(result.history).toEqual(history.slice(0, 2));
+    expect(
+      (result.update as { history: unknown[] } | undefined)?.history,
+    ).toEqual(history.slice(0, 2));
+  });
+
+  it('none 策略加载 persona 后直跳 generate_answer', async () => {
+    const persona = { id: 'persona-1', name: '乔峰' };
+    const personaService = {
+      findOne: jest.fn().mockResolvedValue(persona),
+    };
+    const conversationService = {
+      getCompletedMessages: jest.fn().mockResolvedValue([]),
+    };
+    const node = createLoadContextNode(
+      personaService as never,
+      conversationService as never,
+    );
+
+    const result = await node(
+      { strategy: 'none' } as never,
+      {
+        context: {
+          workflowInput: buildWorkflowInput('turn-1'),
+        },
+      } as never,
+    );
+
+    expect(result.goto).toEqual(['generate_answer']);
+    expect(
+      (result.update as { persona: unknown } | undefined)?.persona,
+    ).toEqual(persona);
   });
 });
 
@@ -136,7 +171,7 @@ describe('createGenerateAnswerNode', () => {
     expect(result).toEqual({ answerText: '回答' });
   });
 
-  it('none 策略会直接生成闲聊回答，不要求 persona 上下文', async () => {
+  it('none 策略用 persona 轻量生成闲聊回答', async () => {
     const answerGenerationService = {
       generate: jest.fn(),
       generateDirect: jest.fn().mockResolvedValue('你好，有什么想聊的？'),
@@ -151,11 +186,12 @@ describe('createGenerateAnswerNode', () => {
       onToken: jest.fn(),
       onCitations: jest.fn(),
     };
+    const persona = { id: 'persona-1', name: '乔峰' };
 
     const result = await node(
       {
         strategy: 'none',
-        persona: null,
+        persona,
         history: [],
         topDocuments: [],
         webCitations: [],
@@ -176,6 +212,8 @@ describe('createGenerateAnswerNode', () => {
       userMessage: '你好',
       signal: input.signal,
       onToken: input.onToken,
+      persona,
+      history: [],
     });
     expect(result).toEqual({ answerText: '你好，有什么想聊的？' });
   });

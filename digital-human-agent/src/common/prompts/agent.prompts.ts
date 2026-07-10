@@ -9,6 +9,12 @@ import { Persona } from '@/persona/persona.entity';
 import type { RagEvidenceAssessmentContext } from '@/common/rag';
 import { PROMPT_REGISTRY } from '@/common/prompts/prompt.registry';
 
+const MAX_KNOWLEDGE_CHUNKS = 6;
+const MAX_KNOWLEDGE_CHARS = 9_000;
+const MAX_CHARS_PER_KNOWLEDGE_CHUNK = 1_800;
+const MAX_WEB_CONTEXT_CHARS = 4_000;
+const MAX_MEMORY_CONTEXT_CHARS = 4_000;
+
 export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.agentChat.system],
   new MessagesPlaceholder('history'),
@@ -40,18 +46,25 @@ export function formatKnowledgeBlock(chunks: KnowledgeChunk[]): string {
     return '（知识库中未找到相关内容）';
   }
 
-  return chunks
-    .map((chunk) => {
-      const graphEvidenceBlock = formatGraphEvidenceBlock(chunk);
-      return [
-        `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]`,
-        graphEvidenceBlock,
-        chunk.content,
-      ]
-        .filter(Boolean)
-        .join('\n');
-    })
-    .join('\n---\n');
+  let remainingChars = MAX_KNOWLEDGE_CHARS;
+  const blocks: string[] = [];
+  for (const chunk of chunks.slice(0, MAX_KNOWLEDGE_CHUNKS)) {
+    if (remainingChars <= 0) break;
+    const content = chunk.content.slice(
+      0,
+      Math.min(MAX_CHARS_PER_KNOWLEDGE_CHUNK, remainingChars),
+    );
+    const block = [
+      `[来源: ${chunk.source}, 段落 ${chunk.chunk_index}]`,
+      formatGraphEvidenceBlock(chunk),
+      content,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    blocks.push(block);
+    remainingChars -= block.length;
+  }
+  return blocks.join('\n---\n');
 }
 
 function formatGraphEvidenceBlock(chunk: KnowledgeChunk): string {
@@ -101,7 +114,9 @@ export function mapConversationHistoryToPromptMessages(
 }
 
 export function formatWebKnowledgeBlock(webContextBlock?: string): string {
-  const normalized = String(webContextBlock ?? '').trim();
+  const normalized = String(webContextBlock ?? '')
+    .trim()
+    .slice(0, MAX_WEB_CONTEXT_CHARS);
   if (!normalized) {
     return '（当前未使用联网补充）';
   }
@@ -115,7 +130,9 @@ export function formatWebKnowledgeBlock(webContextBlock?: string): string {
 }
 
 export function formatMemoryContextBlock(memoryContextBlock?: string): string {
-  const normalized = String(memoryContextBlock ?? '').trim();
+  const normalized = String(memoryContextBlock ?? '')
+    .trim()
+    .slice(0, MAX_MEMORY_CONTEXT_CHARS);
   if (!normalized) {
     return [
       '<conversation_context>',
@@ -169,6 +186,27 @@ export function formatEvidenceAssessmentBlock(
     .join('\n');
 }
 
+/**
+ * 有滚动摘要时裁短 DB history，避免与 memoryContext 重复占 token。
+ * recentTurns=2 → 最多保留最近 4 条（约 2 轮 user+assistant）。
+ */
+export function trimHistoryAgainstRollingSummary(
+  history: ConversationMessage[],
+  memoryContextBlock?: string | null,
+  recentTurns = 2,
+): ConversationMessage[] {
+  if (!history.length) return history;
+  const hasSummary = /会话摘要：\S/.test(String(memoryContextBlock ?? ''));
+  if (!hasSummary) {
+    return history;
+  }
+  const keep = Math.max(0, recentTurns) * 2;
+  if (history.length <= keep) {
+    return history;
+  }
+  return history.slice(-keep);
+}
+
 export function buildAgentPromptInput(
   persona: Persona,
   chunks: KnowledgeChunk[],
@@ -180,6 +218,10 @@ export function buildAgentPromptInput(
     evidenceAssessment?: RagEvidenceAssessmentContext;
   },
 ) {
+  const trimmedHistory = trimHistoryAgainstRollingSummary(
+    history,
+    options?.memoryContextBlock,
+  );
   return {
     personaName: persona.name,
     personaDescription: persona.description ?? '',
@@ -194,13 +236,26 @@ export function buildAgentPromptInput(
     systemPromptExtraSection: persona.systemPromptExtra
       ? `\n${persona.systemPromptExtra}`
       : '',
-    history: mapConversationHistoryToPromptMessages(history),
+    history: mapConversationHistoryToPromptMessages(trimmedHistory),
     userMessage,
   };
 }
 
-export function buildDirectChatPromptInput(userMessage: string) {
+export function buildDirectChatPromptInput(
+  userMessage: string,
+  persona?: Pick<
+    Persona,
+    'name' | 'description' | 'speakingStyle' | 'expertise' | 'systemPromptExtra'
+  > | null,
+) {
   return {
+    personaName: persona?.name?.trim() || '数字人助手',
+    personaDescription: persona?.description ?? '',
+    speakingStyle: persona?.speakingStyle ?? '自然、友善',
+    expertise: (persona?.expertise ?? []).join('、') || '通用对话',
+    systemPromptExtraSection: persona?.systemPromptExtra
+      ? `\n${persona.systemPromptExtra}`
+      : '',
     userMessage,
   };
 }

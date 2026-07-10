@@ -22,7 +22,8 @@ import {
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 import {
   addTurnDegradation,
-  tryConsumeLlmBudget,
+  tryConsumeAuxiliaryLlmBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 const RagEvidenceEvaluationSchema = z.object({
@@ -97,7 +98,7 @@ export class EvidenceEvaluatorService {
       async () => {
         throwIfAborted(params.signal);
 
-        if (!tryConsumeLlmBudget(1)) {
+        if (!tryConsumeAuxiliaryLlmBudget(1)) {
           addTurnDegradation('evaluate_heuristic');
           return this.buildFallbackEvaluation(params);
         }
@@ -106,9 +107,8 @@ export class EvidenceEvaluatorService {
           const evaluator = this.llm.withStructuredOutput(
             RagEvidenceEvaluationSchema,
           );
-          const result = await evaluator.invoke(
-            await RAG_EVIDENCE_EVALUATOR_PROMPT.formatMessages(
-              buildRagEvidenceEvaluatorPromptInput({
+          const messages = await RAG_EVIDENCE_EVALUATOR_PROMPT.formatMessages(
+            buildRagEvidenceEvaluatorPromptInput({
                 question: normalizedQuestion,
                 currentHop: params.currentHop,
                 maxHops: params.maxHops,
@@ -119,9 +119,12 @@ export class EvidenceEvaluatorService {
                 webEvidenceBlock: this.formatWebEvidence(
                   params.webCitations ?? [],
                 ),
-              }),
-            ),
-            {
+            }),
+          );
+          const result = await withRemainingTurnTimeout(
+            'rag_evidence_evaluate_llm',
+            (childSignal) =>
+              evaluator.invoke(messages, {
               ...buildLangSmithRunnableConfig({
                 runName: 'rag_evidence_evaluate_llm',
                 tags: ['agent', 'rag', 'evaluate', 'llm'],
@@ -129,8 +132,9 @@ export class EvidenceEvaluatorService {
                   question: normalizedQuestion,
                 },
               }),
-              signal: params.signal,
-            },
+                signal: childSignal,
+              }),
+            params.signal,
           );
 
           return {
@@ -140,7 +144,7 @@ export class EvidenceEvaluatorService {
             webQuery: String(result.webQuery ?? '').trim(),
           } satisfies RagEvidenceEvaluation;
         } catch (error) {
-          if (isAbortError(error)) {
+          if (isAbortError(error) && params.signal?.aborted) {
             throw error;
           }
 

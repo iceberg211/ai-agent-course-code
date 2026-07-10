@@ -6,6 +6,7 @@ import type {
 } from '@/agent/types/rag-workflow.types';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { KnowledgeChunk as RetrievedKnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import { getTurnBudget } from '@/common/rag/turn-budget.context';
 
 export function getPlannedQuestions(
   state: Pick<RagGraphState, 'strategy' | 'subQuestions' | 'question'>,
@@ -70,6 +71,49 @@ export function isWorkflowBudgetExceeded(
     return false;
   }
   return Date.now() - startedAt >= budgetMs;
+}
+
+/**
+ * 是否应停止继续 hop / web：
+ * wall-clock 超时，或 TurnBudget（LLM/embed）已耗尽。
+ * 注意：isExhausted 在仍可打满 generate 前一格时为 false。
+ */
+export function shouldStopRetrievalBudget(
+  state: Pick<RagGraphState, 'workflowStartedAt' | 'workflowBudgetMs'>,
+): boolean {
+  if (isWorkflowBudgetExceeded(state)) {
+    return true;
+  }
+  return getTurnBudget()?.isExhausted() === true;
+}
+
+/** 多跳候选池上限，防止 documents 膨胀拖垮 rerank */
+export const RAG_MAX_CANDIDATE_DOCUMENTS = 40;
+
+export function capCandidateDocuments<
+  T extends {
+    id?: string;
+    similarity?: number | null;
+    hybrid_score?: number | null;
+    keyword_score?: number | null;
+    rerank_score?: number | null;
+    graph_score?: number | null;
+  },
+>(documents: T[], limit = RAG_MAX_CANDIDATE_DOCUMENTS): T[] {
+  if (documents.length <= limit) {
+    return documents;
+  }
+  const scoreOf = (doc: T) =>
+    Math.max(
+      doc.rerank_score ?? 0,
+      doc.hybrid_score ?? 0,
+      doc.graph_score ?? 0,
+      (doc.similarity ?? 0) * 10,
+      doc.keyword_score ?? 0,
+    );
+  return [...documents]
+    .sort((a, b) => scoreOf(b) - scoreOf(a))
+    .slice(0, limit);
 }
 
 export function toWorkflowCitations(

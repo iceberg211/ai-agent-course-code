@@ -1,56 +1,95 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
 import type {
   ConversationMemoryItem,
   ShortTermMemoryContext,
 } from '@/memory/memory.types';
+import { foldOverflowIntoSummary } from '@/memory/utils/rolling-summary.utils';
+import { RedisService } from '@/common/redis/redis.service';
 
 @Injectable()
-export class ShortTermMemoryService implements OnModuleDestroy {
+export class ShortTermMemoryService {
   private readonly logger = new Logger(ShortTermMemoryService.name);
-  private readonly redis: Redis;
   private failureCount = 0;
   private circuitOpenUntil = 0;
 
-  constructor(private readonly configService: ConfigService) {
-    const redisUrl =
-      this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
-    this.redis = new Redis(redisUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-    });
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {}
+
+  private async redis(): Promise<Redis> {
+    const client = await this.redisService.ensureConnected();
+    if (!client) {
+      throw new Error('Redis 不可用');
+    }
+    return client;
   }
 
+  /**
+   * 追加消息；若触发窗口截断，将被挤出的旧消息折叠进 summary（真滚动摘要）。
+   */
   async appendMessage(
     conversationId: string,
     item: ConversationMemoryItem,
   ): Promise<void> {
     await this.safeRun(async () => {
+      const redis = await this.redis();
       const key = this.windowKey(conversationId);
       const limit = this.windowLimit;
       const ttl = this.ttlSeconds;
-      await this.redis.lpush(key, JSON.stringify({
-        ...item,
-        createdAt: item.createdAt ?? new Date().toISOString(),
-      }));
-      await this.redis.ltrim(key, 0, limit - 1);
-      await this.redis.expire(key, ttl);
+
+      await redis.lpush(
+        key,
+        JSON.stringify({
+          ...item,
+          createdAt: item.createdAt ?? new Date().toISOString(),
+        }),
+      );
+
+      const overflowRows = await redis.lrange(key, limit, -1);
+      if (overflowRows.length > 0) {
+        const overflowItems = overflowRows
+          .map((row) => safeParseMemoryItem(row))
+          .filter((row): row is ConversationMemoryItem => Boolean(row))
+          .reverse();
+        const previousSummary =
+          (await redis.get(this.summaryKey(conversationId))) ?? '';
+        const nextSummary = foldOverflowIntoSummary(
+          previousSummary,
+          overflowItems,
+        );
+        await redis.set(
+          this.summaryKey(conversationId),
+          nextSummary,
+          'EX',
+          ttl,
+        );
+      }
+
+      await redis.ltrim(key, 0, limit - 1);
+      await redis.expire(key, ttl);
     });
   }
 
-  async getContext(conversationId: string, ownerId?: string | null): Promise<ShortTermMemoryContext> {
+  async getContext(
+    conversationId: string,
+    ownerId?: string | null,
+  ): Promise<ShortTermMemoryContext> {
     const fallback: ShortTermMemoryContext = {
       window: [],
       summary: '',
       activeContext: '',
     };
     return this.safeRun(async () => {
+      const redis = await this.redis();
       const [windowRows, summary, activeContext] = await Promise.all([
-        this.redis.lrange(this.windowKey(conversationId), 0, this.windowLimit - 1),
-        this.redis.get(this.summaryKey(conversationId)),
-        ownerId ? this.redis.get(this.activeContextKey(ownerId)) : Promise.resolve(null),
+        redis.lrange(this.windowKey(conversationId), 0, this.windowLimit - 1),
+        redis.get(this.summaryKey(conversationId)),
+        ownerId
+          ? redis.get(this.activeContextKey(ownerId))
+          : Promise.resolve(null),
       ]);
       return {
         window: windowRows
@@ -65,7 +104,8 @@ export class ShortTermMemoryService implements OnModuleDestroy {
 
   async setSummary(conversationId: string, summary: string): Promise<void> {
     await this.safeRun(async () => {
-      await this.redis.set(
+      const redis = await this.redis();
+      await redis.set(
         this.summaryKey(conversationId),
         summary.slice(0, 4000),
         'EX',
@@ -76,7 +116,8 @@ export class ShortTermMemoryService implements OnModuleDestroy {
 
   async setActiveContext(ownerId: string, context: string): Promise<void> {
     await this.safeRun(async () => {
-      await this.redis.set(
+      const redis = await this.redis();
+      await redis.set(
         this.activeContextKey(ownerId),
         context.slice(0, 4000),
         'EX',
@@ -86,16 +127,16 @@ export class ShortTermMemoryService implements OnModuleDestroy {
   }
 
   /**
-   * 基于当前滑动窗口生成轻量会话摘要（无额外 LLM 调用）。
-   * 在 assistant 消息写入后调用，确保 summary 字段可用。
+   * 兼容旧调用：在不溢出时用窗口尾部轻量刷新摘要；
+   * 优先依赖 appendMessage 的溢出折叠，本方法作兜底。
    */
   async refreshSummaryFromWindow(conversationId: string): Promise<void> {
     await this.safeRun(async () => {
-      const windowRows = await this.redis.lrange(
-        this.windowKey(conversationId),
-        0,
-        this.windowLimit - 1,
-      );
+      const redis = await this.redis();
+      const [windowRows, existing] = await Promise.all([
+        redis.lrange(this.windowKey(conversationId), 0, this.windowLimit - 1),
+        redis.get(this.summaryKey(conversationId)),
+      ]);
       const items = windowRows
         .map((row) => safeParseMemoryItem(row))
         .filter((item): item is ConversationMemoryItem => Boolean(item))
@@ -104,17 +145,15 @@ export class ShortTermMemoryService implements OnModuleDestroy {
         return;
       }
 
-      const summary = items
-        .slice(-8)
-        .map((item) => {
-          const role = item.role === 'user' ? '用户' : '助手';
-          const content = item.content.replace(/\s+/g, ' ').trim().slice(0, 120);
-          return `${role}：${content}`;
-        })
-        .join('；')
-        .slice(0, 4000);
+      if (existing?.trim()) {
+        await redis.expire(this.summaryKey(conversationId), this.ttlSeconds);
+        return;
+      }
 
-      await this.redis.set(
+      const seedCount = Math.max(1, Math.floor(items.length / 2));
+      const seed = items.slice(0, seedCount);
+      const summary = foldOverflowIntoSummary('', seed);
+      await redis.set(
         this.summaryKey(conversationId),
         summary,
         'EX',
@@ -125,7 +164,8 @@ export class ShortTermMemoryService implements OnModuleDestroy {
 
   async getRetrievalCache<T>(queryHash: string): Promise<T | null> {
     return this.safeRun(async () => {
-      const value = await this.redis.get(`rag:retrieval-cache:${queryHash}`);
+      const redis = await this.redis();
+      const value = await redis.get(`rag:retrieval-cache:${queryHash}`);
       return value ? (JSON.parse(value) as T) : null;
     }, null);
   }
@@ -136,7 +176,8 @@ export class ShortTermMemoryService implements OnModuleDestroy {
     ttlSeconds = 300,
   ): Promise<void> {
     await this.safeRun(async () => {
-      await this.redis.set(
+      const redis = await this.redis();
+      await redis.set(
         `rag:retrieval-cache:${queryHash}`,
         JSON.stringify(value),
         'EX',
@@ -145,14 +186,7 @@ export class ShortTermMemoryService implements OnModuleDestroy {
     });
   }
 
-  async onModuleDestroy(): Promise<void> {
-    this.redis.disconnect();
-  }
-
-  private async safeRun<T>(
-    fn: () => Promise<T>,
-    fallback?: T,
-  ): Promise<T> {
+  private async safeRun<T>(fn: () => Promise<T>, fallback?: T): Promise<T> {
     if (Date.now() < this.circuitOpenUntil) {
       return fallback as T;
     }
@@ -238,9 +272,10 @@ function safeParseMemoryItem(value: string): ConversationMemoryItem | null {
   try {
     const parsed = JSON.parse(value);
     if (!parsed || typeof parsed.content !== 'string') return null;
-    const role = parsed.role === 'assistant' || parsed.role === 'system'
-      ? parsed.role
-      : 'user';
+    const role =
+      parsed.role === 'assistant' || parsed.role === 'system'
+        ? parsed.role
+        : 'user';
     return {
       role,
       content: parsed.content,
@@ -251,4 +286,3 @@ function safeParseMemoryItem(value: string): ConversationMemoryItem | null {
     return null;
   }
 }
-

@@ -1,7 +1,7 @@
 import { createRouteQuestionNode } from '@/agent/langgraph/nodes/planning.nodes';
 
 describe('createRouteQuestionNode', () => {
-  it('none 路由直接进入 generate_answer，跳过记忆加载', async () => {
+  it('none 路由进入 load_context 保留人设，跳过记忆与检索', async () => {
     const ragRouteService = {
       routeQuestion: jest.fn().mockResolvedValue({
         strategy: 'none',
@@ -10,7 +10,7 @@ describe('createRouteQuestionNode', () => {
     };
     const node = createRouteQuestionNode(ragRouteService as never);
     const command = await node(
-      { question: '你好' } as never,
+      { question: '你好', routeMode: 'heuristic' } as never,
       {
         configurable: {
           workflowInput: { signal: new AbortController().signal },
@@ -18,7 +18,12 @@ describe('createRouteQuestionNode', () => {
       } as never,
     );
 
-    expect(command.goto).toEqual(['generate_answer']);
+    expect(ragRouteService.routeQuestion).toHaveBeenCalledWith(
+      '你好',
+      expect.any(AbortSignal),
+      { mode: 'heuristic' },
+    );
+    expect(command.goto).toEqual(['load_context']);
     expect(command.update).toEqual({
       strategy: 'none',
       routeReason: '寒暄',
@@ -45,7 +50,7 @@ describe('createRouteQuestionNode', () => {
     expect(command.goto).toEqual(['plan_sub_questions']);
   });
 
-  it('simple 路由进入 load_short_term_memory', async () => {
+  it('simple 路由直接进入 retrieve，记忆延后到生成前加载', async () => {
     const ragRouteService = {
       routeQuestion: jest.fn().mockResolvedValue({
         strategy: 'simple',
@@ -62,6 +67,6 @@ describe('createRouteQuestionNode', () => {
       } as never,
     );
 
-    expect(command.goto).toEqual(['load_short_term_memory']);
+    expect(command.goto).toEqual(['retrieve']);
   });
 });

@@ -3,10 +3,40 @@ import {
   MULTI_HOP_PLANNER_PROMPT,
   RAG_EVIDENCE_EVALUATOR_PROMPT,
   RAG_ROUTE_PROMPT,
+  trimHistoryAgainstRollingSummary,
 } from '@/common/prompts/agent.prompts';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
 describe('agent.prompts', () => {
+  it('有会话摘要时裁短 history', () => {
+    const history = [
+      { role: 'user', content: '1', turnId: 't1' },
+      { role: 'assistant', content: 'a1', turnId: 't1' },
+      { role: 'user', content: '2', turnId: 't2' },
+      { role: 'assistant', content: 'a2', turnId: 't2' },
+      { role: 'user', content: '3', turnId: 't3' },
+      { role: 'assistant', content: 'a3', turnId: 't3' },
+    ] as never[];
+    const trimmed = trimHistoryAgainstRollingSummary(
+      history,
+      '会话摘要：讨论过验收\n最近对话：...',
+      2,
+    );
+    expect(trimmed).toHaveLength(4);
+    expect(trimmed[0].content).toBe('2');
+    expect(trimmed.at(-1)?.content).toBe('a3');
+  });
+
+  it('无会话摘要时保留完整 history', () => {
+    const history = [
+      { role: 'user', content: '1', turnId: 't1' },
+      { role: 'assistant', content: 'a1', turnId: 't1' },
+    ] as never[];
+    expect(
+      trimHistoryAgainstRollingSummary(history, '当前任务背景：法务', 2),
+    ).toHaveLength(2);
+  });
+
   it('formatKnowledgeBlock 会把图谱检索证据格式化为 LLM 可读上下文', () => {
     const chunks: KnowledgeChunk[] = [
       {

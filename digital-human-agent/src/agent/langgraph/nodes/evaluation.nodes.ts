@@ -14,7 +14,7 @@ import {
   extendSubQuestionsWithMissingFacts,
   getCurrentQuery,
   getPlannedQuestions,
-  isWorkflowBudgetExceeded,
+  shouldStopRetrievalBudget,
   shouldUseWebFallback,
   publishCitations,
   toWorkflowCitations,
@@ -39,24 +39,6 @@ export function createRerankNode(rerankerService: RerankerService) {
       state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
     const rerankMode = state.rerankMode ?? 'llm';
 
-    // off / score：不做 LLM rerank，按现有融合分截断
-    if (rerankMode === 'off' || rerankMode === 'score') {
-      const topDocuments = documents.slice(0, topK);
-      publishCitations(
-        input,
-        toWorkflowCitations({
-          documents: state.documents,
-          topDocuments,
-          evidenceChunks: topDocuments,
-          webCitations: state.webCitations,
-        }),
-      );
-      return {
-        topDocuments,
-        evidenceChunks: topDocuments,
-      } satisfies Partial<RagGraphState>;
-    }
-
     // 多跳时用当前 hop 查询句重排，同时保留原始问题以覆盖整体意图
     const currentQuery = getCurrentQuery(state);
     const rerankQuery =
@@ -69,6 +51,13 @@ export function createRerankNode(rerankerService: RerankerService) {
       documents,
       topK,
       input.signal,
+      undefined,
+      rerankMode === 'off' ||
+        rerankMode === 'score' ||
+        rerankMode === 'dedicated' ||
+        rerankMode === 'llm'
+        ? rerankMode
+        : 'llm',
     );
 
     // 正式 citations：仅在重排后推送，避免粗召回闪变
@@ -110,7 +99,7 @@ function resolveStopReason(
     return 'single_hop_enough';
   }
 
-  if (isWorkflowBudgetExceeded(state)) {
+  if (shouldStopRetrievalBudget(state)) {
     return 'max_hops_reached';
   }
 
@@ -178,13 +167,13 @@ export function createEvaluateEvidenceNode(
       });
     }
 
-    // 预算耗尽：直接进入生成，不再 hop / web
-    if (isWorkflowBudgetExceeded(state)) {
+    // 预算耗尽（wall-clock 或 llm/embed）：直接进入生成，不再 hop / web
+    if (shouldStopRetrievalBudget(state)) {
       return new Command({
         update: {
           enough: false,
           missingFacts: state.missingFacts,
-          evaluationReason: '工作流耗时预算已用尽，停止继续检索',
+          evaluationReason: '工作流预算已用尽，停止继续检索',
           webQuery: '',
           stopReason: 'max_hops_reached',
         } satisfies Partial<RagGraphState>,
@@ -259,7 +248,7 @@ export function createEvaluateEvidenceNode(
     // hop early-stop：enough 则停；否则在 hop 预算内继续本地检索（含 complex 预规划与 missingFacts 扩展）
     const canRetryLocalKnowledge =
       !nextState.enough &&
-      !isWorkflowBudgetExceeded(nextState) &&
+      !shouldStopRetrievalBudget(nextState) &&
       canContinueMultiHop(nextState);
 
     let goto: 'retrieve' | 'web_fallback' | 'load_context' = 'load_context';
@@ -268,7 +257,7 @@ export function createEvaluateEvidenceNode(
     } else if (canRetryLocalKnowledge) {
       goto = 'retrieve';
     } else if (
-      !isWorkflowBudgetExceeded(nextState) &&
+      !shouldStopRetrievalBudget(nextState) &&
       shouldUseWebFallback(nextState, webFallbackEnabled)
     ) {
       goto = 'web_fallback';

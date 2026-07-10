@@ -2,11 +2,11 @@
 
 | 项 | 内容 |
 |----|------|
-| 文档版本 | **v1.1**（纳入外部评审修正） |
-| 更新日期 | 2026-07-09 |
+| 文档版本 | **v1.5**（A–D + P0–P2） |
+| 更新日期 | 2026-07-10 |
 | 范围 | `digital-human-agent` 的 LangGraph Agent 编排、检索内核、记忆、实时出口 |
 | 不在范围 | 前端 UI 大改、基础设施选型更换、通用 Tool-Agent 平台化 |
-| 前置状态 | 已完成：early-stop 多跳、先 route 再 memory、ACL 批量、上下文去重、citations 时机、wall-clock budget |
+| 前置状态 | **A–D + P0/P1 + P2**：共享 Redis；Search→RetrievalPort；dedicated rerank；history/summary 裁剪；side-effect degradationFlags |
 | 代码锚点 | `RagWorkflowInput` 仅有 `maxHops`（无 profile）；State 分散 `routeAllowWeb` / `workflowBudgetMs` / `retrievalStrategy`；HTTP/WS 共用 `AgentService.run()`；Agent 直调 `HybridRetrieverService`，Search 走 `KnowledgeSearchService` shared pipeline |
 
 ---
@@ -456,11 +456,11 @@ interface AclSnapshot {
 
 ---
 
-### Phase D — 记忆与副作用（约 1 周，非首轮）
+### Phase D — 记忆与副作用（约 1 周，非首轮）✅ 已落地
 
-- 真滚动摘要（溢出压缩，而非 window 拼接）  
-- long-term 默认不进 retrieve query  
-- Turn side-effect 协议：start / evidence / token / end  
+- ✅ 真滚动摘要：`foldOverflowIntoSummary` + `appendMessage` 溢出折叠；`assembleConversationContextParts`（summary + recent）
+- ✅ long-term：`RagProfile.useLongTermMemory`；realtime 默认 off；**仅进 generate 的 preference 区，不进 rewrite/retrieve query**
+- ✅ Turn side-effect 协议：`TurnSideEffectService`（`onTurnStart` / evidence via `onCitations` / `onTurnEnd`）；HTTP ChatController + WS Text/Audio + AgentPipeline 统一
 
 **定位：** 成立，但 ROI 低于 A/B；排在 realtime 稳定与 Port 之后。
 

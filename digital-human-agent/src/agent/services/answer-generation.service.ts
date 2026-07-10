@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
-import { throwIfAborted } from '@/common/utils';
+import { isAbortError, throwIfAborted } from '@/common/utils';
 import type { RagWebCitation } from '@/agent/types/rag-workflow.types';
 import type { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import { DEFAULT_LLM_MODEL_NAME } from '@/common/constants';
@@ -26,6 +26,8 @@ import {
   recordFirstTokenBudget,
   tryConsumeLlmBudget,
   addTurnDegradation,
+  getTurnBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 export interface GenerateAnswerParams {
@@ -51,6 +53,9 @@ export interface GenerateDirectAnswerParams {
   userMessage: string;
   signal: AbortSignal;
   onToken: (token: string) => void;
+  /** 闲聊路径也保留人设，避免退化成通用助手 */
+  persona?: Persona | null;
+  history?: ConversationMessage[];
 }
 
 @Injectable()
@@ -135,32 +140,52 @@ export class AnswerGenerationService {
     }
 
     const messages = await DIRECT_CHAT_PROMPT.formatMessages(
-      buildDirectChatPromptInput(params.userMessage),
+      buildDirectChatPromptInput(params.userMessage, params.persona),
     );
 
     throwIfAborted(params.signal);
 
-    const stream = await this.llm.stream(messages, {
-      ...buildLangSmithRunnableConfig({
-        runName: 'agent_generate_direct',
-        tags: ['agent', 'rag', 'generate', 'direct', 'llm'],
-        metadata: {
-          conversationId: params.conversationId,
-          personaId: params.personaId,
-          turnId: params.turnId,
-        },
-      }),
-      signal: params.signal,
-    });
-
     let answerText = '';
-    for await (const chunk of stream) {
-      throwIfAborted(params.signal);
-      const token = typeof chunk.content === 'string' ? chunk.content : '';
-      if (!token) continue;
-      if (!answerText) recordFirstTokenBudget();
-      answerText += token;
-      params.onToken(token);
+    try {
+      const stream = await withRemainingTurnTimeout(
+        'agent_generate_direct',
+        (childSignal) =>
+          this.llm.stream(messages, {
+            ...buildLangSmithRunnableConfig({
+              runName: 'agent_generate_direct',
+              tags: ['agent', 'rag', 'generate', 'direct', 'llm'],
+              metadata: {
+                conversationId: params.conversationId,
+                personaId: params.personaId,
+                turnId: params.turnId,
+              },
+            }),
+            signal: childSignal,
+          }),
+        params.signal,
+      );
+      for await (const chunk of stream) {
+        throwIfAborted(params.signal);
+        if (getTurnBudget()?.isWallClockExhausted()) {
+          addTurnDegradation('generate_wall_clock_truncated');
+          break;
+        }
+        const token = typeof chunk.content === 'string' ? chunk.content : '';
+        if (!token) continue;
+        if (!answerText) recordFirstTokenBudget();
+        answerText += token;
+        params.onToken(token);
+      }
+    } catch (error) {
+      if (isAbortError(error) && params.signal.aborted) throw error;
+      addTurnDegradation('generate_timeout');
+    }
+
+    if (!answerText) {
+      const fallback = '抱歉，当前生成超时，请稍后再试。';
+      recordFirstTokenBudget();
+      params.onToken(fallback);
+      return fallback;
     }
 
     return answerText;
@@ -198,29 +223,50 @@ export class AnswerGenerationService {
 
     throwIfAborted(params.signal);
 
-    const stream = await this.llm.stream(messages, {
-      ...buildLangSmithRunnableConfig({
-        runName: 'agent_generate',
-        tags: ['agent', 'rag', 'generate', 'llm'],
-        metadata: {
-          conversationId: params.conversationId,
-          personaId: params.personaId,
-          turnId: params.turnId,
-          citationCount:
-            params.localChunks.length + (params.webCitations?.length ?? 0),
-        },
-      }),
-      signal: params.signal,
-    });
-
     let answerText = '';
-    for await (const chunk of stream) {
-      throwIfAborted(params.signal);
-      const token = typeof chunk.content === 'string' ? chunk.content : '';
-      if (!token) continue;
-      if (!answerText) recordFirstTokenBudget();
-      answerText += token;
-      params.onToken(token);
+    try {
+      const stream = await withRemainingTurnTimeout(
+        'agent_generate',
+        (childSignal) =>
+          this.llm.stream(messages, {
+            ...buildLangSmithRunnableConfig({
+              runName: 'agent_generate',
+              tags: ['agent', 'rag', 'generate', 'llm'],
+              metadata: {
+                conversationId: params.conversationId,
+                personaId: params.personaId,
+                turnId: params.turnId,
+                citationCount:
+                  params.localChunks.length +
+                  (params.webCitations?.length ?? 0),
+              },
+            }),
+            signal: childSignal,
+          }),
+        params.signal,
+      );
+      for await (const chunk of stream) {
+        throwIfAborted(params.signal);
+        if (getTurnBudget()?.isWallClockExhausted()) {
+          addTurnDegradation('generate_wall_clock_truncated');
+          break;
+        }
+        const token = typeof chunk.content === 'string' ? chunk.content : '';
+        if (!token) continue;
+        if (!answerText) recordFirstTokenBudget();
+        answerText += token;
+        params.onToken(token);
+      }
+    } catch (error) {
+      if (isAbortError(error) && params.signal.aborted) throw error;
+      addTurnDegradation('generate_timeout');
+    }
+
+    if (!answerText) {
+      const fallback = '抱歉，当前生成超时，请稍后再试。';
+      recordFirstTokenBudget();
+      params.onToken(fallback);
+      return fallback;
     }
 
     return answerText;

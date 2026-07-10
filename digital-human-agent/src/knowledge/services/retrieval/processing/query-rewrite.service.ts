@@ -27,7 +27,8 @@ import type {
 } from '@/knowledge/types/knowledge-content.types';
 import {
   addTurnDegradation,
-  tryConsumeLlmBudget,
+  tryConsumeAuxiliaryLlmBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 
 // Re-export for backward compatibility with existing consumers
@@ -343,7 +344,7 @@ export class QueryRewriteService {
       async () => {
         throwIfAborted(signal);
 
-        if (!tryConsumeLlmBudget(1)) {
+        if (!tryConsumeAuxiliaryLlmBudget(1)) {
           addTurnDegradation('rewrite_heuristic');
           return this.buildFallbackRewrite(
             normalizedQuery,
@@ -356,10 +357,12 @@ export class QueryRewriteService {
           const messages = await KNOWLEDGE_QUERY_REWRITE_PROMPT.formatMessages(
             buildKnowledgeQueryRewritePromptInput(normalizedQuery),
           );
-          const result = await withTimeout(
+          const result = await withRemainingTurnTimeout(
             'knowledge_query_rewrite_llm',
             (childSignal) =>
-              rewriter.invoke(messages, {
+              withTimeout(
+                'knowledge_query_rewrite_model',
+                (timeoutSignal) => rewriter.invoke(messages, {
                 ...buildLangSmithRunnableConfig({
                   runName: 'knowledge_query_rewrite_llm',
                   tags: ['knowledge', 'rag', 'rewrite', 'llm'],
@@ -367,13 +370,15 @@ export class QueryRewriteService {
                     originalQuery: normalizedQuery,
                   },
                 }),
-                signal: childSignal,
-              }),
-            {
-              signal,
-              timeoutMs: this.queryRewriteTimeoutMs,
-              timeoutMessage: 'Query Rewrite 超时',
-            },
+                  signal: timeoutSignal,
+                }),
+                {
+                  signal: childSignal,
+                  timeoutMs: this.queryRewriteTimeoutMs,
+                  timeoutMessage: 'Query Rewrite 超时',
+                },
+              ),
+            signal,
           );
 
           throwIfAborted(signal);

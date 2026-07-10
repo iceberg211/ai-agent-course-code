@@ -8,27 +8,28 @@ import { RagGraphContextAnnotation } from '@/agent/langgraph/rag.context';
 import { createEvaluateEvidenceNode, createRerankNode } from '@/agent/langgraph/nodes/evaluation.nodes';
 import { createPlanSubQuestionsNode, createRouteQuestionNode } from '@/agent/langgraph/nodes/planning.nodes';
 import { RAG_DEPENDENCY_RETRY_POLICY } from '@/agent/langgraph/rag.retry-policy';
-import { createGenerateAnswerNode, createLoadContextNode } from '@/agent/langgraph/nodes/generation.nodes';
-import { createRetrieveNode, createWebFallbackNode, createGraphReasoningNode } from '@/agent/langgraph/nodes/query.nodes';
 import {
-  createFilterMemoryByPolicyNode,
-  createLoadShortTermMemoryNode,
+  createGenerateAnswerNode,
+  createLoadContextNode,
+  createLoadQueryHistoryNode,
+} from '@/agent/langgraph/nodes/generation.nodes';
+import { createRetrieveNode, createWebFallbackNode } from '@/agent/langgraph/nodes/query.nodes';
+import {
+  createLoadGenerationMemoryNode,
   createMergeMemoryContextNode,
-  createRetrieveLongTermMemoryNode,
 } from '@/agent/langgraph/nodes/memory.nodes';
 import { RagGraphStateAnnotation } from '@/agent/langgraph/rag.state';
 import type { ConversationService } from '@/conversation/services/conversation.service';
 import { RerankerService } from '@/knowledge/services/retrieval/processing/reranker.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type { PersonaService } from '@/persona/persona.service';
 import type { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
-import type { KnowledgeGraphService } from '@/knowledge/graph/knowledge-graph.service';
 import type { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
+import type { RetrievalPort } from '@/knowledge/services/retrieval/pipeline/retrieval-port';
 
 export interface RagGraphDeps {
-  personaHybridRetrieverService: HybridRetrieverService;
+  retrievalPort: RetrievalPort;
   personaService: PersonaService;
   conversationService: ConversationService;
   answerGenerationService: AnswerGenerationService;
@@ -41,55 +42,43 @@ export interface RagGraphDeps {
   shortTermMemoryService: ShortTermMemoryService;
   memoryRetrieverService: MemoryRetrieverService;
   memoryPolicyService: MemoryPolicyService;
-  knowledgeGraphService: KnowledgeGraphService;
 }
 
 /**
- * RAG 运行时图（性能友好编排）：
- * 1. 先 route：none 直接生成，避免无谓的记忆/检索开销
- * 2. 每 hop：retrieve → graph → rerank → evaluate，enough 则 early-stop
- * 3. 多跳仅通过 evaluate → retrieve 继续，不再“先全量检索再统一评估”
+ * RAG 运行时图：
+ * 1. 先 route
+ * 2. retrieve 经 RetrievalPort（hybrid + 可选 graph expand）
+ * 3. rerank → evaluate，enough early-stop
  */
 export function buildRagGraph(deps: RagGraphDeps) {
   return new StateGraph(RagGraphStateAnnotation, RagGraphContextAnnotation)
     .addNode('route_question', createRouteQuestionNode(deps.ragRouteService), {
-      ends: ['load_short_term_memory', 'plan_sub_questions', 'generate_answer'],
+      ends: ['load_query_history', 'plan_sub_questions', 'load_context'],
     })
     .addNode(
       'plan_sub_questions',
       createPlanSubQuestionsNode(deps.multiHopPlannerService),
     )
     .addNode(
-      'load_short_term_memory',
-      createLoadShortTermMemoryNode(deps.shortTermMemoryService),
-      {
-        retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
-      },
+      'load_query_history',
+      createLoadQueryHistoryNode(deps.conversationService),
+      { retryPolicy: RAG_DEPENDENCY_RETRY_POLICY },
     )
     .addNode(
-      'retrieve_long_term_memory',
-      createRetrieveLongTermMemoryNode(deps.memoryRetrieverService),
-      {
-        retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
-      },
-    )
-    .addNode(
-      'filter_memory_by_policy',
-      createFilterMemoryByPolicyNode(deps.memoryPolicyService),
+      'load_generation_memory',
+      createLoadGenerationMemoryNode(
+        deps.shortTermMemoryService,
+        deps.memoryRetrieverService,
+        deps.memoryPolicyService,
+      ),
+      { retryPolicy: RAG_DEPENDENCY_RETRY_POLICY },
     )
     .addNode(
       'retrieve',
-      createRetrieveNode(
-        deps.retrievalPolicyResolver,
-        deps.personaHybridRetrieverService,
-      ),
+      createRetrieveNode(deps.retrievalPolicyResolver, deps.retrievalPort),
       {
         retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
       },
-    )
-    .addNode(
-      'graph_reasoning',
-      createGraphReasoningNode(deps.knowledgeGraphService),
     )
     .addNode('rerank', createRerankNode(deps.rerankerService), {
       retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
@@ -112,6 +101,7 @@ export function buildRagGraph(deps: RagGraphDeps) {
       'load_context',
       createLoadContextNode(deps.personaService, deps.conversationService),
       {
+        ends: ['load_generation_memory', 'generate_answer'],
         retryPolicy: RAG_DEPENDENCY_RETRY_POLICY,
       },
     )
@@ -121,14 +111,11 @@ export function buildRagGraph(deps: RagGraphDeps) {
       createGenerateAnswerNode(deps.answerGenerationService),
     )
     .addEdge(START, 'route_question')
-    .addEdge('plan_sub_questions', 'load_short_term_memory')
-    .addEdge('load_short_term_memory', 'retrieve_long_term_memory')
-    .addEdge('retrieve_long_term_memory', 'filter_memory_by_policy')
-    .addEdge('filter_memory_by_policy', 'retrieve')
-    .addEdge('retrieve', 'graph_reasoning')
-    .addEdge('graph_reasoning', 'rerank')
+    .addEdge('plan_sub_questions', 'load_query_history')
+    .addEdge('load_query_history', 'retrieve')
+    .addEdge('load_generation_memory', 'merge_memory_context')
+    .addEdge('retrieve', 'rerank')
     .addEdge('rerank', 'evaluate_evidence')
-    .addEdge('load_context', 'merge_memory_context')
     .addEdge('merge_memory_context', 'generate_answer')
     .addEdge('generate_answer', END)
     .compile();

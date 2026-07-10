@@ -28,6 +28,14 @@ describe('AgentPipelineService', () => {
     };
   }
 
+  function createTurnSideEffects() {
+    return {
+      buildRagTrace: jest.fn().mockReturnValue({ profileId: 'realtime_voice' }),
+      onTurnEnd: jest.fn().mockResolvedValue(undefined),
+      onTurnStart: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
   it('AbortError 时也会落库 interrupted 消息并发送 conversation:done', async () => {
     const abortError = new Error('aborted');
     abortError.name = 'AbortError';
@@ -37,9 +45,6 @@ describe('AgentPipelineService', () => {
         params.onToken('半句');
         throw abortError;
       }),
-    };
-    const conversationService = {
-      addMessage: jest.fn().mockResolvedValue(undefined),
     };
     const session = createSession();
     const sessionRegistry = {
@@ -58,23 +63,14 @@ describe('AgentPipelineService', () => {
       enqueue: jest.fn(),
       markFinalize: jest.fn(),
     };
-    const shortTermMemoryService = {
-      appendMessage: jest.fn().mockResolvedValue(undefined),
-      setActiveContext: jest.fn().mockResolvedValue(undefined),
-      refreshSummaryFromWindow: jest.fn().mockResolvedValue(undefined),
-    };
-    const longTermMemoryService = {
-      captureFromConversation: jest.fn().mockResolvedValue(null),
-    };
+    const turnSideEffects = createTurnSideEffects();
 
     const service = new AgentPipelineService(
       agentService as never,
-      conversationService as never,
       sessionRegistry as never,
       ttsPipeline as never,
       speakPipeline as never,
-      shortTermMemoryService as never,
-      longTermMemoryService as never,
+      turnSideEffects as never,
     );
 
     const client = {
@@ -82,18 +78,20 @@ describe('AgentPipelineService', () => {
       send: jest.fn(),
     } as unknown as WebSocket;
 
-    await service.run(client, session, '你好', 'turn-1');
+    await service.run(client, session, '你好', 'turn-1', {
+      startedAt: 1_700_000_000_000,
+    });
 
-    expect(conversationService.addMessage).toHaveBeenCalledWith(
+    expect(turnSideEffects.onTurnEnd).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: 'conv-1',
         turnId: 'turn-1',
-        role: 'assistant',
-        content: '半句',
+        userMessage: '你好',
+        assistantReply: '半句',
         status: 'interrupted',
         citations: [],
-        ragTrace: null,
         latencyMs: expect.any(Number),
+        persistAssistant: true,
       }),
     );
 
@@ -138,9 +136,6 @@ describe('AgentPipelineService', () => {
         },
       }),
     };
-    const conversationService = {
-      addMessage: jest.fn().mockResolvedValue(undefined),
-    };
     const session = createSession();
     session.accessScope = {
       ownerId: 'owner-1',
@@ -161,12 +156,13 @@ describe('AgentPipelineService', () => {
       enqueue: jest.fn(),
       markFinalize: jest.fn(),
     };
+    const turnSideEffects = createTurnSideEffects();
     const service = new AgentPipelineService(
       agentService as never,
-      conversationService as never,
       sessionRegistry as never,
       ttsPipeline as never,
       speakPipeline as never,
+      turnSideEffects as never,
     );
     const client = {
       readyState: WebSocket.OPEN,
@@ -182,7 +178,10 @@ describe('AgentPipelineService', () => {
           department: '研发部',
           role: 'user',
         },
+        startedAt: expect.any(Number),
       }),
     );
+    expect(turnSideEffects.onTurnEnd).toHaveBeenCalled();
+    expect(turnSideEffects.buildRagTrace).toHaveBeenCalled();
   });
 });

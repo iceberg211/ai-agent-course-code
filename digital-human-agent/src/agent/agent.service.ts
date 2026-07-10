@@ -23,6 +23,8 @@ export interface RunAgentParams {
   onCitations: (citations: RagCitation[]) => void;
   profileId?: RagProfileId;
   maxHops?: number;
+  /** 入口收到本轮消息的时间，用于端到端首 token 与 wall-clock 指标。 */
+  startedAt?: number;
 }
 
 @Injectable()
@@ -77,6 +79,7 @@ export class AgentService {
       onCitations: params.onCitations,
       profileId: params.profileId,
       maxHops: params.maxHops,
+      startedAt: params.startedAt,
     };
   }
 }

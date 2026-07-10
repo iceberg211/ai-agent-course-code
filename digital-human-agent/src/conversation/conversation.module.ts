@@ -4,6 +4,7 @@ import { Conversation } from '@/conversation/entities/conversation.entity';
 import { ConversationMessage } from '@/conversation/entities/conversation-message.entity';
 import { ConversationService } from '@/conversation/services/conversation.service';
 import { RealtimeSessionRegistry } from '@/conversation/services/realtime-session.registry';
+import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 import { ChatController } from '@/conversation/controllers/chat.controller';
 import { ConversationController } from '@/conversation/controllers/conversation.controller';
 import { AgentModule } from '@/agent/agent.module';
@@ -25,7 +26,15 @@ import { RbacModule } from '@/rbac/rbac.module';
     RbacModule,
   ],
   controllers: [ChatController, ConversationController],
-  providers: [ConversationService, RealtimeSessionRegistry],
-  exports: [ConversationService, RealtimeSessionRegistry],
+  providers: [
+    ConversationService,
+    RealtimeSessionRegistry,
+    TurnSideEffectService,
+  ],
+  exports: [
+    ConversationService,
+    RealtimeSessionRegistry,
+    TurnSideEffectService,
+  ],
 })
 export class ConversationModule {}

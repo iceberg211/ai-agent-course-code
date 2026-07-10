@@ -67,11 +67,25 @@ export function extractGraphEntitySearchTerms(text: string): string[] {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
   const terms = new Set<string>();
-  const matches =
-    normalized.match(
-      /[\u4e00-\u9fa5]{2,16}|[A-Za-z][A-Za-z0-9_-]{1,31}/g,
-    ) ?? [];
-  const sorted = [...matches].sort((a, b) => b.length - a.length);
+  // 先按标点/空白切分，再取 2–16 字片段，避免把整句中文粘成一词
+  const segments = normalized
+    .split(/[^\u4e00-\u9fa5A-Za-z0-9_]+/u)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const candidates: string[] = [];
+  for (const seg of segments) {
+    if (/^[A-Za-z]/.test(seg)) {
+      if (seg.length >= 2) candidates.push(seg.slice(0, 32));
+      continue;
+    }
+    // 中文段：整段若适中则保留；过长则再切 2–8 字滑动窗口取前缀块
+    if (seg.length >= 2 && seg.length <= 16) {
+      candidates.push(seg);
+    } else if (seg.length > 16) {
+      candidates.push(seg.slice(0, 8), seg.slice(8, 16));
+    }
+  }
+  const sorted = [...candidates].sort((a, b) => b.length - a.length);
   for (const item of sorted) {
     const term = item.trim();
     if (term.length < 2) continue;

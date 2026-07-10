@@ -25,6 +25,15 @@ describe('RagProfile', () => {
     expect(profile.evaluateMode).toBe('heuristic');
     expect(profile.rerankMode).toBe('score');
     expect(profile.budget.maxLlmCalls).toBe(2);
+    expect(profile.useLongTermMemory).toBe(false);
+    expect(profile.routeMode).toBe('heuristic');
+  });
+
+  it('balanced 开启长期记忆，realtime/search_debug 关闭', () => {
+    expect(RAG_PROFILES.balanced_chat.useLongTermMemory).toBe(true);
+    expect(RAG_PROFILES.deep_research.useLongTermMemory).toBe(true);
+    expect(RAG_PROFILES.search_debug.useLongTermMemory).toBe(false);
+    expect(RAG_PROFILES.balanced_chat.routeMode).toBe('llm');
   });
 });
 
@@ -41,5 +50,23 @@ describe('TurnBudgetContext', () => {
     expect(budget.snapshotFlags()).toContain('budget_llm');
     budget.recordFirstTokenIfNeeded();
     expect(budget.firstTokenLatencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('前置 LLM 调用会为最终生成预留一次预算', () => {
+    const budget = new TurnBudgetContext({
+      wallClockMs: 10_000,
+      maxLlmCalls: 5,
+      maxEmbedCalls: 3,
+    });
+    expect(budget.tryConsumeAuxiliaryLlm()).toBe(true);
+    expect(budget.tryConsumeAuxiliaryLlm()).toBe(true);
+    expect(budget.tryConsumeAuxiliaryLlm()).toBe(true);
+    expect(budget.tryConsumeAuxiliaryLlm()).toBe(true);
+    expect(budget.tryConsumeAuxiliaryLlm()).toBe(false);
+    expect(budget.snapshotFlags()).toContain(
+      'budget_llm_reserved_for_generation',
+    );
+    expect(budget.tryConsumeLlm()).toBe(true);
+    expect(budget.llmCalls).toBe(5);
   });
 });

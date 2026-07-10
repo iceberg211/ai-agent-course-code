@@ -18,8 +18,11 @@ export interface GraphExpandTraceItem {
   error?: string;
 }
 
+/**
+ * 统一检索请求：Agent（persona）与 Search（单库 / 跨库）共用。
+ * 作用域三选一：personaId | knowledgeId | knowledgeIds
+ */
 export interface RetrievalPortRequest {
-  personaId: string;
   retrievalQueries: RetrievalQueryItem[];
   strategy: RetrievalStrategy;
   accessScope?: KnowledgeAccessScope;
@@ -29,6 +32,16 @@ export interface RetrievalPortRequest {
   /** 用于实体匹配的问题/当前 hop query */
   question?: string;
   currentQuery?: string;
+  /** 稳定缓存分区（profile id），勿塞动态 reason */
+  profileId?: string;
+  /** Persona 聚合检索 */
+  personaId?: string;
+  /** 单知识库 */
+  knowledgeId?: string;
+  /** 跨知识库 */
+  knowledgeIds?: string[];
+  threshold?: number;
+  retrievalLimit?: number;
 }
 
 export interface RetrievalPortResponse {
