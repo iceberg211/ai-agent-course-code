@@ -116,7 +116,7 @@ export const PROMPT_REGISTRY = {
   },
   knowledgeRerank: {
     system:
-      '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。只返回 JSON 数组，不要 Markdown，不要额外解释。格式必须是 [{{"index":0,"score":8.6}}]，score 范围 0-10。',
+      '你是知识检索重排器。请根据用户问题评估每个候选片段的相关性分数。只返回 JSON 对象，不要 Markdown，不要额外解释。格式必须是 {{"scores":[{{"index":0,"score":8.6}}]}}，score 范围 0-10。',
     human: '{inputJson}',
   },
 } as const;

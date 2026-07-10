@@ -23,6 +23,7 @@ export const AGENT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
 
 export const DIRECT_CHAT_PROMPT = ChatPromptTemplate.fromMessages([
   ['system', PROMPT_REGISTRY.directChat.system],
+  new MessagesPlaceholder('history'),
   ['human', PROMPT_REGISTRY.directChat.human],
 ]);
 
@@ -97,9 +98,15 @@ function formatGraphEvidenceBlock(chunk: KnowledgeChunk): string {
 }
 
 function normalizeGraphEvidenceText(value: unknown): string {
-  const normalized = String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const raw =
+    typeof value === 'string'
+      ? value
+      : typeof value === 'number' ||
+          typeof value === 'boolean' ||
+          typeof value === 'bigint'
+        ? String(value)
+        : '';
+  const normalized = raw.replace(/\s+/g, ' ').trim();
   return normalized.slice(0, 160) || '未知';
 }
 
@@ -247,6 +254,7 @@ export function buildDirectChatPromptInput(
     Persona,
     'name' | 'description' | 'speakingStyle' | 'expertise' | 'systemPromptExtra'
   > | null,
+  history: ConversationMessage[] = [],
 ) {
   return {
     personaName: persona?.name?.trim() || '数字人助手',
@@ -256,6 +264,7 @@ export function buildDirectChatPromptInput(
     systemPromptExtraSection: persona?.systemPromptExtra
       ? `\n${persona.systemPromptExtra}`
       : '',
+    history: mapConversationHistoryToPromptMessages(history.slice(-10)),
     userMessage,
   };
 }

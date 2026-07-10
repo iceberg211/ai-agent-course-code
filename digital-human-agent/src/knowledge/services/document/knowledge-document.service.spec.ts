@@ -138,7 +138,9 @@ describe('KnowledgeDocumentService', () => {
       },
       embeddings: {
         model: 'text-embedding-v4',
-        embedDocuments: jest.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+        embedDocuments: jest.fn().mockImplementation((texts: string[]) =>
+          Promise.resolve(texts.map(() => [0.1, 0.2, 0.3])),
+        ),
       },
       embeddingBatchSize: 10,
       withTransientRetry: jest.fn(
@@ -368,6 +370,30 @@ describe('KnowledgeDocumentService', () => {
       graphSyncError: null,
     });
     expect(graphIndexedUpdate?.graphSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it('向量化会按 embeddingBatchSize 分批执行并逐批写入索引', async () => {
+    const { service, runtime, insert, elasticsearchService } = createService();
+    runtime.embeddingBatchSize = 1;
+
+    await service.ingestDocument(
+      'kb-1',
+      'demo.md',
+      ['# 第一节', '', '第一段。', '', '# 第二节', '', '第二段。'].join(
+        '\n',
+      ),
+    );
+
+    expect(runtime.embeddings.embedDocuments).toHaveBeenNthCalledWith(1, [
+      '# 第一节\n\n第一段。',
+    ]);
+    expect(runtime.embeddings.embedDocuments).toHaveBeenNthCalledWith(2, [
+      '# 第二节\n\n第二段。',
+    ]);
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(
+      elasticsearchService.safeBulkUpsertChunkDocuments,
+    ).toHaveBeenCalledTimes(2);
   });
 
   it('Neo4j 图谱写入失败时主文档仍完成，但会记录图谱同步失败状态', async () => {

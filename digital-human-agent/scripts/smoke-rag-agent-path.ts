@@ -3,10 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { LangGraphRagOrchestratorService } from '@/agent/orchestrators/langgraph-rag-orchestrator.service';
-import type { RetrievalStrategy } from '@/common/rag';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
-import { PersonaService } from '@/persona/persona.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 
 function readDotEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -47,17 +44,6 @@ function readArg(name: string): string | null {
   );
 }
 
-function toPositiveInteger(
-  raw: string | null,
-  defaultValue: number,
-  min: number,
-  max: number,
-): number {
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return defaultValue;
-  return Math.min(max, Math.max(min, Math.trunc(value)));
-}
-
 async function main(): Promise<void> {
   process.env.NEO4J_GRAPH_ENABLED = 'true';
   process.env.NEO4J_URL ??= 'bolt://localhost:7687';
@@ -76,9 +62,8 @@ async function main(): Promise<void> {
   });
 
   try {
-    const runtime = app.get(ContentRuntimeService);
-    const hybridRetrieverService = app.get(HybridRetrieverService);
-    const personaService = app.get(PersonaService);
+    const runtime = app.get(RagRuntimeService);
+    const orchestrator = app.get(LangGraphRagOrchestratorService);
     const personaId =
       readArg('personaId') ?? (await findMountedPersonaId(runtime));
     if (!personaId) {
@@ -87,112 +72,7 @@ async function main(): Promise<void> {
 
     const query =
       readArg('query') ?? '系统是否允许把甲方上传的合同直接用于公开训练？';
-    const graphMode = readArg('graphMode') === 'neighbors' ? 'neighbors' : 'path';
-    const graphMaxHops = toPositiveInteger(readArg('graphMaxHops'), 2, 1, 3);
     const strict = !process.argv.includes('--allow-partial');
-    const retrievalStrategy: RetrievalStrategy = {
-      needRetrieval: true,
-      useVector: true,
-      useKeyword: true,
-      useGraph: true,
-      useExactPhrase: true,
-      useMultiQuery: false,
-      allowWeb: false,
-      queryCount: 1,
-      graphMode,
-      graphMaxHops,
-      reason: 'Agent path smoke 强制验证 LangGraph 检索节点的三路召回与 Neo4j 路径策略',
-    };
-
-    let generationSummary:
-      | {
-          localChunkCount: number;
-          webCitationCount: number;
-          graphMode: string | null;
-          graphMaxHops: number | null;
-        }
-      | null = null;
-
-    const orchestrator = new LangGraphRagOrchestratorService(
-      hybridRetrieverService,
-      personaService,
-      {
-        getCompletedMessages: async () => [],
-      } as never,
-      {
-        generate: async (params) => {
-          generationSummary = {
-            localChunkCount: params.localChunks.length,
-            webCitationCount: params.webCitations?.length ?? 0,
-            graphMode: params.retrievalStrategy?.graphMode ?? null,
-            graphMaxHops: params.retrievalStrategy?.graphMaxHops ?? null,
-          };
-          return 'smoke-answer';
-        },
-        generateDirect: async () => 'smoke-direct-answer',
-      } as never,
-      {
-        routeQuestion: async () => ({
-          strategy: 'simple' as const,
-          reason: 'smoke 强制单轮 Agent 检索',
-        }),
-      } as never,
-      {
-        plan: async () => ({
-          currentQuery: query,
-          rewrite: {
-            originalQuery: query,
-            rewrittenQuery: query,
-            keywords: [query],
-            expandedQueries: [
-              {
-                index: 0,
-                query,
-                keywords: [query],
-                angle: 'original' as const,
-              },
-            ],
-            changed: false,
-            reason: 'smoke 使用原始问题直检',
-          },
-          retrievalQueries: [
-            {
-              index: 0,
-              query,
-              keywords: [query],
-              angle: 'original' as const,
-            },
-          ],
-          strategy: retrievalStrategy,
-        }),
-      } as never,
-      {
-        planSubQuestions: async () => ({
-          subQuestions: [query],
-          reason: 'simple 路径不做多跳拆解',
-        }),
-      } as never,
-      {
-        rerank: async (_question, documents, topK) => documents.slice(0, topK),
-      } as never,
-      {
-        evaluate: async (params) => ({
-          enough: params.localChunks.length > 0,
-          missingFacts:
-            params.localChunks.length > 0 ? [] : ['本地证据为空'],
-          reason:
-            params.localChunks.length > 0
-              ? 'smoke 命中本地证据'
-              : 'smoke 未命中本地证据',
-          webQuery: '',
-        }),
-      } as never,
-      {
-        isEnabled: () => false,
-        search: async () => [],
-      } as never,
-    );
-
     const pushedCitations: unknown[][] = [];
     const result = await orchestrator.run({
       conversationId: `smoke-conv-${randomUUID()}`,
@@ -203,6 +83,8 @@ async function main(): Promise<void> {
       onToken: () => undefined,
       onCitations: (citations) => pushedCitations.push(citations),
       maxHops: 1,
+      profileId: 'search_debug',
+      startedAt: Date.now(),
     });
 
     const summary = summarize(result.state.retrievalTrace);
@@ -214,8 +96,6 @@ async function main(): Promise<void> {
       summary.vectorResultCount > 0 &&
       summary.keywordResultCount > 0 &&
       summary.graphResultCount > 0 &&
-      result.state.retrievalStrategy.graphMode === graphMode &&
-      result.state.retrievalStrategy.graphMaxHops === graphMaxHops &&
       result.state.topDocuments.length > 0;
 
     console.log(
@@ -225,8 +105,6 @@ async function main(): Promise<void> {
           mode: 'agent-path',
           personaId,
           query,
-          requestedGraphMode: graphMode,
-          requestedGraphMaxHops: graphMaxHops,
           finalRetrievalStrategy: result.state.retrievalStrategy,
           stopReason: result.state.stopReason,
           answerText: result.answerText,
@@ -236,7 +114,6 @@ async function main(): Promise<void> {
           topDocumentCount: result.state.topDocuments.length,
           graphEvidenceCount,
           citationPushCount: pushedCitations.length,
-          generationSummary,
           trace: result.state.retrievalTrace,
         },
         null,
@@ -246,7 +123,7 @@ async function main(): Promise<void> {
 
     if (strict && !passed) {
       throw new Error(
-        'Agent path smoke 未同时验证通过三路召回、graph path/hops 透传或最终本地证据装载，可改用 --allow-partial 先观察输出',
+        'Agent path smoke 未同时验证通过三路召回与最终本地证据装载，可改用 --allow-partial 先观察输出',
       );
     }
   } finally {
@@ -255,7 +132,7 @@ async function main(): Promise<void> {
 }
 
 async function findMountedPersonaId(
-  runtime: ContentRuntimeService,
+  runtime: RagRuntimeService,
 ): Promise<string | null> {
   const { data: mountedRows, error: mountedError } = await runtime.supabase
     .from('persona_knowledge_base')

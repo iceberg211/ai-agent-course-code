@@ -1,4 +1,7 @@
-import { createRerankNode, createEvaluateEvidenceNode } from '@/agent/langgraph/nodes/evaluation.nodes';
+import {
+  createRerankNode,
+  createEvaluateEvidenceNode,
+} from '@/agent/langgraph/nodes/evaluation.nodes';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 
 describe('createRerankNode', () => {
@@ -147,6 +150,41 @@ describe('createRerankNode', () => {
       topDocuments: [documents[1]],
       evidenceChunks: [documents[1]],
     });
+  });
+
+  it('检索策略中的 rerankTopK 与最低分应和 Search 链路保持一致', async () => {
+    const rerankerService = {
+      rerank: jest.fn().mockResolvedValue([documents[0]]),
+    };
+    const node = createRerankNode(rerankerService as never);
+
+    await node(
+      {
+        question: '当前问题',
+        documents,
+        rerankLimit: 10,
+        retrievalStrategy: {
+          rerankTopK: 7,
+          minRerankScore: 3.5,
+        },
+      } as never,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+          },
+        },
+      } as never,
+    );
+
+    expect(rerankerService.rerank).toHaveBeenCalledWith(
+      '当前问题',
+      documents,
+      7,
+      expect.any(AbortSignal),
+      3.5,
+      'llm',
+    );
   });
 });
 

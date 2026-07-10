@@ -170,12 +170,18 @@ describe('AnswerGenerationService', () => {
       turnId: 'turn-1',
       userMessage: '你好',
       signal: new AbortController().signal,
+      history: [
+        { role: 'user', content: '我叫小明' },
+        { role: 'assistant', content: '你好，小明' },
+      ] as never,
       onToken: (token) => tokens.push(token),
     });
 
     const messages = streamMock.mock.calls[0][0] as Array<{ content: string }>;
     expect(messages[0].content).toContain('无需知识库检索');
     expect(messages[0].content).toContain('不要提到知识库');
+    expect(messages[1].content).toBe('我叫小明');
+    expect(messages[2].content).toBe('你好，小明');
     expect(messages[messages.length - 1].content).toBe('你好');
     expect(tokens).toEqual(['你', '好']);
     expect(output).toBe('你好');

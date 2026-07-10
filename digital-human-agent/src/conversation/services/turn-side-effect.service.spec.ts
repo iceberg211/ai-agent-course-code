@@ -1,9 +1,15 @@
 import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 
+const flushBackgroundTasks = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
 describe('TurnSideEffectService', () => {
   function createService() {
     const conversationService = {
-      addMessage: jest.fn().mockResolvedValue(undefined),
+      addMessage: jest.fn().mockResolvedValue({ id: 'message-1' }),
+      updateMessageRagTrace: jest.fn().mockResolvedValue(undefined),
     };
     const shortTermMemoryService = {
       appendMessage: jest.fn().mockResolvedValue(undefined),
@@ -64,8 +70,9 @@ describe('TurnSideEffectService', () => {
       longTermMemoryService,
     } = createService();
 
-    shortTermMemoryService.appendMessage
-      .mockRejectedValueOnce(new Error('redis down'));
+    shortTermMemoryService.appendMessage.mockRejectedValueOnce(
+      new Error('redis down'),
+    );
 
     await service.onTurnEnd({
       conversationId: 'conv-1',
@@ -93,21 +100,39 @@ describe('TurnSideEffectService', () => {
         ragTrace: expect.objectContaining({
           degradationFlags: expect.arrayContaining([
             'route_heuristic',
-            'side_effect_memory_failed',
             'side_effect_user_memory_failed',
           ]),
         }),
       }),
     );
-    expect(longTermMemoryService.captureFromConversation).not.toHaveBeenCalled();
+    expect(
+      (
+        conversationService.addMessage.mock.calls[0]?.[0] as {
+          ragTrace: { degradationFlags: string[] };
+        }
+      ).ragTrace.degradationFlags,
+    ).not.toContain('side_effect_memory_failed');
+
+    await flushBackgroundTasks();
+
+    expect(conversationService.updateMessageRagTrace).toHaveBeenCalledWith(
+      'message-1',
+      expect.objectContaining({
+        degradationFlags: expect.arrayContaining([
+          'route_heuristic',
+          'side_effect_memory_failed',
+          'side_effect_user_memory_failed',
+        ]),
+      }),
+    );
+    expect(
+      longTermMemoryService.captureFromConversation,
+    ).not.toHaveBeenCalled();
   });
 
   it('onTurnEnd 成功时写入记忆与 LTM', async () => {
-    const {
-      service,
-      shortTermMemoryService,
-      longTermMemoryService,
-    } = createService();
+    const { service, shortTermMemoryService, longTermMemoryService } =
+      createService();
 
     await service.onTurnEnd({
       conversationId: 'conv-1',
@@ -122,6 +147,9 @@ describe('TurnSideEffectService', () => {
       department: '研发部',
     });
 
+    expect(shortTermMemoryService.appendMessage).not.toHaveBeenCalled();
+    await flushBackgroundTasks();
+
     expect(shortTermMemoryService.appendMessage).toHaveBeenCalledWith(
       'conv-1',
       expect.objectContaining({
@@ -130,9 +158,9 @@ describe('TurnSideEffectService', () => {
         turnId: 'turn-1',
       }),
     );
-    expect(shortTermMemoryService.refreshSummaryFromWindow).toHaveBeenCalledWith(
-      'conv-1',
-    );
+    expect(
+      shortTermMemoryService.refreshSummaryFromWindow,
+    ).toHaveBeenCalledWith('conv-1');
     expect(shortTermMemoryService.setActiveContext).toHaveBeenCalledWith(
       'owner-1',
       expect.stringContaining('你好'),
@@ -145,6 +173,30 @@ describe('TurnSideEffectService', () => {
         assistantMessage: '您好',
       }),
     );
+  });
+
+  it('助手消息落库失败时不写入记忆', async () => {
+    const { service, conversationService, shortTermMemoryService } =
+      createService();
+    conversationService.addMessage.mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+
+    await service.onTurnEnd({
+      conversationId: 'conv-1',
+      turnId: 'turn-1',
+      userMessage: '你好',
+      assistantReply: '您好',
+      status: 'completed',
+      citations: [],
+      ragTrace: null,
+      latencyMs: 120,
+      ownerId: 'owner-1',
+    });
+    await flushBackgroundTasks();
+
+    expect(shortTermMemoryService.appendMessage).not.toHaveBeenCalled();
+    expect(conversationService.updateMessageRagTrace).not.toHaveBeenCalled();
   });
 
   it('onTurnEnd 无回复且 interrupted 时默认不落库', async () => {

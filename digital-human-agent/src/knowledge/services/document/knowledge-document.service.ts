@@ -207,35 +207,18 @@ export class KnowledgeDocumentService {
         `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
       );
 
-      const texts = splitDocuments.map((item) => item.pageContent);
       await this.updateDocumentStage(document.id, 'embedding');
       this.logger.log(
-        `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
+        `[开始分批 Embedding] model=${this.runtime.embeddings.model} texts=${splitDocuments.length} batchSize=${this.ingestBatchSize}`,
       );
-      const embeddings = await this.runtime.embeddings.embedDocuments(texts);
-      this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
-
-      const chunkRows = splitDocuments.map((item, index) => ({
-        ...this.buildChunkRow({
-          documentId: document.id,
-          chunkIndex: index,
-          content: item.pageContent,
-          filename,
-          category: options.category ?? null,
-          embedding: embeddings[index],
-        }),
-      })) satisfies KnowledgeDocumentChunkRow[];
-
-      // 1. 写入 Supabase PG 数据库
-      await this.insertChunkRows(document.id, chunkRows);
-
-      // 2. 写入 Elasticsearch 索引
-      await this.updateDocumentStage(document.id, 'keyword_indexing');
-      await this.syncDocumentIndex({
+      const chunkRows = await this.persistChunkBatches({
         documentId: document.id,
         knowledgeId,
-        rows: chunkRows,
+        filename,
+        category: options.category ?? null,
+        splitDocuments,
       });
+      await this.updateDocumentStage(document.id, 'keyword_indexing');
 
       await this.documentRepo.update(document.id, {
         status: 'completed',
@@ -792,6 +775,73 @@ export class KnowledgeDocumentService {
 
     this.logger.log(
       `[Insert 完成] doc=${documentId} batches=${Math.ceil(rows.length / batchSize)}`,
+    );
+  }
+
+  /**
+   * 分批生成 embedding、写入 PG 并同步 ES。
+   * 返回的 manifest 行不携带大向量，避免大文档同时驻留全部 number[] 与 JSON 向量字符串。
+   */
+  private async persistChunkBatches(input: {
+    documentId: string;
+    knowledgeId: string;
+    filename: string;
+    category: string | null;
+    splitDocuments: KnowledgeDocumentChunk[];
+  }): Promise<KnowledgeDocumentChunkRow[]> {
+    const manifestRows: KnowledgeDocumentChunkRow[] = [];
+    const batchSize = this.ingestBatchSize;
+
+    for (
+      let start = 0;
+      start < input.splitDocuments.length;
+      start += batchSize
+    ) {
+      const documents = input.splitDocuments.slice(start, start + batchSize);
+      const embeddings = await this.runtime.embeddings.embedDocuments(
+        documents.map((item) => item.pageContent),
+      );
+      if (embeddings.length !== documents.length) {
+        throw new Error(
+          `Embedding 返回数量不匹配：expected=${documents.length} actual=${embeddings.length}`,
+        );
+      }
+
+      const rows = documents.map((item, offset) =>
+        this.buildChunkRow({
+          documentId: input.documentId,
+          chunkIndex: start + offset,
+          content: item.pageContent,
+          filename: input.filename,
+          category: input.category,
+          embedding: embeddings[offset],
+        }),
+      );
+      await this.insertChunkRows(input.documentId, rows);
+      await this.syncDocumentIndex({
+        documentId: input.documentId,
+        knowledgeId: input.knowledgeId,
+        rows,
+      });
+
+      manifestRows.push(
+        ...rows.map((row) => ({
+          ...row,
+          embedding: '[]',
+        })),
+      );
+    }
+
+    this.logger.log(
+      `[分批 Embedding 完成] doc=${input.documentId} chunks=${manifestRows.length}`,
+    );
+    return manifestRows;
+  }
+
+  private get ingestBatchSize(): number {
+    return Math.max(
+      1,
+      Math.min(CHUNK_INSERT_BATCH_SIZE, this.runtime.embeddingBatchSize || 1),
     );
   }
 
@@ -1536,35 +1586,18 @@ export class KnowledgeDocumentService {
       `[切分完成] filename=${filename} chunks=${splitDocuments.length}`,
     );
 
-    const texts = splitDocuments.map((item) => item.pageContent);
     await this.updateDocumentStage(document.id, 'embedding');
     this.logger.log(
-      `[开始 Embedding] model=${this.runtime.embeddings.model} texts=${texts.length} batchSize=${this.runtime.embeddingBatchSize}`,
+      `[开始分批 Embedding] model=${this.runtime.embeddings.model} texts=${splitDocuments.length} batchSize=${this.ingestBatchSize}`,
     );
-    const embeddings = await this.runtime.embeddings.embedDocuments(texts);
-    this.logger.log(`[Embedding 完成] dims=${embeddings[0]?.length}`);
-
-    const chunkRows = splitDocuments.map((item, index) => ({
-      ...this.buildChunkRow({
-        documentId: document.id,
-        chunkIndex: index,
-        content: item.pageContent,
-        filename,
-        category: options.category ?? null,
-        embedding: embeddings[index],
-      }),
-    })) satisfies KnowledgeDocumentChunkRow[];
-
-    // 1. 写入 Supabase PG 数据库
-    await this.insertChunkRows(document.id, chunkRows);
-
-    // 2. 写入 Elasticsearch 索引
-    await this.updateDocumentStage(document.id, 'keyword_indexing');
-    await this.syncDocumentIndex({
+    const chunkRows = await this.persistChunkBatches({
       documentId: document.id,
       knowledgeId,
-      rows: chunkRows,
+      filename,
+      category: options.category ?? null,
+      splitDocuments,
     });
+    await this.updateDocumentStage(document.id, 'keyword_indexing');
 
     await this.documentRepo.update(document.id, {
       status: 'completed',

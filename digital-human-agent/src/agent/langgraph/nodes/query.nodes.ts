@@ -20,9 +20,16 @@ import {
   isTransientRagDependencyError,
 } from '@/agent/langgraph/rag.retry-policy';
 import { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
-import type { RetrievalPort } from '@/knowledge/services/retrieval/pipeline/retrieval-port';
+import type {
+  RetrievalPort,
+  RetrievalPortResponse,
+} from '@/knowledge/services/retrieval/pipeline/retrieval-port';
 import type { RetrievalQueryItem } from '@/knowledge/types/knowledge-content.types';
 import { extractFallbackKeywordTerms } from '@/knowledge/utils/keyword.utils';
+import {
+  addTurnDegradation,
+  withRemainingTurnTimeout,
+} from '@/common/rag/turn-budget.context';
 
 // ==========================================
 // 1. retrieve 节点（经 RetrievalPort：hybrid + 可选 graph expand）
@@ -34,7 +41,9 @@ export function createRetrieveNode(
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
     if (shouldStopRetrievalBudget(state)) {
-      return { stopReason: 'max_hops_reached' } satisfies Partial<RagGraphState>;
+      return {
+        stopReason: 'max_hops_reached',
+      } satisfies Partial<RagGraphState>;
     }
     const currentQuery = getNextQuery(state);
 
@@ -53,7 +62,7 @@ export function createRetrieveNode(
         question: currentQuery,
         routeStrategy: state.strategy,
         profileId: state.profileId ?? input.profileId,
-        history: state.queryHistory,
+        history: state.queryHistory ?? [],
         signal: input.signal,
       });
       routeAllowWeb = augmentation.strategy.allowWeb !== false;
@@ -105,17 +114,52 @@ export function createRetrieveNode(
       } satisfies Partial<RagGraphState>;
     }
 
-    const stage1Result = await retrievalPort.retrieve({
-      personaId: input.personaId,
-      retrievalQueries,
-      strategy: hopStrategy,
-      accessScope: input.accessScope,
-      signal: input.signal,
-      graphExpand: state.useGraphExpand === true && hopStrategy.useGraph === true,
-      question: state.question,
-      currentQuery,
-      profileId: state.profileId ?? input.profileId,
-    });
+    let stage1Result: RetrievalPortResponse;
+    try {
+      stage1Result = await withRemainingTurnTimeout(
+        'rag_retrieval_port',
+        (childSignal) =>
+          retrievalPort.retrieve({
+            personaId: input.personaId,
+            retrievalQueries,
+            strategy: hopStrategy,
+            accessScope: input.accessScope,
+            signal: childSignal,
+            graphExpand:
+              state.useGraphExpand === true && hopStrategy.useGraph === true,
+            question: state.question,
+            currentQuery,
+            profileId: state.profileId ?? input.profileId,
+          }),
+        input.signal,
+      );
+    } catch (error) {
+      if (isAbortError(error) && input.signal.aborted) {
+        throw error;
+      }
+      if (
+        isTransientRagDependencyError(error) &&
+        isBeforeFinalRetryAttempt(config.executionInfo?.nodeAttempt)
+      ) {
+        throw error;
+      }
+      addTurnDegradation('retrieval_timeout_or_failed');
+      return {
+        ...update,
+        documents: state.documents,
+        evidenceChunks: state.documents,
+        retrievalHistory: [
+          ...state.retrievalHistory,
+          {
+            query: currentQuery,
+            resultCount: 0,
+            reason: error instanceof Error ? error.message : String(error),
+            strategy: hopStrategy,
+          },
+        ],
+        stopReason: 'max_hops_reached',
+      } satisfies Partial<RagGraphState>;
+    }
 
     const documents = capCandidateDocuments(
       mergeEvidenceChunks(state.documents, stage1Result.chunks),
@@ -155,7 +199,9 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
 
     if (shouldStopRetrievalBudget(state)) {
       return new Command({
-        update: { stopReason: 'max_hops_reached' } satisfies Partial<RagGraphState>,
+        update: {
+          stopReason: 'max_hops_reached',
+        } satisfies Partial<RagGraphState>,
         goto: 'load_context',
       });
     }
@@ -181,10 +227,15 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
     );
 
     try {
-      const webCitations = await webFallbackService.search({
-        query: webQuery,
-        signal: input.signal,
-      });
+      const webCitations = await withRemainingTurnTimeout(
+        'rag_web_fallback',
+        (childSignal) =>
+          webFallbackService.search({
+            query: webQuery,
+            signal: childSignal,
+          }),
+        input.signal,
+      );
 
       if (webCitations.length === 0) {
         return new Command({

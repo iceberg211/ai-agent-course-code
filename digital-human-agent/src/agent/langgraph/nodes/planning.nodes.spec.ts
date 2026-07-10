@@ -50,7 +50,7 @@ describe('createRouteQuestionNode', () => {
     expect(command.goto).toEqual(['plan_sub_questions']);
   });
 
-  it('simple 路由直接进入 retrieve，记忆延后到生成前加载', async () => {
+  it('simple 路由先加载检索历史，再进入检索', async () => {
     const ragRouteService = {
       routeQuestion: jest.fn().mockResolvedValue({
         strategy: 'simple',
@@ -67,6 +67,6 @@ describe('createRouteQuestionNode', () => {
       } as never,
     );
 
-    expect(command.goto).toEqual(['retrieve']);
+    expect(command.goto).toEqual(['load_query_history']);
   });
 });

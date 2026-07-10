@@ -8,6 +8,7 @@ import {
   type RagGraphConfig,
 } from '@/agent/langgraph/rag.context';
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
+import { withRemainingTurnTimeout } from '@/common/rag/turn-budget.context';
 
 // ==========================================
 // 辅助函数
@@ -35,9 +36,10 @@ export function createLoadQueryHistoryNode(
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
     try {
-      const history = await conversationService.getCompletedMessages(
-        input.conversationId,
-        4,
+      const history = await withRemainingTurnTimeout(
+        'rag_query_history',
+        () => conversationService.getCompletedMessages(input.conversationId, 4),
+        input.signal,
       );
       return {
         queryHistory: normalizePromptHistory(history, input.turnId),
@@ -59,12 +61,20 @@ export function createLoadContextNode(
     const input = ensureWorkflowNotAborted(config);
     // orchestrator 已预加载 history 时避免重复查库；仅补 persona
     const hasHistory = (state.history?.length ?? 0) > 0;
-    const [persona, history] = await Promise.all([
-      personaService.findOne(input.personaId),
-      hasHistory
-        ? Promise.resolve(state.history)
-        : conversationService.getCompletedMessages(input.conversationId, 10),
-    ]);
+    const [persona, history] = await withRemainingTurnTimeout(
+      'rag_generation_context',
+      () =>
+        Promise.all([
+          personaService.findOne(input.personaId),
+          hasHistory
+            ? Promise.resolve(state.history)
+            : conversationService.getCompletedMessages(
+                input.conversationId,
+                10,
+              ),
+        ]),
+      input.signal,
+    );
 
     const update = {
       persona,

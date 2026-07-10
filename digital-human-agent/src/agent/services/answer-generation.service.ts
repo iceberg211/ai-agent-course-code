@@ -140,7 +140,11 @@ export class AnswerGenerationService {
     }
 
     const messages = await DIRECT_CHAT_PROMPT.formatMessages(
-      buildDirectChatPromptInput(params.userMessage, params.persona),
+      buildDirectChatPromptInput(
+        params.userMessage,
+        params.persona,
+        params.history ?? [],
+      ),
     );
 
     throwIfAborted(params.signal);
@@ -198,8 +202,7 @@ export class AnswerGenerationService {
 
     if (!tryConsumeLlmBudget(1)) {
       addTurnDegradation('budget_llm');
-      const fallback =
-        '抱歉，当前检索与生成资源紧张，请稍后再试或简化问题。';
+      const fallback = '抱歉，当前检索与生成资源紧张，请稍后再试或简化问题。';
       recordFirstTokenBudget();
       params.onToken(fallback);
       return fallback;

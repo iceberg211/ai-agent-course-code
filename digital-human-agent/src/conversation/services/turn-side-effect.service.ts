@@ -6,6 +6,7 @@ import { LongTermMemoryService } from '@/memory/services/long-term-memory.servic
 import type { RagWorkflowResult } from '@/agent/types/rag-workflow.types';
 import type { RagProfileId } from '@/common/rag/rag-profile';
 import { toRagTracePayload } from '@/common/rag/rag-turn-report';
+import { withTimeout } from '@/common/utils';
 
 /**
  * Turn 副作用协议（HTTP / WS 共用）：
@@ -128,28 +129,16 @@ export class TurnSideEffectService {
   }): Promise<void> {
     const hasReply = input.assistantReply.trim().length > 0;
     const shouldPersist =
-      input.persistAssistant ??
-      (input.status !== 'interrupted' || hasReply);
-
-    const memoryFlags = hasReply
-      ? await this.persistMemorySideEffects({
-          conversationId: input.conversationId,
-          turnId: input.turnId,
-          userMessage: input.userMessage,
-          assistantReply: input.assistantReply,
-          ownerId: input.ownerId,
-          department: input.department,
-        })
-      : [];
+      input.persistAssistant ?? (input.status !== 'interrupted' || hasReply);
 
     const ragTrace = this.mergeDegradationFlags(input.ragTrace, [
       ...(input.sideEffectFlags ?? []),
-      ...memoryFlags,
     ]);
 
+    let persistedMessageId: string | null = null;
     if (shouldPersist) {
       try {
-        await this.conversationService.addMessage({
+        const message = await this.conversationService.addMessage({
           conversationId: input.conversationId,
           turnId: input.turnId,
           role: 'assistant',
@@ -159,6 +148,7 @@ export class TurnSideEffectService {
           ragTrace,
           latencyMs: input.latencyMs,
         });
+        persistedMessageId = message?.id ?? null;
       } catch (error) {
         this.logger.error(
           `onTurnEnd 落库 assistant 失败：${
@@ -166,6 +156,74 @@ export class TurnSideEffectService {
           }`,
         );
       }
+    }
+
+    // 仅在助手消息成功落库后派发记忆，避免生成“有记忆、无会话记录”的不一致状态。
+    if (hasReply && persistedMessageId) {
+      this.scheduleMemorySideEffects(input, persistedMessageId, ragTrace);
+    }
+  }
+
+  private scheduleMemorySideEffects(
+    input: {
+      conversationId: string;
+      turnId: string;
+      userMessage: string;
+      assistantReply: string;
+      ownerId?: string | null;
+      department?: string | null;
+    },
+    persistedMessageId: string | null,
+    ragTrace: Record<string, unknown>,
+  ): void {
+    setImmediate(() => {
+      void this.runMemorySideEffects(input, persistedMessageId, ragTrace);
+    });
+  }
+
+  private async runMemorySideEffects(
+    input: {
+      conversationId: string;
+      turnId: string;
+      userMessage: string;
+      assistantReply: string;
+      ownerId?: string | null;
+      department?: string | null;
+    },
+    persistedMessageId: string | null,
+    ragTrace: Record<string, unknown>,
+  ): Promise<void> {
+    let flags: string[] = [];
+    try {
+      flags = await withTimeout(
+        'turn_memory_side_effects',
+        () => this.persistMemorySideEffects(input),
+        {
+          timeoutMs: 5_000,
+          timeoutMessage: '记忆副作用执行超时',
+        },
+      );
+    } catch (error) {
+      flags = ['side_effect_memory_timeout'];
+      this.logger.warn(
+        `onTurnEnd 记忆副作用超时：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (!persistedMessageId || flags.length === 0) return;
+    try {
+      await this.conversationService.updateMessageRagTrace(
+        persistedMessageId,
+        this.mergeDegradationFlags(ragTrace, flags),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `更新助手消息副作用标记失败：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

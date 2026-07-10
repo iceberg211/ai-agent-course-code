@@ -7,6 +7,7 @@ import type { ShortTermMemoryService } from '@/memory/services/short-term-memory
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
 import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import { assembleConversationContextParts } from '@/memory/utils/rolling-summary.utils';
+import { withRemainingTurnTimeout } from '@/common/rag/turn-budget.context';
 
 export function createLoadShortTermMemoryNode(
   shortTermMemoryService: ShortTermMemoryService,
@@ -39,21 +40,30 @@ export function createLoadGenerationMemoryNode(
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
-    const shortTermPromise = shortTermMemoryService
-      .getContext(input.conversationId, input.accessScope?.ownerId)
-      .catch(() => ({ window: [], summary: '', activeContext: '' }));
+    const shortTermPromise = withRemainingTurnTimeout(
+      'rag_short_term_memory',
+      () =>
+        shortTermMemoryService.getContext(
+          input.conversationId,
+          input.accessScope?.ownerId,
+        ),
+      input.signal,
+    ).catch(() => ({ window: [], summary: '', activeContext: '' }));
     const longTermPromise =
       state.useLongTermMemory === false
         ? Promise.resolve([])
-        : memoryRetrieverService
-            .retrieve({
-              query: state.question,
-              ownerId: input.accessScope?.ownerId,
-              department: input.accessScope?.department,
-              accessScope: input.accessScope,
-              limit: state.retrievalStrategy.memoryTopK ?? 5,
-            })
-            .catch(() => []);
+        : withRemainingTurnTimeout(
+            'rag_long_term_memory',
+            () =>
+              memoryRetrieverService.retrieve({
+                query: state.question,
+                ownerId: input.accessScope?.ownerId,
+                department: input.accessScope?.department,
+                accessScope: input.accessScope,
+                limit: state.retrievalStrategy.memoryTopK ?? 5,
+              }),
+            input.signal,
+          ).catch(() => []);
     const [shortTermMemory, longTermMemories] = await Promise.all([
       shortTermPromise,
       longTermPromise,
@@ -95,7 +105,7 @@ export function createRetrieveLongTermMemoryNode(
 export function createFilterMemoryByPolicyNode(
   memoryPolicyService: MemoryPolicyService,
 ) {
-  return async (state: RagGraphState, config: RagGraphConfig) => {
+  return (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
     return {
       longTermMemories: memoryPolicyService.filterReadable(
@@ -107,7 +117,7 @@ export function createFilterMemoryByPolicyNode(
 }
 
 export function createMergeMemoryContextNode() {
-  return async (state: RagGraphState) => {
+  return (state: RagGraphState) => {
     // DB history 已作为 prompt history 注入；此处仅保留摘要与任务背景，避免重复最近会话。
     const shortParts = assembleConversationContextParts({
       summary: state.shortTermMemory.summary ?? '',

@@ -32,6 +32,7 @@ import {
   runWithTurnBudget,
   TurnBudgetContext,
   getTurnBudget,
+  withRemainingTurnTimeout,
 } from '@/common/rag/turn-budget.context';
 import { RetrievalPipelineService } from '@/knowledge/services/retrieval/pipeline/retrieval-pipeline.service';
 
@@ -86,21 +87,24 @@ export class LangGraphRagOrchestratorService
       shortTermMemoryService:
         this.shortTermMemoryService ??
         ({
-          getContext: async () => ({
-            window: [],
-            summary: '',
-            activeContext: '',
-          }),
+          getContext: () =>
+            Promise.resolve({
+              window: [],
+              summary: '',
+              activeContext: '',
+            }),
         } as unknown as ShortTermMemoryService),
       memoryRetrieverService:
         this.memoryRetrieverService ??
         ({
-          retrieve: async () => [],
+          retrieve: () => Promise.resolve([]),
         } as unknown as MemoryRetrieverService),
       memoryPolicyService:
         this.memoryPolicyService ??
         ({
-          filterReadable: (items: any[]) => items,
+          filterReadable: (
+            items: Parameters<MemoryPolicyService['filterReadable']>[0],
+          ) => items,
         } as MemoryPolicyService),
     });
   }
@@ -171,27 +175,37 @@ export class LangGraphRagOrchestratorService
         },
         async () => {
           throwIfAborted(resolvedInput.signal);
-          const finalState = await this.graph.invoke(
-            buildInitialRagGraphState(resolvedInput),
-            {
-              ...buildLangSmithRunnableConfig({
-                runName: 'langgraph_rag_workflow',
-                tags: ['agent', 'rag', 'langgraph', profile.id],
-                metadata: {
-                  conversationId: resolvedInput.conversationId,
-                  personaId: resolvedInput.personaId,
-                  turnId: resolvedInput.turnId,
-                  profileId: profile.id,
+          const finalState = await withRemainingTurnTimeout(
+            'langgraph_rag_workflow',
+            (childSignal) => {
+              const deadlineInput: RagWorkflowInput = {
+                ...resolvedInput,
+                signal: childSignal ?? resolvedInput.signal,
+              };
+              return this.graph.invoke(
+                buildInitialRagGraphState(deadlineInput),
+                {
+                  ...buildLangSmithRunnableConfig({
+                    runName: 'langgraph_rag_workflow',
+                    tags: ['agent', 'rag', 'langgraph', profile.id],
+                    metadata: {
+                      conversationId: deadlineInput.conversationId,
+                      personaId: deadlineInput.personaId,
+                      turnId: deadlineInput.turnId,
+                      profileId: profile.id,
+                    },
+                  }),
+                  signal: deadlineInput.signal,
+                  configurable: {
+                    workflowInput: deadlineInput,
+                  },
+                  context: {
+                    workflowInput: deadlineInput,
+                  },
                 },
-              }),
-              signal: resolvedInput.signal,
-              configurable: {
-                workflowInput: resolvedInput,
-              },
-              context: {
-                workflowInput: resolvedInput,
-              },
+              );
             },
+            resolvedInput.signal,
           );
 
           const liveBudget = getTurnBudget();

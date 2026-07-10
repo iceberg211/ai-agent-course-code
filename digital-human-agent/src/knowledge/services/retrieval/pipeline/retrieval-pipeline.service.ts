@@ -20,6 +20,7 @@ import { PersonaKbConfigService } from '@/knowledge/services/manage/persona-kb-c
 import { createAbortError, isAbortError } from '@/common/utils';
 import { KnowledgeCacheRevisionService } from '@/common/rag/knowledge-cache-revision.service';
 import type { MountedKnowledgeConfig } from '@/knowledge/types/knowledge-content.types';
+import { withRemainingTurnTimeout } from '@/common/rag/turn-budget.context';
 
 type ResolvedRetrievalScope = {
   kind: 'persona' | 'knowledge' | 'knowledge_ids';
@@ -121,8 +122,7 @@ export class RetrievalPipelineService implements RetrievalPort {
     const aclSnapshot = buildAclSnapshot(request.accessScope, aclEpochByKb);
     const cacheInput = {
       profileId: cacheProfile,
-      personaId:
-        scope.kind === 'persona' ? (scope.personaId ?? '') : '',
+      personaId: scope.kind === 'persona' ? (scope.personaId ?? '') : '',
       scopeKey: scope.cacheScopeKey,
       queryKeyParts: this.buildCacheQueryKeyParts(
         request,
@@ -175,12 +175,14 @@ export class RetrievalPipelineService implements RetrievalPort {
     let shared = this.inFlightRetrievals.get(inFlightKey);
     if (!shared) {
       // 共享的底层检索不绑定首个调用方的 signal，避免其中一个 HTTP/WS 断开取消其他等价请求。
-      shared = this.retrieveUncached(
-        scope,
-        { ...request, signal: undefined },
-        cacheInput,
-        true,
-        mountedKnowledgeConfigs,
+      shared = withRemainingTurnTimeout('rag_shared_retrieval', (childSignal) =>
+        this.retrieveUncached(
+          scope,
+          { ...request, signal: childSignal },
+          cacheInput,
+          true,
+          mountedKnowledgeConfigs,
+        ),
       ).finally(() => {
         this.inFlightRetrievals.delete(inFlightKey);
       });
@@ -197,7 +199,11 @@ export class RetrievalPipelineService implements RetrievalPort {
     cacheable: boolean,
     mountedKnowledgeConfigs?: MountedKnowledgeConfig[],
   ): Promise<RetrievalPortResponse> {
-    const hybrid = await this.loadHybrid(scope, request, mountedKnowledgeConfigs);
+    const hybrid = await this.loadHybrid(
+      scope,
+      request,
+      mountedKnowledgeConfigs,
+    );
 
     let chunks = hybrid.chunks;
     let graphExpandTrace: GraphExpandTraceItem[] = [
@@ -228,7 +234,7 @@ export class RetrievalPipelineService implements RetrievalPort {
               Math.max(hybrid.chunks.length + expand.expandedChunks.length, 20),
             )
           : hybrid.chunks;
-      graphExpandTrace = expand.trace as GraphExpandTraceItem[];
+      graphExpandTrace = expand.trace;
       if (expand.expandedChunks.length > 0) {
         this.logger.debug(
           `Graph expand 合并 ${expand.expandedChunks.length} 条邻居证据`,
@@ -284,7 +290,11 @@ export class RetrievalPipelineService implements RetrievalPort {
         },
         (error) => {
           cleanup();
-          reject(error);
+          reject(
+            error instanceof Error
+              ? error
+              : new Error(`共享检索失败：${String(error)}`),
+          );
         },
       );
     });
@@ -312,7 +322,9 @@ export class RetrievalPipelineService implements RetrievalPort {
       };
     }
     const ids = Array.from(
-      new Set((request.knowledgeIds ?? []).map((id) => id.trim()).filter(Boolean)),
+      new Set(
+        (request.knowledgeIds ?? []).map((id) => id.trim()).filter(Boolean),
+      ),
     );
     if (ids.length > 0) {
       return {
@@ -358,7 +370,8 @@ export class RetrievalPipelineService implements RetrievalPort {
 
     return [
       ...request.retrievalQueries.map(
-        (q) => `${q.index}:${q.query}:${(q.keywords ?? []).join(',')}:${q.angle}`,
+        (q) =>
+          `${q.index}:${q.query}:${(q.keywords ?? []).join(',')}:${q.angle}`,
       ),
       `question=${request.question ?? ''}`,
       `currentQuery=${request.currentQuery ?? ''}`,

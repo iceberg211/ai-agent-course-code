@@ -7,6 +7,7 @@ import type {
   MemoryRecord,
   SearchMemoryInput,
 } from '@/memory/memory.types';
+import { withTimeout } from '@/common/utils';
 
 @Injectable()
 export class Mem0LongTermMemoryProvider implements LongTermMemoryProvider {
@@ -50,15 +51,19 @@ export class Mem0LongTermMemoryProvider implements LongTermMemoryProvider {
     const data = await this.request(`/memories/search?${search.toString()}`, {
       method: 'GET',
     });
-    const rows = Array.isArray(data?.results)
-      ? data.results
+    const dataRecord = this.toRecord(data);
+    const rows = Array.isArray(dataRecord?.results)
+      ? dataRecord.results
       : Array.isArray(data)
         ? data
         : [];
-    return rows.map((item: any) => this.toMemoryRecord(item, {
-      ownerId: input.ownerId ?? '',
-      content: String(item.memory ?? item.content ?? ''),
-    }));
+    return rows.map((item) => {
+      const row = this.toRecord(item);
+      return this.toMemoryRecord(item, {
+        ownerId: input.ownerId ?? '',
+        content: this.toText(row?.memory ?? row?.content),
+      });
+    });
   }
 
   async delete(input: DeleteMemoryInput): Promise<void> {
@@ -73,47 +78,123 @@ export class Mem0LongTermMemoryProvider implements LongTermMemoryProvider {
   private async request(
     path: string,
     options: { method: string; body?: unknown },
-  ): Promise<any> {
+  ): Promise<unknown> {
     const url = `${this.baseUrl}${path}`;
-    const res = await fetch(url, {
-      method: options.method,
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
+    const res = await withTimeout(
+      'mem0_request',
+      (signal) =>
+        fetch(url, {
+          method: options.method,
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body:
+            options.body === undefined
+              ? undefined
+              : JSON.stringify(options.body),
+          signal,
+        }),
+      {
+        timeoutMs: this.timeoutMs,
+        timeoutMessage: 'mem0 请求超时',
       },
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`mem0 请求失败 ${res.status}: ${text.slice(0, 200)}`);
     }
     if (res.status === 204) return null;
-    return res.json();
+    return res.json() as Promise<unknown>;
   }
 
-  private toMemoryRecord(data: any, fallback: Partial<AddMemoryInput>): MemoryRecord {
-    const metadata = data?.metadata ?? fallback.metadata ?? {};
-    const createdAt = data?.created_at ? new Date(data.created_at) : new Date();
-    const updatedAt = data?.updated_at ? new Date(data.updated_at) : createdAt;
+  private toMemoryRecord(
+    data: unknown,
+    fallback: Partial<AddMemoryInput>,
+  ): MemoryRecord {
+    const row = this.toRecord(data);
+    const metadata =
+      this.toRecord(row?.metadata) ?? fallback.metadata ?? ({} as const);
+    const createdAt = this.toDate(row?.created_at) ?? new Date();
+    const updatedAt = this.toDate(row?.updated_at) ?? createdAt;
+    const visibility = this.toMemoryVisibility(
+      metadata.visibility ?? fallback.visibility,
+    );
+    const category = this.toMemoryCategory(
+      metadata.category ?? fallback.category,
+    );
+    const expiresAtValue = metadata.expiresAt ?? fallback.expiresAt;
     return {
-      id: String(data?.id ?? data?.memory_id ?? crypto.randomUUID()),
-      ownerId: String(data?.user_id ?? fallback.ownerId ?? ''),
-      department: metadata.department ?? fallback.department ?? null,
-      visibility: metadata.visibility ?? fallback.visibility ?? 'private',
-      category: metadata.category ?? fallback.category ?? 'preference',
-      content: String(data?.memory ?? data?.content ?? fallback.content ?? ''),
+      id: this.toText(row?.id ?? row?.memory_id) || crypto.randomUUID(),
+      ownerId: this.toText(row?.user_id ?? fallback.ownerId),
+      department:
+        this.toNullableText(metadata.department) ?? fallback.department ?? null,
+      visibility,
+      category,
+      content: this.toText(row?.memory ?? row?.content ?? fallback.content),
       sourceConversationId:
-        metadata.sourceConversationId ?? fallback.sourceConversationId ?? null,
-      confidence: Number(metadata.confidence ?? fallback.confidence ?? 0.7),
-      expiresAt:
-        metadata.expiresAt || fallback.expiresAt
-          ? new Date(metadata.expiresAt ?? fallback.expiresAt)
-          : null,
+        this.toNullableText(metadata.sourceConversationId) ??
+        fallback.sourceConversationId ??
+        null,
+      confidence: this.toFiniteNumber(
+        metadata.confidence ?? fallback.confidence,
+        0.7,
+      ),
+      expiresAt: this.toDate(expiresAtValue),
       metadata,
       createdAt,
       updatedAt,
     };
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private toText(value: unknown): string {
+    return typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+      ? String(value)
+      : '';
+  }
+
+  private toNullableText(value: unknown): string | null {
+    const text = this.toText(value).trim();
+    return text || null;
+  }
+
+  private toDate(value: unknown): Date | null {
+    if (
+      !(value instanceof Date) &&
+      typeof value !== 'string' &&
+      typeof value !== 'number'
+    ) {
+      return null;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  private toFiniteNumber(value: unknown, fallback: number): number {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : fallback;
+  }
+
+  private toMemoryVisibility(value: unknown): MemoryRecord['visibility'] {
+    return value === 'department' || value === 'company' ? value : 'private';
+  }
+
+  private toMemoryCategory(value: unknown): MemoryRecord['category'] {
+    return value === 'profile' ||
+      value === 'business_context' ||
+      value === 'task_goal' ||
+      value === 'conversation_summary'
+      ? value
+      : 'preference';
   }
 
   private get baseUrl(): string {
@@ -125,5 +206,11 @@ export class Mem0LongTermMemoryProvider implements LongTermMemoryProvider {
 
   private get apiKey(): string {
     return String(this.configService.get<string>('MEM0_API_KEY') ?? '').trim();
+  }
+
+  private get timeoutMs(): number {
+    const raw = Number(this.configService.get<string>('MEM0_TIMEOUT_MS'));
+    if (!Number.isFinite(raw) || raw <= 0) return 4_000;
+    return Math.min(15_000, Math.max(500, Math.floor(raw)));
   }
 }

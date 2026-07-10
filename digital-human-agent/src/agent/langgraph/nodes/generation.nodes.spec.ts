@@ -1,4 +1,7 @@
-import { createLoadContextNode, createGenerateAnswerNode } from '@/agent/langgraph/nodes/generation.nodes';
+import {
+  createLoadContextNode,
+  createGenerateAnswerNode,
+} from '@/agent/langgraph/nodes/generation.nodes';
 
 describe('createLoadContextNode', () => {
   function buildWorkflowInput(turnId: string) {
@@ -44,7 +47,7 @@ describe('createLoadContextNode', () => {
       'conv-1',
       10,
     );
-    expect(result.goto).toEqual(['load_short_term_memory']);
+    expect(result.goto).toEqual(['load_generation_memory']);
     expect(result.update).toEqual(
       expect.objectContaining({
         persona,

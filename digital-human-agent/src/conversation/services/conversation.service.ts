@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { IsNull, Repository } from 'typeorm';
+import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { Conversation } from '@/conversation/entities/conversation.entity';
 import {
   ConversationMessage,
@@ -81,6 +82,17 @@ export class ConversationService {
     );
   }
 
+  async updateMessageRagTrace(
+    messageId: string,
+    ragTrace: Record<string, unknown>,
+  ): Promise<void> {
+    await this.withTransientRetry('updateMessageRagTrace', () =>
+      this.msgRepo.update({ id: messageId }, {
+        ragTrace,
+      } as QueryDeepPartialEntity<ConversationMessage>),
+    );
+  }
+
   async listConversations(params: {
     personaId?: string;
     ownerId?: string | null;
@@ -131,16 +143,18 @@ export class ConversationService {
     let lastMessages: ConversationMessage[] = [];
     if (conversations.length > 0) {
       const convIds = conversations.map((c) => c.id);
-      lastMessages = await this.withTransientRetry('batchGetLatestMessages', () =>
-        this.msgRepo
-          .createQueryBuilder('message')
-          .select()
-          .distinctOn(['message.conversation_id'])
-          .where('message.conversation_id IN (:...convIds)', { convIds })
-          .orderBy('message.conversation_id', 'ASC')
-          .addOrderBy('message.seq', 'DESC')
-          .addOrderBy('message.created_at', 'DESC')
-          .getMany(),
+      lastMessages = await this.withTransientRetry(
+        'batchGetLatestMessages',
+        () =>
+          this.msgRepo
+            .createQueryBuilder('message')
+            .select()
+            .distinctOn(['message.conversation_id'])
+            .where('message.conversation_id IN (:...convIds)', { convIds })
+            .orderBy('message.conversation_id', 'ASC')
+            .addOrderBy('message.seq', 'DESC')
+            .addOrderBy('message.created_at', 'DESC')
+            .getMany(),
       );
     }
 
@@ -160,7 +174,9 @@ export class ConversationService {
     return { items, total, page, pageSize };
   }
 
-  async deleteConversation(id: string): Promise<{ id: string; deleted: boolean }> {
+  async deleteConversation(
+    id: string,
+  ): Promise<{ id: string; deleted: boolean }> {
     const result = await this.withTransientRetry('deleteConversation', () =>
       this.convRepo.delete(id),
     );

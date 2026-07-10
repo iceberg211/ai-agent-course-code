@@ -1027,12 +1027,13 @@ export class HybridRetrieverService {
       );
       return filtered.chunks;
     } catch (error) {
+      addTurnDegradation('permission_filter_failed');
       this.logger.warn(
-        `DataScope 后置过滤失败，回退当前结果：${
+        `DataScope 后置过滤失败，按安全策略返回空结果：${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return chunks;
+      return [];
     }
   }
 

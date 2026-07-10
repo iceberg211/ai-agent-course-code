@@ -36,7 +36,10 @@ export function createRerankNode(rerankerService: RerankerService) {
     }
 
     const topK =
-      state.rerankLimit ?? DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
+      state.retrievalStrategy?.rerankTopK ??
+      state.rerankLimit ??
+      DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG.rerankLimit;
+    const minScore = state.retrievalStrategy?.minRerankScore;
     const rerankMode = state.rerankMode ?? 'llm';
 
     // 多跳时用当前 hop 查询句重排，同时保留原始问题以覆盖整体意图
@@ -51,7 +54,7 @@ export function createRerankNode(rerankerService: RerankerService) {
       documents,
       topK,
       input.signal,
-      undefined,
+      minScore,
       rerankMode === 'off' ||
         rerankMode === 'score' ||
         rerankMode === 'dedicated' ||
@@ -294,9 +297,7 @@ function buildHeuristicEvaluation(state: RagGraphState): {
   return {
     enough,
     missingFacts: enough ? [] : ['当前证据可能不足以覆盖完整答案'],
-    reason: enough
-      ? '启发式判断证据基本足够'
-      : '启发式判断证据仍不足',
+    reason: enough ? '启发式判断证据基本足够' : '启发式判断证据仍不足',
     webQuery: webCount > 0 ? '' : state.question.trim(),
   };
 }

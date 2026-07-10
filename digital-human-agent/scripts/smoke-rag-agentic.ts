@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
-import { ContentRuntimeService } from '@/knowledge/services/manage/content-runtime.service';
+import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
 import { KnowledgeSearchService } from '@/knowledge/services/retrieval/pipeline/knowledge-search.service';
 
 function readDotEnv(): Record<string, string> {
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const runtime = app.get(ContentRuntimeService);
+    const runtime = app.get(RagRuntimeService);
     const searchService = app.get(KnowledgeSearchService);
     const personaId =
       readArg('personaId') ?? (await findMountedPersonaId(runtime));
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
     const query =
       readArg('query') ?? '系统是否允许把甲方上传的合同直接用于公开训练？';
 
-    const result = await searchService.retrieveForPersonaWithStages(
+    const result = await searchService.retrieveForPersonaWithDebug(
       personaId,
       query,
       {
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
 }
 
 async function findMountedPersonaId(
-  runtime: ContentRuntimeService,
+  runtime: RagRuntimeService,
 ): Promise<string | null> {
   const { data: mountedRows, error: mountedError } = await runtime.supabase
     .from('persona_knowledge_base')

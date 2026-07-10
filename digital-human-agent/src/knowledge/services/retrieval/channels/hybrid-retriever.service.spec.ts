@@ -44,6 +44,7 @@ describe('HybridRetrieverService', () => {
     keywordError?: Error;
     vectorError?: Error;
     vectorResult?: KnowledgeChunk[];
+    dataScopeError?: Error;
   }) {
     const configService = {
       get: jest.fn((key: string) => {
@@ -128,6 +129,16 @@ describe('HybridRetrieverService', () => {
         },
       ]),
     };
+    const dataScopeService = {
+      filterKnowledgeChunks: jest.fn().mockImplementation(
+        (chunks: KnowledgeChunk[]) => {
+          if (options?.dataScopeError) {
+            return Promise.reject(options.dataScopeError);
+          }
+          return Promise.resolve({ chunks });
+        },
+      ),
+    };
 
     const service = new HybridRetrieverService(
       runtime as never,
@@ -135,6 +146,8 @@ describe('HybridRetrieverService', () => {
       fulltextRetriever as never,
       graphRetriever as never,
       personaKnowledgeConfigService as never,
+      undefined,
+      dataScopeService as never,
     );
 
     return {
@@ -144,6 +157,7 @@ describe('HybridRetrieverService', () => {
       fulltextRetriever,
       graphRetriever,
       personaKnowledgeConfigService,
+      dataScopeService,
     };
   }
 
@@ -491,5 +505,38 @@ describe('HybridRetrieverService', () => {
         },
       }),
     ).rejects.toThrow(/知识库检索全部失败/);
+  });
+
+  it('权限后置过滤异常时必须安全返回空结果', async () => {
+    const { service } = createService({
+      pgResult: [sampleChunk],
+      dataScopeError: new Error('permission database unavailable'),
+    });
+
+    const result = await service.retrieveForKnowledge({
+      knowledgeId: 'kb-1',
+      retrievalQueries: [
+        {
+          index: 0,
+          query: '删除时限',
+          keywords: ['删除时限'],
+          angle: 'original',
+        },
+      ],
+      strategy: {
+        ...strategy,
+        useVector: false,
+        useGraph: false,
+      },
+      threshold: 0.6,
+      globalRetrievalLimit: 5,
+      accessScope: {
+        ownerId: 'user-1',
+        department: '研发部',
+        role: 'member',
+      },
+    });
+
+    expect(result.chunks).toEqual([]);
   });
 });
