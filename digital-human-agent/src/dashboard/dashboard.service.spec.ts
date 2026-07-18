@@ -180,7 +180,9 @@ describe('DashboardService', () => {
     expect(result.failedDocumentTrend).toHaveLength(7);
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-    const todayTrend = result.failedDocumentTrend.find((t) => t.date === todayStr);
+    const todayTrend = result.failedDocumentTrend.find(
+      (t) => t.date === todayStr,
+    );
     expect(todayTrend?.count).toBe(1);
 
     // 热门问题校验
@@ -210,7 +212,8 @@ describe('DashboardService', () => {
     mockDocumentRepo.count.mockImplementation((options?: any) => {
       if (options?.where?.status === 'failed') return Promise.resolve(2);
       if (options?.where?.status === 'processing') return Promise.resolve(3);
-      if (options?.where?.graphSyncStatus === 'failed') return Promise.resolve(1);
+      if (options?.where?.graphSyncStatus === 'failed')
+        return Promise.resolve(1);
       if (options?.where?.chunkCount === 0) return Promise.resolve(4);
       return Promise.resolve(20);
     });
@@ -226,7 +229,9 @@ describe('DashboardService', () => {
     });
     mockTaskRepo.find.mockResolvedValue([{ id: 'task-1', status: 'failed' }]);
     mockNotificationRepo.find.mockResolvedValue([{ id: 'notice-1' }]);
-    mockDocumentRepo.find.mockResolvedValue([{ id: 'doc-1', status: 'failed' }]);
+    mockDocumentRepo.find.mockResolvedValue([
+      { id: 'doc-1', status: 'failed' },
+    ]);
     mockMessageRepo.count.mockResolvedValue(2);
     mockMessageRepo.find.mockResolvedValue([
       {
@@ -245,7 +250,34 @@ describe('DashboardService', () => {
             rrfFusion: [{ chunkId: 'chunk-2' }],
           },
           degradedChannels: [{ channel: 'rerank' }],
+          graphReasoningTrace: [{ reason: 'retrieval_cache_hit' }],
+          report: {
+            profileId: 'balanced_chat',
+            degradationFlags: ['rerank_fallback'],
+            metrics: {
+              latencyMs: 1500,
+              firstTokenLatencyMs: 450,
+              llmCalls: 3,
+              embedCalls: 2,
+            },
+          },
         },
+        latencyMs: 1500,
+      },
+      {
+        ragTrace: {
+          report: {
+            profileId: 'balanced_chat',
+            degradationFlags: [],
+            metrics: {
+              latencyMs: 2500,
+              firstTokenLatencyMs: 650,
+              llmCalls: 5,
+              embedCalls: 4,
+            },
+          },
+        },
+        latencyMs: 2500,
       },
     ]);
 
@@ -315,6 +347,21 @@ describe('DashboardService', () => {
     expect(result.fallbackToPgCount).toBe(1);
     expect(result.rrfFusionTraceCount).toBe(2);
     expect(result.averageRerankLatencyMs).toBe(42);
+    expect(result.profilePerformance).toEqual([
+      {
+        profileId: 'balanced_chat',
+        sampleCount: 2,
+        firstTokenSampleCount: 2,
+        latencyMs: { average: 2000, p50: 2000, p95: 2450 },
+        firstTokenLatencyMs: { average: 550, p50: 550, p95: 640 },
+        llmCalls: { average: 4, p50: 4, p95: 4.9 },
+        embedCalls: { average: 3, p50: 3, p95: 3.9 },
+        cacheHitCount: 1,
+        cacheHitRate: 0.5,
+        degradedTurnCount: 1,
+        degradedTurnRate: 0.5,
+      },
+    ]);
     expect(result.documentHealth).toMatchObject({
       total: 20,
       failed: 2,

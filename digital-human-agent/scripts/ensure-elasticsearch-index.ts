@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { formatElasticsearchError } from '@/knowledge/elasticsearch/elasticsearch-error-format';
+import { formatElasticsearchError } from '@/knowledge/elasticsearch/error-format';
 import { ElasticsearchIndexService } from '@/knowledge/elasticsearch/elasticsearch-index.service';
 import { ElasticsearchScriptModule } from './elasticsearch-script.module';
 

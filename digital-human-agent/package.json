@@ -7,13 +7,14 @@
   "license": "UNLICENSED",
   "scripts": {
     "db:migrate": "node scripts/migrate.js",
-    "build": "nest build && tsc-alias -p tsconfig.build.json",
+    "build": "nest build && tsc-alias -p tsconfig.build.json && tsc -p tsconfig.scripts.json",
     "neo4j:prepare-image": "bash ./scripts/prepare-neo4j-image.sh",
     "rag:infra:up": "pnpm neo4j:prepare-image && docker compose -f docker-compose.rag.yml up -d",
     "rag:infra:down": "docker compose -f docker-compose.rag.yml down",
     "rag:preflight": "node -r ts-node/register -r tsconfig-paths/register ./scripts/rag-runtime-preflight.ts",
     "rag:smoke:agentic": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agentic.ts",
     "rag:smoke:agent-path": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agent-path.ts",
+    "rag:eval:agent": "node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-agent.ts",
     "es:index:ensure": "node -r ts-node/register -r tsconfig-paths/register ./scripts/ensure-elasticsearch-index.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -27,6 +28,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {

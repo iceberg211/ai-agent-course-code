@@ -88,6 +88,11 @@ pnpm rag:smoke:agent-path
 # 运行 Agent 决策冒烟测试
 pnpm rag:smoke:agentic
 
+# 使用 eval/rag-golden-set.json 运行真实 LangGraph Agent 评测
+pnpm rag:eval:agent
+# 可覆盖评测文件、角色和执行 profile
+# pnpm rag:eval:agent -- --file=eval/rag-golden-set.json --personaId=<uuid> --profileId=realtime_voice
+
 # 执行全量单元测试（包含 mock S3/ES/LLM）
 pnpm test --runInBand
 

@@ -22,6 +22,7 @@ export interface RagHealthSummary {
   fallbackToPgCount: number;
   degradedChannels: Array<{ channel: string; count: number }>;
   rrfFusionTraceCount: number;
+  profilePerformance: RagProfilePerformanceSummary[];
   documentHealth: {
     total: number;
     failed: number;
@@ -62,6 +63,26 @@ export interface RagHealthSummary {
   recentFailedDocuments: KnowledgeDocument[];
   recentFailedTasks: DocumentTask[];
   recentNotifications: Notification[];
+}
+
+export interface RagMetricDistribution {
+  average: number | null;
+  p50: number | null;
+  p95: number | null;
+}
+
+export interface RagProfilePerformanceSummary {
+  profileId: string;
+  sampleCount: number;
+  firstTokenSampleCount: number;
+  latencyMs: RagMetricDistribution;
+  firstTokenLatencyMs: RagMetricDistribution;
+  llmCalls: RagMetricDistribution;
+  embedCalls: RagMetricDistribution;
+  cacheHitCount: number;
+  cacheHitRate: number;
+  degradedTurnCount: number;
+  degradedTurnRate: number;
 }
 
 @Injectable()
@@ -206,10 +227,12 @@ export class DashboardService {
         trendMap.set(dateStr, (trendMap.get(dateStr) ?? 0) + 1);
       }
     }
-    const failedDocumentTrend = Array.from(trendMap.entries()).map(([date, count]) => ({
-      date,
-      count,
-    }));
+    const failedDocumentTrend = Array.from(trendMap.entries()).map(
+      ([date, count]) => ({
+        date,
+        count,
+      }),
+    );
 
     // 2. 热门提问映射
     const hotQuestions = hotQuestionsRaw.map((row) => ({
@@ -244,7 +267,10 @@ export class DashboardService {
         "doc.mimeType LIKE 'image/%' OR doc.mimeType LIKE 'audio/%' OR doc.mimeType LIKE 'video/%'",
       )
       .getCount();
-    const multimodalRate = documentCount > 0 ? parseFloat((multimodalDocsCount / documentCount).toFixed(4)) : 0;
+    const multimodalRate =
+      documentCount > 0
+        ? parseFloat((multimodalDocsCount / documentCount).toFixed(4))
+        : 0;
 
     // 6. 文档指标: 平均处理耗时 (基于最近 50 条已完成文档)
     const completedDocs = await this.documentRepo.find({
@@ -252,12 +278,16 @@ export class DashboardService {
       where: { status: 'completed' },
       take: 50,
     });
-    const averageDocumentProcessTimeMs = completedDocs.length > 0
-      ? Math.round(
-          completedDocs.reduce((acc, doc) => acc + (doc.updatedAt.getTime() - doc.createdAt.getTime()), 0) /
-          completedDocs.length
-        )
-      : 0;
+    const averageDocumentProcessTimeMs =
+      completedDocs.length > 0
+        ? Math.round(
+            completedDocs.reduce(
+              (acc, doc) =>
+                acc + (doc.updatedAt.getTime() - doc.createdAt.getTime()),
+              0,
+            ) / completedDocs.length,
+          )
+        : 0;
 
     // 7. 权限指标: 被过滤的检索结果条数 & 越权访问拦截次数 (扫描最近 100 条回复的 Trace)
     const recentMessagesForAcl = await this.messageRepo.find({
@@ -273,11 +303,16 @@ export class DashboardService {
         const traces = (msg.ragTrace.retrievalTrace as any[]) || [];
         for (const tr of traces) {
           if (tr?.permissionFilter?.filtered) {
-            totalPermissionFilteredCount += Number(tr.permissionFilter.filtered);
+            totalPermissionFilteredCount += Number(
+              tr.permissionFilter.filtered,
+            );
           }
         }
       }
-      if (msg.status === 'failed' && (msg.content?.includes('无权') || msg.content?.includes('越权'))) {
+      if (
+        msg.status === 'failed' &&
+        (msg.content?.includes('无权') || msg.content?.includes('越权'))
+      ) {
         blockedAccessCount++;
       }
     }
@@ -351,7 +386,9 @@ export class DashboardService {
       this.documentRepo.count({ where: { status: 'failed' } }),
       this.documentRepo.count({ where: { status: 'processing' } }),
       this.documentRepo.count({ where: { graphSyncStatus: 'failed' } }),
-      this.documentRepo.count({ where: { status: 'completed', chunkCount: 0 } }),
+      this.documentRepo.count({
+        where: { status: 'completed', chunkCount: 0 },
+      }),
       this.documentRepo
         .createQueryBuilder('doc')
         .where(
@@ -426,6 +463,9 @@ export class DashboardService {
       Number(answerStatsRaw?.averageLatencyMs ?? 0),
     );
     const traceStats = this.extractTraceStats(recentAssistantMessages);
+    const profilePerformance = this.extractProfilePerformance(
+      recentAssistantMessages,
+    );
     const evalSummary = this.buildEvalSummary(evalCases);
 
     return {
@@ -442,6 +482,7 @@ export class DashboardService {
         .map(([channel, count]) => ({ channel, count }))
         .sort((a, b) => b.count - a.count),
       rrfFusionTraceCount: traceStats.rrfFusionTraceCount,
+      profilePerformance,
       documentHealth: {
         total: documentCount,
         failed: failedDocumentCount,
@@ -531,14 +572,157 @@ export class DashboardService {
     };
   }
 
-  private buildEvalSummary(evalCases: KnowledgeEvalCase[]): RagHealthSummary['evalSummary'] {
+  private extractProfilePerformance(
+    messages: Pick<ConversationMessage, 'ragTrace' | 'latencyMs'>[],
+  ): RagProfilePerformanceSummary[] {
+    const groups = new Map<
+      string,
+      {
+        sampleCount: number;
+        firstTokenLatencies: number[];
+        latencies: number[];
+        llmCalls: number[];
+        embedCalls: number[];
+        cacheHitCount: number;
+        degradedTurnCount: number;
+      }
+    >();
+
+    for (const message of messages) {
+      const trace = this.toRecord(message.ragTrace) ?? {};
+      const report = this.toRecord(trace.report);
+      const metrics =
+        this.toRecord(report?.metrics) ?? this.toRecord(trace.metrics) ?? {};
+      const profileId =
+        this.toNonEmptyString(report?.profileId) ??
+        this.toNonEmptyString(trace.profileId) ??
+        'legacy';
+      const group = groups.get(profileId) ?? {
+        sampleCount: 0,
+        firstTokenLatencies: [],
+        latencies: [],
+        llmCalls: [],
+        embedCalls: [],
+        cacheHitCount: 0,
+        degradedTurnCount: 0,
+      };
+
+      group.sampleCount += 1;
+      this.pushFiniteNumber(
+        group.latencies,
+        metrics.latencyMs ?? message.latencyMs,
+      );
+      this.pushFiniteNumber(
+        group.firstTokenLatencies,
+        metrics.firstTokenLatencyMs,
+      );
+      this.pushFiniteNumber(group.llmCalls, metrics.llmCalls);
+      this.pushFiniteNumber(group.embedCalls, metrics.embedCalls);
+      if (this.hasRetrievalCacheHit(trace, report)) {
+        group.cacheHitCount += 1;
+      }
+      const degradationFlags = Array.isArray(report?.degradationFlags)
+        ? report.degradationFlags
+        : Array.isArray(trace.degradationFlags)
+          ? trace.degradationFlags
+          : [];
+      if (degradationFlags.length > 0) {
+        group.degradedTurnCount += 1;
+      }
+      groups.set(profileId, group);
+    }
+
+    return Array.from(groups.entries())
+      .map(([profileId, group]) => ({
+        profileId,
+        sampleCount: group.sampleCount,
+        firstTokenSampleCount: group.firstTokenLatencies.length,
+        latencyMs: this.distribution(group.latencies),
+        firstTokenLatencyMs: this.distribution(group.firstTokenLatencies),
+        llmCalls: this.distribution(group.llmCalls),
+        embedCalls: this.distribution(group.embedCalls),
+        cacheHitCount: group.cacheHitCount,
+        cacheHitRate: this.ratio(group.cacheHitCount, group.sampleCount),
+        degradedTurnCount: group.degradedTurnCount,
+        degradedTurnRate: this.ratio(
+          group.degradedTurnCount,
+          group.sampleCount,
+        ),
+      }))
+      .sort((left, right) => left.profileId.localeCompare(right.profileId));
+  }
+
+  private hasRetrievalCacheHit(
+    trace: Record<string, unknown>,
+    report: Record<string, unknown> | null,
+  ): boolean {
+    const debug = this.toRecord(report?.debug);
+    return [
+      trace.retrievalTrace,
+      trace.graphReasoningTrace,
+      debug?.retrievalTrace,
+      debug?.graphReasoningTrace,
+    ].some((value) => this.traceContainsReason(value, 'retrieval_cache_hit'));
+  }
+
+  private traceContainsReason(value: unknown, reason: string): boolean {
+    if (!Array.isArray(value)) return false;
+    return value.some((item) => {
+      const row = this.toRecord(item);
+      return row?.reason === reason;
+    });
+  }
+
+  private distribution(values: number[]): RagMetricDistribution {
+    return {
+      average: this.average(values),
+      p50: this.percentile(values, 0.5),
+      p95: this.percentile(values, 0.95),
+    };
+  }
+
+  private percentile(values: number[], ratio: number): number | null {
+    const valid = values
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => left - right);
+    if (valid.length === 0) return null;
+    if (valid.length === 1) return valid[0];
+    const position = (valid.length - 1) * ratio;
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.ceil(position);
+    const lower = valid[lowerIndex];
+    const upper = valid[upperIndex];
+    const result = lower + (upper - lower) * (position - lowerIndex);
+    return Number(result.toFixed(2));
+  }
+
+  private pushFiniteNumber(target: number[], value: unknown): void {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      target.push(value);
+    }
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private toNonEmptyString(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private buildEvalSummary(
+    evalCases: KnowledgeEvalCase[],
+  ): RagHealthSummary['evalSummary'] {
     const successCases = evalCases.filter(
       (item) => item.lastRunStatus === 'success',
     );
     return {
       total: evalCases.length,
       success: successCases.length,
-      failed: evalCases.filter((item) => item.lastRunStatus === 'failed').length,
+      failed: evalCases.filter((item) => item.lastRunStatus === 'failed')
+        .length,
       unrun: evalCases.filter((item) => item.lastRunStatus === 'unrun').length,
       reviewedPassed: evalCases.filter(
         (item) => item.userReviewStatus === 'passed',
@@ -551,7 +735,9 @@ export class DashboardService {
       ).length,
       hitAt1: this.average(successCases.map((item) => item.lastRunHitAt1)),
       hitAt3: this.average(successCases.map((item) => item.lastRunHitAt3)),
-      recallAt5: this.average(successCases.map((item) => item.lastRunRecallAt5)),
+      recallAt5: this.average(
+        successCases.map((item) => item.lastRunRecallAt5),
+      ),
       recallAt10: this.average(
         successCases.map((item) => item.lastRunRecallAt10),
       ),
