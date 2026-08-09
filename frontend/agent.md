@@ -1,4 +1,4 @@
-# digital-human-agent-frontend / Agent 协作说明
+# RAG Agent 前端 / Agent 协作说明
 
 ## 1. 项目定位
 
@@ -57,7 +57,7 @@
 - 常量统一放在 `src/common/constants`，但只收敛可复用、系统级的常量：
   - 例如 WS 路径、共享 accept 类型、状态文案映射、导航与标签配置。
 - 单文件内的局部数字阈值、节流/延迟时间、一次性边界值，默认保留在就近 Hook / 组件，不要为了抽常量而抽常量。
-- 前端不要自行维护 LLM 提示词；如果后续新增提示词，一律放到后端 `digital-human-agent/src/common/prompts`，并使用 LangChain 模板统一管理。
+- 前端不要自行维护 LLM 提示词；如果后续新增提示词，一律放到后端 `backend/src/common/prompts`，并使用 LangChain 模板统一管理。
 - 新增 WS 消息类型时，必须同步更新：
   - `useAppController.ts` 事件处理
   - 相关类型定义 `src/types.ts`

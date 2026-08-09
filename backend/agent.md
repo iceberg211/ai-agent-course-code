@@ -1,10 +1,10 @@
-# digital-human-agent Agent 接手说明
+# RAG Agent 后端协作说明
 
 这份文件给后续接手本项目的 Agent 使用。目标是先理解主链路，再做最小必要改动；不要把学习型项目直接扩大成生产级改造。
 
 ## 项目定位
 
-`digital-human-agent` 是一个数字人问答后端，核心能力是：
+`backend` 是 RAG Agent 后端，核心能力是：
 
 - 角色管理与知识库挂载
 - 文本问答与 WebSocket 会话
@@ -126,8 +126,8 @@ NEO4J_GRAPH_ENABLED=true HYBRID_KEYWORD_BACKEND=elastic pnpm rag:smoke:agentic -
 
 当前项目需要的镜像是：
 
-- `digital-human-agent-neo4j:5.26.26`
-- `digital-human-agent-elasticsearch-ik:9.3.3`
+- `rag-agent-neo4j:5.26.26`
+- `rag-agent-elasticsearch-ik:9.3.3`
 - `docker.m.daocloud.io/kibana:9.3.3`
 - `docker.m.daocloud.io/elasticsearch:9.3.3`
 

@@ -1,13 +1,13 @@
-# Digital Human Agent
+# RAG Agent
 
-这是一个前后端分离的知识库与数字人问答项目。仓库由 Vue 前端、NestJS 后端和共享架构文档组成。
+这是一个前后端分离的 RAG Agent 学习项目，核心是文档入库、混合检索、证据评估、答案生成与引用。数字人和语音交互作为可选呈现能力保留。
 
 ## 目录结构
 
 | 目录 | 职责 | 技术栈 |
 |---|---|---|
-| `digital-human-agent-frontend/` | 管理后台、知识库、对话、数字人与评测界面 | Vue 3、Vite、TypeScript、Pinia |
-| `digital-human-agent/` | HTTP/WebSocket API、RAG、文档入库、权限和异步任务 | NestJS 11、LangGraph、TypeORM |
+| `frontend/` | 管理后台、知识库、对话、数字人与评测界面 | Vue 3、Vite、TypeScript、Pinia |
+| `backend/` | HTTP/WebSocket API、RAG、文档入库、权限和异步任务 | NestJS 11、LangGraph、TypeORM |
 | `docs/` | 跨前后端的架构和整理文档 | Markdown |
 
 前后端是两个独立的 pnpm 项目，分别维护依赖和锁文件，不使用根目录 workspace 统一安装。
@@ -38,17 +38,17 @@
 ### 1. 安装依赖
 
 ```bash
-cd digital-human-agent
+cd backend
 pnpm install
 
-cd ../digital-human-agent-frontend
+cd ../frontend
 pnpm install
 ```
 
 ### 2. 配置并启动后端
 
 ```bash
-cd digital-human-agent
+cd backend
 cp .env.example .env
 
 pnpm rag:infra:up
@@ -59,14 +59,14 @@ pnpm start:dev
 文档异步处理需要另开一个终端：
 
 ```bash
-cd digital-human-agent
+cd backend
 pnpm start:worker:dev
 ```
 
 ### 3. 启动前端
 
 ```bash
-cd digital-human-agent-frontend
+cd frontend
 pnpm dev
 ```
 
@@ -84,7 +84,7 @@ pnpm dev
 后端：
 
 ```bash
-cd digital-human-agent
+cd backend
 pnpm typecheck
 pnpm test --runInBand
 pnpm test:e2e
@@ -94,7 +94,7 @@ pnpm build
 前端：
 
 ```bash
-cd digital-human-agent-frontend
+cd frontend
 pnpm typecheck
 pnpm build
 ```
@@ -102,13 +102,13 @@ pnpm build
 真实 RAG 依赖检查和 Agent smoke：
 
 ```bash
-cd digital-human-agent
+cd backend
 pnpm rag:preflight
 pnpm rag:smoke:agent-path
 ```
 
 更详细的子项目说明见：
 
-- [后端 README](digital-human-agent/README.md)
-- [前端 README](digital-human-agent-frontend/README.md)
+- [后端说明](docs/backend.md)
+- [前端说明](docs/frontend.md)
 - [RAG 架构与问题记录](docs/rag-architecture.md)

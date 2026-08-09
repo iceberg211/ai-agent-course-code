@@ -1,6 +1,6 @@
 # RAG 链路架构梳理与问题清单
 
-> 梳理日期：2026-08-09 ｜ 梳理对象：`digital-human-agent`（NestJS 11 + LangGraph + TypeORM + ES + Neo4j + Redis + mem0）
+> 梳理日期：2026-08-09 ｜ 梳理对象：`backend`（NestJS 11 + LangGraph + TypeORM + ES + Neo4j + Redis + mem0）
 > 本文档目的：记录当前 RAG 链路的真实实现、已确认问题、优化顺序与验收标准，作为后续稳定化工作的基线。**问题清单中的每一项在修复后应更新状态，并记录实际验证证据。**
 
 ---

@@ -6,8 +6,8 @@ services:
       args:
         ELASTIC_BASE_IMAGE: docker.m.daocloud.io/elasticsearch:9.3.3
         ELASTIC_VERSION: 9.3.3
-    image: digital-human-agent-elasticsearch-ik:9.3.3
-    container_name: digital-human-agent-elasticsearch
+    image: rag-agent-elasticsearch-ik:9.3.3
+    container_name: rag-agent-elasticsearch
     environment:
       discovery.type: single-node
       xpack.security.enabled: 'false'
@@ -19,7 +19,7 @@ services:
 
   kibana:
     image: docker.m.daocloud.io/kibana:9.3.3
-    container_name: digital-human-agent-kibana
+    container_name: rag-agent-kibana
     depends_on:
       - elasticsearch
     environment:
@@ -34,9 +34,9 @@ services:
       dockerfile: docker/neo4j/Dockerfile
       args:
         NEO4J_VERSION: ${NEO4J_VERSION:-5.26.26}
-        NEO4J_BASE_IMAGE: ${NEO4J_BASE_IMAGE:-digital-human-agent-elasticsearch-ik:9.3.3}
-    image: ${NEO4J_IMAGE:-digital-human-agent-neo4j:5.26.26}
-    container_name: digital-human-agent-neo4j
+        NEO4J_BASE_IMAGE: ${NEO4J_BASE_IMAGE:-rag-agent-elasticsearch-ik:9.3.3}
+    image: ${NEO4J_IMAGE:-rag-agent-neo4j:5.26.26}
+    container_name: rag-agent-neo4j
     environment:
       NEO4J_AUTH: ${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-12345678}
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
@@ -52,7 +52,7 @@ services:
 
   redis:
     image: docker.m.daocloud.io/redis:7.2-alpine
-    container_name: digital-human-agent-redis
+    container_name: rag-agent-redis
     command: redis-server --appendonly yes --maxmemory-policy noeviction
     ports:
       - '6379:6379'
@@ -61,7 +61,7 @@ services:
 
   minio:
     image: docker.m.daocloud.io/minio/minio:RELEASE.2024-01-28T22-35-53Z
-    container_name: digital-human-agent-minio
+    container_name: rag-agent-minio
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -76,8 +76,8 @@ services:
     build:
       context: .
       dockerfile: docker/app/Dockerfile
-    image: digital-human-agent-api:latest
-    container_name: digital-human-agent-api
+    image: rag-agent-api:latest
+    container_name: rag-agent-api
     depends_on:
       - elasticsearch
       - neo4j
@@ -103,8 +103,8 @@ services:
     command: node dist/main.js
 
   worker:
-    image: digital-human-agent-api:latest
-    container_name: digital-human-agent-worker
+    image: rag-agent-api:latest
+    container_name: rag-agent-worker
     depends_on:
       - api
       - redis

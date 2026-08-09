@@ -1,10 +1,10 @@
-# Digital Human Agent 后端
+# RAG Agent 后端
 
-本目录是 Digital Human Agent 的后端子项目。仓库整体结构、前后端联合启动方式见[项目根 README](../README.md)。
+本目录是 RAG Agent 的后端子项目。仓库整体结构、前后端联合启动方式见[项目根 README](../README.md)。
 
 后端技术栈基于 `NestJS 11 + TypeORM + PostgreSQL (Supabase) + WebSocket + LangGraph + Elasticsearch + Neo4j`。
 
-本项目作为数字人与知识库的后台服务，重点实现了异步文档提取、多模态融合检索 (RAG)、双记忆体系、细粒度数据权限隔离、知识图谱推理增强以及自动化质量评估。
+本项目以知识库 RAG 为核心，重点实现异步文档提取、混合检索、证据评估、细粒度数据权限、知识图谱增强和自动化质量评估；数字人与语音能力作为可选交互方式。
 
 ---
 

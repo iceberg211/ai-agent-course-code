@@ -1,8 +1,8 @@
 {
-  "name": "digital-human-agent-frontend",
+  "name": "rag-agent-frontend",
   "private": true,
   "version": "0.0.1",
-  "description": "Digital Human Agent 的 Vue 前端应用",
+  "description": "RAG Agent 的 Vue 前端应用",
   "type": "module",
   "scripts": {
     "dev": "vite",

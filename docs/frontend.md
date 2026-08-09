@@ -1,6 +1,6 @@
-# Digital Human Agent 前端
+# RAG Agent 前端
 
-本目录是 Digital Human Agent 的前端子项目。仓库整体结构、后端与基础设施启动方式见[项目根 README](../README.md)。
+本目录是 RAG Agent 的前端子项目。仓库整体结构、后端与基础设施启动方式见[项目根 README](../README.md)。
 
 技术栈：`Vue 3 + Vite + TypeScript + Pinia + Vue Router + Tailwind CSS`。
 

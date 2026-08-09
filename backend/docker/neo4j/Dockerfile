@@ -1,4 +1,4 @@
-ARG NEO4J_BASE_IMAGE=digital-human-agent-elasticsearch-ik:9.3.3
+ARG NEO4J_BASE_IMAGE=rag-agent-elasticsearch-ik:9.3.3
 FROM ${NEO4J_BASE_IMAGE}
 
 ARG NEO4J_VERSION=5.26.26

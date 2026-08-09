@@ -5,6 +5,7 @@ import { WsAdapter } from '@nestjs/platform-ws';
 import WebSocket, { RawData } from 'ws';
 import { DIGITAL_HUMAN_PROVIDER } from '@/common/constants';
 import { ConversationService } from '@/conversation/services/conversation.service';
+import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 import { AsrService } from '@/speech/asr/asr.service';
 import { SessionHandler } from '@/gateway/handlers/session.handler';
 import { AudioHandler } from '@/gateway/handlers/audio.handler';
@@ -22,12 +23,6 @@ import { AuthorizationService } from '@/rbac/services/authorization.service';
 
 type JsonMessage = Record<string, unknown>;
 
-jest.mock('uuid', () => {
-  let mockUuidCounter = 0;
-  return {
-    v4: () => `mock-uuid-${++mockUuidCounter}`,
-  };
-});
 
 describe('Conversation Gateway (e2e)', () => {
   let app: INestApplication;
@@ -45,6 +40,10 @@ describe('Conversation Gateway (e2e)', () => {
     getLatestConversationByPersona: jest.fn(),
     getRecentMessages: jest.fn(),
     addMessage: jest.fn(),
+  };
+
+  const turnSideEffects = {
+    onTurnStart: jest.fn().mockResolvedValue([]),
   };
 
   const asrService = {
@@ -81,6 +80,7 @@ describe('Conversation Gateway (e2e)', () => {
         { provide: PersonaService, useValue: personaService },
         { provide: ConversationService, useValue: conversationService },
         { provide: AsrService, useValue: asrService },
+        { provide: TurnSideEffectService, useValue: turnSideEffects },
         { provide: AgentPipelineService, useValue: agentPipeline },
         { provide: DIGITAL_HUMAN_PROVIDER, useValue: digitalHumanProvider },
         { provide: AccessControlService, useValue: accessControlService },
@@ -148,7 +148,6 @@ describe('Conversation Gateway (e2e)', () => {
     });
 
     conversationService.getRecentMessages.mockResolvedValue([]);
-    conversationService.addMessage.mockResolvedValue(undefined);
 
     asrService.recognize.mockResolvedValue('帮我总结一下产品能力');
 
@@ -195,7 +194,7 @@ describe('Conversation Gateway (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it('session:start 返回 session:ready', async () => {
@@ -262,12 +261,10 @@ describe('Conversation Gateway (e2e)', () => {
       );
       const doneMessage = await collector.waitFor('conversation:done');
 
-      expect(conversationService.addMessage).toHaveBeenCalledWith(
+      expect(turnSideEffects.onTurnStart).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationId,
-          role: 'user',
-          content: '介绍一下企业知识库',
-          status: 'completed',
+          userMessage: '介绍一下企业知识库',
         }),
       );
       expect(agentPipeline.run).toHaveBeenCalledWith(
@@ -279,6 +276,10 @@ describe('Conversation Gateway (e2e)', () => {
         }),
         '介绍一下企业知识库',
         expect.any(String),
+        expect.objectContaining({
+          sideEffectFlags: [],
+          startedAt: expect.any(Number),
+        }),
       );
       expect(startMessage.type).toBe('conversation:start');
       expect(textChunkMessage).toEqual(
@@ -321,12 +322,10 @@ describe('Conversation Gateway (e2e)', () => {
       const doneMessage = await collector.waitFor('conversation:done');
 
       expect(asrService.recognize).toHaveBeenCalledWith(expect.any(Buffer));
-      expect(conversationService.addMessage).toHaveBeenCalledWith(
+      expect(turnSideEffects.onTurnStart).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationId,
-          role: 'user',
-          content: '帮我总结一下产品能力',
-          status: 'completed',
+          userMessage: '帮我总结一下产品能力',
         }),
       );
       expect(agentPipeline.run).toHaveBeenCalledWith(
@@ -338,6 +337,10 @@ describe('Conversation Gateway (e2e)', () => {
         }),
         '帮我总结一下产品能力',
         expect.any(String),
+        expect.objectContaining({
+          sideEffectFlags: [],
+          startedAt: expect.any(Number),
+        }),
       );
       expect(asrMessage).toEqual(
         expect.objectContaining({

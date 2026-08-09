@@ -11,18 +11,13 @@ import { AgentService } from '@/agent/agent.service';
 import { ChatController } from '@/conversation/controllers/chat.controller';
 import { RequestNormalizePipe } from '@/common/pipes/request-normalize.pipe';
 import { ConversationService } from '@/conversation/services/conversation.service';
+import { TurnSideEffectService } from '@/conversation/services/turn-side-effect.service';
 import { PersonaService } from '@/persona/persona.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { LongTermMemoryService } from '@/memory/services/long-term-memory.service';
 import { AuthorizationService } from '@/rbac/services/authorization.service';
 
-jest.mock('uuid', () => {
-  let mockUuidCounter = 0;
-  return {
-    v4: () => `mock-uuid-${++mockUuidCounter}`,
-  };
-});
 
 describe('Chat API (e2e)', () => {
   let app: INestApplication;
@@ -45,6 +40,12 @@ describe('Chat API (e2e)', () => {
     findOne: jest.fn(),
   };
 
+  const turnSideEffects = {
+    onTurnStart: jest.fn().mockResolvedValue([]),
+    buildRagTrace: jest.fn().mockReturnValue({}),
+    onTurnEnd: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [ChatController],
@@ -52,6 +53,7 @@ describe('Chat API (e2e)', () => {
         { provide: AgentService, useValue: agentService },
         { provide: ConversationService, useValue: conversationService },
         { provide: PersonaService, useValue: personaService },
+        { provide: TurnSideEffectService, useValue: turnSideEffects },
         {
           provide: ShortTermMemoryService,
           useValue: {
@@ -121,7 +123,6 @@ describe('Chat API (e2e)', () => {
       personaId,
     });
 
-    conversationService.addMessage.mockResolvedValue(undefined);
 
     agentService.run.mockImplementation(
       async ({
@@ -154,7 +155,7 @@ describe('Chat API (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it('POST /chat 支持纯文本 message 入参', async () => {
@@ -181,21 +182,17 @@ describe('Chat API (e2e)', () => {
         userMessage: '请介绍一下这个系统',
       }),
     );
-    expect(conversationService.addMessage).toHaveBeenNthCalledWith(
-      1,
+    expect(turnSideEffects.onTurnStart).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId,
-        role: 'user',
-        content: '请介绍一下这个系统',
-        status: 'completed',
+        userMessage: '请介绍一下这个系统',
       }),
     );
-    expect(conversationService.addMessage).toHaveBeenNthCalledWith(
-      2,
+    expect(turnSideEffects.onTurnEnd).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId,
-        role: 'assistant',
-        content: '你好，这里是测试回复。',
+        userMessage: '请介绍一下这个系统',
+        assistantReply: '你好，这里是测试回复。',
         status: 'completed',
       }),
     );

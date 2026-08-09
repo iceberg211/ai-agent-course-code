@@ -1,7 +1,7 @@
 {
-  "name": "digital-human-agent-backend",
+  "name": "rag-agent-backend",
   "version": "0.0.1",
-  "description": "Digital Human Agent 的 NestJS 后端服务",
+  "description": "RAG Agent 的 NestJS 后端服务",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

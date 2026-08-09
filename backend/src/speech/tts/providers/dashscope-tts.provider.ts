@@ -159,7 +159,7 @@ export class DashscopeTtsProvider implements TtsProvider {
     await new Promise<void>((resolve, reject) => {
       const headers: Record<string, string> = {
         Authorization: `Bearer ${this.apiKey}`,
-        'user-agent': 'digital-human-agent/tts',
+        'user-agent': 'rag-agent/tts',
       };
       if (this.workspaceId) {
         headers['X-DashScope-WorkSpace'] = this.workspaceId;

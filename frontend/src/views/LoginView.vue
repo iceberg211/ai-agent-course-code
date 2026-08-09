@@ -8,7 +8,7 @@
     <!-- 登录注册卡片：高通透亮色磨砂玻璃 -->
     <div class="relative w-[420px] p-11 pb-9 bg-white/45 backdrop-blur-[20px] border border-white/70 rounded-xl shadow-[0_10px_30px_-10px_rgba(0,0,0,0.04),0_20px_40px_-15px_rgba(59,130,246,0.08),inset_0_1px_0_0_rgba(255,255,255,0.6)] z-10 transition-all duration-300 hover:border-white/95 hover:shadow-[0_12px_35px_-10px_rgba(0,0,0,0.06),0_25px_45px_-12px_rgba(59,130,246,0.12)]">
       <div class="text-center mb-8">
-        <h1 class="text-[26px] font-bold tracking-tight mb-2 bg-gradient-to-br from-text-main to-primary bg-clip-text text-transparent">Digital Human Agent</h1>
+        <h1 class="text-[26px] font-bold tracking-tight mb-2 bg-gradient-to-br from-text-main to-primary bg-clip-text text-transparent">RAG Agent</h1>
         <p class="text-xs text-text-muted leading-relaxed">
           {{ isLogin ? '探索下一代多模态 RAG 对话智能体' : '开启您的智能代理之旅' }}
         </p>

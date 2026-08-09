@@ -63,8 +63,8 @@ async function bootstrap() {
   app.enableCors(resolveCorsOptions(configService));
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Digital Human Agent API')
-    .setDescription('数字人 Agent 后端接口文档')
+    .setTitle('RAG Agent API')
+    .setDescription('RAG Agent 后端接口文档')
     .setVersion('1.0.0')
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
