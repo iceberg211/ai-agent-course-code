@@ -145,7 +145,6 @@ describe('createGenerateAnswerNode', () => {
         persona: { id: 'persona-1', name: '法务顾问' },
         history: [],
         topDocuments: [topChunk],
-        evidenceChunks: [],
         retrievalStrategy: { needRetrieval: true },
         webCitations: [],
         enough: false,

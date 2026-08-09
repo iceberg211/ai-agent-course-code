@@ -147,7 +147,6 @@ export function createRetrieveNode(
       return {
         ...update,
         documents: state.documents,
-        evidenceChunks: state.documents,
         retrievalHistory: [
           ...state.retrievalHistory,
           {
@@ -165,12 +164,11 @@ export function createRetrieveNode(
       mergeEvidenceChunks(state.documents, stage1Result.chunks),
     );
 
-    // 不在粗召回阶段推 citations，避免前端闪变；正式引用在 rerank 后发布
+    // 不在粗召回阶段推 citations，避免前端闪变；正式引用在 rerank 后发布。
 
     return {
       ...update,
       documents,
-      evidenceChunks: documents,
       retrievalTrace: [...state.retrievalTrace, ...stage1Result.trace],
       graphReasoningTrace: [
         ...(state.graphReasoningTrace ?? []),
@@ -258,9 +256,7 @@ export function createWebFallbackNode(webFallbackService: WebFallbackService) {
       publishCitations(
         input,
         toWorkflowCitations({
-          documents: state.documents,
           topDocuments: state.topDocuments,
-          evidenceChunks: state.topDocuments,
           webCitations: mergedWebCitations,
         }),
       );

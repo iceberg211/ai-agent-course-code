@@ -63,7 +63,9 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     rerankMode: 'score',
     evaluateMode: 'llm',
     budget: {
-      wallClockMs: 20_000,
+      // Supabase REST RPC ~1s/次 + 3 轮检索 + 路由/重写/评估/生成约 5 次 LLM，
+      // 20s 预算在命中场景会超预算打断生成，放宽到 40s
+      wallClockMs: 40_000,
       maxLlmCalls: 6,
       maxEmbedCalls: 6,
     },

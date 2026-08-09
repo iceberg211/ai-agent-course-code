@@ -54,11 +54,10 @@ describe('createRerankNode', () => {
     );
     expect(update).toEqual({
       topDocuments: [documents[1], documents[0]],
-      evidenceChunks: [documents[1], documents[0]],
     });
   });
 
-  it('多跳时会用原始问题 + 当前 hop 查询句做 rerank', async () => {
+  it('多跳时仍按原始问题对累计候选做统一 rerank', async () => {
     const rerankerService = {
       rerank: jest.fn().mockResolvedValue([documents[0]]),
     };
@@ -81,7 +80,7 @@ describe('createRerankNode', () => {
     );
 
     expect(rerankerService.rerank).toHaveBeenCalledWith(
-      '合同删除与审计要求是什么？\n当前检索焦点：审计要求是什么？',
+      '合同删除与审计要求是什么？',
       documents,
       5,
       expect.any(AbortSignal),
@@ -91,6 +90,7 @@ describe('createRerankNode', () => {
   });
 
   it('没有 documents 时不会调用 reranker', async () => {
+    const onCitations = jest.fn();
     const rerankerService = {
       rerank: jest.fn(),
     };
@@ -105,6 +105,7 @@ describe('createRerankNode', () => {
         configurable: {
           workflowInput: {
             signal: new AbortController().signal,
+            onCitations,
           },
         },
       } as never,
@@ -113,8 +114,66 @@ describe('createRerankNode', () => {
     expect(rerankerService.rerank).not.toHaveBeenCalled();
     expect(update).toEqual({
       topDocuments: [],
-      evidenceChunks: [],
     });
+    expect(onCitations).toHaveBeenCalledWith([]);
+  });
+
+  it('重排全部否决时：证据为空且向前端推送空引用（清空上一跳残留）', async () => {
+    const onCitations = jest.fn();
+    const rerankerService = {
+      rerank: jest.fn().mockResolvedValue([]),
+    };
+    const node = createRerankNode(rerankerService as never);
+
+    const update = await node(
+      {
+        question: '当前问题',
+        documents,
+      } as never,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+            onCitations,
+          },
+        },
+      } as never,
+    );
+
+    // 粗召回 documents 存在，但重排全部否决 → 证据必须为空，不能回退粗召回
+    expect(update).toEqual({
+      topDocuments: [],
+    });
+    // 空引用也必须推送，让前端清掉上一跳的旧引用
+    expect(onCitations).toHaveBeenCalledWith([]);
+  });
+
+  it('多跳重排只发布本次按原始问题统一选出的最终证据', async () => {
+    const onCitations = jest.fn();
+    const rerankerService = {
+      rerank: jest.fn().mockResolvedValue([documents[1]]),
+    };
+    const node = createRerankNode(rerankerService as never);
+
+    const update = await node(
+      {
+        question: '当前问题',
+        documents,
+      } as never,
+      {
+        configurable: {
+          workflowInput: {
+            signal: new AbortController().signal,
+            onCitations,
+          },
+        },
+      } as never,
+    );
+
+    expect(update.topDocuments.map((c) => c.id)).toEqual(['chunk-2']);
+    expect(onCitations).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'chunk-2' }),
+    ]);
   });
 
   it('如果 state 中有动态配置的 rerankLimit，则会优先使用它', async () => {
@@ -148,7 +207,6 @@ describe('createRerankNode', () => {
     );
     expect(update).toEqual({
       topDocuments: [documents[1]],
-      evidenceChunks: [documents[1]],
     });
   });
 
@@ -212,16 +270,6 @@ describe('createEvaluateEvidenceNode', () => {
       },
     ],
     topDocuments: [
-      {
-        id: 'chunk-1',
-        content: '合同第七条说明试用数据删除时限。',
-        source: 'contract.md',
-        chunk_index: 7,
-        category: null,
-        similarity: 0.9,
-      },
-    ],
-    evidenceChunks: [
       {
         id: 'chunk-1',
         content: '合同第七条说明试用数据删除时限。',
@@ -533,7 +581,6 @@ describe('createEvaluateEvidenceNode', () => {
         currentHop: 1,
         documents: [],
         topDocuments: [],
-        evidenceChunks: [],
         retrievalStrategy: {
           name: 'balanced',
           needRetrieval: false,

@@ -20,6 +20,7 @@ import {
   LlmFactoryService,
 } from '@/common/llm/llm-factory.service';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
+import type { RagProfileId } from '@/common/rag/rag-profile';
 import {
   addTurnDegradation,
   tryConsumeAuxiliaryLlmBudget,
@@ -40,6 +41,7 @@ interface EvaluateEvidenceParams {
   currentHop: number;
   maxHops: number;
   remainingSubQuestionCount: number;
+  profileId?: RagProfileId;
   signal?: AbortSignal;
 }
 
@@ -215,9 +217,12 @@ export function buildFallbackEvaluation(
     return score >= 4 || (chunk.similarity ?? 0) >= 0.55;
   });
   const webCount = params.webCitations?.length ?? 0;
-  // 失败降级时宁缺毋滥：至少 2 条中高相关本地证据，或本地 1 条高相关 + 联网补充
+  // 实时语音只有单跳且禁止 Web，允许一条强证据回答单事实问题。
+  // 其他 profile（包括 LLM 评估失败后的降级）保持保守标准，
+  // 避免复杂问题只命中一个局部事实就提前停止后续 hop / Web。
+  const requiredLocalCount = params.profileId === 'realtime_voice' ? 1 : 2;
   const enough =
-    highConfidenceLocal.length >= 2 ||
+    highConfidenceLocal.length >= requiredLocalCount ||
     (highConfidenceLocal.length >= 1 && webCount >= 1) ||
     webCount >= 2;
 

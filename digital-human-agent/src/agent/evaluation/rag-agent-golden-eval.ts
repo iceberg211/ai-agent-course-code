@@ -41,7 +41,6 @@ export function evaluateRagAgentGoldenCase(
   );
   const chunks = deduplicateChunks<KnowledgeChunk>([
     ...(result.state.topDocuments ?? []),
-    ...(result.state.evidenceChunks ?? []),
     ...knowledgeCitations,
   ]);
   const evidenceHitCount = goldenCase.expected_evidence_spans.filter((span) =>

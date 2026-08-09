@@ -1,6 +1,7 @@
 import {
   capCandidateDocuments,
   mergeEvidenceChunks,
+  toWorkflowCitations,
 } from '@/agent/langgraph/rag.utils';
 import type { KnowledgeChunk } from '@/knowledge/types/knowledge-content.types';
 
@@ -63,5 +64,48 @@ describe('rag.utils', () => {
         }),
       ],
     });
+  });
+
+  it('toWorkflowCitations 引用只来自证据，绝不回退到粗召回 documents', () => {
+    const doc = {
+      id: 'c1',
+      content: '粗召回文档',
+      source: 'a.md',
+      chunk_index: 0,
+      category: null,
+      similarity: 0.5,
+    };
+    const web = {
+      kind: 'web',
+      id: 'w1',
+      title: '网页',
+      url: 'https://example.com',
+      snippet: '摘要',
+    };
+
+    // 重排全否决时，即使有粗召回也不产生本地引用。
+    expect(
+      toWorkflowCitations({
+        documents: [doc],
+        topDocuments: [],
+        webCitations: [],
+      } as never),
+    ).toEqual([]);
+
+    // topDocuments 是唯一正式本地证据。
+    const fromTop = toWorkflowCitations({
+      documents: [doc],
+      topDocuments: [doc],
+      webCitations: [],
+    } as never);
+    expect(fromTop).toHaveLength(1);
+
+    // 网页引用始终合并
+    const withWeb = toWorkflowCitations({
+      documents: [doc],
+      topDocuments: [doc],
+      webCitations: [web as never],
+    } as never);
+    expect(withWeb).toHaveLength(2);
   });
 });

@@ -56,7 +56,7 @@ describe('KnowledgeGraphService', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('document.is_current_version = true');
     expect(qb.andWhere).toHaveBeenCalledWith('chunk.enabled = true');
     expect(neo4jGraphService.query).toHaveBeenCalledWith(
-      expect.stringContaining('c.id IN $chunkIds'),
+      expect.stringContaining('LIMIT toInteger($limit)'),
       expect.objectContaining({
         knowledgeId: 'kb-1',
         query: '乔峰',
@@ -97,7 +97,7 @@ describe('KnowledgeGraphService', () => {
     });
 
     expect(neo4jGraphService.query).toHaveBeenCalledWith(
-      expect.stringContaining('c.id IN $chunkIds'),
+      expect.stringContaining('LIMIT toInteger($limit)'),
       expect.objectContaining({
         knowledgeId: 'kb-1',
         chunkIds: ['chunk-1'],

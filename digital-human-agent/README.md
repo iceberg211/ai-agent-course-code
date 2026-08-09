@@ -1,6 +1,8 @@
-# Digital Human Agent (企业级知识库与数字人问答后端)
+# Digital Human Agent 后端
 
-本项目是一个成熟化升级的企业级知识库与数字人问答后端系统。技术栈基于 `NestJS 11 + TypeORM + PostgreSQL (Supabase) + WebSocket + LangChain + ElasticSearch + Neo4j`。
+本目录是 Digital Human Agent 的后端子项目。仓库整体结构、前后端联合启动方式见[项目根 README](../README.md)。
+
+后端技术栈基于 `NestJS 11 + TypeORM + PostgreSQL (Supabase) + WebSocket + LangGraph + Elasticsearch + Neo4j`。
 
 本项目作为数字人与知识库的后台服务，重点实现了异步文档提取、多模态融合检索 (RAG)、双记忆体系、细粒度数据权限隔离、知识图谱推理增强以及自动化质量评估。
 
@@ -95,6 +97,12 @@ pnpm rag:eval:agent
 
 # 执行全量单元测试（包含 mock S3/ES/LLM）
 pnpm test --runInBand
+
+# 执行 WebSocket e2e 测试
+pnpm test:e2e
+
+# TypeScript 类型检查
+pnpm typecheck
 
 # 编译打包构建
 pnpm build

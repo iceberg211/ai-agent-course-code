@@ -472,7 +472,7 @@ export class KnowledgeGraphService {
       WITH distinct n
       WHERE 1=1 ${filterSql}
       RETURN n.nodeKey as key, n.nodeType as type, n.displayName as name, n.entityType as entityType, n.aliases as aliases
-      LIMIT $limit
+      LIMIT toInteger($limit)
     `;
 
     return this.neo4jGraphService.query(cypher, {
@@ -506,7 +506,7 @@ export class KnowledgeGraphService {
         rel.evidenceText as evidenceText,
         rel.chunkId as chunkId,
         rel.documentId as documentId
-      LIMIT $limit
+      LIMIT toInteger($limit)
     `;
 
     return this.neo4jGraphService.query(cypher, {
@@ -610,7 +610,7 @@ export class KnowledgeGraphService {
           rel.documentId as documentId,
           rel.chunkId as chunkId,
           rel.evidenceText as evidenceText
-        LIMIT $limit
+        LIMIT toInteger($limit)
       `,
       {
         knowledgeId,

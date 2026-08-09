@@ -119,17 +119,12 @@ export function capCandidateDocuments<
 export function toWorkflowCitations(
   state: Pick<
     RagGraphState,
-    'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'
+    'topDocuments' | 'webCitations'
   >,
 ): RagCitation[] {
-  const localChunks =
-    state.topDocuments.length > 0
-      ? state.topDocuments
-      : state.evidenceChunks.length > 0
-        ? state.evidenceChunks
-        : state.documents;
+  // 引用只允许来自统一重排后的最终证据，绝不回退粗召回 documents。
   return mergeCitations(
-    toKnowledgeCitations(localChunks),
+    toKnowledgeCitations(state.topDocuments),
     state.webCitations,
   );
 }
@@ -227,12 +222,12 @@ export function shouldUseWebFallback(
 }
 
 export function mergeEvidenceChunks(
-  existing: RetrievedKnowledgeChunk[],
-  incoming: RetrievedKnowledgeChunk[],
+  existing: RetrievedKnowledgeChunk[] | undefined,
+  incoming: RetrievedKnowledgeChunk[] | undefined,
 ): RetrievedKnowledgeChunk[] {
   const merged = new Map<string, RetrievedKnowledgeChunk>();
 
-  for (const chunk of [...existing, ...incoming]) {
+  for (const chunk of [...(existing ?? []), ...(incoming ?? [])]) {
     const previous = merged.get(chunk.id);
     if (!previous) {
       merged.set(chunk.id, chunk);
@@ -342,9 +337,12 @@ export function publishCitations(
   input: RagWorkflowInput,
   citations: RagCitation[],
 ): void {
-  if (citations.length > 0 && typeof input?.onCitations === 'function') {
-    input.onCitations(citations);
+  if (typeof input?.onCitations !== 'function') {
+    return;
   }
+  // 空数组也必须推送：重排全否决后要让前端清空上一跳残留的引用，
+  // 否则前端会展示与当前答案上下文不一致的旧引用
+  input.onCitations(citations);
 }
 
 function normalizeMissingFactQuery(fact: string): string {

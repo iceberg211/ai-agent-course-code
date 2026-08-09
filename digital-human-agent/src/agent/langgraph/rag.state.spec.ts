@@ -1,7 +1,7 @@
 import { toRagWorkflowState } from '@/agent/langgraph/rag.state';
 
 describe('toRagWorkflowState', () => {
-  it('会优先把 rerank 后的 topDocuments 作为最终本地证据与引用', () => {
+  it('会把 topDocuments 作为唯一最终本地证据与引用', () => {
     const stage1Chunk = {
       id: 'chunk-1',
       content: '乔峰是丐帮帮主。',
@@ -42,7 +42,6 @@ describe('toRagWorkflowState', () => {
       maxHops: 3,
       documents: [stage1Chunk, topChunk],
       topDocuments: [topChunk],
-      evidenceChunks: [stage1Chunk],
       webCitations: [webCitation],
       retrievalHistory: [{ query: '乔峰是谁？', resultCount: 1 }],
       retrievalTrace: [],
@@ -104,6 +103,7 @@ describe('toRagWorkflowState', () => {
         ...topChunk,
       },
     ]);
+    // evidenceChunks 仅作为对外兼容别名，与 topDocuments 恒等。
     expect(workflowState.evidenceChunks).toEqual([topChunk]);
     expect(workflowState.citations).toEqual([
       {

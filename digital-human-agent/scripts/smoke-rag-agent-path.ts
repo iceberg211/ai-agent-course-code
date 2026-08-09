@@ -75,7 +75,8 @@ async function main(): Promise<void> {
     const strict = !process.argv.includes('--allow-partial');
     const pushedCitations: unknown[][] = [];
     const result = await orchestrator.run({
-      conversationId: `smoke-conv-${randomUUID()}`,
+      // conversation_id 是 uuid 列，必须用合法 uuid（smoke-conv- 前缀会被 pg 拒绝）
+      conversationId: randomUUID(),
       personaId,
       question: query,
       turnId: randomUUID(),

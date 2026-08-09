@@ -24,7 +24,6 @@ describe('createRetrieveNode', () => {
     maxHops: 3,
     documents: [],
     topDocuments: [],
-    evidenceChunks: [],
     webCitations: [],
     retrievalHistory: [],
     retrievalTrace: [],
@@ -302,7 +301,6 @@ describe('createRetrieveNode', () => {
       currentHop: 1,
       nextSubIdx: 1,
       documents: [chunk],
-      evidenceChunks: [chunk],
       retrievalTrace: [
         expect.objectContaining({
           knowledgeId: 'kb-1',

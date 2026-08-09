@@ -509,7 +509,11 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.evidenceEvaluatorService.evaluate).toHaveBeenCalledTimes(2);
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
-        localChunks: [chunkA, chunkB],
+        // 证据经 mergeEvidenceChunks 累积（含重排 mock 的完整字段），按 id 断言
+        localChunks: expect.arrayContaining([
+          expect.objectContaining({ id: 'chunk-a' }),
+          expect.objectContaining({ id: 'chunk-b' }),
+        ]),
       }),
     );
     expect(result.state.strategy).toBe('complex');
@@ -619,7 +623,12 @@ describe('LangGraphRagOrchestratorService', () => {
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(
       expect.objectContaining({
-        localChunks: [chunkA, chunkB, chunkC],
+        // 证据经 mergeEvidenceChunks 累积（含重排 mock 的完整字段），按 id 断言
+        localChunks: expect.arrayContaining([
+          expect.objectContaining({ id: 'chunk-a' }),
+          expect.objectContaining({ id: 'chunk-b' }),
+          expect.objectContaining({ id: 'chunk-c' }),
+        ]),
       }),
     );
     expect(result.state.subQuestions).toEqual([

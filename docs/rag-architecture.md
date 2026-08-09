@@ -1,7 +1,7 @@
 # RAG 链路架构梳理与问题清单
 
 > 梳理日期：2026-08-09 ｜ 梳理对象：`digital-human-agent`（NestJS 11 + LangGraph + TypeORM + ES + Neo4j + Redis + mem0）
-> 本文档目的：记录当前 RAG 链路的真实实现全貌，以及历次迭代后遗留的全部问题，作为后续稳定化工作的基线。**问题清单中的每一项在修复后应更新状态。**
+> 本文档目的：记录当前 RAG 链路的真实实现、已确认问题、优化顺序与验收标准，作为后续稳定化工作的基线。**问题清单中的每一项在修复后应更新状态，并记录实际验证证据。**
 
 ---
 
@@ -79,7 +79,7 @@ TurnSideEffectService ──┘                          │
 ## 2. 问题清单
 
 > 所有问题均已逐项核实（含行号）。按影响分级：🔴 隐性破损 ＞ 🟠 死代码 ＞ 🟡 重复实现 ＞ 🟢 遗留抽象。
-> 修复进度：① 恢复基线（A 组）+ ② 清理（B 组 + C1/C3/C5）已完成于 2026-08-09；C2/C4 与 ④ 结构性收敛（C6-C8）、⑤ 遗留抽象（D 组）待排期。
+> 修复进度：① 恢复基线（A1-A2）+ ② 早期清理（B1-B8、C1/C3/C5）已完成于 2026-08-09；A3-A6、B11、C2、C4 已完成于 2026-08-10；B9-B10 与其他结构性清理待排期。
 
 ### 🔴 A. 隐性破损（最优先处理）
 
@@ -87,6 +87,11 @@ TurnSideEffectService ──┘                          │
 |---|---|---|---|---|
 | A1 | **`tsc` 全量类型检查失败（9 处）**：`queryHistory` 字段加入 `RagGraphStateAnnotation` 后 spec 未同步 | `agent/langgraph/nodes/evaluation.nodes.spec.ts`（7 处）、`agent/langgraph/nodes/query.nodes.spec.ts`（1 处）、`agent/langgraph/rag.state.spec.ts`（1 处） | `pnpm build` 绿（spec 被 `tsconfig.build.json` 排除），但编辑器与 CI 的 `tsc` 全量检查红，问题被掩盖 | ✅ 已修复：spec 补 `queryHistory: []`；`package.json` 新增 `typecheck` 脚本（全量 tsc）防回归 |
 | A2 | **`KnowledgeSearchService` 的 Port 为 `@Optional` 注入 + 静默空结果假实现**：`retrievalPipelineService` 未注入时回退为"永远返回空结果"的 stub（:164-172），不报任何错误 | `knowledge/services/retrieval/pipeline/knowledge-search.service.ts:161-172` | DI 配置错误时 Search API 永远返回空结果，极难排查 | ✅ 已修复：改为必注入 `RetrievalPipelineService`，移除 stub，同步 spec |
+| A3 | **重排否决的粗召回文档会重新进入 citations**：LLM rerank 明确允许返回空数组，但 `toWorkflowCitations` 在 `topDocuments/evidenceChunks` 为空时回退 `documents` | `agent/langgraph/nodes/evaluation.nodes.ts`、`agent/langgraph/rag.utils.ts`、`knowledge/services/retrieval/processing/llm-reranker.provider.ts` | 生成使用空 `topDocuments`，引用却可能包含已被否决的粗召回文档，答案上下文与引用不一致 | ✅ 已修复：citations 只读取统一重排后的 `topDocuments` 与网页证据，不再回退粗候选 |
+| A4 | **空 citations 不会推送，前端可能保留上一跳旧引用** | `agent/langgraph/rag.utils.ts` 的 `publishCitations`、`evaluation.nodes.ts` 的空候选分支 | 多跳后一轮重排为空时，回调不执行，入口保存的 citations 仍可能是前一跳结果 | ✅ 已修复：重排全否决和粗召回为空都会显式发布当前 citations（含空数组） |
+| A5 | **多跳重排受当前子问题偏置**：候选池跨 hop 累积，但每次用“原问题 + 当前检索焦点”覆盖 `topDocuments` | `agent/langgraph/nodes/query.nodes.ts`、`agent/langgraph/nodes/evaluation.nodes.ts` | 后一跳可能挤掉前一跳已经找到、但仍属于原问题必要组成部分的证据 | ✅ 已修复：子问题只负责召回；累计 `documents` 每跳统一按原始问题重排为 `topDocuments` |
+| A6 | **实时语音启发式对单条强证据一律判不足** | `common/rag/rag-profile.ts`、`agent/services/evidence-evaluator.service.ts` | `realtime_voice` 只有 1 hop 且禁用 Web；即使一条证据高度相关，也会进入“不足”语义 | ✅ 已修复：仅 `realtime_voice` 允许单条强证据判足够；其他 profile 及 LLM 降级仍采用保守标准 |
+| A7 | **Neo4j `LIMIT` 参数被驱动序列化为浮点数** | `knowledge/graph/knowledge-graph.service.ts` 的 `listEntities` / `listRelations` / `getOverview` | 真实 Graph expand 报错：`12.0 is not a valid value`，图通道静默降级为 0 条结果 | ✅ 已修复：Cypher 统一使用 `LIMIT toInteger($limit)`，并补回归断言 |
 
 ### 🟠 B. 死代码（纯删除，零行为变化）
 
@@ -100,15 +105,18 @@ TurnSideEffectService ──┘                          │
 | B6 | 旧短期记忆缓存 `getRetrievalCache` / `setRetrievalCache` | `memory/services/short-term-memory.service.ts:165/173` | 已被 `RagRetrievalCacheService` 取代，无调用者 | ✅ 已修复 |
 | B7 | `hybridRetrieverService` 注入未使用 | `knowledge/services/retrieval/pipeline/knowledge-search.service.ts:153` | 注释自认"保留 hybrid 注入仅作兼容" | ✅ 已修复（随 A2 一并移除） |
 | B8 | 孤儿测试文件 | `agent/retrieval-strategy.utils.spec.ts` | 无对应被测源码，测的其实是 `common/rag/retrieval-strategy.utils.ts`，应迁到 common/rag 下 | ✅ 已修复：`git mv` 至 `common/rag/` |
+| B9 | 未注册的进程内文档任务执行器 | `knowledge/services/document/document-task-executor.service.ts` | 全仓库只有定义，没有模块注册或调用；正式路径已使用 BullMQ Worker | ⬜ 第三阶段删除 |
+| B10 | 无生产调用的旧同步入库链路 | `knowledge-document.service.ts` 的 `ingestDocument` / `parseAndIngestDocument` / `uploadDocumentVersion` / `ingestPreparedDocument` | 当前 Controller 已统一创建 `DocumentTask`；旧方法只剩测试或旧方法之间互调 | ⬜ 第三阶段删除前先核对外部调用与版本接口 |
+| B11 | 未接通的检索预设公开为可用能力 | `retrieval-strategy.utils.ts`、`knowledge-search.controller.ts` 的 `memory_aware` / `multimodal` | 当前有长期记忆和多模态解析，但没有对应 memory/multimodal RRF 召回通道 | ✅ 已修复：从公开预设列表移除，内部 case 保留兼容并标记实验性 |
 
 ### 🟡 C. 重复实现（收敛）
 
 | # | 问题 | 位置 | 说明 | 状态 |
 |---|---|---|---|---|
 | C1 | **启发式评估逻辑双份** | `agent/langgraph/nodes/evaluation.nodes.ts` 的 `buildHeuristicEvaluation`（:276）≡ `agent/services/evidence-evaluator.service.ts` 的 `buildFallbackEvaluation`（:200） | 阈值相同但服务版多 `graph_score*5` 因子；改一处忘另一处必漂移 | ✅ 已修复：统一为导出的 `buildFallbackEvaluation`，节点 heuristic 模式复用（顺带获得 graph_score 因子） |
-| C2 | **state 冗余字段 `evidenceChunks`** | `agent/langgraph/rag.state.ts`（annotation + buildInitial + toRagWorkflowState）、`query.nodes.ts`（retrieve 写入）、`evaluation.nodes.ts`（rerank 写入）、`rag.utils.ts` `toWorkflowCitations` | 恒等于 `topDocuments`（rerank 后）或 `documents`（retrieve 后），三字段可减为两字段（`documents` + `topDocuments`） | ⬜ 待排期（有 spec 覆盖，改动面较大） |
+| C2 | **state 冗余字段 `evidenceChunks`** | `agent/langgraph/rag.state.ts`、`query.nodes.ts`、`evaluation.nodes.ts`、`rag.utils.ts` | 它在 retrieve 后等于粗候选、rerank 后又等于最终结果，使“候选”和“证据”边界模糊，并直接诱发 A3 | ✅ 已修复：从 LangGraph 状态删除；对外 `RagWorkflowState.evidenceChunks` 暂作为 `topDocuments` 的兼容别名 |
 | C3 | **长期记忆双重 policy 过滤** | `memory/services/long-term-memory.service.ts:39`（`search` 内过滤一次）+ `agent/langgraph/nodes/memory.nodes.ts:73`（`filterReadable` 再过滤一次） | 同一份记忆过滤两遍 | ✅ 已修复：保留 `search` 内过滤，节点不再二次过滤（含 graph deps/orchestrator 同步） |
-| C4 | citations 入口重复包装 | `agent/langgraph/rag.state.ts:135` `getRagWorkflowCitations` 只是包了一层 `rag.utils.ts:119` `toWorkflowCitations` | — | ⬜ 待排期 |
+| C4 | citations 入口重复包装 | `agent/langgraph/rag.state.ts` 的 `getRagWorkflowCitations` 只是包了一层 `rag.utils.ts` 的 `toWorkflowCitations` | 引用规则存在两个入口，不利于保持单一证据契约 | ✅ 已修复：删除包装函数，统一调用 `toWorkflowCitations` |
 | C5 | 恒真三元 | `agent/langgraph/nodes/evaluation.nodes.ts:58-63` `rerankMode === 'off' \|\| ... ? rerankMode : 'llm'` | 条件穷尽所有合法值，else 分支不可达 | ✅ 已修复：直接传 `rerankMode` |
 | C6 | TTS 与 Speak 两条管线高度同构 | `gateway/pipeline/tts-pipeline.service.ts` vs `gateway/pipeline/speak-pipeline.service.ts` | `enqueue`/`markFinalize`/`drain`/`completeTurnIfNeeded`/`resetTurnState` 五方法逐一同构，且 speak 复用 `ttsTurnId/ttsStarted/ttsFinalizeRequested/ttsSeq` 字段（speak:54-57 vs tts:50-57） |
 | C7 | Text/Audio Handler 重复模板 | `gateway/handlers/text.handler.ts:59-76` vs `audio.handler.ts:65-82` | 重复"中止旧 turn → initTurn → onTurnStart"；`MAX_USER_TEXT_LENGTH` 限制只在 TextHandler，AudioHandler 无对应限制 |
@@ -126,7 +134,7 @@ TurnSideEffectService ──┘                          │
 
 ---
 
-## 3. 稳定化路线图（待决策，未执行）
+## 3. 稳定化路线图
 
 > 项目骨架健康（单一 LangGraph 编排、Port 统一、Profile/Budget 中心化、全链路降级），混乱来自迭代叠加的残留而非架构方向错误。因此方案为**清理 + 收敛 + 护栏**，不做重写。
 
@@ -134,15 +142,40 @@ TurnSideEffectService ──┘                          │
 |---|---|---|---|
 | ① 恢复护栏 | 修 3 个 spec 的 `queryHistory` 类型错误恢复 tsc 全绿；新增 `typecheck` 脚本（全量 tsc）防止回归；`KnowledgeSearchService` 的 Port 改为必注入 | A1、A2 | ✅ 2026-08-09 完成（tsc + jest 全绿） |
 | ② 清理死代码 | 删除 B 组全部 8 项；删除后全量测试验证 | B1–B8 | ✅ 2026-08-09 完成 |
-| ③ 收敛重复 | 合并 C1 启发式评估为单一共享函数；删除 C2 `evidenceChunks` 字段（有 spec 覆盖）；去掉 C3 双重过滤；统一 C4 citations 入口；简化 C5 恒真三元 | C1–C5 | 🔄 C1/C3/C5 已完成；C2/C4 待排期 |
-| ④ 结构性收敛（可延后） | 合并 C6 TTS/Speak 管线；去重 C7 Handler 模板；收敛 C8 权限校验 | C6–C8 | ⬜ 待排期（有 WS 状态机 spec 覆盖） |
-| ⑤ 遗留抽象处置 | 决定 D2 legacy 双写去留（依赖前端升级进度）；D1/D3/D4 简化 | D1–D5 | ⬜ 待排期 |
+| ③ 证据与引用一致性 | 候选/证据分离；从图状态移除 `evidenceChunks`；citations 只来自最终证据；允许发布空 citations；多跳累计候选按原问题重排；补空重排和多跳测试 | A3-A5、C2、C4 | ✅ 2026-08-10 完成 |
+| ④ 默认链路收敛 | 评估单跳基础 profile；复核 Web/Graph 默认值；修正实时语音单强证据判断；处理未接通预设 | A6、B11 | 🔄 A6/B11 已完成；其他 profile 参数需要真实 golden set |
+| ⑤ 入库与外围清理 | 删除未注册执行器与旧同步入库链；合并上传兼容入口；清理无用 DI/导入；拆分超大服务 | B9、B10、C6-C8 | ⬜ 待排期 |
+| ⑥ 遗留抽象处置 | 决定 D2 legacy 双写去留（依赖前端升级进度）；D1/D3/D4 简化 | D1-D5 | ⬜ 待排期 |
 
-**建议**：C2/C4 可与 ④ 结构性收敛合并排期；⑤ 视前端兼容需求决定。
+### 3.1 第一阶段验收标准
+
+1. `documents` 只表示粗召回候选，`topDocuments` 只表示最终可生成、可引用的证据。
+2. rerank 返回空数组时，最终 `localCitations` 与 `citations` 不得回退到粗候选。
+3. 重排完成后必须向入口发布当前 citations，包括空数组，避免保留前一跳旧值。
+4. 多跳的子问题只改变召回 query；累计候选的最终选择统一对齐原始用户问题。
+5. golden evaluator 只读取 `topDocuments` 和正式 knowledge citations，不读取候选池。
+6. `pnpm typecheck`、目标测试、全量单测和 `git diff --check` 全部通过。
+
+### 3.2 本阶段不实施
+
+- 不继续调整 `balanced_chat` 的 Web、Graph、hop 参数。
+- 不删除文档旧链路或兼容接口。
+- 不处理 B9-B10、C6-C8 和 D 组外围清理。
+- 不把单元测试结果描述为真实 ES、pgvector、Neo4j 或模型效果。
 
 ---
 
 ## 4. 执行记录
+
+### 2026-08-10：最终证据契约与真实链路修复
+
+- 图内只保留两层本地数据：`documents` 是跨跳累计粗候选，`topDocuments` 是按原始用户问题统一重排后的唯一最终证据。
+- 证据评估、答案生成、knowledge citations 和 golden evaluator 统一读取 `topDocuments`；`RagWorkflowState.evidenceChunks` 仅作为对外兼容别名。
+- 粗召回为空或重排全否决时均显式发布当前 citations，包括空数组。
+- 单条强证据判足够仅适用于 `realtime_voice`；其他 profile 与 LLM 评估失败降级仍采用保守规则。
+- 真实 smoke 暴露的 Neo4j `LIMIT` 浮点参数问题已改为 Cypher `toInteger` 转换。
+
+**验证边界**：类型检查与全量单测通过；RAG preflight 的 PostgreSQL、Elasticsearch 均可连接。真实 agent-path smoke 已完成关键词召回、最终证据装载、生成与引用，但严格“三路召回同时命中”仍受测试数据和 LLM 查询改写波动影响，本次未宣称向量、关键词、图谱三路全部通过。
 
 ### 2026-08-09：数据基线 + 链路重平衡（③④）
 

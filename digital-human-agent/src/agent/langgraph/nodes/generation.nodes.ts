@@ -139,6 +139,7 @@ export function createGenerateAnswerNode(
       signal: input.signal,
       persona: state.persona,
       history: state.history,
+      // 检索节点累计候选，重排节点按原始问题统一选择最终证据。
       localChunks: state.topDocuments,
       memoryContext: state.memoryContext,
       retrievalStrategy: state.retrievalStrategy,

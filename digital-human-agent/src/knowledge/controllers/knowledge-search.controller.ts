@@ -42,13 +42,14 @@ export class KnowledgeSearchController {
   @Get('retrieval-strategies/presets')
   @ApiOperation({ summary: '查询可用检索策略预设' })
   listRetrievalStrategyPresets() {
+    // 注意：memory_aware / multimodal 预设目前只有布尔开关，没有独立的
+    // memory / multimodal 检索通道实现（RAG 管线实际只有 vector/keyword/graph），
+    // 对外暴露会误导使用者，故不列入公开预设列表
     const presets: RetrievalPreset[] = [
       'precise',
       'balanced',
       'broad',
       'graph_first',
-      'memory_aware',
-      'multimodal',
     ];
     return {
       presets: presets.map((name) => ({

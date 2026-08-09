@@ -3,9 +3,9 @@ import { throwIfAborted } from '@/common/utils';
 import { type RagGraph, buildRagGraph } from '@/agent/langgraph/rag.graph';
 import {
   buildInitialRagGraphState,
-  getRagWorkflowCitations,
   toRagWorkflowState,
 } from '@/agent/langgraph/rag.state';
+import { toWorkflowCitations } from '@/agent/langgraph/rag.utils';
 import { AnswerGenerationService } from '@/agent/services/answer-generation.service';
 import { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
 import { MultiHopPlannerService } from '@/agent/services/multi-hop-planner.service';
@@ -201,7 +201,7 @@ export class LangGraphRagOrchestratorService
           const liveBudget = getTurnBudget();
           return {
             state: toRagWorkflowState(finalState),
-            citations: getRagWorkflowCitations(finalState),
+            citations: toWorkflowCitations(finalState),
             answerText: finalState.answerText,
             profileId: profile.id,
             budgetSnapshot: {

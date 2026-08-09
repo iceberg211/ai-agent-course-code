@@ -15,7 +15,6 @@ import { RerankerService } from '@/knowledge/services/retrieval/processing/reran
 import {
   canContinueMultiHop,
   extendSubQuestionsWithMissingFacts,
-  getCurrentQuery,
   getPlannedQuestions,
   shouldStopRetrievalBudget,
   shouldUseWebFallback,
@@ -32,9 +31,15 @@ export function createRerankNode(rerankerService: RerankerService) {
     const documents = state.documents;
 
     if (documents.length === 0) {
+      publishCitations(
+        input,
+        toWorkflowCitations({
+          topDocuments: [],
+          webCitations: state.webCitations,
+        }),
+      );
       return {
         topDocuments: [],
-        evidenceChunks: [],
       } satisfies Partial<RagGraphState>;
     }
 
@@ -45,15 +50,10 @@ export function createRerankNode(rerankerService: RerankerService) {
     const minScore = state.retrievalStrategy?.minRerankScore;
     const rerankMode = state.rerankMode ?? 'llm';
 
-    // 多跳时用当前 hop 查询句重排，同时保留原始问题以覆盖整体意图
-    const currentQuery = getCurrentQuery(state);
-    const rerankQuery =
-      currentQuery && currentQuery !== state.question
-        ? `${state.question}\n当前检索焦点：${currentQuery}`
-        : state.question;
-
     const topDocuments = await rerankerService.rerank(
-      rerankQuery,
+      // documents 已跨跳累计；最终证据始终按原始用户问题统一选择，
+      // 子问题只负责扩大召回范围，不改变最终证据判定标准。
+      state.question,
       documents,
       topK,
       input.signal,
@@ -61,20 +61,17 @@ export function createRerankNode(rerankerService: RerankerService) {
       rerankMode,
     );
 
-    // 正式 citations：仅在重排后推送，避免粗召回闪变
+    // 正式 citations 只来自本次统一重排后的最终证据；空数组也会发布。
     publishCitations(
       input,
       toWorkflowCitations({
-        documents: state.documents,
         topDocuments,
-        evidenceChunks: topDocuments,
         webCitations: state.webCitations,
       }),
     );
 
     return {
       topDocuments,
-      evidenceChunks: topDocuments,
     } satisfies Partial<RagGraphState>;
   };
 }
@@ -211,6 +208,7 @@ export function createEvaluateEvidenceNode(
         currentHop: state.currentHop,
         maxHops: state.maxHops,
         remainingSubQuestionCount,
+        profileId: state.profileId,
         signal: input.signal,
       });
     } else {
@@ -221,6 +219,7 @@ export function createEvaluateEvidenceNode(
         currentHop: state.currentHop,
         maxHops: state.maxHops,
         remainingSubQuestionCount,
+        profileId: state.profileId,
         signal: input.signal,
       });
     }
@@ -278,4 +277,3 @@ export function createEvaluateEvidenceNode(
     });
   };
 }
-

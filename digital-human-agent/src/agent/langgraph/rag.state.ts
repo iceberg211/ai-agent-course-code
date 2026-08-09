@@ -52,8 +52,6 @@ export const RagGraphStateAnnotation = Annotation.Root({
   documents: Annotation<RetrievedKnowledgeChunk[]>(),
   /** 重排(Rerank)后保留的高相关性候选文档片段 */
   topDocuments: Annotation<RetrievedKnowledgeChunk[]>(),
-  /** 融合作答所需的本地核心证据片段 */
-  evidenceChunks: Annotation<RetrievedKnowledgeChunk[]>(),
   /** 网页检索结果生成的引文结构 */
   webCitations: Annotation<RagWorkflowState['webCitations']>(),
   /** 多跳检索的历史记录，防止死循环并做路径追溯 */
@@ -129,15 +127,6 @@ export const RagGraphStateAnnotation = Annotation.Root({
 
 export type RagGraphState = typeof RagGraphStateAnnotation.State;
 
-export function getRagWorkflowCitations(
-  state: Pick<
-    RagGraphState,
-    'documents' | 'topDocuments' | 'evidenceChunks' | 'webCitations'
-  >,
-) {
-  return toWorkflowCitations(state);
-}
-
 export function buildInitialRagGraphState(
   input: RagWorkflowInput,
   history: ConversationMessage[] = [],
@@ -158,7 +147,6 @@ export function buildInitialRagGraphState(
     maxHops,
     documents: [],
     topDocuments: [],
-    evidenceChunks: [],
     webCitations: [],
     retrievalHistory: [],
     retrievalTrace: [],
@@ -214,11 +202,9 @@ export function toRagWorkflowState(state: RagGraphState): RagWorkflowState {
   return {
     ...workflowState,
     currentQuery: getCurrentQuery(state),
-    evidenceChunks:
-      state.topDocuments.length > 0 ? state.topDocuments : state.evidenceChunks,
-    localCitations: toKnowledgeCitations(
-      state.topDocuments.length > 0 ? state.topDocuments : state.evidenceChunks,
-    ),
-    citations: getRagWorkflowCitations(state),
+    // evidenceChunks 仅保留为对外兼容别名；图内唯一最终证据是 topDocuments。
+    evidenceChunks: state.topDocuments,
+    localCitations: toKnowledgeCitations(state.topDocuments),
+    citations: toWorkflowCitations(state),
   };
 }

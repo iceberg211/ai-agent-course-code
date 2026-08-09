@@ -75,10 +75,12 @@ export function createRetrievalStrategyPreset(
         minRerankScore: 2.0,
         ...overrides,
       };
+    // 以下两个预设尚无独立检索通道实现（无 memory/multimodal retriever），
+    // 保留 case 仅为兼容既有调用方传参，不应作为公开能力对外宣传
     case 'memory_aware':
       return {
         ...base,
-        reason: '记忆感知检索策略',
+        reason: '记忆感知检索策略（实验性：无独立记忆检索通道）',
         useMemory: true,
         memoryTopK: 5,
         ...overrides,
@@ -86,7 +88,7 @@ export function createRetrievalStrategyPreset(
     case 'multimodal':
       return {
         ...base,
-        reason: '多模态检索策略',
+        reason: '多模态检索策略（实验性：无独立多模态检索通道）',
         useMultimodal: true,
         vectorTopK: 10,
         keywordTopK: 10,
