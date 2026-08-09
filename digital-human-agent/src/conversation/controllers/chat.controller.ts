@@ -269,12 +269,6 @@ export class ChatController {
     };
   }
 
-  private normalizeOwnerId(value: unknown): string | null {
-    const raw = Array.isArray(value) ? value[0] : value;
-    const normalized = String(raw ?? '').trim();
-    return normalized ? normalized.slice(0, 120) : null;
-  }
-
   private extractLatestUserText(body: ChatRequestDto): string {
     if (typeof body.message === 'string' && body.message.trim()) {
       return body.message.trim();

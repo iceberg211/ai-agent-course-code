@@ -29,9 +29,12 @@ describe('RagProfile', () => {
     expect(profile.routeMode).toBe('heuristic');
   });
 
-  it('balanced 开启长期记忆，realtime/search_debug 关闭', () => {
-    expect(RAG_PROFILES.balanced_chat.useLongTermMemory).toBe(true);
+  it('balanced 便宜优先且默认关闭长期记忆，deep_research 保留深度模式', () => {
+    expect(RAG_PROFILES.balanced_chat.useLongTermMemory).toBe(false);
+    expect(RAG_PROFILES.balanced_chat.rerankMode).toBe('score');
+    expect(RAG_PROFILES.balanced_chat.budget.maxLlmCalls).toBe(6);
     expect(RAG_PROFILES.deep_research.useLongTermMemory).toBe(true);
+    expect(RAG_PROFILES.deep_research.rerankMode).toBe('llm');
     expect(RAG_PROFILES.search_debug.useLongTermMemory).toBe(false);
     expect(RAG_PROFILES.balanced_chat.routeMode).toBe('llm');
   });

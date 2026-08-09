@@ -20,8 +20,8 @@ export interface RagProfile {
   maxHops: number;
   allowWeb: boolean;
   useMultiQuery: boolean;
+  /** 图谱检索通道（含一跳邻居扩展，expand 内部有 hit 阈值协调） */
   useGraphChannel: boolean;
-  useGraphExpand: boolean;
   /** 是否加载并注入长期记忆（不进 rewrite/retrieve query） */
   useLongTermMemory: boolean;
   /** 路由：heuristic 不打 LLM（realtime 默认） */
@@ -39,7 +39,6 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     allowWeb: false,
     useMultiQuery: false,
     useGraphChannel: false,
-    useGraphExpand: false,
     useLongTermMemory: false,
     routeMode: 'heuristic',
     rewriteMode: 'heuristic',
@@ -57,15 +56,15 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     allowWeb: true,
     useMultiQuery: true,
     useGraphChannel: true,
-    useGraphExpand: true,
-    useLongTermMemory: true,
+    useLongTermMemory: false,
     routeMode: 'llm',
     rewriteMode: 'llm',
-    rerankMode: 'llm',
+    // 便宜优先：LLM rerank 让位于已有分数排序，省下的预算留给多跳的 rewrite/evaluate
+    rerankMode: 'score',
     evaluateMode: 'llm',
     budget: {
       wallClockMs: 20_000,
-      maxLlmCalls: 5,
+      maxLlmCalls: 6,
       maxEmbedCalls: 6,
     },
   },
@@ -75,7 +74,6 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     allowWeb: true,
     useMultiQuery: true,
     useGraphChannel: true,
-    useGraphExpand: true,
     useLongTermMemory: true,
     routeMode: 'llm',
     rewriteMode: 'llm',
@@ -93,7 +91,6 @@ export const RAG_PROFILES: Record<RagProfileId, RagProfile> = {
     allowWeb: false,
     useMultiQuery: true,
     useGraphChannel: true,
-    useGraphExpand: true,
     useLongTermMemory: false,
     routeMode: 'llm',
     rewriteMode: 'llm',

@@ -5,38 +5,13 @@ import {
 import type { RagGraphState } from '@/agent/langgraph/rag.state';
 import type { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
-import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import { assembleConversationContextParts } from '@/memory/utils/rolling-summary.utils';
 import { withRemainingTurnTimeout } from '@/common/rag/turn-budget.context';
 
-export function createLoadShortTermMemoryNode(
-  shortTermMemoryService: ShortTermMemoryService,
-) {
-  return async (state: RagGraphState, config: RagGraphConfig) => {
-    const input = ensureWorkflowNotAborted(config);
-    try {
-      const shortTermMemory = await shortTermMemoryService.getContext(
-        input.conversationId,
-        input.accessScope?.ownerId,
-      );
-      return { shortTermMemory } satisfies Partial<RagGraphState>;
-    } catch {
-      return {
-        shortTermMemory: {
-          window: [],
-          summary: '',
-          activeContext: '',
-        },
-      } satisfies Partial<RagGraphState>;
-    }
-  };
-}
-
-/** 生成前并行读取两类记忆，减少生成前串行 I/O。 */
+/** 生成前并行读取两类记忆，减少生成前串行 I/O。长期记忆在 LongTermMemoryService.search 内已做 policy 过滤。 */
 export function createLoadGenerationMemoryNode(
   shortTermMemoryService: ShortTermMemoryService,
   memoryRetrieverService: MemoryRetrieverService,
-  memoryPolicyService: MemoryPolicyService,
 ) {
   return async (state: RagGraphState, config: RagGraphConfig) => {
     const input = ensureWorkflowNotAborted(config);
@@ -70,48 +45,7 @@ export function createLoadGenerationMemoryNode(
     ]);
     return {
       shortTermMemory,
-      longTermMemories: memoryPolicyService.filterReadable(
-        longTermMemories,
-        input.accessScope,
-      ),
-    } satisfies Partial<RagGraphState>;
-  };
-}
-
-export function createRetrieveLongTermMemoryNode(
-  memoryRetrieverService: MemoryRetrieverService,
-) {
-  return async (state: RagGraphState, config: RagGraphConfig) => {
-    const input = ensureWorkflowNotAborted(config);
-    // 长期记忆只用于生成上下文，永不进入 rewrite/retrieve query；profile 可关闭加载
-    if (state.useLongTermMemory === false) {
-      return { longTermMemories: [] } satisfies Partial<RagGraphState>;
-    }
-    try {
-      const longTermMemories = await memoryRetrieverService.retrieve({
-        query: state.question,
-        ownerId: input.accessScope?.ownerId,
-        department: input.accessScope?.department,
-        accessScope: input.accessScope,
-        limit: state.retrievalStrategy.memoryTopK ?? 5,
-      });
-      return { longTermMemories } satisfies Partial<RagGraphState>;
-    } catch {
-      return { longTermMemories: [] } satisfies Partial<RagGraphState>;
-    }
-  };
-}
-
-export function createFilterMemoryByPolicyNode(
-  memoryPolicyService: MemoryPolicyService,
-) {
-  return (state: RagGraphState, config: RagGraphConfig) => {
-    const input = ensureWorkflowNotAborted(config);
-    return {
-      longTermMemories: memoryPolicyService.filterReadable(
-        state.longTermMemories,
-        input.accessScope,
-      ),
+      longTermMemories,
     } satisfies Partial<RagGraphState>;
   };
 }

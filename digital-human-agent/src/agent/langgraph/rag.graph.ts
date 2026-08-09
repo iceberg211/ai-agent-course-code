@@ -24,7 +24,6 @@ import { RerankerService } from '@/knowledge/services/retrieval/processing/reran
 import type { PersonaService } from '@/persona/persona.service';
 import type { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import type { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
-import type { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import type { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
 import type { RetrievalPort } from '@/knowledge/services/retrieval/pipeline/retrieval-port';
 
@@ -41,7 +40,6 @@ export interface RagGraphDeps {
   webFallbackService: WebFallbackService;
   shortTermMemoryService: ShortTermMemoryService;
   memoryRetrieverService: MemoryRetrieverService;
-  memoryPolicyService: MemoryPolicyService;
 }
 
 /**
@@ -69,7 +67,6 @@ export function buildRagGraph(deps: RagGraphDeps) {
       createLoadGenerationMemoryNode(
         deps.shortTermMemoryService,
         deps.memoryRetrieverService,
-        deps.memoryPolicyService,
       ),
       { retryPolicy: RAG_DEPENDENCY_RETRY_POLICY },
     )

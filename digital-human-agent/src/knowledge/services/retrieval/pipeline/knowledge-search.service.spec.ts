@@ -205,13 +205,12 @@ describe('KnowledgeSearchService', () => {
 
     const service = new KnowledgeSearchService(
       runtime as never,
-      hybridRetrieverService as never,
       rerankerService as never,
       queryRewriteService as never,
       dataScopeService as never,
+      retrievalPipelineService as never,
       knowledgeRepo as never,
       chunkRepo as never,
-      retrievalPipelineService as never,
     );
 
     return {

@@ -230,19 +230,6 @@ export class ConversationService {
     return recentDesc.reverse();
   }
 
-  private async getLatestMessage(
-    conversationId: string,
-  ): Promise<ConversationMessage | null> {
-    const rows = await this.withTransientRetry('getLatestMessage', () =>
-      this.msgRepo.find({
-        where: { conversationId },
-        order: { seq: 'DESC', createdAt: 'DESC' },
-        take: 1,
-      }),
-    );
-    return rows[0] ?? null;
-  }
-
   private async getNextMessageSeq(conversationId: string): Promise<number> {
     const row = await this.withTransientRetry('getNextMessageSeq', () =>
       this.msgRepo

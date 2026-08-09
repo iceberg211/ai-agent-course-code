@@ -25,7 +25,6 @@ import { RerankerService } from '@/knowledge/services/retrieval/processing/reran
 import { PersonaService } from '@/persona/persona.service';
 import { ShortTermMemoryService } from '@/memory/services/short-term-memory.service';
 import { MemoryRetrieverService } from '@/memory/services/memory-retriever.service';
-import { MemoryPolicyService } from '@/memory/services/memory-policy.service';
 import { RetrievalPolicyResolver } from '@/agent/services/retrieval-policy.resolver';
 import { getRagProfile } from '@/common/rag/rag-profile';
 import {
@@ -58,8 +57,6 @@ export class LangGraphRagOrchestratorService
     private readonly shortTermMemoryService: ShortTermMemoryService,
     @Optional()
     private readonly memoryRetrieverService: MemoryRetrieverService,
-    @Optional()
-    private readonly memoryPolicyService: MemoryPolicyService,
   ) {}
 
   onModuleInit(): void {
@@ -99,13 +96,6 @@ export class LangGraphRagOrchestratorService
         ({
           retrieve: () => Promise.resolve([]),
         } as unknown as MemoryRetrieverService),
-      memoryPolicyService:
-        this.memoryPolicyService ??
-        ({
-          filterReadable: (
-            items: Parameters<MemoryPolicyService['filterReadable']>[0],
-          ) => items,
-        } as MemoryPolicyService),
     });
   }
 

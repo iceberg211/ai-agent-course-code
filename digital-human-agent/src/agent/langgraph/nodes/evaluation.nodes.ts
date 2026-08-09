@@ -1,7 +1,10 @@
 import { Command } from '@langchain/langgraph';
 import { DEFAULT_KNOWLEDGE_RETRIEVAL_CONFIG } from '@/common/constants';
 import type { WebFallbackService } from '@/agent/services/web-fallback.service';
-import type { EvidenceEvaluatorService } from '@/agent/services/evidence-evaluator.service';
+import {
+  buildFallbackEvaluation,
+  type EvidenceEvaluatorService,
+} from '@/agent/services/evidence-evaluator.service';
 import {
   ensureWorkflowNotAborted,
   type RagGraphConfig,
@@ -55,12 +58,7 @@ export function createRerankNode(rerankerService: RerankerService) {
       topK,
       input.signal,
       minScore,
-      rerankMode === 'off' ||
-        rerankMode === 'score' ||
-        rerankMode === 'dedicated' ||
-        rerankMode === 'llm'
-        ? rerankMode
-        : 'llm',
+      rerankMode,
     );
 
     // 正式 citations：仅在重排后推送，避免粗召回闪变
@@ -206,7 +204,15 @@ export function createEvaluateEvidenceNode(
         webQuery: '',
       };
     } else if (evaluateMode === 'heuristic') {
-      evaluation = buildHeuristicEvaluation(state);
+      evaluation = buildFallbackEvaluation({
+        question: state.question,
+        localChunks: state.topDocuments,
+        webCitations: state.webCitations,
+        currentHop: state.currentHop,
+        maxHops: state.maxHops,
+        remainingSubQuestionCount,
+        signal: input.signal,
+      });
     } else {
       evaluation = await evidenceEvaluatorService.evaluate({
         question: state.question,
@@ -273,31 +279,3 @@ export function createEvaluateEvidenceNode(
   };
 }
 
-function buildHeuristicEvaluation(state: RagGraphState): {
-  enough: boolean;
-  missingFacts: string[];
-  reason: string;
-  webQuery: string;
-} {
-  const highConfidence = state.topDocuments.filter((chunk) => {
-    const score = Math.max(
-      chunk.rerank_score ?? 0,
-      (chunk.hybrid_score ?? 0) * 10,
-      (chunk.similarity ?? 0) * 10,
-      chunk.keyword_score ?? 0,
-    );
-    return score >= 4 || (chunk.similarity ?? 0) >= 0.55;
-  });
-  const webCount = state.webCitations?.length ?? 0;
-  const enough =
-    highConfidence.length >= 2 ||
-    (highConfidence.length >= 1 && webCount >= 1) ||
-    webCount >= 2;
-
-  return {
-    enough,
-    missingFacts: enough ? [] : ['当前证据可能不足以覆盖完整答案'],
-    reason: enough ? '启发式判断证据基本足够' : '启发式判断证据仍不足',
-    webQuery: webCount > 0 ? '' : state.question.trim(),
-  };
-}

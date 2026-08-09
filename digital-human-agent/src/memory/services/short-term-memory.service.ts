@@ -162,30 +162,6 @@ export class ShortTermMemoryService {
     });
   }
 
-  async getRetrievalCache<T>(queryHash: string): Promise<T | null> {
-    return this.safeRun(async () => {
-      const redis = await this.redis();
-      const value = await redis.get(`rag:retrieval-cache:${queryHash}`);
-      return value ? (JSON.parse(value) as T) : null;
-    }, null);
-  }
-
-  async setRetrievalCache(
-    queryHash: string,
-    value: unknown,
-    ttlSeconds = 300,
-  ): Promise<void> {
-    await this.safeRun(async () => {
-      const redis = await this.redis();
-      await redis.set(
-        `rag:retrieval-cache:${queryHash}`,
-        JSON.stringify(value),
-        'EX',
-        Math.min(Math.max(ttlSeconds, 30), 3600),
-      );
-    });
-  }
-
   private async safeRun<T>(fn: () => Promise<T>, fallback?: T): Promise<T> {
     if (Date.now() < this.circuitOpenUntil) {
       return fallback as T;

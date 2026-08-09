@@ -125,8 +125,8 @@ export function createRetrieveNode(
             strategy: hopStrategy,
             accessScope: input.accessScope,
             signal: childSignal,
-            graphExpand:
-              state.useGraphExpand === true && hopStrategy.useGraph === true,
+            // 图谱通道开启即启用一跳扩展（expand 内部有 hit 阈值协调，避免重复扩展）
+            graphExpand: hopStrategy.useGraph === true,
             question: state.question,
             currentQuery,
             profileId: state.profileId ?? input.profileId,

@@ -9,7 +9,6 @@ import {
 } from '@/common/constants';
 import { normalizeKeywords, extractFallbackKeywordTerms } from '@/knowledge/utils/keyword.utils';
 import { RagRuntimeService } from '@/knowledge/services/manage/rag-runtime.service';
-import { HybridRetrieverService } from '@/knowledge/services/retrieval/channels/hybrid-retriever.service';
 import type {
   KnowledgeChunk,
   DocumentSearchFilters,
@@ -30,7 +29,6 @@ import { DataScopeService } from '@/rbac/services/data-scope.service';
 import { Knowledge } from '@/knowledge/entities/knowledge.entity';
 import { KnowledgeChunk as KnowledgeChunkEntity } from '@/knowledge/entities/knowledge-chunk.entity';
 import { applyJsonbAnyTagFilter } from '@/knowledge/utils/document-filter.util';
-import type { RetrievalPort } from '@/knowledge/services/retrieval/pipeline/retrieval-port';
 import { RetrievalPipelineService } from '@/knowledge/services/retrieval/pipeline/retrieval-pipeline.service';
 
 // ==========================================
@@ -146,31 +144,18 @@ interface RerankSelectionResult {
 @Injectable()
 export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
-  private readonly retrievalPort: RetrievalPort;
 
   constructor(
     private readonly runtime: RagRuntimeService,
-    private readonly hybridRetrieverService: HybridRetrieverService,
     private readonly rerankerService: RerankerService,
     private readonly queryRewriteService: QueryRewriteService,
     private readonly dataScopeService: DataScopeService,
+    private readonly retrievalPort: RetrievalPipelineService,
     @InjectRepository(Knowledge)
     private readonly knowledgeRepo: Repository<Knowledge>,
     @InjectRepository(KnowledgeChunkEntity)
     private readonly chunkRepo: Repository<KnowledgeChunkEntity>,
-    /** Search 与 Agent 共用 Port；保留 hybrid 注入仅作兼容，默认走 Port */
-    retrievalPipelineService?: RetrievalPipelineService,
-  ) {
-    this.retrievalPort =
-      retrievalPipelineService ??
-      ({
-        retrieve: async () => ({
-          chunks: [],
-          trace: [],
-          knowledgeCount: 0,
-        }),
-      } as RetrievalPort);
-  }
+  ) {}
 
   async retrieve(
     knowledgeId: string,

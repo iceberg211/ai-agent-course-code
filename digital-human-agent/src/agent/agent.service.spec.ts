@@ -53,7 +53,6 @@ describe('AgentService', () => {
         workflowStartedAt: Date.now(),
         workflowBudgetMs: 20_000,
         profileId: 'balanced_chat',
-        useGraphExpand: false,
         evaluateMode: 'heuristic',
         rerankMode: 'score',
         useLongTermMemory: true,

@@ -158,20 +158,6 @@ export class RagRetrievalCacheService {
     }
   }
 
-  /** 保留旧接口，供尚未升级的调用方平滑迁移。 */
-  async getRetrievalChunks(
-    input: RetrievalCacheKeyInput,
-  ): Promise<KnowledgeChunk[] | null> {
-    return (await this.getRetrievalResult(input))?.chunks ?? null;
-  }
-
-  /** 保留旧接口，供尚未升级的调用方平滑迁移。 */
-  async setRetrievalChunks(
-    input: RetrievalCacheKeyInput & { chunks: KnowledgeChunk[] },
-  ): Promise<void> {
-    await this.setRetrievalResult(input);
-  }
-
   private toOptionalNonNegativeInteger(value: unknown): number | undefined {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;

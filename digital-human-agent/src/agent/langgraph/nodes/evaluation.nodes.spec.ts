@@ -264,7 +264,6 @@ describe('createEvaluateEvidenceNode', () => {
     workflowStartedAt: Date.now(),
     workflowBudgetMs: 60_000,
     profileId: 'balanced_chat',
-    useGraphExpand: true,
     evaluateMode: 'llm',
     rerankMode: 'llm',
     useLongTermMemory: true,
@@ -288,6 +287,7 @@ describe('createEvaluateEvidenceNode', () => {
     answerText: '',
     persona: null,
     history: [],
+    queryHistory: [],
   } satisfies RagGraphState;
 
   it('评估发现缺失事实且还有 hop 预算时，会扩展子问题并回到本地检索', async () => {

@@ -75,7 +75,6 @@ describe('toRagWorkflowState', () => {
       workflowStartedAt: Date.now(),
       workflowBudgetMs: 20_000,
       profileId: 'balanced_chat',
-      useGraphExpand: true,
       evaluateMode: 'llm',
       rerankMode: 'llm',
       useLongTermMemory: true,
@@ -95,6 +94,7 @@ describe('toRagWorkflowState', () => {
       answerText: '答案',
       persona: null,
       history: [],
+      queryHistory: [],
     });
 
     expect(workflowState.currentQuery).toBe('乔峰是谁？');

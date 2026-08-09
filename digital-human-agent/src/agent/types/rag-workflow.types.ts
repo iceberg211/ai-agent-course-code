@@ -110,8 +110,6 @@ export interface RagWorkflowState {
   workflowBudgetMs: number;
   /** 当前执行剖面 */
   profileId: RagProfileId;
-  /** 是否启用图一跳扩展（profile 控制） */
-  useGraphExpand: boolean;
   /** evaluate 模式：off | heuristic | llm */
   evaluateMode: 'off' | 'heuristic' | 'llm';
   /** rerank 模式：off | score | llm | dedicated */

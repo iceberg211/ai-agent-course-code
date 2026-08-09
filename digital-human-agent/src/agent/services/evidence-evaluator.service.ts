@@ -100,7 +100,7 @@ export class EvidenceEvaluatorService {
 
         if (!tryConsumeAuxiliaryLlmBudget(1)) {
           addTurnDegradation('evaluate_heuristic');
-          return this.buildFallbackEvaluation(params);
+          return buildFallbackEvaluation(params);
         }
 
         try {
@@ -153,7 +153,7 @@ export class EvidenceEvaluatorService {
               error instanceof Error ? error.message : String(error)
             }`,
           );
-          return this.buildFallbackEvaluation(params);
+          return buildFallbackEvaluation(params);
         }
       },
     );
@@ -197,32 +197,34 @@ export class EvidenceEvaluatorService {
     ).slice(0, 6);
   }
 
-  private buildFallbackEvaluation(
-    params: EvaluateEvidenceParams,
-  ): RagEvidenceEvaluation {
-    const highConfidenceLocal = params.localChunks.filter((chunk) => {
-      const score = Math.max(
-        chunk.rerank_score ?? 0,
-        (chunk.hybrid_score ?? 0) * 10,
-        (chunk.similarity ?? 0) * 10,
-        chunk.keyword_score ?? 0,
-        (chunk.graph_score ?? 0) * 5,
-      );
-      // 兼容 0-10 / 0-1 两种量纲：至少需要「中等相关」信号
-      return score >= 4 || (chunk.similarity ?? 0) >= 0.55;
-    });
-    const webCount = params.webCitations?.length ?? 0;
-    // 失败降级时宁缺毋滥：至少 2 条中高相关本地证据，或本地 1 条高相关 + 联网补充
-    const enough =
-      highConfidenceLocal.length >= 2 ||
-      (highConfidenceLocal.length >= 1 && webCount >= 1) ||
-      webCount >= 2;
+}
 
-    return {
-      enough,
-      missingFacts: enough ? [] : ['当前证据可能不足以覆盖完整答案'],
-      reason: enough ? '启发式判断证据基本足够' : '启发式判断证据仍不足',
-      webQuery: webCount > 0 ? '' : params.question.trim(),
-    };
-  }
+/** 启发式证据评估：LLM 降级/关闭与 LangGraph 节点 heuristic 模式共用，避免双份逻辑漂移。 */
+export function buildFallbackEvaluation(
+  params: EvaluateEvidenceParams,
+): RagEvidenceEvaluation {
+  const highConfidenceLocal = params.localChunks.filter((chunk) => {
+    const score = Math.max(
+      chunk.rerank_score ?? 0,
+      (chunk.hybrid_score ?? 0) * 10,
+      (chunk.similarity ?? 0) * 10,
+      chunk.keyword_score ?? 0,
+      (chunk.graph_score ?? 0) * 5,
+    );
+    // 兼容 0-10 / 0-1 两种量纲：至少需要「中等相关」信号
+    return score >= 4 || (chunk.similarity ?? 0) >= 0.55;
+  });
+  const webCount = params.webCitations?.length ?? 0;
+  // 失败降级时宁缺毋滥：至少 2 条中高相关本地证据，或本地 1 条高相关 + 联网补充
+  const enough =
+    highConfidenceLocal.length >= 2 ||
+    (highConfidenceLocal.length >= 1 && webCount >= 1) ||
+    webCount >= 2;
+
+  return {
+    enough,
+    missingFacts: enough ? [] : ['当前证据可能不足以覆盖完整答案'],
+    reason: enough ? '启发式判断证据基本足够' : '启发式判断证据仍不足',
+    webQuery: webCount > 0 ? '' : params.question.trim(),
+  };
 }

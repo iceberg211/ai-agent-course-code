@@ -15,6 +15,7 @@
     "rag:smoke:agentic": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agentic.ts",
     "rag:smoke:agent-path": "node -r ts-node/register -r tsconfig-paths/register ./scripts/smoke-rag-agent-path.ts",
     "rag:eval:agent": "node -r ts-node/register -r tsconfig-paths/register ./scripts/eval-rag-agent.ts",
+    "rag:telemetry": "node -r ts-node/register -r tsconfig-paths/register ./scripts/analyze-rag-telemetry.ts",
     "es:index:ensure": "node -r ts-node/register -r tsconfig-paths/register ./scripts/ensure-elasticsearch-index.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -28,6 +29,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },

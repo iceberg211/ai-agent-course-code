@@ -1,6 +1,5 @@
 import { Annotation } from '@langchain/langgraph';
 import {
-  DEFAULT_RAG_MAX_HOPS,
   DEFAULT_RAG_MAX_WEB_SEARCH_ATTEMPTS,
   DEFAULT_RAG_WORKFLOW_BUDGET_MS,
 } from '@/agent/agent.constants';
@@ -81,8 +80,6 @@ export const RagGraphStateAnnotation = Annotation.Root({
   workflowBudgetMs: Annotation<number>(),
   /** 执行剖面 id */
   profileId: Annotation<RagWorkflowState['profileId']>(),
-  /** 是否允许图一跳扩展 */
-  useGraphExpand: Annotation<boolean>(),
   evaluateMode: Annotation<RagWorkflowState['evaluateMode']>(),
   rerankMode: Annotation<RagWorkflowState['rerankMode']>(),
   useLongTermMemory: Annotation<boolean>(),
@@ -146,7 +143,7 @@ export function buildInitialRagGraphState(
   history: ConversationMessage[] = [],
 ): RagGraphState {
   const profile = getRagProfile(input.profileId);
-  const maxHops = input.maxHops ?? profile.maxHops ?? DEFAULT_RAG_MAX_HOPS;
+  const maxHops = input.maxHops ?? profile.maxHops;
   return {
     conversationId: input.conversationId,
     personaId: input.personaId,
@@ -182,7 +179,6 @@ export function buildInitialRagGraphState(
         : Date.now(),
     workflowBudgetMs: profile.budget.wallClockMs || DEFAULT_RAG_WORKFLOW_BUDGET_MS,
     profileId: profile.id,
-    useGraphExpand: profile.useGraphExpand,
     evaluateMode: profile.evaluateMode,
     rerankMode: profile.rerankMode,
     useLongTermMemory: profile.useLongTermMemory !== false,

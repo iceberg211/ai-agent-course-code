@@ -186,7 +186,6 @@ describe('LangGraphRagOrchestratorService', () => {
             allowWeb: true,
             useMultiQuery: true,
             useGraphChannel: true,
-            useGraphExpand: true,
             rewriteMode: 'llm',
             rerankMode: 'llm',
             evaluateMode: 'llm',
@@ -255,7 +254,6 @@ describe('LangGraphRagOrchestratorService', () => {
         rerankerService as never,
         evidenceEvaluatorService as never,
         webFallbackService as never,
-        undefined as never,
         undefined as never,
         undefined as never,
       ),
@@ -329,7 +327,7 @@ describe('LangGraphRagOrchestratorService', () => {
       5,
       expect.any(AbortSignal),
       undefined,
-      'llm',
+      'score',
     );
     expect(deps.webFallbackService.search).not.toHaveBeenCalled();
     expect(deps.answerGenerationService.generate).toHaveBeenCalledWith(

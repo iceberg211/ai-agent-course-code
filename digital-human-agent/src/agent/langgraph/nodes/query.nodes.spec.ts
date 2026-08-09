@@ -72,11 +72,11 @@ describe('createRetrieveNode', () => {
     persona: null,
     history: [],
     profileId: 'balanced_chat',
-    useGraphExpand: true,
     evaluateMode: 'llm',
     rerankMode: 'llm',
     useLongTermMemory: true,
     routeMode: 'llm',
+    queryHistory: [],
   } as RagGraphState;
 
   it('needRetrieval=false 时不调用 persona stage1，并记录 skipped 历史', async () => {
